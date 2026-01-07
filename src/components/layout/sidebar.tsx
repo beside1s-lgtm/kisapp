@@ -21,25 +21,24 @@ const NavItem = ({ href, label, icon, count }: NavItemProps) => {
   const isActive = pathname === href;
 
   return (
-    <Link href={href} passHref legacyBehavior>
-      <a
-        className={cn(
-          'flex items-center justify-between p-3.5 rounded-xl font-bold transition-all text-sm',
-          isActive
-            ? 'bg-primary/10 text-primary'
-            : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-        )}
-      >
-        <div className="flex items-center gap-3">
-          {icon}
-          <span>{label}</span>
-        </div>
-        {count != null && count > 0 && (
-          <span className="bg-destructive text-destructive-foreground text-xs font-black w-5 h-5 flex items-center justify-center rounded-full">
-            {count}
-          </span>
-        )}
-      </a>
+    <Link
+      href={href}
+      className={cn(
+        'flex items-center justify-between p-3.5 rounded-xl font-bold transition-all text-sm',
+        isActive
+          ? 'bg-primary/10 text-primary'
+          : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+      )}
+    >
+      <div className="flex items-center gap-3">
+        {icon}
+        <span>{label}</span>
+      </div>
+      {count != null && count > 0 && (
+        <span className="bg-destructive text-destructive-foreground text-xs font-black w-5 h-5 flex items-center justify-center rounded-full">
+          {count}
+        </span>
+      )}
     </Link>
   );
 };
