@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
-import AppHeader from '@/components/layout/header';
+import { AppHeader } from '@/components/layout/header';
 import AppSidebar from '@/components/layout/sidebar';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
