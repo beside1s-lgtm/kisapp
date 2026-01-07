@@ -11,15 +11,13 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { FileText, LifeBuoy, LogOut, Loader2, Settings, User as UserIcon, Languages } from 'lucide-react';
-import { useState } from 'react';
-import { ProfileModal } from '../profile-modal';
 import { SettingsModal } from '../settings-modal';
+import { useState } from 'react';
 
-export default function AppHeader() {
-  const { user, profile, logout, profileLoading } = useAuth();
-  const [showProfileModal, setShowProfileModal] = useState(false);
+export function AppHeader() {
+  const { user, profile, logout, profileLoading, setShowProfileModal } = useAuth();
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-
+  
   return (
     <>
       <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b bg-card px-4 md:px-8">
@@ -102,17 +100,11 @@ export default function AppHeader() {
         </div>
       </header>
       
-      {user && profile && (
-        <>
-          <ProfileModal 
-            isOpen={showProfileModal} 
-            setIsOpen={setShowProfileModal}
-          />
+      {user && profile && profile.isAdmin && (
           <SettingsModal 
             isOpen={showSettingsModal}
             setIsOpen={setShowSettingsModal}
           />
-        </>
       )}
     </>
   );

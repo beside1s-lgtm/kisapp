@@ -7,8 +7,9 @@ import { getUserProfile, saveUserProfile } from '@/app/actions';
 import { UserProfile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
-import { ProfileModal } from './profile-modal';
 import { errorEmitter } from '@/lib/error-emitter';
+import { AppHeader } from './layout/header';
+import { ProfileModal } from './profile-modal';
 
 interface AuthContextType {
   user: FirebaseUser | null;
@@ -58,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       let userProfile = await getUserProfile(firebaseUser.uid);
       if (!userProfile) {
+        // This is a new user, let's create a default profile.
         const newProfile: UserProfile = {
           name: firebaseUser.displayName || 'New User',
           role: '담당', // default role
@@ -67,15 +69,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
         await saveUserProfile(firebaseUser.uid, firebaseUser.email!, newProfile);
         userProfile = newProfile;
-        incomplete = true;
-      } else if (userProfile.name === 'New User' || !userProfile.signature) {
+        incomplete = true; // Mark as incomplete to suggest user to update it
+      } else if (!userProfile.signature || userProfile.name === 'New User') {
         incomplete = true;
       }
       setProfile(userProfile);
       setIsProfileIncomplete(incomplete);
-      if (incomplete) {
-        setShowProfileModal(true);
-      }
     } catch (error) {
       console.error("Failed to fetch or create profile", error);
       toast({ variant: 'destructive', title: 'Profile Error', description: 'Could not load your profile.' });
