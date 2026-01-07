@@ -53,6 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true);
+      setProfileLoading(true);
       if (firebaseUser) {
         if (firebaseUser.email?.endsWith('@kshcm.net')) {
             setUser(firebaseUser);
@@ -66,8 +68,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setUser(null);
         setProfile(null);
-        setProfileLoading(false);
       }
+      setProfileLoading(false);
       setLoading(false);
     });
 
@@ -75,36 +77,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchProfile, toast]);
   
   const googleSignIn = async () => {
-    setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({
         prompt: 'select_account'
       });
-      const result = await signInWithPopup(auth, provider);
-      const firebaseUser = result.user;
-
-      if (!firebaseUser.email?.endsWith('@kshcm.net')) {
-        toast({ variant: 'destructive', title: '접근 거부', description: 'kshcm.net 도메인 계정으로만 로그인할 수 있습니다.' });
-        await signOut(auth);
-        setUser(null);
-        setProfile(null);
-        setLoading(false);
-        return;
-      }
-      // onAuthStateChanged will handle setting the user and profile
+      // The onAuthStateChanged listener will handle the user state update.
+      await signInWithPopup(auth, provider);
     } catch (error: any) {
-      console.error(error);
-      let description = 'Could not sign in with Google.';
-      if (error.code === 'auth/unauthorized-domain') {
-        description = 'This domain is not authorized for sign-in. Please contact support.';
-      } else if (error.code === 'auth/popup-closed-by-user') {
-        description = 'Sign-in popup was closed before completion.';
+      console.error("Google Sign-In Error:", error);
+      let description = '로그인 중 오류가 발생했습니다.';
+      if (error.code === 'auth/popup-closed-by-user') {
+        description = '로그인 팝업이 닫혔습니다. 다시 시도해주세요.';
       } else if (error.code === 'auth/cancelled-popup-request') {
-        description = 'Multiple sign-in attempts detected. Please try again.';
+        description = '여러 번의 로그인 시도가 감지되었습니다. 잠시 후 다시 시도해주세요.';
+      } else if (error.code === 'auth/unauthorized-domain') {
+        description = '이 도메인은 로그인에 허용되지 않았습니다. 관리자에게 문의하세요.';
       }
-      toast({ variant: 'destructive', title: 'Sign-in Failed', description: description });
-      setLoading(false);
+      toast({ variant: 'destructive', title: '로그인 실패', description: description });
     }
   };
 
@@ -112,8 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       await signOut(auth);
-      setUser(null);
-      setProfile(null);
+      // onAuthStateChanged will handle setting user and profile to null
     } catch (error) {
        console.error(error);
        toast({ variant: 'destructive', title: 'Sign-out Failed', description: 'An error occurred while signing out.' });
