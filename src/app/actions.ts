@@ -330,13 +330,17 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
   const userProfileRef = getUserProfileRef(userId);
 
   try {
-      const dataToSave: Partial<User & UserProfile> = {
-          uid: userId,
-          email: email,
+      const dataToSave: Partial<UserProfile> = {
           name: profile.name,
           role: profile.role,
           signature: profile.signature,
       };
+
+      // Add email only if it's a new user (document doesn't exist yet)
+      const docSnap = await getDoc(userProfileRef);
+      if (!docSnap.exists()) {
+        dataToSave.email = email;
+      }
       
       // clean undefined values
       Object.keys(dataToSave).forEach(key => 
