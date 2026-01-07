@@ -3,7 +3,7 @@
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/utils';
-import { useEffect, useState, useTransition, cloneElement, ReactElement } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -20,20 +20,17 @@ import { Loader2, AlertTriangle, User, Mail, Award } from 'lucide-react';
 import Image from 'next/image';
 import { Alert, AlertDescription } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import type { UserProfile } from '@/lib/types';
 import { saveUserProfile } from '@/app/actions';
+import type { UserProfile } from '@/lib/types';
 
 
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 
-type ProfileModalProps = {
-  children: ReactElement;
-};
-
-export function ProfileModal({ children }: ProfileModalProps) {
-  const { user, profile, fetchProfile, loading: authLoading, profileLoading, setProfile } = useAuth();
+export function ProfileModal() {
+  const { user, profile, loading: authLoading, profileLoading, fetchProfile } = useAuth();
   const { toast } = useToast();
   const [isSaving, startSaving] = useTransition();
+
   const [isOpen, setIsOpen] = useState(false);
   
   const [name, setName] = useState('');
@@ -44,7 +41,7 @@ export function ProfileModal({ children }: ProfileModalProps) {
 
   // When the modal opens, populate the state from the profile in auth context
   useEffect(() => {
-    if (profile && isOpen) {
+    if (profile) {
         setName(profile.name || '');
         setRole(profile.role || '');
         setSigPreview(profile.signature || '');
@@ -59,28 +56,24 @@ export function ProfileModal({ children }: ProfileModalProps) {
   }, [authLoading, profileLoading, user, isProfileIncomplete])
 
   const handleSave = () => {
-    if (!user) return;
+    if (!user || !profile) return;
 
     startSaving(async () => {
-      let finalSignature = profile?.signature || '';
-      if (sigPreview !== profile?.signature) {
+      let finalSignature = profile.signature || '';
+      if (sigPreview !== profile.signature) {
         finalSignature = sigPreview ? await compressImage(sigPreview) : '';
       }
-
-      // Ensure we don't lose isAdmin and email on update
-      const updatedProfileData: UserProfile = {
+      
+      const updatedProfileData: Partial<UserProfile> = {
         name,
         role,
         signature: finalSignature,
-        email: profile?.email || user.email!,
-        isAdmin: profile?.isAdmin || false,
       };
       
       const result = await saveUserProfile(user.uid, user.email!, updatedProfileData);
 
       if (result.success) {
-        // Manually update the profile in the context to avoid re-fetching and loops
-        setProfile(updatedProfileData);
+        await fetchProfile(user); // Refetch profile to update context
         toast({ title: '프로필 업데이트됨' });
         setIsOpen(false);
       } else {
@@ -102,28 +95,29 @@ export function ProfileModal({ children }: ProfileModalProps) {
   };
 
   const handleOpenChange = (open: boolean) => {
-    // Prevent closing if profile is incomplete and user tries to close it
-    if (!open && isProfileIncomplete) {
-        toast({
-            variant: 'destructive',
-            title: '프로필 미완성',
-            description: '시스템을 사용하려면 먼저 이름과 직책을 설정해야 합니다.'
-        })
-        return; 
+     if (isProfileIncomplete && !open) {
+      toast({
+        variant: "destructive",
+        title: "프로필 미완성",
+        description: "시스템을 사용하려면 먼저 이름과 직책을 설정해야 합니다."
+      })
+      return; //
     }
     setIsOpen(open);
   }
-  
-  const trigger = cloneElement(children, {
-    onClick: (e: MouseEvent) => {
-      e.preventDefault();
-      setIsOpen(true)
-    },
-  });
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>
+         <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+            <Avatar className="h-10 w-10">
+                <AvatarImage src={user?.photoURL || ''} alt={profile?.name || ''} />
+                <AvatarFallback>
+                    {profile?.name?.charAt(0).toUpperCase() || <UserIcon />}
+                </AvatarFallback>
+            </Avatar>
+        </Button>
+      </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>내 프로필</DialogTitle>

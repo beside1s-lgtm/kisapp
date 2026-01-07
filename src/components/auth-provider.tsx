@@ -9,6 +9,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { errorEmitter } from '@/lib/error-emitter';
 
+const ADMIN_EMAIL = 'beside1s@kshcm.net';
+
 interface AuthContextType {
   user: FirebaseUser | null;
   profile: UserProfile | null;
@@ -50,18 +52,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchProfile = useCallback(async (firebaseUser: FirebaseUser): Promise<UserProfile | null> => {
     setProfileLoading(true);
+    const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
     try {
       let userProfile = await getUserProfile(firebaseUser.uid);
+      
       if (userProfile) {
+        // If user is the hardcoded admin, ensure their admin status is always true
+        if (isHardcodedAdmin && !userProfile.isAdmin) {
+          userProfile.isAdmin = true;
+          // Optionally, save this back to the DB, but for now, just update context
+          await saveUserProfile(firebaseUser.uid, firebaseUser.email!, { isAdmin: true });
+        }
         setProfile(userProfile);
         return userProfile;
       } else {
+        // User profile doesn't exist, create it
         const newProfile: UserProfile = {
           name: firebaseUser.displayName || 'New User',
           email: firebaseUser.email!,
-          role: '담당',
+          role: '담당', // Default role
           signature: '',
-          isAdmin: false,
+          isAdmin: isHardcodedAdmin, // Set admin status on creation
         };
         await saveUserProfile(firebaseUser.uid, firebaseUser.email!, newProfile);
         setProfile(newProfile);
@@ -82,10 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (firebaseUser) {
         if (firebaseUser.email?.endsWith('@kshcm.net') || firebaseUser.email?.endsWith('@kish.kr') || process.env.NODE_ENV === 'development' ) {
             setUser(firebaseUser);
-            // Fetch profile only if user changes or doesn't exist
-            if (!profile || profile.email !== firebaseUser.email) {
-               await fetchProfile(firebaseUser);
-            }
+            await fetchProfile(firebaseUser);
         } else {
             toast({ variant: 'destructive', title: '접근 거부', description: '허용된 도메인 계정으로만 로그인할 수 있습니다.'});
             await signOut(auth);
@@ -97,11 +105,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
       }
       setLoading(false);
-      setProfileLoading(false);
+      if (profileLoading) {
+        setProfileLoading(false);
+      }
     });
 
     return () => unsubscribe();
-  }, [fetchProfile, toast]);
+  }, [fetchProfile]);
   
   const googleSignIn = async () => {
     try {
