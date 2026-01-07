@@ -149,19 +149,20 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
   
   const settingsRef = getSettingsRef();
   const approvalsCol = getApprovalsCol();
-  
   const newDocRef = doc(approvalsCol);
   const newDocId = newDocRef.id;
 
   try {
     const finalDocNoStr = await runTransaction(db, async (transaction) => {
         const settingsSnap = await transaction.get(settingsRef);
-        const currentConfig = (settingsSnap.data() as DocConfig) || { nextNumber: 1 };
-        let nextNum = currentConfig.nextNumber || 1;
-        
+        if (!settingsSnap.exists()) {
+            throw new Error("Document config settings not found.");
+        }
+        const currentConfig = settingsSnap.data() as DocConfig;
+        const nextNum = currentConfig.nextNumber || 1;
         const docNo = `Kish-초등-${nextNum}`;
-        transaction.set(settingsRef, { nextNumber: nextNum + 1 }, { merge: true });
         
+        transaction.update(settingsRef, { nextNumber: nextNum + 1 });
         return docNo;
     });
 
@@ -181,37 +182,30 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       completedAt: hasApprovers ? null : serverTimestamp() as Timestamp,
     };
 
-    // Use .catch() directly on the setDoc promise to handle permission errors
-    await setDoc(newDocRef, newDocData)
-        .catch((serverError) => {
-            // Create a specific permission error
-            const permissionError = new FirestorePermissionError({
-                path: newDocRef.path,
-                operation: 'create',
-                requestResourceData: newDocData,
-            });
-            // Emit it for central handling (e.g., toast in UI)
-            errorEmitter.emit('permission-error', permissionError);
-            
-            // IMPORTANT: Re-throw the error to ensure the outer catch block is triggered
-            // and returns a failure response to the client.
-            throw permissionError;
-        });
+    // Correctly await the setDoc operation inside the try block
+    await setDoc(newDocRef, newDocData);
 
     revalidatePath('/sent');
     return { success: true, docId: newDocId, docNo: finalDocNoStr };
 
   } catch (error: any) {
-    console.error("Failed to create document:", error); // Log the full error on the server
-    
-    // Ensure a user-friendly message is returned to the client
-    const errorMessage = error instanceof FirestorePermissionError 
-        ? "문서 생성 권한이 없습니다. 보안 규칙을 확인하세요."
-        : "문서 생성 중 알 수 없는 오류가 발생했습니다.";
+    console.error("Failed to create document:", error);
 
-    return { success: false, error: errorMessage };
+    // Create a specific permission error if it's a firestore permission issue
+    if (error.code === 'permission-denied') {
+        const permissionError = new FirestorePermissionError({
+            path: newDocRef.path,
+            operation: 'create',
+            requestResourceData: payload,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        return { success: false, error: "문서 생성 권한이 없습니다. Firestore 보안 규칙을 확인하세요." };
+    }
+    
+    return { success: false, error: error.message || "문서 생성 중 알 수 없는 오류가 발생했습니다." };
   }
 }
+
 
 export async function approveDocument(docId: string, userId: string, userProfile: UserProfile) {
     if (!db) return { success: false, error: "Database not initialized." };
