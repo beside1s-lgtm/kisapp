@@ -19,46 +19,49 @@ interface UserSearchProps extends Omit<InputProps, 'onSelect' | 'value' | 'onCha
 
 export function UserSearch({ users, onSelectUser, value, onValueChange, placeholder, ...props }: UserSearchProps) {
   const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState(value || '');
+  const [internalValue, setInternalValue] = useState(value || '');
 
   useEffect(() => {
-    setSearch(value || '');
+    if(value !== internalValue) {
+        setInternalValue(value || '');
+    }
   }, [value]);
 
   const filteredUsers = useMemo(() => {
-    if (!search) return [];
+    if (!internalValue) return [];
     return users.filter(
-      (u) => u.name.toLowerCase().includes(search.toLowerCase()) || 
-             u.email.toLowerCase().includes(search.toLowerCase())
+      (u) => u.name.toLowerCase().includes(internalValue.toLowerCase()) || 
+             u.email.toLowerCase().includes(internalValue.toLowerCase())
     );
-  }, [search, users]);
+  }, [internalValue, users]);
 
   const handleSelect = (user: UserProfile) => {
     onSelectUser(user);
-    setSearch(user.name);
+    setInternalValue(user.name);
     if(onValueChange) {
         onValueChange(user.name);
     }
     setOpen(false);
   };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    setInternalValue(newValue);
+    if (onValueChange) {
+        onValueChange(newValue);
+    }
+    setOpen(!!newValue);
+  }
   
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Input
           {...props}
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            if(onValueChange) {
-                onValueChange(e.target.value);
-            }
-            if(e.target.value) {
-                setOpen(true);
-            }
-          }}
+          value={internalValue}
+          onChange={handleChange}
           onFocus={() => {
-            if(search) setOpen(true);
+            if(internalValue) setOpen(true);
           }}
           placeholder={placeholder || "Search name..."}
           autoComplete="off"

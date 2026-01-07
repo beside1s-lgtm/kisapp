@@ -67,13 +67,24 @@ const formSchema = z.object({
   content: z.string().min(1, '내용은 필수입니다.'),
   approvers: z
     .array(approverSchema)
-    .refine(
-      (approvers) => approvers.some((a) => a.active && a.name && a.email),
-      {
-        message: '최소 한 명의 활성화된 결재자를 지정해야 합니다.',
-      }
-    )
-    .or(z.array(approverSchema).length(0)),
+    .superRefine((approvers, ctx) => {
+      approvers.forEach((approver, index) => {
+        if (approver.active) {
+          if (!approver.name) {
+            ctx.addIssue({
+              path: [index, 'name'],
+              message: '결재자 이름은 필수입니다.',
+            });
+          }
+          if (!approver.email) {
+            ctx.addIssue({
+              path: [index, 'email'],
+              message: '결재자 이메일은 필수입니다.',
+            });
+          }
+        }
+      });
+    }),
   circulars: z.array(
     z.object({ name: z.string(), email: z.string(), role: z.string() })
   ),
@@ -150,7 +161,7 @@ export default function DocumentForm() {
         return;
       }
       const activeApprovers = approvers
-        .filter((a) => a.active)
+        .filter((a) => a.active && a.name && a.role)
         .map((a) => ({ name: a.name, role: a.role }));
 
       const result = await generateContentAction({
@@ -186,11 +197,10 @@ export default function DocumentForm() {
       
       const activeApprovers = data.approvers.filter(a => a.active && a.name && a.email);
 
-      // This is a temporary check for the testing phase, allowing no approvers.
-      // if (activeApprovers.length === 0) {
-      //   const proceed = window.confirm("결재자 없이 문서를 상신하시겠습니까? 이 문서는 즉시 완료 처리됩니다.");
-      //   if (!proceed) return;
-      // }
+      if (activeApprovers.length === 0) {
+        const proceed = window.confirm("결재자 없이 문서를 상신하시겠습니까? 이 문서는 즉시 완료 처리됩니다.");
+        if (!proceed) return;
+      }
 
 
       if (!profile.signature) {
@@ -243,7 +253,7 @@ export default function DocumentForm() {
           homepage: docConfig.homepage || '',
         },
       };
-
+      
       const result = await createDocument(payload, user.uid, profile);
 
       if (result.success && result.docId) {
@@ -407,32 +417,24 @@ export default function DocumentForm() {
                   </div>
                   {form.watch(`approvers.${index}.active`) && (
                     <div className="space-y-2">
-                      <Controller
+                       <FormField
                         control={form.control}
                         name={`approvers.${index}.name`}
                         render={({ field: nameField }) => (
-                          <UserSearch
-                            users={users}
-                            onSelectUser={(user) => {
-                              form.setValue(
-                                `approvers.${index}.name`,
-                                user.name,
-                                { shouldValidate: true }
-                              );
-                              form.setValue(
-                                `approvers.${index}.email`,
-                                user.email,
-                                { shouldValidate: true }
-                              );
-                            }}
-                            value={nameField.value}
-                            onValueChange={(value) => {
-                              nameField.onChange(value);
-                              if (value === '') {
-                                form.setValue(`approvers.${index}.email`, '');
-                              }
-                            }}
-                          />
+                          <FormItem>
+                            <FormControl>
+                                <UserSearch
+                                users={users}
+                                onSelectUser={(user) => {
+                                    form.setValue(`approvers.${index}.name`, user.name, { shouldValidate: true });
+                                    form.setValue(`approvers.${index}.email`, user.email, { shouldValidate: true });
+                                }}
+                                value={nameField.value}
+                                onValueChange={nameField.onChange}
+                                />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
                         )}
                       />
                       <FormField
@@ -459,7 +461,7 @@ export default function DocumentForm() {
                 </CardContent>
               </Card>
             ))}
-             <FormMessage>{form.formState.errors.approvers?.message}</FormMessage>
+             <FormMessage>{(form.formState.errors.approvers as any)?.root?.message}</FormMessage>
           </CardContent>
         </Card>
 
