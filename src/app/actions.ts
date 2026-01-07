@@ -48,11 +48,6 @@ function getUserProfileRef(userId: string) {
     if (!db) throw new Error("Firestore is not initialized.");
     return doc(db, 'users', userId);
 }
-function getUserDirectoryRef(userId: string) {
-    if (!db) throw new Error("Firestore is not initialized.");
-    // This now points to the same user profile document
-    return doc(db, 'users', userId);
-}
 
 
 function serializeDocs(docs: any[]): any[] {
@@ -103,15 +98,11 @@ export async function getRegistryDocuments(userId: string, userEmail: string) {
         const snapshot = await getDocs(q);
         return serializeDocs(snapshot.docs);
     } catch (error: any) {
-        console.error("Error fetching registry documents: ", error);
-        // Emitting a permission error if we suspect that's the issue
-        if (error.code === 'permission-denied') {
-            const permissionError = new FirestorePermissionError({
-                path: getApprovalsCol().path,
-                operation: 'list',
-            });
-            errorEmitter.emit('permission-error', permissionError);
-        }
+        const permissionError = new FirestorePermissionError({
+            path: getApprovalsCol().path,
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
         return [];
     }
 }
@@ -126,14 +117,11 @@ export async function getDocumentById(docId: string) {
     }
     return serializeDocs([snapshot])[0];
   } catch (error: any) {
-     console.error("Error fetching document by ID: ", error);
-     if (error.code === 'permission-denied') {
-        const permissionError = new FirestorePermissionError({
-            path: docRef.path,
-            operation: 'get',
-        });
-        errorEmitter.emit('permission-error', permissionError);
-     }
+     const permissionError = new FirestorePermissionError({
+         path: docRef.path,
+         operation: 'get',
+     });
+     errorEmitter.emit('permission-error', permissionError);
      return null;
   }
 }
@@ -299,7 +287,11 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
         const snap = await getDoc(docRef);
         return snap.exists() ? snap.data() as UserProfile : null;
     } catch (error) {
-        console.error("Error fetching user profile:", error);
+        const permissionError = new FirestorePermissionError({
+            path: docRef.path,
+            operation: 'get',
+        });
+        errorEmitter.emit('permission-error', permissionError);
         return null;
     }
 }
@@ -310,7 +302,6 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
   }
   
   const userProfileRef = getUserProfileRef(userId);
-  let transactionError = null;
 
   try {
       const dataToSave: Partial<User & UserProfile> = {
@@ -331,22 +322,14 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
       revalidatePath('/');
       return { success: true };
   } catch (error: any) {
-      transactionError = error;
-  }
-
-  // Handle errors outside the transaction block to ensure we can emit
-  if (transactionError) {
       const permissionError = new FirestorePermissionError({
-          path: userProfileRef.path, // This might be one of two paths
+          path: userProfileRef.path,
           operation: 'update',
           requestResourceData: profile,
       });
       errorEmitter.emit('permission-error', permissionError);
       return { success: false, error: permissionError.message };
   }
-
-  // This part should not be reached, but as a fallback
-  return { success: false, error: "An unknown error occurred." };
 }
 
 
