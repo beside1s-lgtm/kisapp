@@ -3,9 +3,11 @@
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { AppHeader } from '@/components/layout/header';
 import AppSidebar from '@/components/layout/sidebar';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, profile, profileLoading } = useAuth();
@@ -39,6 +41,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {children}
             </main>
         </div>
+        <Button asChild className="md:hidden fixed bottom-6 right-6 h-16 w-16 rounded-full shadow-lg z-40" size="icon">
+          <Link href="/new">
+            <Plus className="h-8 w-8" />
+            <span className="sr-only">새 결재문서 작성</span>
+          </Link>
+        </Button>
     </div>
   );
 }
