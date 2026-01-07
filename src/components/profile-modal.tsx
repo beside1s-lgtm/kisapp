@@ -51,9 +51,8 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
       }
 
       const updatedProfile = {
-        ...profile,
         name,
-        // Role is not updated here anymore
+        role: profile.role, // role is needed for display but not changed here
         signature: finalSignature,
         email: user.email!,
       };
@@ -61,7 +60,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
       const result = await saveUserProfile(user.uid, user.email!, updatedProfile);
 
       if (result.success) {
-        setProfile(updatedProfile);
+        setProfile({ ...profile, ...updatedProfile });
         toast({ title: '프로필 업데이트됨' });
         setIsOpen(false);
       } else {

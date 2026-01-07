@@ -322,7 +322,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
     }
 }
 
-export async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>) {
+export async function saveUserProfile(userId: string, email: string, profile: Partial<Omit<UserProfile, 'isAdmin'>>) {
   if (!db) {
       return { success: false, error: "Database not initialized." };
   }
@@ -338,23 +338,10 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
           signature: profile.signature,
       };
       
-      // Only include isAdmin if it's being set by an admin (which we can't check here, so we rely on rules)
-      // For general profile saves, we should not include it.
-      if (profile.isAdmin !== undefined) {
-         // dataToSave.isAdmin = profile.isAdmin; // Removed this line
-      }
-      
       // clean undefined values
       Object.keys(dataToSave).forEach(key => 
             dataToSave[key as keyof typeof dataToSave] === undefined && delete dataToSave[key as keyof typeof dataToSave]
       );
-      
-      // If the call is coming from the profile modal, it won't include isAdmin.
-      // If it's from the settings modal, it will. Let's create a separate object for the error.
-      const requestDataForError = {...profile};
-      if (requestDataForError.isAdmin === undefined) {
-        delete requestDataForError.isAdmin;
-      }
       
       await setDoc(userProfileRef, dataToSave, { merge: true });
       revalidatePath('/');
