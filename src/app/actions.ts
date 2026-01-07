@@ -1,3 +1,4 @@
+
 'use server';
 
 import {
@@ -153,11 +154,22 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
   const newDocId = newDocRef.id;
 
   try {
-    const hasApprovers = payload.approvers && payload.approvers.length > 0;
+    const finalDocNoStr = await runTransaction(db, async (transaction) => {
+        const settingsSnap = await transaction.get(settingsRef);
+        const currentConfig = (settingsSnap.data() as DocConfig) || { nextNumber: 1 };
+        let nextNum = currentConfig.nextNumber || 1;
+        
+        const docNo = `Kish-초등-${nextNum}`;
+        transaction.set(settingsRef, { nextNumber: nextNum + 1 }, { merge: true });
+        
+        return docNo;
+    });
 
+    const hasApprovers = payload.approvers && payload.approvers.length > 0;
+    
     const newDocData: Omit<ApprovalDoc, 'id'> = {
       ...payload,
-      docNo: '', // Will be set in transaction
+      docNo: finalDocNoStr,
       requesterId: userId,
       requesterName: userProfile.name,
       requesterEmail: userProfile.email,
@@ -169,18 +181,16 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       completedAt: hasApprovers ? null : serverTimestamp() as Timestamp,
     };
 
-    const finalDocNoStr = await runTransaction(db, async (transaction) => {
-      const settingsSnap = await transaction.get(settingsRef);
-      const currentConfig = (settingsSnap.data() as DocConfig) || { nextNumber: 1 };
-      let nextNum = currentConfig.nextNumber || 1;
-      
-      const docNo = `Kish-초등-${nextNum}`;
-      newDocData.docNo = docNo;
-      
-      transaction.set(settingsRef, { nextNumber: nextNum + 1 }, { merge: true });
-      transaction.set(newDocRef, newDocData);
-      
-      return docNo;
+    await setDoc(newDocRef, newDocData).catch((error) => {
+        // This catch block is crucial for permission errors
+        const permissionError = new FirestorePermissionError({
+            path: newDocRef.path,
+            operation: 'create',
+            requestResourceData: newDocData,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        // We throw to make sure the outer catch block catches it.
+        throw new Error(`Permission denied: ${permissionError.message}`);
     });
 
     revalidatePath('/sent');
@@ -189,25 +199,14 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
   } catch (error: any) {
     console.error("Failed to create document:", error); // Log the full error on the server
     
-    // Create a more user-friendly error message
     let errorMessage = "An unknown error occurred while creating the document.";
-    if (error.name === 'FirebaseError') {
-       if (error.code === 'permission-denied') {
-          errorMessage = "Permission denied. Please check Firestore security rules.";
-       } else {
-          errorMessage = `Firestore error: ${error.code}.`;
-       }
-    } else {
+    if (error instanceof Error) {
         errorMessage = error.message;
+    } else if (typeof error === 'string') {
+        errorMessage = error;
+    } else if (error?.name === 'FirebaseError' && error.code === 'permission-denied') {
+        errorMessage = "Permission denied. Please check Firestore security rules.";
     }
-    
-    // Optionally emit a specific permission error if that's what we suspect
-    const permissionError = new FirestorePermissionError({
-        path: newDocId ? doc(approvalsCol, newDocId).path : approvalsCol.path, 
-        operation: 'create',
-        requestResourceData: payload,
-    });
-    errorEmitter.emit('permission-error', permissionError);
 
     // Return the specific error to the client
     return { success: false, error: errorMessage };
@@ -497,5 +496,7 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
 }
+
+    
 
     
