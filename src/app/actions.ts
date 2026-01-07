@@ -192,6 +192,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
 
   } catch (error: any) {
     let permissionError;
+    const requestData = { ...payload };
     if (error.message.includes("settings")) {
         permissionError = new FirestorePermissionError({
             path: settingsRef.path,
@@ -199,9 +200,9 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
         });
     } else {
        permissionError = new FirestorePermissionError({
-          path: approvalsCol.path, 
+          path: newDocId ? doc(approvalsCol, newDocId).path : approvalsCol.path, 
           operation: 'create',
-          requestResourceData: payload,
+          requestResourceData: requestData,
       });
     }
     errorEmitter.emit('permission-error', permissionError);
@@ -283,8 +284,17 @@ export async function getUsersDirectory(): Promise<User[]> {
 export async function getDocConfig(): Promise<DocConfig> {
   if (!db) return {};
   const settingsRef = getSettingsRef();
-  const snap = await getDoc(settingsRef);
-  return snap.exists() ? snap.data() as DocConfig : {};
+  try {
+    const snap = await getDoc(settingsRef);
+    return snap.exists() ? snap.data() as DocConfig : {};
+  } catch(error) {
+    const permissionError = new FirestorePermissionError({
+      path: settingsRef.path,
+      operation: 'get',
+    });
+    errorEmitter.emit('permission-error', permissionError);
+    return {};
+  }
 }
 
 export async function saveDocConfig(payload: DocConfig) {
@@ -330,30 +340,37 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
   const userProfileRef = getUserProfileRef(userId);
 
   try {
-      const dataToSave: Partial<UserProfile> = {
-          name: profile.name,
-          role: profile.role,
-          signature: profile.signature,
-      };
-
-      // Add email only if it's a new user (document doesn't exist yet)
       const docSnap = await getDoc(userProfileRef);
-      if (!docSnap.exists()) {
-        dataToSave.email = email;
+      
+      // Data to save, starts clean.
+      const dataToSave: Partial<UserProfile> = {};
+
+      if (profile.name !== undefined) dataToSave.name = profile.name;
+      if (profile.role !== undefined) dataToSave.role = profile.role;
+      if (profile.signature !== undefined) dataToSave.signature = profile.signature;
+
+      // For admin changes, only allow 'isAdmin' field to be updated
+      if (profile.isAdmin !== undefined) {
+         await setDoc(userProfileRef, { isAdmin: profile.isAdmin }, { merge: true });
+      } else {
+        // For regular user updates
+        if (!docSnap.exists()) {
+          // If document does not exist (new user), set email and default isAdmin
+          dataToSave.email = email;
+          dataToSave.isAdmin = false;
+          await setDoc(userProfileRef, dataToSave);
+        } else {
+          // If document exists, update it. Exclude email.
+          await updateDoc(userProfileRef, dataToSave);
+        }
       }
       
-      // clean undefined values
-      Object.keys(dataToSave).forEach(key => 
-            dataToSave[key as keyof typeof dataToSave] === undefined && delete dataToSave[key as keyof typeof dataToSave]
-      );
-      
-      await setDoc(userProfileRef, dataToSave, { merge: true });
       revalidatePath('/');
       return { success: true };
   } catch (error: any) {
       const permissionError = new FirestorePermissionError({
           path: userProfileRef.path,
-          operation: 'update',
+          operation: docSnap.exists() ? 'update' : 'create',
           requestResourceData: profile,
       });
       errorEmitter.emit('permission-error', permissionError);
