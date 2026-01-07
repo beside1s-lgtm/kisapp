@@ -56,12 +56,12 @@ import {
 } from './ui/form';
 
 const formSchema = z.object({
-  title: z.string().min(1, 'Title is required.'),
-  content: z.string().min(1, 'Content is required.'),
+  title: z.string().min(1, '제목은 필수입니다.'),
+  content: z.string().min(1, '내용은 필수입니다.'),
   approvers: z
     .array(
       z.object({
-        name: z.string().min(1, 'Approver name is required.'),
+        name: z.string().min(1, '결재자 이름은 필수입니다.'),
         email: z.string().email(),
         role: z.string(),
         type: z.enum(['normal', 'final', 'proxy']),
@@ -69,7 +69,7 @@ const formSchema = z.object({
       })
     )
     .refine((approvers) => approvers.filter((a) => a.active).length > 0, {
-      message: 'At least one approver must be active.',
+      message: '최소 한 명의 결재자가 활성화되어야 합니다.',
     }),
   circulars: z.array(
     z.object({ name: z.string(), email: z.string(), role: z.string() })
@@ -141,8 +141,8 @@ export default function DocumentForm() {
       if (!title) {
         toast({
           variant: 'destructive',
-          title: 'Title Required',
-          description: 'Please enter a title to generate content.',
+          title: '제목 필요',
+          description: '내용을 생성하려면 제목을 입력하세요.',
         });
         return;
       }
@@ -153,9 +153,9 @@ export default function DocumentForm() {
       const result = await generateContentAction({ title, approvers: activeApprovers });
       if (result.success) {
         form.setValue('content', result.content);
-        toast({ title: 'Content Generated', description: 'AI has generated the document content.' });
+        toast({ title: '내용 생성됨', description: 'AI가 문서 내용을 생성했습니다.' });
       } else {
-        toast({ variant: 'destructive', title: 'Generation Failed', description: result.error });
+        toast({ variant: 'destructive', title: '생성 실패', description: result.error });
       }
     });
   };
@@ -165,20 +165,20 @@ export default function DocumentForm() {
       if (!user || !profile) {
         toast({
           variant: 'destructive',
-          title: 'Authentication Error',
-          description: 'You must be logged in to submit a document.',
+          title: '인증 오류',
+          description: '문서를 제출하려면 로그인해야 합니다.',
         });
         return;
       }
 
       if (!profile.signature) {
-        const confirmed = window.confirm("You don't have a signature saved. Continue without one?");
+        const confirmed = window.confirm("저장된 서명이 없습니다. 서명 없이 계속하시겠습니까?");
         if (!confirmed) return;
       }
       
       if (data.docType === 'external' && (!data.receiverName || !data.receiverEmail)) {
-          form.setError('receiverName', { message: 'Receiver is required for external documents.'});
-          form.setError('receiverEmail', { message: 'Email is required for external documents.'});
+          form.setError('receiverName', { message: '외부 문서에는 수신처가 필요합니다.'});
+          form.setError('receiverEmail', { message: '외부 문서에는 이메일이 필요합니다.'});
           return;
       }
 
@@ -219,14 +219,14 @@ export default function DocumentForm() {
 
       if (result.success) {
         toast({
-          title: 'Document Submitted!',
-          description: `Your document (No: ${result.docNo}) has been sent for approval.`,
+          title: '문서 제출 완료!',
+          description: `문서(번호: ${result.docNo})가 결재를 위해 전송되었습니다.`,
         });
         router.push(`/documents/${result.docId}`);
       } else {
         toast({
           variant: 'destructive',
-          title: 'Submission Failed',
+          title: '제출 실패',
           description: result.error,
         });
       }
@@ -243,9 +243,9 @@ export default function DocumentForm() {
               name="title"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-lg font-bold">Title</FormLabel>
+                  <FormLabel className="text-lg font-bold">제목</FormLabel>
                   <FormControl>
-                    <Input placeholder="Document Title" {...field} className="h-12 text-lg" />
+                    <Input placeholder="문서 제목" {...field} className="h-12 text-lg" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -258,16 +258,16 @@ export default function DocumentForm() {
                   name="docType"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Document Type</FormLabel>
+                      <FormLabel>문서 종류</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select document type" />
+                            <SelectValue placeholder="문서 종류 선택" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="internal">Internal</SelectItem>
-                          <SelectItem value="external">External</SelectItem>
+                          <SelectItem value="internal">내부결재</SelectItem>
+                          <SelectItem value="external">대외공문</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -279,16 +279,16 @@ export default function DocumentForm() {
                   name="publishStatus"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Visibility</FormLabel>
+                      <FormLabel>공개여부</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select visibility" />
+                            <SelectValue placeholder="공개여부 선택" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="공개">Public</SelectItem>
-                          <SelectItem value="비공개">Private</SelectItem>
+                          <SelectItem value="공개">공개</SelectItem>
+                          <SelectItem value="비공개">비공개</SelectItem>
                         </SelectContent>
                       </Select>
                        <FormMessage />
@@ -303,9 +303,9 @@ export default function DocumentForm() {
                         name="receiverName"
                         render={({ field }) => (
                             <FormItem>
-                                <FormLabel>Receiver Name</FormLabel>
+                                <FormLabel>수신처</FormLabel>
                                 <FormControl>
-                                    <Input placeholder="e.g., Ministry of Education" {...field} />
+                                    <Input placeholder="예: 교육부" {...field} />
                                 </FormControl>
                                 <FormMessage />
                             </FormItem>
@@ -316,9 +316,9 @@ export default function DocumentForm() {
                         name="receiverEmail"
                         render={({ field }) => (
                             <FormItem>
-                                <FormLabel>Receiver Email</FormLabel>
+                                <FormLabel>수신처 이메일</FormLabel>
                                 <FormControl>
-                                    <Input placeholder="e.g., contact@moe.gov" {...field} />
+                                    <Input placeholder="예: contact@moe.gov" {...field} />
                                 </FormControl>
                                  <FormMessage />
                             </FormItem>
@@ -332,7 +332,7 @@ export default function DocumentForm() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Approval Line</CardTitle>
+            <CardTitle>결재선</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {approverFields.map((field, index) => (
@@ -348,7 +348,7 @@ export default function DocumentForm() {
                           <FormControl>
                              <Switch checked={field.value} onCheckedChange={field.onChange} />
                           </FormControl>
-                          <FormLabel>Active</FormLabel>
+                          <FormLabel>활성</FormLabel>
                         </FormItem>
                       )}
                     />
@@ -370,12 +370,12 @@ export default function DocumentForm() {
                             render={({ field: selectField }) => (
                             <Select onValueChange={selectField.onChange} defaultValue={selectField.value}>
                                 <SelectTrigger>
-                                    <SelectValue placeholder="Approval Type" />
+                                    <SelectValue placeholder="결재 종류" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="normal">Normal</SelectItem>
-                                    <SelectItem value="final">Final</SelectItem>
-                                    <SelectItem value="proxy">Proxy</SelectItem>
+                                    <SelectItem value="normal">일반</SelectItem>
+                                    <SelectItem value="final">전결</SelectItem>
+                                    <SelectItem value="proxy">대결</SelectItem>
                                 </SelectContent>
                             </Select>
                             )}
@@ -390,12 +390,12 @@ export default function DocumentForm() {
         
         <Card>
             <CardHeader>
-                <CardTitle>Circulars (CC)</CardTitle>
-                <FormDescription>Add users who need to see this document but not approve it.</FormDescription>
+                <CardTitle>공람</CardTitle>
+                <FormDescription>결재는 필요 없지만 문서를 확인해야 하는 사용자를 추가하세요.</FormDescription>
             </CardHeader>
             <CardContent>
                 <div className="mb-4">
-                    <UserSearch users={users} onSelectUser={(user) => appendCircular(user)} placeholder="Search for users to add..."/>
+                    <UserSearch users={users} onSelectUser={(user) => appendCircular(user)} placeholder="추가할 사용자 검색..."/>
                 </div>
                 <div className="flex flex-wrap gap-2">
                     {circularFields.map((field, index) => (
@@ -413,7 +413,7 @@ export default function DocumentForm() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Content</CardTitle>
+            <CardTitle>내용</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-end">
@@ -423,7 +423,7 @@ export default function DocumentForm() {
                 ) : (
                   <Sparkles className="mr-2 h-4 w-4 text-yellow-500" />
                 )}
-                Generate with AI
+                AI로 생성하기
               </Button>
             </div>
             <FormField
@@ -433,7 +433,7 @@ export default function DocumentForm() {
                 <FormItem>
                   <FormControl>
                     <Textarea
-                      placeholder="Write the document content here..."
+                      placeholder="문서 내용을 여기에 작성하세요..."
                       rows={15}
                       className="font-serif text-base leading-relaxed"
                       {...field}
@@ -448,14 +448,14 @@ export default function DocumentForm() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Attachments</CardTitle>
+            <CardTitle>첨부파일</CardTitle>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => attachmentInputRef.current?.click()}
             >
-              <Plus className="mr-2 h-4 w-4" /> Add Files
+              <Plus className="mr-2 h-4 w-4" /> 파일 추가
             </Button>
             <input
               type="file"
@@ -503,7 +503,7 @@ export default function DocumentForm() {
                 </div>
               ))}
               {attachmentFields.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">No files attached.</p>
+                <p className="text-sm text-muted-foreground text-center py-4">첨부된 파일이 없습니다.</p>
               )}
             </div>
           </CardContent>
@@ -511,7 +511,7 @@ export default function DocumentForm() {
 
         <Button type="submit" disabled={isPending} size="lg" className="w-full h-14 text-lg">
           {isPending && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
-          Submit for Approval
+          결재 요청
         </Button>
       </form>
     </Form>

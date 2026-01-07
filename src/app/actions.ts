@@ -130,7 +130,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     revalidatePath('/sent');
     return { success: true, docId: docRef.id, docNo: finalDocNoStr };
   } catch (error: any) {
-    console.error("Submission error:", error);
+    console.error("제출 오류:", error);
     return { success: false, error: error.message };
   }
 }
@@ -142,14 +142,14 @@ export async function approveDocument(docId: string, userId: string, userProfile
         await runTransaction(db, async (transaction) => {
             const docSnap = await transaction.get(docRef);
             if (!docSnap.exists()) {
-                throw new Error("Document does not exist!");
+                throw new Error("문서가 존재하지 않습니다!");
             }
 
             const data = docSnap.data() as ApprovalDoc;
             const step = data.currentStep;
 
             if (data.approvers[step]?.email !== userProfile.email) {
-                throw new Error("Not your turn to approve.");
+                throw new Error("결재할 차례가 아닙니다.");
             }
 
             const updatedApprovers = [...data.approvers];
@@ -175,7 +175,7 @@ export async function approveDocument(docId: string, userId: string, userProfile
         revalidatePath(`/documents/${docId}`);
         return { success: true, docId };
     } catch (error: any) {
-        console.error("Approval error:", error);
+        console.error("결재 오류:", error);
         return { success: false, error: error.message };
     }
 }
@@ -235,21 +235,21 @@ export async function generateContentAction(input: {
   attachments?: { name: string; data: string }[];
 }) {
   const schema = z.object({
-    title: z.string().min(1, 'Title is required'),
+    title: z.string().min(1, '제목은 필수입니다.'),
     approvers: z.array(z.object({ name: z.string(), role: z.string() })),
     attachments: z.array(z.object({ name: z.string(), data: z.string() })).optional(),
   });
 
   const validation = schema.safeParse(input);
   if (!validation.success) {
-    return { success: false, error: 'Invalid input.' };
+    return { success: false, error: '잘못된 입력입니다.' };
   }
 
   try {
     const result = await generateDocumentContent(validation.data);
     return { success: true, content: result.content };
   } catch (error: any) {
-    console.error("AI content generation error:", error);
-    return { success: false, error: `Failed to generate content: ${error.message}` };
+    console.error("AI 콘텐츠 생성 오류:", error);
+    return { success: false, error: `콘텐츠 생성 실패: ${error.message}` };
   }
 }

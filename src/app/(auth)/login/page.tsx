@@ -53,10 +53,10 @@ export default function LoginPage() {
           <FileText className="h-10 w-10" />
         </div>
         <h1 className="font-headline text-4xl font-bold text-foreground mb-2">
-          KISH Approval System
+          KISH 결재 시스템
         </h1>
         <p className="text-muted-foreground mb-8">
-          Please sign in with your Google Workspace account.
+          Google Workspace 계정으로 로그인해주세요.
         </p>
 
         <Button
@@ -70,10 +70,10 @@ export default function LoginPage() {
           ) : (
             <GoogleIcon className="mr-3 h-6 w-6" />
           )}
-          Sign in with Google
+          Google로 로그인
         </Button>
          <p className="text-xs text-muted-foreground mt-8">
-          Only authorized users from the KISH domain can access this system.
+          KISH 도메인의 승인된 사용자만 이 시스템에 접근할 수 있습니다.
         </p>
       </main>
     </div>

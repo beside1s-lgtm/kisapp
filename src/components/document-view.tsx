@@ -41,17 +41,17 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   
   const handleApprove = () => {
     if (!profile?.signature) {
-        const confirmed = window.confirm("You have no signature set. Do you want to approve without a signature?");
+        const confirmed = window.confirm("저장된 서명이 없습니다. 서명 없이 결재하시겠습니까?");
         if(!confirmed) return;
     }
     startApproveTransition(async () => {
       const result = await approveDocument(initialDoc.id, user.uid, profile);
       if (result.success) {
-        toast({ title: 'Approved!', description: 'The document has been approved.' });
+        toast({ title: '결재 완료!', description: '문서가 성공적으로 결재되었습니다.' });
         router.push('/inbox');
         router.refresh();
       } else {
-        toast({ variant: 'destructive', title: 'Approval Failed', description: result.error });
+        toast({ variant: 'destructive', title: '결재 실패', description: result.error });
       }
     });
   };
@@ -69,7 +69,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     <div>
         <div className="print:hidden flex justify-end gap-2 mb-4">
             <Button variant="outline" onClick={() => window.print()}>
-                <Printer className="mr-2 h-4 w-4" /> Print / Save as PDF
+                <Printer className="mr-2 h-4 w-4" /> 인쇄 / PDF로 저장
             </Button>
         </div>
         <div className="bg-white p-12 shadow-lg rounded-lg max-w-4xl mx-auto A4-page">
@@ -208,7 +208,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     disabled={isApproving}
                 >
                     {isApproving ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CheckCircle2 className="mr-2 h-5 w-5" />}
-                    Approve and Sign
+                    결재 및 서명
                 </Button>
             </div>
         )}

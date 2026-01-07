@@ -59,12 +59,12 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
 
       if (result.success) {
         setProfile(updatedProfile);
-        toast({ title: 'Profile Updated' });
+        toast({ title: '프로필 업데이트됨' });
         setIsOpen(false);
       } else {
         toast({
           variant: 'destructive',
-          title: 'Update Failed',
+          title: '업데이트 실패',
           description: result.error,
         });
       }
@@ -83,25 +83,25 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>My Profile</DialogTitle>
+          <DialogTitle>내 프로필</DialogTitle>
           <DialogDescription>
-            Update your name, role, and signature.
+            이름, 직책, 서명을 업데이트하세요.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="name" className="text-right">
-              Name
+              이름
             </Label>
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} className="col-span-3" />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="role" className="text-right">
-              Role
+              직책
             </Label>
             <Select value={role} onValueChange={setRole}>
               <SelectTrigger className="col-span-3">
-                <SelectValue placeholder="Select a role" />
+                <SelectValue placeholder="직책 선택" />
               </SelectTrigger>
               <SelectContent>
                 {['담당', '부장', '행정실장', '교감', '교장'].map((r) => (
@@ -113,15 +113,15 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
             </Select>
           </div>
           <div className="grid grid-cols-4 items-start gap-4">
-            <Label className="text-right pt-2">Signature</Label>
+            <Label className="text-right pt-2">서명</Label>
             <div className="col-span-3 space-y-2">
                 <div className="p-4 border-2 border-dashed rounded-lg text-center h-32 flex items-center justify-center">
                     <Input type="file" id="sig-upload" accept="image/png, image/jpeg" onChange={onFileChange} className="hidden" />
                     <Label htmlFor="sig-upload" className="cursor-pointer">
                         {sigPreview ? (
-                            <Image src={sigPreview} alt="Signature Preview" width={120} height={120} className="max-h-24 object-contain" />
+                            <Image src={sigPreview} alt="서명 미리보기" width={120} height={120} className="max-h-24 object-contain" />
                         ) : (
-                            <span className="text-sm text-muted-foreground">Upload Image</span>
+                            <span className="text-sm text-muted-foreground">이미지 업로드</span>
                         )}
                     </Label>
                 </div>
@@ -131,7 +131,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
         <DialogFooter>
           <Button onClick={handleSave} disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save changes
+            변경사항 저장
           </Button>
         </DialogFooter>
       </DialogContent>

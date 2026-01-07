@@ -7,9 +7,9 @@ export default function NewDocumentPage() {
        <div className="mb-8">
             <h1 className="font-headline text-3xl font-bold flex items-center gap-3">
                 <PenTool className="h-8 w-8 text-primary" />
-                New Approval Request
+                새 결재문서 작성
             </h1>
-            <p className="text-muted-foreground mt-1">Fill out the form below to start a new approval process.</p>
+            <p className="text-muted-foreground mt-1">아래 양식을 작성하여 새 결재를 요청하세요.</p>
         </div>
       <DocumentForm />
     </div>

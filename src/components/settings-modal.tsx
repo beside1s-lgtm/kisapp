@@ -60,10 +60,10 @@ export function SettingsModal({ isOpen, setIsOpen }: SettingsModalProps) {
 
       const result = await saveDocConfig(finalConfig);
       if (result.success) {
-        toast({ title: 'Settings Saved' });
+        toast({ title: '설정 저장됨' });
         setIsOpen(false);
       } else {
-        toast({ variant: 'destructive', title: 'Save Failed', description: result.error });
+        toast({ variant: 'destructive', title: '저장 실패', description: result.error });
       }
     });
   };
@@ -72,57 +72,57 @@ export function SettingsModal({ isOpen, setIsOpen }: SettingsModalProps) {
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Document Settings</DialogTitle>
+          <DialogTitle>문서 설정</DialogTitle>
           <DialogDescription>
-            Configure the official document template and numbering.
+            공식 문서 템플릿과 번호 체계를 설정합니다.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-6 py-4">
           <div className="space-y-2">
-            <Label htmlFor="nextNumber">Next Document Number</Label>
+            <Label htmlFor="nextNumber">다음 문서 번호</Label>
             <Input id="nextNumber" name="nextNumber" type="number" value={config.nextNumber || 1} onChange={handleChange} />
           </div>
           <div className="space-y-2">
-            <Label>Header Image</Label>
+            <Label>헤더 이미지</Label>
             <div className="p-4 border-2 border-dashed rounded-lg text-center relative group">
               <Input id="header-up" type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
               <Label htmlFor="header-up" className="cursor-pointer block">
                 {headerPreview ? (
                   <div className="relative h-16 w-full">
-                    <NextImage src={headerPreview} alt="Header Preview" layout="fill" objectFit="contain" />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity text-xs font-bold text-white rounded-md">Change</div>
+                    <NextImage src={headerPreview} alt="헤더 미리보기" layout="fill" objectFit="contain" />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity text-xs font-bold text-white rounded-md">변경</div>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-1 py-2">
                     <ImageIcon className="text-muted-foreground" size={24} />
-                    <span className="text-sm font-medium text-muted-foreground">Upload Header Image</span>
+                    <span className="text-sm font-medium text-muted-foreground">헤더 이미지 업로드</span>
                   </div>
                 )}
               </Label>
             </div>
           </div>
           <div className="space-y-4 pt-4 border-t">
-            <h4 className="font-semibold">Footer Information</h4>
+            <h4 className="font-semibold">바닥글 정보</h4>
             <div className="space-y-2">
-              <Label htmlFor="address">Address</Label>
+              <Label htmlFor="address">주소</Label>
               <Input id="address" name="address" value={config.address || ''} onChange={handleChange} />
             </div>
              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="phone">Phone</Label>
+                  <Label htmlFor="phone">전화번호</Label>
                   <Input id="phone" name="phone" value={config.phone || ''} onChange={handleChange} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="fax">Fax</Label>
+                  <Label htmlFor="fax">팩스</Label>
                   <Input id="fax" name="fax" value={config.fax || ''} onChange={handleChange} />
                 </div>
              </div>
              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">이메일</Label>
                 <Input id="email" name="email" type="email" value={config.email || ''} onChange={handleChange} />
             </div>
             <div className="space-y-2">
-                <Label htmlFor="homepage">Homepage</Label>
+                <Label htmlFor="homepage">홈페이지</Label>
                 <Input id="homepage" name="homepage" value={config.homepage || ''} onChange={handleChange} />
             </div>
           </div>
@@ -130,7 +130,7 @@ export function SettingsModal({ isOpen, setIsOpen }: SettingsModalProps) {
         <DialogFooter>
           <Button onClick={handleSave} disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save Settings
+            설정 저장
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { FileText, LifeBuoy, LogOut, Loader2, Settings, User as UserIcon } from 'lucide-react';
+import { FileText, LifeBuoy, LogOut, Loader2, Settings, User as UserIcon, Languages } from 'lucide-react';
 import { useState } from 'react';
 import { ProfileModal } from '../profile-modal';
 import { SettingsModal } from '../settings-modal';
@@ -35,10 +35,25 @@ export default function AppHeader() {
             <FileText size={20} />
           </div>
           <h1 className="font-headline text-lg font-bold tracking-tight text-foreground uppercase">
-            KISH Approval System
+            KISH 결재 시스템
           </h1>
         </div>
         <div className="flex items-center gap-4">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon">
+                    <Languages className="h-5 w-5 text-muted-foreground" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-40" align="end">
+                <DropdownMenuLabel>언어 선택</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>한국어</DropdownMenuItem>
+                <DropdownMenuItem>English</DropdownMenuItem>
+                <DropdownMenuItem>Tiếng Việt</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button variant="ghost" size="icon" onClick={() => setShowSettingsModal(true)}>
             <Settings className="h-5 w-5 text-muted-foreground" />
           </Button>
@@ -68,20 +83,20 @@ export default function AppHeader() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={() => setShowProfileModal(true)}>
                   <UserIcon className="mr-2 h-4 w-4" />
-                  <span>Profile</span>
+                  <span>프로필</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setShowSettingsModal(true)}>
                   <Settings className="mr-2 h-4 w-4" />
-                  <span>Settings</span>
+                  <span>설정</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled>
                   <LifeBuoy className="mr-2 h-4 w-4" />
-                  <span>Support</span>
+                  <span>지원</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={logout}>
                   <LogOut className="mr-2 h-4 w-4" />
-                  <span>Log out</span>
+                  <span>로그아웃</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

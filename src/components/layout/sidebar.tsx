@@ -66,14 +66,14 @@ export default function AppSidebar() {
       <Button asChild size="lg" className="w-full font-bold text-base h-14 rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow">
         <Link href="/new">
           <Plus className="mr-2 h-5 w-5" />
-          New Request
+          새 결재문서
         </Link>
       </Button>
       <div className="bg-background rounded-xl p-2 space-y-1">
-        <NavItem href="/inbox" label="Inbox" icon={<Inbox size={18} />} count={inboxCount} />
-        <NavItem href="/sent" label="Sent" icon={<Send size={18} />} />
+        <NavItem href="/inbox" label="결재함" icon={<Inbox size={18} />} count={inboxCount} />
+        <NavItem href="/sent" label="보낸 문서" icon={<Send size={18} />} />
         <div className="h-px bg-border my-1 mx-2"></div>
-        <NavItem href="/registry" label="Document Registry" icon={<ListFilter size={18} />} />
+        <NavItem href="/registry" label="문서대장" icon={<ListFilter size={18} />} />
       </div>
     </aside>
   );

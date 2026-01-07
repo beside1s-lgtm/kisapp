@@ -34,9 +34,9 @@ export default function RegistryPage() {
             <div className="mb-8">
                 <h1 className="font-headline text-3xl font-bold flex items-center gap-3">
                     <ListFilter className="h-8 w-8 text-primary" />
-                    Document Registry
+                    문서대장
                 </h1>
-                <p className="text-muted-foreground mt-1">Archive of all approved documents.</p>
+                <p className="text-muted-foreground mt-1">모든 결재 완료된 문서의 기록입니다.</p>
             </div>
             <DocumentList documents={docs} />
         </div>

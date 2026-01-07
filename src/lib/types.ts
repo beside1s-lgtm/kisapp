@@ -79,3 +79,5 @@ export type DocConfig = {
     email?: string;
     homepage?: string;
 };
+
+export type Language = 'ko' | 'en' | 'vi';
