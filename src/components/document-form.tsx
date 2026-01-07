@@ -60,8 +60,8 @@ const formSchema = z.object({
   content: z.string().min(1, '내용은 필수입니다.'),
   approvers: z.array(
     z.object({
-      name: z.string(), // Temporarily remove validation for testing
-      email: z.string(), // Temporarily remove validation for testing
+      name: z.string(), 
+      email: z.string(),
       role: z.string(),
       type: z.enum(['normal', 'final', 'proxy']),
       active: z.boolean(),
@@ -182,7 +182,7 @@ export default function DocumentForm() {
         title: data.title,
         content: data.content,
         approvers: data.approvers
-          .filter((a) => a.active && a.name && a.email)
+          .filter((a) => a.active)
           .map(
             (a) =>
               ({
