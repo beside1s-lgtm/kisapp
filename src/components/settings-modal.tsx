@@ -82,7 +82,7 @@ export function SettingsModal() {
     const result = await saveUserProfile(uid, email, { [field]: value });
     if (result.success) {
       toast({ title: '사용자 정보 업데이트됨' });
-      setUsers(prev => prev.map(u => u.uid === uid ? { ...u, [field]: value } : u));
+      setUsers(prev => prev.map(u => u.email === email ? { ...u, [field]: value } : u));
     } else {
       toast({ variant: 'destructive', title: '업데이트 실패', description: result.error });
     }
@@ -238,7 +238,7 @@ export function SettingsModal() {
                 <ScrollArea className="h-[45vh] p-1">
                   <div className="space-y-4 p-4">
                     {users.map(user => (
-                      <div key={user.uid} className="flex items-center justify-between p-3 bg-card rounded-lg border">
+                      <div key={user.email} className="flex items-center justify-between p-3 bg-card rounded-lg border">
                         <div>
                           <p className="font-semibold">{user.name}</p>
                           <p className="text-sm text-muted-foreground">{user.email}</p>
@@ -246,11 +246,12 @@ export function SettingsModal() {
                         <div className="flex items-center gap-4">
                             <div className="flex items-center space-x-2">
                                 <Switch 
-                                    id={`admin-${user.uid}`} 
+                                    id={`admin-${user.email}`} 
                                     checked={user.isAdmin}
                                     onCheckedChange={(checked) => handleUserUpdate(user.uid, user.email, 'isAdmin', checked)}
+                                    disabled={user.email === 'beside1s@kshcm.net'}
                                 />
-                                <Label htmlFor={`admin-${user.uid}`} className="text-sm">관리자</Label>
+                                <Label htmlFor={`admin-${user.email}`} className="text-sm">관리자</Label>
                             </div>
                             <div className="w-40">
                                <Select 

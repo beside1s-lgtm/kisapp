@@ -19,7 +19,6 @@ interface AuthContextType {
   googleSignIn: () => Promise<void>;
   logout: () => Promise<void>;
   fetchProfile: (user: FirebaseUser) => Promise<UserProfile | null>;
-  setProfile: React.Dispatch<React.SetStateAction<UserProfile | null>>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -53,37 +52,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchProfile = useCallback(async (firebaseUser: FirebaseUser): Promise<UserProfile | null> => {
     if (!firebaseUser?.email) return null;
     setProfileLoading(true);
-    const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
     try {
       let userProfile = await getUserProfileByEmail(firebaseUser.email);
+      const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
       
       if (userProfile) {
-        if (isHardcodedAdmin && !userProfile.isAdmin) {
+         if (isHardcodedAdmin && !userProfile.isAdmin) {
           userProfile.isAdmin = true;
+          await saveUserProfile(firebaseUser.uid, firebaseUser.email, { isAdmin: true });
         }
-        setProfile(userProfile);
         
-        // If the auth UID in the database doesn't match the current user's UID, update it.
+        // If the auth UID in the database doesn't match the current user's UID, or is empty, update it.
         // This handles the case where a user was bulk-imported and is logging in for the first time.
-        if (userProfile.uid !== firebaseUser.uid) {
+        if (userProfile.uid !== firebaseUser.uid || !userProfile.uid) {
+            userProfile.uid = firebaseUser.uid;
             await saveUserProfile(firebaseUser.uid, firebaseUser.email, { uid: firebaseUser.uid });
         }
+        setProfile(userProfile);
         return userProfile;
 
       } else {
-        // This case should ideally not be hit for a production app where users are pre-registered.
-        // We'll create a profile for them, but they might not have the correct role.
-        const newProfile: UserProfile = {
-          uid: firebaseUser.uid,
-          name: firebaseUser.displayName || 'New User',
-          email: firebaseUser.email,
-          role: '담당', 
-          signature: '',
-          isAdmin: isHardcodedAdmin, 
-        };
-        await saveUserProfile(firebaseUser.uid, firebaseUser.email, newProfile);
-        setProfile(newProfile);
-        return newProfile;
+        if (isHardcodedAdmin) {
+            const adminProfile: UserProfile = {
+                uid: firebaseUser.uid,
+                name: firebaseUser.displayName || '관리자',
+                email: firebaseUser.email,
+                role: '관리자', 
+                signature: '',
+                isAdmin: true, 
+            };
+            await saveUserProfile(firebaseUser.uid, firebaseUser.email, adminProfile);
+            setProfile(adminProfile);
+            return adminProfile;
+        }
+        // This user is not in the system and is not the hardcoded admin.
+        return null;
       }
     } catch (error) {
       console.error("Failed to fetch or create profile", error);
@@ -92,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setProfileLoading(false);
     }
-  }, []);
+  }, [toast]);
   
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -109,13 +112,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(null);
             setProfile(null);
         } else {
-            // Check if user exists in our Firestore 'users' collection by email
-            const existingProfile = await getUserProfileByEmail(firebaseUser.email);
-            const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
+            const fetchedProfile = await fetchProfile(firebaseUser);
             
-            if (existingProfile || isHardcodedAdmin) {
+            if (fetchedProfile) {
                 setUser(firebaseUser);
-                await fetchProfile(firebaseUser);
             } else {
                 toast({ variant: 'destructive', title: '미승인 사용자', description: '시스템에 등록된 사용자가 아닙니다. 관리자에게 문의하세요.' });
                 await signOut(auth);
@@ -132,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => unsubscribe();
-  }, [fetchProfile]);
+  }, [fetchProfile, toast]);
   
   const googleSignIn = async () => {
     try {
@@ -152,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut(auth);
   };
   
-  const value = { user, profile, loading, profileLoading, googleSignIn, logout, fetchProfile, setProfile };
+  const value = { user, profile, loading, profileLoading, googleSignIn, logout, fetchProfile };
 
   if (loading) {
     return (
