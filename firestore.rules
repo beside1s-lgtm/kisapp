@@ -36,8 +36,8 @@ service cloud.firestore {
       // - if the document is marked as public and approved
       allow read: if isAdmin() || 
                     resource.data.requesterId == request.auth.uid ||
-                    resource.data.approvers.exists(a => a.email == request.auth.token.email) ||
-                    resource.data.circulars.exists(c => c.email == request.auth.token.email) ||
+                    resource.data.approvers.hasAny([request.auth.token.email]) ||
+                    resource.data.circulars.hasAny([request.auth.token.email]) ||
                     (resource.data.publishStatus == '공개' && resource.data.status == 'approved');
 
       // Who can update/delete a document?
@@ -50,10 +50,8 @@ service cloud.firestore {
       allow delete: if isAdmin() || resource.data.requesterId == request.auth.uid;
       
       // Who can list documents?
-      // This is tricky. The query in getRegistryDocuments filters by status == 'approved'.
-      // The rules must allow this query to pass.
-      // After the query, the client-side code filters further.
-      // A broad rule is needed here, but the read rule will protect individual document access.
+      // This rule allows queries like `where('status', '==', 'approved')`
+      // The more specific `read` rule will still protect individual document access.
       allow list: if isSignedIn();
     }
   }
