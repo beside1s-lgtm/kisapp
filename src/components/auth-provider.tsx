@@ -14,7 +14,6 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   profileLoading: boolean;
-  isProfileIncomplete: boolean;
   googleSignIn: () => Promise<void>;
   logout: () => Promise<void>;
   setProfile: (profile: UserProfile | null) => void;
@@ -28,7 +27,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
-  const [isProfileIncomplete, setIsProfileIncomplete] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -56,7 +54,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userProfile = await getUserProfile(firebaseUser.uid);
       if (userProfile) {
         setProfile(userProfile);
-        setIsProfileIncomplete(!userProfile.signature || userProfile.name === 'New User' || !userProfile.role);
       } else {
          // Create a default profile for new users
         const newProfile: UserProfile = {
@@ -66,9 +63,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           signature: '',
           isAdmin: false,
         };
-        await saveUserProfile(firebaseUser.uid, newProfile);
+        await saveUserProfile(firebaseUser.uid, firebaseUser.email!, newProfile);
         setProfile(newProfile);
-        setIsProfileIncomplete(true);
       }
     } catch (error) {
       console.error("Failed to fetch or create profile", error);
@@ -80,12 +76,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true);
       if (firebaseUser) {
         if (firebaseUser.email?.endsWith('@kshcm.net') || firebaseUser.email?.endsWith('@kish.kr') || process.env.NODE_ENV === 'development' ) {
             setUser(firebaseUser);
-            if (!profile || profile.email !== firebaseUser.email) {
-                await fetchProfile(firebaseUser);
-            }
+            // Fetch profile only if user changes
+            await fetchProfile(firebaseUser);
         } else {
             toast({ variant: 'destructive', title: '접근 거부', description: '허용된 도메인 계정으로만 로그인할 수 있습니다.'});
             await signOut(auth);
@@ -95,13 +91,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setUser(null);
         setProfile(null);
-        setIsProfileIncomplete(false);
       }
       setLoading(false);
+      setProfileLoading(false); // Also set profile loading to false here
     });
 
     return () => unsubscribe();
-  }, [fetchProfile, toast, profile]);
+  }, [fetchProfile, toast]);
   
   const googleSignIn = async () => {
     try {
@@ -126,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut(auth);
   };
   
-  const value = { user, profile, loading, profileLoading, googleSignIn, logout, setProfile, isProfileIncomplete, fetchProfile };
+  const value = { user, profile, loading, profileLoading, googleSignIn, logout, setProfile, fetchProfile };
 
   if (loading) {
     return (
