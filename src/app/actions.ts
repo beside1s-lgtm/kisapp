@@ -150,15 +150,30 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       completedAt: null,
     };
     
-    const docRef = await addDoc(getApprovalsCol(), newDoc);
+    addDoc(getApprovalsCol(), newDoc)
+      .then(docRef => {
+        revalidatePath('/sent');
+        // This part runs on the server, we can't directly return to the client form submission
+        // But revalidation helps. For client-side navigation, it should be handled in the component.
+      })
+      .catch((error) => {
+        const permissionError = new FirestorePermissionError({
+          path: getApprovalsCol().path,
+          operation: 'create',
+          requestResourceData: newDoc,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      });
 
-    revalidatePath('/sent');
-    return { success: true, docId: docRef.id, docNo: finalDocNoStr };
+    // We can't return the docId here directly if we don't `await` addDoc.
+    // The form submission flow might need adjustment if the ID is needed immediately.
+    return { success: true, docNo: finalDocNoStr };
   } catch (error: any) {
+    // This will catch errors from the transaction itself
     const permissionError = new FirestorePermissionError({
-      path: getApprovalsCol().path,
-      operation: 'create',
-      requestResourceData: payload,
+      path: settingsRef.path,
+      operation: 'update',
+      requestResourceData: { nextNumber: '...'}, // Redacted for simplicity
     });
     errorEmitter.emit('permission-error', permissionError);
     return { success: false, error: permissionError.message };
@@ -208,6 +223,7 @@ export async function approveDocument(docId: string, userId: string, userProfile
         revalidatePath(`/documents/${docId}`);
         return { success: true, docId };
     } catch (error: any) {
+        // Catch transaction errors, including permission errors
         const permissionError = new FirestorePermissionError({
             path: docRef.path,
             operation: 'update',
@@ -241,7 +257,7 @@ export async function saveDocConfig(payload: DocConfig) {
     revalidatePath('/'); // Revalidate all pages that might use this
     return { success: true };
   } catch (error: any) {
-    const permissionError = new FirestorePermissionError({
+     const permissionError = new FirestorePermissionError({
       path: settingsRef.path,
       operation: 'update',
       requestResourceData: payload,
@@ -291,7 +307,7 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
     return { success: true };
   } catch (error: any) {
     const permissionError = new FirestorePermissionError({
-        path: userProfileRef.path,
+        path: userProfileRef.path, // This might be one of two paths
         operation: 'update',
         requestResourceData: profile,
     });
