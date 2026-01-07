@@ -38,10 +38,11 @@ service cloud.firestore {
       // - Any signed in user can create a document.
       // - If there are approvers, the status must be 'pending'.
       // - If there are no approvers, the status must be 'approved'.
-      allow create: if isSignedIn() && (
-        (request.resource.data.approvers.size() > 0 && request.resource.data.status == 'pending') ||
-        (request.resource.data.approvers.size() == 0 && request.resource.data.status == 'approved')
-      );
+      allow create: if isSignedIn() && 
+        (
+          (request.resource.data.approvers.size() > 0 && request.resource.data.status == 'pending') ||
+          (request.resource.data.approvers.size() == 0 && request.resource.data.status == 'approved')
+        );
       
       // Read:
       // - Requester can read

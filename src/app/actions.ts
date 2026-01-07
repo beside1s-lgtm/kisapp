@@ -183,13 +183,12 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     await setDoc(newDocRef, newDocData);
 
     revalidatePath('/sent');
+    revalidatePath('/inbox');
     return { success: true, docId: newDocRef.id, docNo: finalDocNoStr };
 
   } catch (error: any) {
     console.error("Failed to create document:", error);
     
-    // Create a contextual error and emit it.
-    // This will be caught by the client-side error listener.
     const permissionError = new FirestorePermissionError({
         path: newDocRef.path,
         operation: 'create',
@@ -197,7 +196,6 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     });
     errorEmitter.emit('permission-error', permissionError);
 
-    // Also return a clear error message for the form's toast notification.
     return { success: false, error: `문서 생성 실패: ${error.message}` };
   }
 }
