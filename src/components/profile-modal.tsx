@@ -18,6 +18,9 @@ import { Label } from './ui/label';
 import { Loader2, AlertTriangle, User, Mail, Award } from 'lucide-react';
 import Image from 'next/image';
 import { Alert, AlertDescription } from './ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+
+const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 
 type ProfileModalProps = {
   isOpen: boolean;
@@ -30,6 +33,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
   const [isSaving, startSaving] = useTransition();
 
   const [name, setName] = useState(profile?.name || '');
+  const [role, setRole] = useState(profile?.role || '');
   const [sigPreview, setSigPreview] = useState(profile?.signature || '');
 
   const isProfileIncomplete = profile?.name === 'New User' || !profile?.signature;
@@ -37,6 +41,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
   useEffect(() => {
     if (profile) {
         setName(profile.name);
+        setRole(profile.role);
         setSigPreview(profile.signature || '');
     }
   }, [profile]);
@@ -50,10 +55,14 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
         finalSignature = sigPreview ? await compressImage(sigPreview) : '';
       }
 
-      const updatedProfile = {
+      const updatedProfile: { name: string; signature: string; role?: string; } = {
         name,
         signature: finalSignature,
       };
+
+      if (profile.isAdmin) {
+        updatedProfile.role = role;
+      }
 
       const result = await saveUserProfile(user.uid, user.email!, updatedProfile);
 
@@ -108,21 +117,34 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
           </div>
           <div className="flex items-start gap-4">
             <Award className="h-5 w-5 text-muted-foreground" />
-            <div>
+            <div className="w-full">
               <Label>직책</Label>
-              <p className="text-sm font-semibold text-foreground mt-1">{profile?.role}</p>
-              <p className="text-xs text-muted-foreground mt-1">직책 변경은 관리자에게 문의하세요.</p>
+              {profile?.isAdmin ? (
+                <Select value={role} onValueChange={setRole}>
+                    <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="직책 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+              ) : (
+                <>
+                    <p className="text-sm font-semibold text-foreground mt-2">{profile?.role}</p>
+                    <p className="text-xs text-muted-foreground mt-1">직책 변경은 관리자에게 문의하세요.</p>
+                </>
+              )}
             </div>
           </div>
            <div className="flex items-start gap-4">
             <Mail className="h-5 w-5 text-muted-foreground" />
             <div>
               <Label>이메일</Label>
-              <p className="text-sm text-muted-foreground mt-1">{profile?.email}</p>
+              <p className="text-sm text-muted-foreground mt-2">{profile?.email}</p>
             </div>
           </div>
           <div className="grid grid-cols-4 items-start gap-4">
-            <Label className="text-right pt-2">서명</Label>
+            <Label className="text-right pt-2 col-span-1">서명</Label>
             <div className="col-span-3 space-y-2">
                 <div className="p-4 border-2 border-dashed rounded-lg text-center h-32 flex items-center justify-center">
                     <Input type="file" id="sig-upload" accept="image/png, image/jpeg" onChange={onFileChange} className="hidden" />
