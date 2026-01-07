@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser, GoogleAuthProvider } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
 import { getUserProfile, saveUserProfile } from '@/app/actions';
 import { UserProfile } from '@/lib/types';
@@ -77,11 +77,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const googleSignIn = async () => {
     setLoading(true);
     try {
-      googleProvider.setCustomParameters({
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({
         prompt: 'select_account'
       });
-      await signInWithPopup(auth, googleProvider);
-      // onAuthStateChanged will handle the rest
+      const result = await signInWithPopup(auth, provider);
+      const firebaseUser = result.user;
+
+      if (!firebaseUser.email?.endsWith('@kshcm.net')) {
+        toast({ variant: 'destructive', title: '접근 거부', description: 'kshcm.net 도메인 계정으로만 로그인할 수 있습니다.' });
+        await signOut(auth);
+        setUser(null);
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+      // onAuthStateChanged will handle setting the user and profile
     } catch (error: any) {
       console.error(error);
       let description = 'Could not sign in with Google.';
@@ -89,6 +100,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         description = 'This domain is not authorized for sign-in. Please contact support.';
       } else if (error.code === 'auth/popup-closed-by-user') {
         description = 'Sign-in popup was closed before completion.';
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        description = 'Multiple sign-in attempts detected. Please try again.';
       }
       toast({ variant: 'destructive', title: 'Sign-in Failed', description: description });
       setLoading(false);
