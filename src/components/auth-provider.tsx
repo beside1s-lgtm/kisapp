@@ -8,6 +8,7 @@ import { UserProfile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { ProfileModal } from './profile-modal';
+import { errorEmitter } from '@/lib/error-emitter';
 
 interface AuthContextType {
   user: FirebaseUser | null;
@@ -28,6 +29,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profileLoading, setProfileLoading] = useState(true);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const handlePermissionError = (error: Error) => {
+      console.error(error); // Log the detailed error to the console
+      toast({
+        variant: 'destructive',
+        title: '권한 오류',
+        description: '데이터베이스 작업에 실패했습니다. 보안 규칙을 확인하세요.',
+        duration: 10000,
+      });
+    };
+
+    errorEmitter.on('permission-error', handlePermissionError);
+
+    return () => {
+      errorEmitter.removeListener('permission-error', handlePermissionError);
+    };
+  }, [toast]);
+
 
   const fetchProfile = useCallback(async (firebaseUser: FirebaseUser) => {
     setProfileLoading(true);
@@ -94,8 +114,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         description = '로그인 팝업이 닫혔습니다. 다시 시도해주세요.';
       } else if (error.code === 'auth/cancelled-popup-request') {
         description = '여러 번의 로그인 시도가 감지되었습니다. 잠시 후 다시 시도해주세요.';
-      } else if (error.code === 'auth/unauthorized-domain') {
-        description = '이 도메인은 로그인에 허용되지 않았습니다. 관리자에게 문의하세요.';
       }
       toast({ variant: 'destructive', title: '로그인 실패', description: description });
     }

@@ -26,6 +26,8 @@ import type {
 } from '@/lib/types';
 import { generateDocumentContent } from '@/ai/flows/generate-document-content';
 import { z } from 'zod';
+import { errorEmitter } from '@/lib/error-emitter';
+import { FirestorePermissionError } from '@/lib/errors';
 
 const appId = 'kish-standard-v6-fix'.replace(/[\/.]/g, '_');
 
@@ -148,11 +150,24 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       completedAt: null,
     };
     
-    const docRef = await addDoc(getApprovalsCol(), newDoc);
+    const docRef = await addDoc(getApprovalsCol(), newDoc)
+    .catch((serverError) => {
+        const permissionError = new FirestorePermissionError({
+          path: getApprovalsCol().path,
+          operation: 'create',
+          requestResourceData: newDoc,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        throw permissionError;
+      });
+
 
     revalidatePath('/sent');
     return { success: true, docId: docRef.id, docNo: finalDocNoStr };
   } catch (error: any) {
+    if (error instanceof FirestorePermissionError) {
+        return { success: false, error: error.message };
+    }
     console.error("제출 오류:", error);
     return { success: false, error: error.message };
   }
@@ -161,6 +176,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
 export async function approveDocument(docId: string, userId: string, userProfile: UserProfile) {
     if (!db) return { success: false, error: "Database not initialized." };
     const docRef = doc(getApprovalsCol(), docId);
+    let updatedData: any = {};
 
     try {
         await runTransaction(db, async (transaction) => {
@@ -187,18 +203,27 @@ export async function approveDocument(docId: string, userId: string, userProfile
 
             const isFinal = updatedApprovers[step].type === 'final' || step === updatedApprovers.length - 1;
             
-            transaction.update(docRef, {
+            updatedData = {
                 approvers: updatedApprovers,
                 currentStep: isFinal ? step : step + 1,
                 status: isFinal ? 'approved' : 'pending',
                 completedAt: isFinal ? serverTimestamp() : null,
-            });
+            };
+            transaction.update(docRef, updatedData);
         });
 
         revalidatePath('/inbox');
         revalidatePath(`/documents/${docId}`);
         return { success: true, docId };
     } catch (error: any) {
+        if (!(error instanceof FirestorePermissionError)) { // Avoid double-wrapping
+            const permissionError = new FirestorePermissionError({
+                path: docRef.path,
+                operation: 'update',
+                requestResourceData: updatedData,
+            });
+            errorEmitter.emit('permission-error', permissionError);
+        }
         console.error("결재 오류:", error);
         return { success: false, error: error.message };
     }
@@ -227,7 +252,13 @@ export async function saveDocConfig(payload: DocConfig) {
     revalidatePath('/'); // Revalidate all pages that might use this
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message };
+    const permissionError = new FirestorePermissionError({
+      path: settingsRef.path,
+      operation: 'update',
+      requestResourceData: payload,
+    });
+    errorEmitter.emit('permission-error', permissionError);
+    return { success: false, error: permissionError.message };
   }
 }
 
@@ -245,36 +276,38 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
 
 export async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>) {
   if (!db) {
-      console.error("Database not initialized in saveUserProfile.");
       return { success: false, error: "Database not initialized." };
   }
   
+  const userProfileRef = getUserProfileRef(userId);
+  const userDirectoryRef = getUserDirectoryRef(userId);
+
   try {
-      await runTransaction(db, async (transaction) => {
-          const userProfileRef = getUserProfileRef(userId);
-          const userDirectoryRef = getUserDirectoryRef(userId);
-          
-          transaction.set(userProfileRef, profile, { merge: true });
+    await runTransaction(db, async (transaction) => {
+        transaction.set(userProfileRef, profile, { merge: true });
 
-          const directoryData: Partial<User> = {
-              name: profile.name,
-              email: email,
-              role: profile.role,
-          };
-          Object.keys(directoryData).forEach(key => 
-              directoryData[key as keyof typeof directoryData] === undefined && delete directoryData[key as keyof typeof directoryData]
-          );
+        const directoryData: Partial<User> = {
+            name: profile.name,
+            email: email,
+            role: profile.role,
+        };
+        Object.keys(directoryData).forEach(key => 
+            directoryData[key as keyof typeof directoryData] === undefined && delete directoryData[key as keyof typeof directoryData]
+        );
 
-          transaction.set(userDirectoryRef, directoryData, { merge: true });
-      });
+        transaction.set(userDirectoryRef, directoryData, { merge: true });
+    });
       
-      revalidatePath('/');
-      return { success: true };
+    revalidatePath('/');
+    return { success: true };
   } catch (error: any) {
-      console.error("Error saving user profile:", error);
-      // Here we can add the contextual error reporting in the future if needed.
-      // For now, just returning the raw error message is better than crashing.
-      return { success: false, error: error.message || "An unknown error occurred while saving the profile." };
+    const permissionError = new FirestorePermissionError({
+        path: userProfileRef.path,
+        operation: 'update',
+        requestResourceData: profile,
+    });
+    errorEmitter.emit('permission-error', permissionError);
+    return { success: false, error: permissionError.message };
   }
 }
 
