@@ -16,12 +16,5 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
-const workspaceDomain = process.env.NEXT_PUBLIC_GOOGLE_WORKSPACE_DOMAIN;
-
-if(workspaceDomain) {
-  googleProvider.setCustomParameters({
-    hd: workspaceDomain,
-  });
-}
 
 export { app, auth, db, googleProvider };
