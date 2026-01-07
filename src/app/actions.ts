@@ -1,4 +1,3 @@
-
 'use server';
 
 import {
@@ -144,7 +143,7 @@ export async function getDocumentById(docId: string) {
 }
 
 
-export async function createDocument(payload: ApprovalDocPayload, userId: string, userProfile: UserProfile): Promise<{ success: boolean; error?: string; docId?: string; docNo?: string; }> {
+export async function createDocument(payload: ApprovalDocPayload, userId: string, userProfile: UserProfile): Promise<{ success: boolean; error?: string; docId?: string; docNo?: string; } | void> {
   if (!db) return { success: false, error: "Database not initialized." };
   
   const newDocRef = doc(getApprovalsCol());
@@ -187,14 +186,18 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     return { success: true, docId: newDocRef.id, docNo: finalDocNoStr };
 
   } catch (error: any) {
-    // DO NOT USE console.error here as it will terminate the server action unexpectedly.
-    const permissionError = new FirestorePermissionError({
-        path: newDocRef.path,
-        operation: 'create',
-        requestResourceData: payload,
-    });
-    errorEmitter.emit('permission-error', permissionError);
-
+    if (error.code === 'permission-denied') {
+        const permissionError = new FirestorePermissionError({
+            path: newDocRef.path,
+            operation: 'create',
+            requestResourceData: payload,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        // Explicitly return nothing to prevent double error handling
+        return; 
+    }
+    
+    // For all other errors, return an error object for the client to handle
     return { success: false, error: `문서 생성 실패: ${error.message}` };
   }
 }
