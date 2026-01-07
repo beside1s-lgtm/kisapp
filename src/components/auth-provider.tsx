@@ -57,22 +57,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let userProfile = await getUserProfile(firebaseUser.uid);
       
       if (userProfile) {
-        // If user is the hardcoded admin, ensure their admin status is always true
+        // If user is the hardcoded admin, ensure their admin status is always true in the context
         if (isHardcodedAdmin && !userProfile.isAdmin) {
           userProfile.isAdmin = true;
-          // Optionally, save this back to the DB, but for now, just update context
-          await saveUserProfile(firebaseUser.uid, firebaseUser.email!, { isAdmin: true });
+          // We don't need to save it back here, the context will reflect it.
+          // The profile modal will save the correct state if changed.
         }
         setProfile(userProfile);
         return userProfile;
       } else {
-        // User profile doesn't exist, create it
+        // User profile doesn't exist, this might be a new user.
+        // The new login flow will deny them if they aren't pre-registered.
+        // But if they are pre-registered but logging in for the first time, their profile won't exist.
+        // We will create it here.
+        
+        // This path is now only for users that are in the user directory but logging in for the first time.
+        // The onAuthStateChanged will handle non-registered users.
         const newProfile: UserProfile = {
           name: firebaseUser.displayName || 'New User',
           email: firebaseUser.email!,
-          role: '담당', // Default role
+          role: '담당', // This will be overwritten by DB data if it exists, otherwise it's a default.
           signature: '',
-          isAdmin: isHardcodedAdmin, // Set admin status on creation
+          isAdmin: isHardcodedAdmin, 
         };
         await saveUserProfile(firebaseUser.uid, firebaseUser.email!, newProfile);
         setProfile(newProfile);
@@ -85,17 +91,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setProfileLoading(false);
     }
-  }, [toast]);
+  }, []);
   
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setLoading(true);
-      if (firebaseUser) {
-        if (firebaseUser.email?.endsWith('@kshcm.net') || firebaseUser.email?.endsWith('@kish.kr') || process.env.NODE_ENV === 'development' ) {
+      setProfileLoading(true);
+
+      if (firebaseUser && firebaseUser.email) {
+        const allowedDomains = ['@kshcm.net', '@kish.kr'];
+        const isAllowedDomain = allowedDomains.some(domain => firebaseUser.email!.endsWith(domain)) || process.env.NODE_ENV === 'development';
+
+        if (!isAllowedDomain) {
+            toast({ variant: 'destructive', title: '접근 거부', description: '허용된 도메인 계정으로만 로그인할 수 있습니다.'});
+            await signOut(auth);
+            setUser(null);
+            setProfile(null);
+            setLoading(false);
+            setProfileLoading(false);
+            return;
+        }
+
+        // Check if user exists in our Firestore 'users' collection
+        const existingProfile = await getUserProfile(firebaseUser.uid);
+        const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
+        
+        // Allow login if profile exists OR if the user is the hardcoded admin
+        if (existingProfile || isHardcodedAdmin) {
             setUser(firebaseUser);
+            // Fetch full profile data (this will also create if it's the admin's first login)
             await fetchProfile(firebaseUser);
         } else {
-            toast({ variant: 'destructive', title: '접근 거부', description: '허용된 도메인 계정으로만 로그인할 수 있습니다.'});
+            toast({ variant: 'destructive', title: '미승인 사용자', description: '시스템에 등록된 사용자가 아닙니다. 관리자에게 문의하세요.' });
             await signOut(auth);
             setUser(null);
             setProfile(null);
@@ -105,9 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
       }
       setLoading(false);
-      if (profileLoading) {
-        setProfileLoading(false);
-      }
+      setProfileLoading(false);
     });
 
     return () => unsubscribe();

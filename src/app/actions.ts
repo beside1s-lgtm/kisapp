@@ -15,6 +15,7 @@ import {
   where,
   Timestamp,
   DocumentSnapshot,
+  writeBatch,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/firebase';
@@ -29,6 +30,8 @@ import { generateDocumentContent } from '@/ai/flows/generate-document-content';
 import { z } from 'zod';
 import { errorEmitter } from '@/lib/error-emitter';
 import { FirestorePermissionError } from '@/lib/errors';
+import * as xlsx from 'xlsx';
+
 
 const appId = 'kish-standard-v6-fix'.replace(/[\/.]/g, '_');
 
@@ -344,22 +347,28 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
     try {
         const docSnap = await getDoc(userProfileRef);
         docExists = docSnap.exists();
+        const existingData = docSnap.data() as UserProfile | undefined;
         
-        if (docExists) {
-            // Document exists, so we update.
-            // The `profile` object should contain all fields for update.
-            await updateDoc(userProfileRef, profile);
+        let dataToSave: UserProfile;
+
+        if (docExists && existingData) {
+            // Document exists, so we merge.
+            dataToSave = {
+                ...existingData,
+                ...profile,
+                email: email // Ensure email is always correct
+            };
+            await setDoc(userProfileRef, dataToSave, { merge: true });
         } else {
             // Document does not exist, so we create it.
-            // This is typically for new users. Ensure all necessary fields are present.
-            const newProfileData: UserProfile = {
+            dataToSave = {
                 email: email,
                 name: profile.name || 'New User',
                 role: profile.role || '담당',
                 signature: profile.signature || '',
-                isAdmin: profile.isAdmin === true ? true : false, // Explicitly set to false if not true
+                isAdmin: profile.isAdmin === true ? true : false,
             };
-            await setDoc(userProfileRef, newProfileData);
+            await setDoc(userProfileRef, dataToSave);
         }
         
         revalidatePath('/');
@@ -399,5 +408,91 @@ export async function generateContentAction(input: {
   } catch (error: any) {
     console.error("AI 콘텐츠 생성 오류:", error);
     return { success: false, error: `콘텐츠 생성 실패: ${error.message}` };
+  }
+}
+
+// Function to generate a user ID from an email.
+// This is a placeholder and should be replaced with a more robust method.
+function generateUidFromEmail(email: string): string {
+    // Simple hash function for demonstration. Replace with something better.
+    // In a real app, you'd let Firebase Auth generate the UID. This is for pre-populating.
+    return 'pre_reg_' + email.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+export async function bulkRegisterUsers(fileData: string): Promise<{ success: boolean; error?: string; summary?: string; }> {
+  if (!db) {
+    return { success: false, error: '데이터베이스가 초기화되지 않았습니다.' };
+  }
+
+  try {
+    const base64Data = fileData.split(',')[1];
+    const buffer = Buffer.from(base64Data, 'base64');
+    const workbook = xlsx.read(buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const usersJson = xlsx.utils.sheet_to_json(worksheet) as { email: string; name: string; role: string }[];
+
+    const requiredColumns = ['email', 'name', 'role'];
+    if (usersJson.length > 0) {
+        const firstRow = Object.keys(usersJson[0]);
+        const hasAllColumns = requiredColumns.every(col => firstRow.includes(col));
+        if (!hasAllColumns) {
+            return { success: false, error: `엑셀 파일에 필수 컬럼(${requiredColumns.join(', ')})이 포함되어야 합니다.` };
+        }
+    } else {
+        return { success: false, error: '엑셀 파일에 데이터가 없습니다.'};
+    }
+
+    const batch = writeBatch(db);
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    for (const user of usersJson) {
+      const { email, name, role } = user;
+      if (!email || !name || !role) {
+        console.warn(`Skipping row due to missing data: ${JSON.stringify(user)}`);
+        continue;
+      }
+      
+      // Use a consistent, generated UID based on email for pre-registration.
+      // This allows us to find and update the user record later.
+      // IMPORTANT: This assumes we can't get the real Firebase Auth UID beforehand.
+      // When the user actually logs in with Google, a new UID will be created.
+      // The login logic needs to handle this transition.
+      const userId = generateUidFromEmail(email);
+      const userRef = doc(db, 'users', userId);
+
+      const userProfile: UserProfile = {
+        email,
+        name,
+        role,
+        isAdmin: false, // Default to not admin
+        signature: '',
+      };
+      
+      // We use set with merge to either create a new user or update an existing one.
+      batch.set(userRef, userProfile, { merge: true });
+      updatedCount++; // For simplicity, we'll just count all as updates/creations.
+    }
+
+    await batch.commit();
+    revalidatePath('/'); // Revalidate to reflect changes
+
+    return { 
+        success: true, 
+        summary: `${updatedCount}명의 사용자가 성공적으로 등록/업데이트되었습니다.`
+    };
+  } catch (error: any) {
+    console.error('Bulk user registration failed:', error);
+    // Firestore permission errors should be caught and emitted
+    if (error.name === 'FirebaseError' && error.code === 'permission-denied') {
+        const permissionError = new FirestorePermissionError({
+            path: getUsersDirCol().path,
+            operation: 'update', // This is a batch write, so 'update' is a reasonable guess
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        return { success: false, error: permissionError.message };
+    }
+    return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
 }

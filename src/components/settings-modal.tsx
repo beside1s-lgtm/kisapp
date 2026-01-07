@@ -1,8 +1,8 @@
 'use client';
-import { getDocConfig, saveDocConfig, getUsersDirectory, saveUserProfile } from '@/app/actions';
+import { getDocConfig, saveDocConfig, getUsersDirectory, saveUserProfile, bulkRegisterUsers } from '@/app/actions';
 import { DocConfig, User, UserProfile } from '@/lib/types';
 import { compressImage } from '@/lib/utils';
-import { useEffect, useState, useTransition } from 'react';
+import { ChangeEvent, useEffect, useState, useTransition } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -16,26 +16,25 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Loader2, Image as ImageIcon, Users, Settings as SettingsIcon } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Users, Settings as SettingsIcon, FileUp } from 'lucide-react';
 import NextImage from 'next/image';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ScrollArea } from './ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 
-type SettingsModalProps = {
-  children: React.ReactNode;
-};
-
-export function SettingsModal({ children }: SettingsModalProps) {
+export function SettingsModal() {
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, startSaving] = useTransition();
+  const [isUploading, startUploading] = useTransition();
   const [config, setConfig] = useState<DocConfig>({});
   const [headerPreview, setHeaderPreview] = useState<string>('');
   const [users, setUsers] = useState<(User & UserProfile)[]>([]);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -87,13 +86,47 @@ export function SettingsModal({ children }: SettingsModalProps) {
     }
   };
 
+  const handleBulkUpload = () => {
+    if (!selectedFile) {
+        toast({ variant: 'destructive', title: '파일 없음', description: '업로드할 엑셀 파일을 선택해주세요.'});
+        return;
+    }
+
+    startUploading(async () => {
+        const reader = new FileReader();
+        reader.readAsDataURL(selectedFile);
+        reader.onload = async (e) => {
+            const fileData = e.target?.result as string;
+            const result = await bulkRegisterUsers(fileData);
+            if (result.success) {
+                toast({ title: '사용자 일괄 등록 성공', description: result.summary });
+                // Refresh user list
+                getUsersDirectory().then(setUsers);
+            } else {
+                toast({ variant: 'destructive', title: '일괄 등록 실패', description: result.error, duration: 8000 });
+            }
+        };
+        reader.onerror = (error) => {
+            toast({ variant: 'destructive', title: '파일 읽기 오류', description: '파일을 읽는 중 문제가 발생했습니다.' });
+        }
+    });
+  }
+
+  const onFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+        setSelectedFile(e.target.files[0]);
+    }
+  };
+
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogTrigger asChild>
-            {children}
+           <Button variant="ghost" size="icon">
+                <SettingsIcon className="h-5 w-5 text-muted-foreground" />
+            </Button>
         </DialogTrigger>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh]">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh]">
         <DialogHeader>
           <DialogTitle>시스템 설정</DialogTitle>
           <DialogDescription>
@@ -167,41 +200,58 @@ export function SettingsModal({ children }: SettingsModalProps) {
             </DialogFooter>
           </TabsContent>
           <TabsContent value="users">
-            <ScrollArea className="h-[60vh] p-1">
-              <div className="space-y-4 p-4">
-                {users.map(user => (
-                  <div key={user.uid} className="flex items-center justify-between p-3 bg-card rounded-lg border">
-                    <div>
-                      <p className="font-semibold">{user.name}</p>
-                      <p className="text-sm text-muted-foreground">{user.email}</p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center space-x-2">
-                            <Switch 
-                                id={`admin-${user.uid}`} 
-                                checked={user.isAdmin}
-                                onCheckedChange={(checked) => handleUserUpdate(user.uid, user.email, 'isAdmin', checked)}
-                            />
-                            <Label htmlFor={`admin-${user.uid}`} className="text-sm">관리자</Label>
+            <div className="space-y-4 p-1">
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-lg">사용자 일괄 등록</CardTitle>
+                        <CardDescription>
+                           `email`, `name`, `role` 컬럼을 포함한 엑셀(.xlsx) 파일을 업로드하여 사용자를 추가하거나 업데이트합니다.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col sm:flex-row items-center gap-4">
+                        <Input type="file" accept=".xlsx, .xls" onChange={onFileSelect} className="flex-grow"/>
+                        <Button onClick={handleBulkUpload} disabled={isUploading || !selectedFile} className="w-full sm:w-auto">
+                            {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileUp className="mr-2 h-4 w-4"/>}
+                            업로드 및 등록
+                        </Button>
+                    </CardContent>
+                </Card>
+                <ScrollArea className="h-[45vh] p-1">
+                  <div className="space-y-4 p-4">
+                    {users.map(user => (
+                      <div key={user.uid} className="flex items-center justify-between p-3 bg-card rounded-lg border">
+                        <div>
+                          <p className="font-semibold">{user.name}</p>
+                          <p className="text-sm text-muted-foreground">{user.email}</p>
                         </div>
-                        <div className="w-40">
-                           <Select 
-                              defaultValue={user.role} 
-                              onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="직책 선택" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
+                        <div className="flex items-center gap-4">
+                            <div className="flex items-center space-x-2">
+                                <Switch 
+                                    id={`admin-${user.uid}`} 
+                                    checked={user.isAdmin}
+                                    onCheckedChange={(checked) => handleUserUpdate(user.uid, user.email, 'isAdmin', checked)}
+                                />
+                                <Label htmlFor={`admin-${user.uid}`} className="text-sm">관리자</Label>
+                            </div>
+                            <div className="w-40">
+                               <Select 
+                                  defaultValue={user.role} 
+                                  onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="직책 선택" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                            </div>
                         </div>
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </ScrollArea>
+                </ScrollArea>
+            </div>
           </TabsContent>
         </Tabs>
       </DialogContent>
