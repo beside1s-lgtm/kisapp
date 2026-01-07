@@ -28,8 +28,29 @@ import { generateDocumentContent } from '@/ai/flows/generate-document-content';
 import { z } from 'zod';
 
 const appId = 'kish-standard-v6-fix'.replace(/[\/.]/g, '_');
-const approvalsCol = collection(db, 'artifacts', appId, 'public', 'data', 'approvals');
-const usersDirCol = collection(db, 'artifacts', appId, 'public', 'data', 'users_directory');
+
+// Helper function to get collections, handles null db
+function getApprovalsCol() {
+  if (!db) throw new Error("Firestore is not initialized.");
+  return collection(db, 'artifacts', appId, 'public', 'data', 'approvals');
+}
+function getUsersDirCol() {
+    if (!db) throw new Error("Firestore is not initialized.");
+    return collection(db, 'artifacts', appId, 'public', 'data', 'users_directory');
+}
+function getSettingsRef() {
+    if (!db) throw new Error("Firestore is not initialized.");
+    return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'docConfig');
+}
+function getUserProfileRef(userId: string) {
+    if (!db) throw new Error("Firestore is not initialized.");
+    return doc(db, 'artifacts', appId, 'users', userId, 'profile', 'info');
+}
+function getUserDirectoryRef(userId: string) {
+    if (!db) throw new Error("Firestore is not initialized.");
+    return doc(db, 'artifacts', appId, 'public', 'data', 'users_directory', userId);
+}
+
 
 function serializeDocs(docs: any[]): any[] {
   return docs.map(d => {
@@ -48,13 +69,11 @@ function serializeDocs(docs: any[]): any[] {
 }
 
 export async function getInboxDocuments(userEmail: string) {
+  if (!db) return [];
   if (!userEmail) return [];
   const q = query(
-    approvalsCol,
+    getApprovalsCol(),
     where('status', '==', 'pending'),
-    // This is a limitation of Firestore, we can't query array contains on a specific property of an object in an array.
-    // So we fetch all pending and filter client-side or here. For security, this should be a client-side filter
-    // with security rules, but for functionality, we filter here.
   );
   const snapshot = await getDocs(q);
   const allPending = serializeDocs(snapshot.docs);
@@ -63,22 +82,21 @@ export async function getInboxDocuments(userEmail: string) {
 }
 
 export async function getSentDocuments(userId: string) {
+  if (!db) return [];
   if (!userId) return [];
-  const q = query(approvalsCol, where('requesterId', '==', userId), orderBy('createdAt', 'desc'));
+  const q = query(getApprovalsCol(), where('requesterId', '==', userId), orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
   return serializeDocs(snapshot.docs);
 }
 
 export async function getRegistryDocuments(userId: string, userEmail: string) {
+    if (!db) return [];
     if (!userId || !userEmail) return [];
     
-    // This query is broad and will be filtered. In a real app with many documents,
-    // this would be inefficient and require better data modeling or a search service.
-    const q = query(approvalsCol, where('status', '==', 'approved'), orderBy('createdAt', 'desc'));
+    const q = query(getApprovalsCol(), where('status', '==', 'approved'), orderBy('createdAt', 'desc'));
     const snapshot = await getDocs(q);
     const allApproved = serializeDocs(snapshot.docs);
 
-    // Filter based on permissions
     return allApproved.filter(doc => {
         if (doc.publishStatus === '공개') return true;
         const isRequester = doc.requesterId === userId;
@@ -89,7 +107,8 @@ export async function getRegistryDocuments(userId: string, userEmail: string) {
 }
 
 export async function getDocumentById(docId: string) {
-  const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'approvals', docId);
+  if (!db) return null;
+  const docRef = doc(getApprovalsCol(), docId);
   const snapshot = await getDoc(docRef);
   if (!snapshot.exists()) {
     return null;
@@ -99,7 +118,8 @@ export async function getDocumentById(docId: string) {
 
 
 export async function createDocument(payload: ApprovalDocPayload, userId: string, userProfile: UserProfile) {
-  const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'docConfig');
+  if (!db) return { success: false, error: "Database not initialized." };
+  const settingsRef = getSettingsRef();
 
   let finalDocNoStr = "";
   try {
@@ -125,7 +145,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       createdAt: serverTimestamp() as Timestamp,
     };
     
-    const docRef = await addDoc(approvalsCol, newDoc);
+    const docRef = await addDoc(getApprovalsCol(), newDoc);
 
     revalidatePath('/sent');
     return { success: true, docId: docRef.id, docNo: finalDocNoStr };
@@ -136,7 +156,8 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
 }
 
 export async function approveDocument(docId: string, userId: string, userProfile: UserProfile) {
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'approvals', docId);
+    if (!db) return { success: false, error: "Database not initialized." };
+    const docRef = doc(getApprovalsCol(), docId);
 
     try {
         await runTransaction(db, async (transaction) => {
@@ -182,18 +203,21 @@ export async function approveDocument(docId: string, userId: string, userProfile
 
 
 export async function getUsersDirectory(): Promise<User[]> {
-  const snapshot = await getDocs(usersDirCol);
+  if (!db) return [];
+  const snapshot = await getDocs(getUsersDirCol());
   return snapshot.docs.map(d => d.data() as User);
 }
 
 export async function getDocConfig(): Promise<DocConfig> {
-  const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'docConfig');
+  if (!db) return {};
+  const settingsRef = getSettingsRef();
   const snap = await getDoc(settingsRef);
   return snap.exists() ? snap.data() as DocConfig : {};
 }
 
 export async function saveDocConfig(payload: DocConfig) {
-  const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'docConfig');
+  if (!db) return { success: false, error: "Database not initialized." };
+  const settingsRef = getSettingsRef();
   try {
     await setDoc(settingsRef, payload, { merge: true });
     revalidatePath('/'); // Revalidate all pages that might use this
@@ -204,15 +228,17 @@ export async function saveDocConfig(payload: DocConfig) {
 }
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
+    if (!db) return null;
     if (!userId) return null;
-    const docRef = doc(db, 'artifacts', appId, 'users', userId, 'profile', 'info');
+    const docRef = getUserProfileRef(userId);
     const snap = await getDoc(docRef);
     return snap.exists() ? snap.data() as UserProfile : null;
 }
 
 export async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>) {
-  const userProfileRef = doc(db, 'artifacts', appId, 'users', userId, 'profile', 'info');
-  const userDirectoryRef = doc(db, 'artifacts', appId, 'public', 'data', 'users_directory', userId);
+  if (!db) return { success: false, error: "Database not initialized." };
+  const userProfileRef = getUserProfileRef(userId);
+  const userDirectoryRef = getUserDirectoryRef(userId);
   try {
     await setDoc(userProfileRef, profile, { merge: true });
     const directoryData = {
