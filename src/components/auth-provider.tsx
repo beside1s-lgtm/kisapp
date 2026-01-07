@@ -1,12 +1,13 @@
 'use client';
 
 import { createContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser, GoogleAuthProvider } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
 import { getUserProfile, saveUserProfile } from '@/app/actions';
 import { UserProfile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { ProfileModal } from './profile-modal';
 
 interface AuthContextType {
   user: FirebaseUser | null;
@@ -25,6 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const { toast } = useToast();
 
   const fetchProfile = useCallback(async (firebaseUser: FirebaseUser) => {
@@ -32,15 +34,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       let userProfile = await getUserProfile(firebaseUser.uid);
       if (!userProfile) {
-        // Create a basic profile if one doesn't exist
         const newProfile: UserProfile = {
           name: firebaseUser.displayName || 'New User',
           role: '담당', // default role
           email: firebaseUser.email!,
           signature: '',
+          isAdmin: false,
         };
         await saveUserProfile(firebaseUser.uid, firebaseUser.email!, newProfile);
         userProfile = newProfile;
+        setShowProfileModal(true); // Show modal for new users
+      } else if (userProfile.name === 'New User' || !userProfile.signature) {
+        setShowProfileModal(true); // Show modal if profile is incomplete
       }
       setProfile(userProfile);
     } catch (error) {
@@ -78,12 +83,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   const googleSignIn = async () => {
     try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({
+      googleProvider.setCustomParameters({
         prompt: 'select_account'
       });
-      // The onAuthStateChanged listener will handle the user state update.
-      await signInWithPopup(auth, provider);
+      await signInWithPopup(auth, googleProvider);
     } catch (error: any) {
       console.error("Google Sign-In Error:", error);
       let description = '로그인 중 오류가 발생했습니다.';
@@ -99,16 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    setLoading(true);
-    try {
-      await signOut(auth);
-      // onAuthStateChanged will handle setting user and profile to null
-    } catch (error) {
-       console.error(error);
-       toast({ variant: 'destructive', title: 'Sign-out Failed', description: 'An error occurred while signing out.' });
-    } finally {
-      setLoading(false);
-    }
+    await signOut(auth);
   };
   
   const value = { user, profile, loading, profileLoading, googleSignIn, logout, setProfile };
@@ -121,5 +115,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+        {children}
+        {user && profile && (
+            <ProfileModal 
+                isOpen={showProfileModal} 
+                setIsOpen={setShowProfileModal}
+            />
+        )}
+    </AuthContext.Provider>
+  );
 }

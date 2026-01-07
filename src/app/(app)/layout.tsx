@@ -28,7 +28,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // If profile doesn't exist after loading, the modals in the header will handle it.
+  // If profile doesn't exist or is incomplete, the modals in AuthProvider/Header will handle it.
   
   return (
     <div className="min-h-screen bg-background text-foreground font-body">

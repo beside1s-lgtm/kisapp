@@ -3,7 +3,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/utils';
 import { saveUserProfile } from '@/app/actions';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -22,13 +22,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
 import Image from 'next/image';
+import { Alert, AlertDescription } from './ui/alert';
 
 type ProfileModalProps = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
 };
+
+const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 
 export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
   const { user, profile, setProfile } = useAuth();
@@ -39,16 +42,27 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
   const [role, setRole] = useState(profile?.role || '담당');
   const [sigPreview, setSigPreview] = useState(profile?.signature || '');
 
+  const isProfileIncomplete = profile?.name === 'New User' || !profile?.signature;
+
+  useEffect(() => {
+    if (profile) {
+        setName(profile.name);
+        setRole(profile.role);
+        setSigPreview(profile.signature || '');
+    }
+  }, [profile]);
+
   const handleSave = () => {
     startSaving(async () => {
-      if (!user) return;
+      if (!user || !profile) return;
       
-      let finalSignature = profile?.signature || '';
-      if (sigPreview !== profile?.signature) {
+      let finalSignature = profile.signature || '';
+      if (sigPreview !== profile.signature) {
         finalSignature = sigPreview ? await compressImage(sigPreview) : '';
       }
 
       const updatedProfile = {
+        ...profile,
         name,
         role,
         signature: finalSignature,
@@ -80,14 +94,24 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog open={isOpen} onOpenChange={isProfileIncomplete ? () => {} : setIsOpen}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>내 프로필</DialogTitle>
           <DialogDescription>
-            이름, 직책, 서명을 업데이트하세요.
+            이름, 직책, 서명을 업데이트하세요. 결재 시스템을 사용하려면 모든 정보가 필요합니다.
           </DialogDescription>
         </DialogHeader>
+
+        {isProfileIncomplete && (
+            <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                    시스템을 사용하기 전에 프로필을 먼저 설정해주세요.
+                </AlertDescription>
+            </Alert>
+        )}
+
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="name" className="text-right">
@@ -104,7 +128,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
                 <SelectValue placeholder="직책 선택" />
               </SelectTrigger>
               <SelectContent>
-                {['담당', '부장', '행정실장', '교감', '교장'].map((r) => (
+                {ROLES.map((r) => (
                   <SelectItem key={r} value={r}>
                     {r}
                   </SelectItem>
@@ -129,7 +153,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={handleSave} disabled={isSaving}>
+          <Button onClick={handleSave} disabled={isSaving || !name || !role || !sigPreview}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             변경사항 저장
           </Button>

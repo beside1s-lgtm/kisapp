@@ -13,6 +13,7 @@ export type UserProfile = {
     role: string;
     email: string;
     signature?: string;
+    isAdmin?: boolean;
 };
 
 export type Approver = {

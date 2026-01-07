@@ -20,13 +20,6 @@ export default function AppHeader() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
 
-  // Show profile modal automatically if the name is 'New User' after loading
-  useState(() => {
-    if(!profileLoading && profile?.name === 'New User') {
-      setShowProfileModal(true);
-    }
-  });
-
   return (
     <>
       <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b bg-card px-4 md:px-8">
@@ -54,9 +47,12 @@ export default function AppHeader() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button variant="ghost" size="icon" onClick={() => setShowSettingsModal(true)}>
-            <Settings className="h-5 w-5 text-muted-foreground" />
-          </Button>
+          {profile?.isAdmin && (
+            <Button variant="ghost" size="icon" onClick={() => setShowSettingsModal(true)}>
+              <Settings className="h-5 w-5 text-muted-foreground" />
+            </Button>
+          )}
+
           {profileLoading ? (
              <Loader2 className="h-5 w-5 animate-spin" />
           ) : (
@@ -85,10 +81,12 @@ export default function AppHeader() {
                   <UserIcon className="mr-2 h-4 w-4" />
                   <span>프로필</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setShowSettingsModal(true)}>
-                  <Settings className="mr-2 h-4 w-4" />
-                  <span>설정</span>
-                </DropdownMenuItem>
+                {profile?.isAdmin && (
+                  <DropdownMenuItem onSelect={() => setShowSettingsModal(true)}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    <span>설정</span>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem disabled>
                   <LifeBuoy className="mr-2 h-4 w-4" />
                   <span>지원</span>
