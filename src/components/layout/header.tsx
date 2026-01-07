@@ -14,39 +14,12 @@ import { FileText, LifeBuoy, LogOut, Loader2, Settings, User as UserIcon, Langua
 import { SettingsModal } from '../settings-modal';
 import { useState } from 'react';
 import { ProfileModal } from '../profile-modal';
-import { UserProfile } from '@/lib/types';
-import { useToast } from '@/hooks/use-toast';
-import { saveUserProfile } from '@/app/actions';
 
 export function AppHeader() {
-  const { user, profile, logout, profileLoading, setProfile } = useAuth();
+  const { user, profile, logout, profileLoading } = useAuth();
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const { toast } = useToast();
 
-  const handleProfileSave = async (updatedData: Partial<UserProfile>) => {
-    if (!user || !profile) return;
-    
-    const result = await saveUserProfile(user.uid, user.email!, updatedData);
-
-    if (result.success) {
-      const newProfile: UserProfile = {
-        ...profile,
-        ...updatedData,
-      };
-      setProfile(newProfile);
-      toast({ title: '프로필 업데이트됨' });
-      return true;
-    } else {
-      toast({
-        variant: 'destructive',
-        title: '업데이트 실패',
-        description: result.error,
-      });
-      return false;
-    }
-  };
-  
   return (
     <>
       <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b bg-card px-4 md:px-8">
@@ -129,22 +102,17 @@ export function AppHeader() {
         </div>
       </header>
       
-      {user && profile && (
-          <>
-            {profile.isAdmin && (
-              <SettingsModal 
-                isOpen={showSettingsModal}
-                setIsOpen={setShowSettingsModal}
-              />
-            )}
-            <ProfileModal 
-              isOpen={showProfileModal}
-              setIsOpen={setShowProfileModal}
-              profile={profile}
-              onSave={handleProfileSave}
-            />
-          </>
+      {profile?.isAdmin && (
+        <SettingsModal 
+          isOpen={showSettingsModal}
+          setIsOpen={setShowSettingsModal}
+        />
       )}
+      {/* ProfileModal is now only controlled here */}
+      <ProfileModal 
+        isOpen={showProfileModal}
+        setIsOpen={setShowProfileModal}
+      />
     </>
   );
 }

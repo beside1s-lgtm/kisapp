@@ -1,5 +1,6 @@
 'use client';
 
+import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/utils';
 import { useEffect, useState, useTransition } from 'react';
@@ -19,6 +20,7 @@ import Image from 'next/image';
 import { Alert, AlertDescription } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import type { UserProfile } from '@/lib/types';
+import { saveUserProfile } from '@/app/actions';
 
 
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
@@ -26,18 +28,18 @@ const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무�
 type ProfileModalProps = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-  profile: UserProfile;
-  onSave: (data: Partial<UserProfile>) => Promise<boolean>;
 };
 
-export function ProfileModal({ isOpen, setIsOpen, profile, onSave }: ProfileModalProps) {
+export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
+  const { user, profile, fetchProfile, setProfile } = useAuth();
+  const { toast } = useToast();
   const [isSaving, startSaving] = useTransition();
 
-  const [name, setName] = useState(profile.name || '');
-  const [role, setRole] = useState(profile.role || '');
-  const [sigPreview, setSigPreview] = useState(profile.signature || '');
-
-  const isProfileIncomplete = !profile.name || profile.name === 'New User' || !profile.signature;
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('');
+  const [sigPreview, setSigPreview] = useState('');
+  
+  const isProfileIncomplete = !profile?.name || profile.name === 'New User' || !profile.signature;
 
   useEffect(() => {
     if (profile && isOpen) {
@@ -48,21 +50,32 @@ export function ProfileModal({ isOpen, setIsOpen, profile, onSave }: ProfileModa
   }, [profile, isOpen]);
 
   const handleSave = () => {
+    if (!user || !profile) return;
     startSaving(async () => {
       let finalSignature = profile.signature || '';
       if (sigPreview !== profile.signature) {
         finalSignature = sigPreview ? await compressImage(sigPreview) : '';
       }
 
-      const updatedProfileData: Partial<UserProfile> = {
+      const updatedProfileData: UserProfile = {
+        ...profile, // Keep existing fields like email, isAdmin
         name,
         role,
         signature: finalSignature,
       };
       
-      const success = await onSave(updatedProfileData);
-      if (success) {
+      const result = await saveUserProfile(user.uid, user.email!, updatedProfileData);
+
+      if (result.success) {
+        setProfile(updatedProfileData);
+        toast({ title: '프로필 업데이트됨' });
         setIsOpen(false);
+      } else {
+        toast({
+          variant: 'destructive',
+          title: '업데이트 실패',
+          description: result.error,
+        });
       }
     });
   };
@@ -74,6 +87,8 @@ export function ProfileModal({ isOpen, setIsOpen, profile, onSave }: ProfileModa
       reader.readAsDataURL(e.target.files[0]);
     }
   };
+
+  if (!profile) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={isProfileIncomplete ? () => {} : setIsOpen}>
