@@ -3,7 +3,7 @@
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/utils';
-import { useEffect, useState, useTransition, cloneElement } from 'react';
+import { useEffect, useState, useTransition, cloneElement, ReactElement } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -27,11 +27,11 @@ import { saveUserProfile } from '@/app/actions';
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 
 type ProfileModalProps = {
-  children: React.ReactElement;
+  children: ReactElement;
 };
 
 export function ProfileModal({ children }: ProfileModalProps) {
-  const { user, profile, fetchProfile, loading: authLoading, profileLoading } = useAuth();
+  const { user, profile, fetchProfile, loading: authLoading, profileLoading, setProfile } = useAuth();
   const { toast } = useToast();
   const [isSaving, startSaving] = useTransition();
   const [isOpen, setIsOpen] = useState(false);
@@ -40,7 +40,7 @@ export function ProfileModal({ children }: ProfileModalProps) {
   const [role, setRole] = useState('');
   const [sigPreview, setSigPreview] = useState('');
   
-  const isProfileIncomplete = !profile?.name || !profile.role || !profile.signature;
+  const isProfileIncomplete = !profile?.name || !profile.role;
 
   // When the modal opens, populate the state from the profile in auth context
   useEffect(() => {
@@ -59,24 +59,28 @@ export function ProfileModal({ children }: ProfileModalProps) {
   }, [authLoading, profileLoading, user, isProfileIncomplete])
 
   const handleSave = () => {
-    if (!user || !profile) return;
+    if (!user) return;
 
     startSaving(async () => {
-      let finalSignature = profile.signature || '';
-      if (sigPreview !== profile.signature) {
+      let finalSignature = profile?.signature || '';
+      if (sigPreview !== profile?.signature) {
         finalSignature = sigPreview ? await compressImage(sigPreview) : '';
       }
 
-      const updatedProfileData: Partial<UserProfile> = {
+      // Ensure we don't lose isAdmin and email on update
+      const updatedProfileData: UserProfile = {
         name,
         role,
         signature: finalSignature,
+        email: profile?.email || user.email!,
+        isAdmin: profile?.isAdmin || false,
       };
       
       const result = await saveUserProfile(user.uid, user.email!, updatedProfileData);
 
       if (result.success) {
-        await fetchProfile(user); // Re-fetch the profile to update the auth context
+        // Manually update the profile in the context to avoid re-fetching and loops
+        setProfile(updatedProfileData);
         toast({ title: '프로필 업데이트됨' });
         setIsOpen(false);
       } else {
@@ -98,12 +102,12 @@ export function ProfileModal({ children }: ProfileModalProps) {
   };
 
   const handleOpenChange = (open: boolean) => {
-    // Prevent closing if profile is incomplete
+    // Prevent closing if profile is incomplete and user tries to close it
     if (!open && isProfileIncomplete) {
         toast({
             variant: 'destructive',
             title: '프로필 미완성',
-            description: '시스템을 사용하려면 먼저 프로필을 완성해야 합니다.'
+            description: '시스템을 사용하려면 먼저 이름과 직책을 설정해야 합니다.'
         })
         return; 
     }
@@ -111,8 +115,10 @@ export function ProfileModal({ children }: ProfileModalProps) {
   }
   
   const trigger = cloneElement(children, {
-    onClick: () => setIsOpen(true),
-    ...children.props,
+    onClick: (e: MouseEvent) => {
+      e.preventDefault();
+      setIsOpen(true)
+    },
   });
 
   return (
@@ -158,7 +164,7 @@ export function ProfileModal({ children }: ProfileModalProps) {
                 </Select>
               ) : (
                 <>
-                    <p className="text-sm font-semibold text-foreground mt-2">{profile?.role || '미지정'}</p>
+                    <p className="text-sm font-semibold text-foreground mt-2">{role || '미지정'}</p>
                     <p className="text-xs text-muted-foreground mt-1">직책 변경은 관리자에게 문의하세요.</p>
                 </>
               )}
@@ -186,7 +192,7 @@ export function ProfileModal({ children }: ProfileModalProps) {
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={handleSave} disabled={isSaving || !name || !role || !sigPreview}>
+          <Button onClick={handleSave} disabled={isSaving || !name || !role}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             변경사항 저장
           </Button>
