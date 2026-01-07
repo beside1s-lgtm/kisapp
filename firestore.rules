@@ -12,10 +12,20 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      // Users can read/write their own profile. Admins can read/write any.
-      allow read, write: if request.auth.uid == userId || isAdmin();
       // Any authenticated user can read the user directory (list of users)
       allow list: if isSignedIn();
+      // Users can read their own profile. Admins can read any.
+      allow get: if request.auth.uid == userId || isAdmin();
+
+      // Users can create their own profile, but cannot set isAdmin to true.
+      allow create: if request.auth.uid == userId && request.resource.data.isAdmin == false;
+      
+      // Users can update their own profile, but cannot change the isAdmin field.
+      // Admins can update any profile.
+      allow update: if (request.auth.uid == userId && request.resource.data.isAdmin == resource.data.isAdmin) || isAdmin();
+      
+      // Only admins can delete users.
+      allow delete: if isAdmin();
     }
     
     match /settings/{docId} {
@@ -36,22 +46,20 @@ service cloud.firestore {
       // - if the document is marked as public and approved
       allow read: if isAdmin() || 
                     resource.data.requesterId == request.auth.uid ||
-                    resource.data.approvers.hasAny([request.auth.token.email]) ||
-                    resource.data.circulars.hasAny([request.auth.token.email]) ||
+                    (resource.data.approvers.size() > 0 && resource.data.approvers.exists(approver, approver.email == request.auth.token.email)) ||
+                    (resource.data.circulars.size() > 0 && resource.data.circulars.exists(circular, circular.email == request.auth.token.email)) ||
                     (resource.data.publishStatus == '공개' && resource.data.status == 'approved');
 
       // Who can update/delete a document?
       // - an admin
-      // - the person who created it
-      // - the current approver (for updates only)
+      // - the person who created it (if not yet approved by anyone)
+      // - the current approver (for updates only, to approve)
       allow update: if isAdmin() || 
-                      resource.data.requesterId == request.auth.uid ||
-                      resource.data.approvers[resource.data.currentStep].email == request.auth.token.email;
+                      (resource.data.requesterId == request.auth.uid && resource.data.currentStep == 0) ||
+                      (resource.data.approvers.size() > resource.data.currentStep && resource.data.approvers[resource.data.currentStep].email == request.auth.token.email);
       allow delete: if isAdmin() || resource.data.requesterId == request.auth.uid;
       
-      // Who can list documents?
-      // This rule allows queries like `where('status', '==', 'approved')`
-      // The more specific `read` rule will still protect individual document access.
+      // Allow list queries based on status or user involvement.
       allow list: if isSignedIn();
     }
   }
