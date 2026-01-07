@@ -125,17 +125,6 @@ export default function DocumentForm() {
         
         const config = await getDocConfig();
         setDocConfig(config);
-        
-        // Pre-fill approvers
-        const currentApprovers = form.getValues('approvers');
-        const updatedApprovers = currentApprovers.map(approver => {
-            const foundUser = userList.find(u => u.role === approver.role);
-            if (foundUser) {
-                return { ...approver, name: foundUser.name, email: foundUser.email };
-            }
-            return approver;
-        });
-        form.setValue('approvers', updatedApprovers);
     }
     fetchData();
   }, []);

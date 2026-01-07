@@ -35,6 +35,7 @@ service cloud.firestore {
     match /approvals/{docId} {
       // Create:
       // - Any signed in user can create a document.
+      // - If there are approvers, the status must be 'pending'.
       // - If there are no approvers, the status must be 'approved'.
       allow create: if isSignedIn() && (
         (request.resource.data.approvers.size() > 0 && request.resource.data.status == 'pending') ||
