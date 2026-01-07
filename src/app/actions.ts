@@ -156,6 +156,8 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     const newDocRef = doc(approvalsCol); // Generate a new ref with an ID
     newDocId = newDocRef.id;
 
+    const hasApprovers = payload.approvers && payload.approvers.length > 0;
+
     const newDoc: Omit<ApprovalDoc, 'id'> = {
       ...payload,
       docNo: '', // Will be set in transaction
@@ -165,9 +167,9 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       requesterRole: userProfile.role,
       requesterSignature: userProfile.signature || '',
       currentStep: 0,
-      status: 'pending',
+      status: hasApprovers ? 'pending' : 'approved',
       createdAt: serverTimestamp() as Timestamp,
-      completedAt: null,
+      completedAt: hasApprovers ? null : serverTimestamp() as Timestamp,
     };
 
     await runTransaction(db, async (transaction) => {
@@ -492,3 +494,5 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
 }
+
+    
