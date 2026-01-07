@@ -255,20 +255,19 @@ export async function saveDocConfig(payload: DocConfig) {
   if (!db) return { success: false, error: "Database not initialized." };
   const settingsRef = getSettingsRef();
   
-  return setDoc(settingsRef, payload, { merge: true })
-    .then(() => {
-        revalidatePath('/'); // Revalidate all pages that might use this
-        return { success: true };
-    })
-    .catch((error) => {
-        const permissionError = new FirestorePermissionError({
-            path: settingsRef.path,
-            operation: 'update',
-            requestResourceData: payload,
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        return { success: false, error: permissionError.message };
+  try {
+    await setDoc(settingsRef, payload, { merge: true });
+    revalidatePath('/'); // Revalidate all pages that might use this
+    return { success: true };
+  } catch (error: any) {
+    const permissionError = new FirestorePermissionError({
+        path: settingsRef.path,
+        operation: 'update',
+        requestResourceData: payload,
     });
+    errorEmitter.emit('permission-error', permissionError);
+    return { success: false, error: permissionError.message };
+  }
 }
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
