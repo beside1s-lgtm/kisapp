@@ -9,10 +9,10 @@ export type User = {
 };
 
 export type UserProfile = {
-    uid: string;
+    uid: string; // The Firebase Auth user ID. This is set upon first login.
     name: string;
     role: string;
-    email: string;
+    email: string; // This is the unique identifier for documents in 'users' collection.
     signature?: string;
     isAdmin?: boolean;
 };

@@ -16,14 +16,15 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Loader2, Image as ImageIcon, Users, Settings as SettingsIcon, FileUp } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Users, Settings as SettingsIcon, FileUp, Download } from 'lucide-react';
 import NextImage from 'next/image';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ScrollArea } from './ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
-import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import * as xlsx from 'xlsx';
+
 
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 
@@ -34,7 +35,7 @@ export function SettingsModal() {
   const [isUploading, startUploading] = useTransition();
   const [config, setConfig] = useState<DocConfig>({});
   const [headerPreview, setHeaderPreview] = useState<string>('');
-  const [users, setUsers] = useState<(User & UserProfile)[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   useEffect(() => {
@@ -117,6 +118,17 @@ export function SettingsModal() {
     if (e.target.files && e.target.files.length > 0) {
         setSelectedFile(e.target.files[0]);
     }
+  };
+  
+  const handleDownloadTemplate = () => {
+    const templateData = [
+      { email: 'user1@example.com', name: '홍길동', role: '교사' },
+      { email: 'user2@example.com', name: '김철수', role: '부장' },
+    ];
+    const worksheet = xlsx.utils.json_to_sheet(templateData);
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, worksheet, '사용자 목록');
+    xlsx.writeFile(workbook, 'user_template.xlsx');
   };
 
 
@@ -211,10 +223,16 @@ export function SettingsModal() {
                     </CardHeader>
                     <CardContent className="flex flex-col sm:flex-row items-center gap-4">
                         <Input type="file" accept=".xlsx, .xls" onChange={onFileSelect} className="flex-grow"/>
-                        <Button onClick={handleBulkUpload} disabled={isUploading || !selectedFile} className="w-full sm:w-auto">
-                            {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileUp className="mr-2 h-4 w-4"/>}
-                            업로드 및 등록
-                        </Button>
+                        <div className="flex gap-2 w-full sm:w-auto">
+                            <Button onClick={handleDownloadTemplate} variant="outline">
+                                <Download className="mr-2 h-4 w-4"/>
+                                양식 다운로드
+                            </Button>
+                            <Button onClick={handleBulkUpload} disabled={isUploading || !selectedFile} className="flex-grow">
+                                {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileUp className="mr-2 h-4 w-4"/>}
+                                업로드 및 등록
+                            </Button>
+                        </div>
                     </CardContent>
                 </Card>
                 <ScrollArea className="h-[45vh] p-1">
@@ -236,7 +254,7 @@ export function SettingsModal() {
                             </div>
                             <div className="w-40">
                                <Select 
-                                  defaultValue={user.role} 
+                                  value={user.role} 
                                   onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
                                 >
                                   <SelectTrigger>

@@ -24,7 +24,6 @@ import type {
   ApprovalDocPayload,
   DocConfig,
   UserProfile,
-  User,
 } from '@/lib/types';
 import { generateDocumentContent } from '@/ai/flows/generate-document-content';
 import { z } from 'zod';
@@ -47,10 +46,6 @@ function getUsersDirCol() {
 function getSettingsRef() {
     if (!db) throw new Error("Firestore is not initialized.");
     return doc(db, 'settings', 'docConfig');
-}
-function getUserProfileRef(userId: string) {
-    if (!db) throw new Error("Firestore is not initialized.");
-    return doc(db, 'users', userId);
 }
 
 
@@ -269,12 +264,22 @@ export async function approveDocument(docId: string, userId: string, userProfile
 }
 
 
-export async function getUsersDirectory(): Promise<User[]> {
+export async function getUsersDirectory(): Promise<UserProfile[]> {
   if (!db) return [];
   try {
     const snapshot = await getDocs(getUsersDirCol());
     if (snapshot.empty) return [];
-    return snapshot.docs.map(d => ({ ...(d.data() as object), uid: d.id }) as User);
+    
+    // We are using user's email as the document ID, but the actual auth UID is stored in the 'uid' field.
+    // The profile type expects 'uid' so we map the document's 'uid' field to the returned object.
+    return snapshot.docs.map(d => {
+        const data = d.data() as Omit<UserProfile, 'uid'>;
+        return {
+            ...data,
+            uid: data.uid || d.id, // Fallback to doc id if uid field is missing
+        } as UserProfile
+    });
+
   } catch (error) {
     const permissionError = new FirestorePermissionError({
       path: getUsersDirCol().path,
@@ -320,9 +325,9 @@ export async function saveDocConfig(payload: DocConfig) {
   }
 }
 
-export async function getUserProfile(userId: string): Promise<UserProfile | null> {
-    if (!db || !userId) return null;
-    const docRef = getUserProfileRef(userId);
+export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
+    if (!db || !email) return null;
+    const docRef = doc(db, 'users', email);
     try {
         const snap = await getDoc(docRef);
         return snap.exists() ? snap.data() as UserProfile : null;
@@ -456,6 +461,7 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
         email,
         name,
         role,
+        uid: '', // UID will be set on first login
         isAdmin: false, 
         signature: '',
       };
@@ -485,20 +491,4 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     }
     return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
-}
-
-export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
-    if (!db || !email) return null;
-    const docRef = doc(db, 'users', email);
-    try {
-        const snap = await getDoc(docRef);
-        return snap.exists() ? snap.data() as UserProfile : null;
-    } catch (error) {
-        const permissionError = new FirestorePermissionError({
-            path: docRef.path,
-            operation: 'get',
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        return null;
-    }
 }
