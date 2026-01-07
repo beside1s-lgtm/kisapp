@@ -13,7 +13,7 @@ import {
   setDoc,
   updateDoc,
   where,
-  Timestamp
+  Timestamp,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/firebase';

@@ -54,8 +54,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        setUser(firebaseUser);
-        await fetchProfile(firebaseUser);
+        if (firebaseUser.email?.endsWith('@kish.or.kr')) {
+            setUser(firebaseUser);
+            await fetchProfile(firebaseUser);
+        } else {
+            toast({ variant: 'destructive', title: '접근 거부', description: 'KISH 도메인 계정으로만 로그인할 수 있습니다.'});
+            await signOut(auth);
+            setUser(null);
+            setProfile(null);
+        }
       } else {
         setUser(null);
         setProfile(null);
@@ -65,20 +72,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => unsubscribe();
-  }, [fetchProfile]);
+  }, [fetchProfile, toast]);
   
   const googleSignIn = async () => {
     setLoading(true);
     try {
-      // 명시적으로 모든 Google 계정을 허용하도록 설정
       googleProvider.setCustomParameters({
-        'prompt': 'select_account'
+        prompt: 'select_account',
+        hd: 'kish.or.kr'
       });
       await signInWithPopup(auth, googleProvider);
       // onAuthStateChanged will handle the rest
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast({ variant: 'destructive', title: 'Sign-in Failed', description: 'Could not sign in with Google.' });
+      let description = 'Could not sign in with Google.';
+      if (error.code === 'auth/unauthorized-domain') {
+        description = 'This domain is not authorized for sign-in. Please contact support.';
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        description = 'Sign-in popup was closed before completion.';
+      }
+      toast({ variant: 'destructive', title: 'Sign-in Failed', description: description });
       setLoading(false);
     }
   };

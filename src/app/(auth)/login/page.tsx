@@ -56,7 +56,7 @@ export default function LoginPage() {
           KISH 결재 시스템
         </h1>
         <p className="text-muted-foreground mb-8">
-          Google Workspace 계정으로 로그인해주세요.
+          KISH Google Workspace 계정으로 로그인해주세요.
         </p>
 
         <Button
