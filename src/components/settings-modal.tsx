@@ -1,6 +1,6 @@
 'use client';
 import { getDocConfig, saveDocConfig, getUsersDirectory, saveUserProfile, bulkRegisterUsers } from '@/app/actions';
-import { DocConfig, User, UserProfile } from '@/lib/types';
+import { DocConfig, UserProfile } from '@/lib/types';
 import { compressImage } from '@/lib/utils';
 import { ChangeEvent, useEffect, useState, useTransition } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -16,7 +16,7 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Loader2, Image as ImageIcon, Users, Settings as SettingsIcon, FileUp, Download } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Users, Settings as SettingsIcon, FileUp, Download, PlusCircle, Save, XCircle } from 'lucide-react';
 import NextImage from 'next/image';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ScrollArea } from './ui/scroll-area';
@@ -38,10 +38,14 @@ export function SettingsModal() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
+  // For adding a new user
+  const [isAddingNewUser, setIsAddingNewUser] = useState(false);
+  const [newUser, setNewUser] = useState({ email: '', name: '', role: '교사' });
+
   const fetchUsers = () => {
     getUsersDirectory().then(data => {
       const uniqueUsers = Array.from(new Map(data.map(user => [user.email, user])).values());
-      setUsers(uniqueUsers);
+      setUsers(uniqueUsers.sort((a,b) => a.name.localeCompare(b.name)));
     });
   };
 
@@ -89,10 +93,26 @@ export function SettingsModal() {
     const result = await saveUserProfile(uid, email, { [field]: value });
     if (result.success) {
       toast({ title: '사용자 정보 업데이트됨' });
-      setUsers(prev => prev.map(u => u.email === email ? { ...u, [field]: value } : u));
+      setUsers(prev => prev.map(u => u.email === email ? { ...u, [field]: value } as UserProfile : u));
     } else {
       toast({ variant: 'destructive', title: '업데이트 실패', description: result.error });
     }
+  };
+
+  const handleAddNewUser = async () => {
+      if (!newUser.email || !newUser.name || !newUser.role) {
+          toast({ variant: 'destructive', title: '입력 오류', description: '이메일, 이름, 직책을 모두 입력해야 합니다.' });
+          return;
+      }
+      const result = await saveUserProfile('', newUser.email, newUser);
+      if (result.success) {
+          toast({ title: '사용자 추가됨' });
+          fetchUsers(); // Refresh the list
+          setIsAddingNewUser(false);
+          setNewUser({ email: '', name: '', role: '교사' });
+      } else {
+          toast({ variant: 'destructive', title: '추가 실패', description: result.error });
+      }
   };
 
   const handleBulkUpload = () => {
@@ -242,15 +262,48 @@ export function SettingsModal() {
                         </div>
                     </CardContent>
                 </Card>
-                <ScrollArea className="h-[45vh] p-1">
-                  <div className="space-y-4 p-4">
+                <div className="px-4 py-2 flex justify-between items-center">
+                    <h3 className="text-lg font-semibold">사용자 목록</h3>
+                    {!isAddingNewUser && (
+                        <Button variant="outline" size="sm" onClick={() => setIsAddingNewUser(true)}>
+                            <PlusCircle className="mr-2 h-4 w-4" />
+                            새 사용자 추가
+                        </Button>
+                    )}
+                </div>
+                <ScrollArea className="h-[40vh] p-1">
+                  <div className="space-y-2 p-4">
+                    {isAddingNewUser && (
+                        <div className="flex items-center gap-2 p-3 bg-secondary/50 rounded-lg border border-dashed">
+                             <Input 
+                                placeholder="이메일" 
+                                value={newUser.email} 
+                                onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
+                                className="w-1/3"
+                             />
+                             <Input 
+                                placeholder="이름" 
+                                value={newUser.name}
+                                onChange={(e) => setNewUser(p => ({ ...p, name: e.target.value }))}
+                                className="w-1/4"
+                             />
+                             <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r }))}>
+                                <SelectTrigger className="w-1/4"><SelectValue /></SelectTrigger>
+                                <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+                             </Select>
+                             <div className="flex gap-1">
+                                <Button size="icon" variant="ghost" onClick={handleAddNewUser}><Save className="h-4 w-4 text-primary"/></Button>
+                                <Button size="icon" variant="ghost" onClick={() => setIsAddingNewUser(false)}><XCircle className="h-4 w-4 text-destructive"/></Button>
+                             </div>
+                        </div>
+                    )}
                     {users.map(user => (
-                      <div key={user.email} className="flex items-center justify-between p-3 bg-card rounded-lg border">
-                        <div>
+                      <div key={user.email} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-card rounded-lg border gap-4">
+                        <div className="flex-grow">
                           <p className="font-semibold">{user.name}</p>
                           <p className="text-sm text-muted-foreground">{user.email}</p>
                         </div>
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-4 w-full sm:w-auto">
                             <div className="flex items-center space-x-2">
                                 <Switch 
                                     id={`admin-${user.email}`} 
@@ -258,7 +311,7 @@ export function SettingsModal() {
                                     onCheckedChange={(checked) => handleUserUpdate(user.uid, user.email, 'isAdmin', checked)}
                                     disabled={user.email === 'beside1s@kshcm.net'}
                                 />
-                                <Label htmlFor={`admin-${user.email}`} className="text-sm">관리자</Label>
+                                <Label htmlFor={`admin-${user.email}`} className="text-sm shrink-0">관리자</Label>
                             </div>
                             <div className="w-40">
                                <Select 

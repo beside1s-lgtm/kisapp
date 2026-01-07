@@ -181,17 +181,22 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       completedAt: hasApprovers ? null : serverTimestamp() as Timestamp,
     };
 
-    await setDoc(newDocRef, newDocData).catch((error) => {
-        // This catch block is crucial for permission errors
-        const permissionError = new FirestorePermissionError({
-            path: newDocRef.path,
-            operation: 'create',
-            requestResourceData: newDocData,
+    // Use .catch() directly on the setDoc promise to handle permission errors
+    await setDoc(newDocRef, newDocData)
+        .catch((serverError) => {
+            // Create a specific permission error
+            const permissionError = new FirestorePermissionError({
+                path: newDocRef.path,
+                operation: 'create',
+                requestResourceData: newDocData,
+            });
+            // Emit it for central handling (e.g., toast in UI)
+            errorEmitter.emit('permission-error', permissionError);
+            
+            // IMPORTANT: Re-throw the error to ensure the outer catch block is triggered
+            // and returns a failure response to the client.
+            throw permissionError;
         });
-        errorEmitter.emit('permission-error', permissionError);
-        // We throw to make sure the outer catch block catches it.
-        throw new Error(`Permission denied: ${permissionError.message}`);
-    });
 
     revalidatePath('/sent');
     return { success: true, docId: newDocId, docNo: finalDocNoStr };
@@ -199,16 +204,11 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
   } catch (error: any) {
     console.error("Failed to create document:", error); // Log the full error on the server
     
-    let errorMessage = "An unknown error occurred while creating the document.";
-    if (error instanceof Error) {
-        errorMessage = error.message;
-    } else if (typeof error === 'string') {
-        errorMessage = error;
-    } else if (error?.name === 'FirebaseError' && error.code === 'permission-denied') {
-        errorMessage = "Permission denied. Please check Firestore security rules.";
-    }
+    // Ensure a user-friendly message is returned to the client
+    const errorMessage = error instanceof FirestorePermissionError 
+        ? "문서 생성 권한이 없습니다. 보안 규칙을 확인하세요."
+        : "문서 생성 중 알 수 없는 오류가 발생했습니다.";
 
-    // Return the specific error to the client
     return { success: false, error: errorMessage };
   }
 }
@@ -359,7 +359,7 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
         docExists = docSnap.exists();
         const existingData = docSnap.data() as UserProfile | undefined;
         
-        let dataToSave: UserProfile;
+        let dataToSave: Partial<UserProfile>;
 
         if (docExists && existingData) {
             // Document exists, so we merge.
@@ -367,14 +367,14 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
                 ...existingData,
                 ...profile,
                 email: email, // Ensure email is always correct
-                uid: userId, // Update with the latest Firebase Auth UID
+                // Only update UID if it's provided (e.g. during first login)
+                ...(userId && { uid: userId }), 
             };
             await setDoc(userProfileRef, dataToSave, { merge: true });
         } else {
             // Document does not exist, so we create it.
-            // This case should be rare if users are pre-registered
             dataToSave = {
-                uid: userId,
+                uid: userId || '', // Can be empty if registered by admin
                 email: email,
                 name: profile.name || 'New User',
                 role: profile.role || '담당',
@@ -385,7 +385,7 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
         }
         
         revalidatePath('/');
-        return { success: true, profile: dataToSave };
+        return { success: true, profile: dataToSave as UserProfile };
     } catch (error: any) {
         // We need docExists from the try block to determine the operation.
         const permissionError = new FirestorePermissionError({
@@ -496,7 +496,3 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
 }
-
-    
-
-    
