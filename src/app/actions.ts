@@ -182,7 +182,6 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       completedAt: hasApprovers ? null : serverTimestamp() as Timestamp,
     };
 
-    // Correctly await the setDoc operation inside the try block
     await setDoc(newDocRef, newDocData);
 
     revalidatePath('/sent');
@@ -199,7 +198,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
             requestResourceData: payload,
         });
         errorEmitter.emit('permission-error', permissionError);
-        return { success: false, error: "문서 생성 권한이 없습니다. Firestore 보안 규칙을 확인하세요." };
+        return { success: false, error: `권한 오류: ${error.message}` };
     }
     
     return { success: false, error: error.message || "문서 생성 중 알 수 없는 오류가 발생했습니다." };
@@ -270,13 +269,16 @@ export async function getUsersDirectory(): Promise<UserProfile[]> {
     
     // We are using user's email as the document ID, but the actual auth UID is stored in the 'uid' field.
     // The profile type expects 'uid' so we map the document's 'uid' field to the returned object.
-    return snapshot.docs.map(d => {
-        const data = d.data() as Omit<UserProfile, 'uid'>;
+    const users = snapshot.docs.map(d => {
+        const data = d.data() as Omit<UserProfile, 'uid'> & { uid?: string };
         return {
             ...data,
-            uid: data.uid || d.id, // Fallback to doc id if uid field is missing
+            email: d.id, // Ensure email is the doc id
+            uid: data.uid || d.id, 
         } as UserProfile
     });
+    const uniqueUsers = Array.from(new Map(users.map(user => [user.email, user])).values());
+    return uniqueUsers;
 
   } catch (error) {
     const permissionError = new FirestorePermissionError({
@@ -328,7 +330,13 @@ export async function getUserProfileByEmail(email: string): Promise<UserProfile 
     const docRef = doc(db, 'users', email);
     try {
         const snap = await getDoc(docRef);
-        return snap.exists() ? snap.data() as UserProfile : null;
+        if (!snap.exists()) return null;
+        const data = snap.data() as Omit<UserProfile, 'uid'> & { uid?: string };
+        return {
+            ...data,
+            email: snap.id,
+            uid: data.uid || snap.id
+        } as UserProfile;
     } catch (error) {
         const permissionError = new FirestorePermissionError({
             path: docRef.path,
@@ -347,27 +355,20 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
     // We use email as the document ID in the 'users' collection
     const userProfileRef = doc(db, 'users', email);
     let docExists = false;
+    
+    let dataToSave: Partial<UserProfile>;
 
     try {
         const docSnap = await getDoc(userProfileRef);
         docExists = docSnap.exists();
         const existingData = docSnap.data() as UserProfile | undefined;
         
-        let dataToSave: Partial<UserProfile>;
-
         if (docExists && existingData) {
             // Document exists, so we merge.
-            dataToSave = {
-                ...existingData,
-                ...profile,
-                email: email, // Ensure email is always correct
-                // Only update UID if it's provided (e.g. during first login)
-                ...(userId && { uid: userId }), 
-            };
-            await setDoc(userProfileRef, dataToSave, { merge: true });
+            dataToSave = { ...existingData, ...profile };
         } else {
             // Document does not exist, so we create it.
-            dataToSave = {
+             dataToSave = {
                 uid: userId || '', // Can be empty if registered by admin
                 email: email,
                 name: profile.name || 'New User',
@@ -375,11 +376,19 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
                 signature: profile.signature || '',
                 isAdmin: profile.isAdmin === true ? true : false,
             };
-            await setDoc(userProfileRef, dataToSave);
         }
+        
+        // Ensure email is always set correctly from the parameter, not from a potentially partial profile object
+        dataToSave.email = email;
+        if (userId) {
+          dataToSave.uid = userId;
+        }
+        
+        await setDoc(userProfileRef, dataToSave, { merge: true });
         
         revalidatePath('/');
         return { success: true, profile: dataToSave as UserProfile };
+
     } catch (error: any) {
         // We need docExists from the try block to determine the operation.
         const permissionError = new FirestorePermissionError({
@@ -388,7 +397,7 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
             requestResourceData: profile,
         });
         errorEmitter.emit('permission-error', permissionError);
-        return { success: false, error: permissionError.message };
+        return { success: false, error: `권한 오류: ${error.message}` };
     }
 }
 

@@ -13,7 +13,7 @@ import {
   Attachment,
   Circular,
   DocConfig,
-  User,
+  UserProfile,
 } from '@/lib/types';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -60,7 +60,7 @@ const formSchema = z.object({
   content: z.string().min(1, '내용은 필수입니다.'),
   approvers: z.array(
     z.object({
-      name: z.string(), 
+      name: z.string(),
       email: z.string(),
       role: z.string(),
       type: z.enum(['normal', 'final', 'proxy']),
@@ -87,7 +87,7 @@ export default function DocumentForm() {
   const { user, profile } = useAuth();
   const [isPending, startTransition] = useTransition();
   const [isGenerating, startGenerating] = useTransition();
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
   const [docConfig, setDocConfig] = useState<DocConfig>({});
   const attachmentInputRef = useRef<HTMLInputElement>(null);
 
@@ -351,15 +351,21 @@ export default function DocumentForm() {
                   </div>
                   {field.active && (
                     <div className="space-y-2">
-                       <UserSearch
+                      <Controller
+                        control={form.control}
+                        name={`approvers.${index}.name`}
+                        render={({ field: nameField }) => (
+                          <UserSearch
                             users={users}
                             onSelectUser={(user) => {
                                 form.setValue(`approvers.${index}.name`, user.name);
                                 form.setValue(`approvers.${index}.email`, user.email);
                             }}
-                            value={form.watch(`approvers.${index}.name`)}
-                            onChange={(e) => form.setValue(`approvers.${index}.name`, e.target.value)}
-                        />
+                            value={nameField.value}
+                            onValueChange={nameField.onChange}
+                          />
+                        )}
+                       />
                         <FormField
                             control={form.control}
                             name={`approvers.${index}.type`}
@@ -513,5 +519,3 @@ export default function DocumentForm() {
     </Form>
   );
 }
-
-    

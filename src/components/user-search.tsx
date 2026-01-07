@@ -1,7 +1,7 @@
 'use client';
 
-import { User } from '@/lib/types';
-import { useState, useMemo } from 'react';
+import { UserProfile } from '@/lib/types';
+import { useState, useMemo, useEffect } from 'react';
 import { Input, type InputProps } from './ui/input';
 import {
   Popover,
@@ -9,15 +9,21 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-interface UserSearchProps extends Omit<InputProps, 'onSelect' | 'value'> {
-  users: User[];
-  onSelectUser: (user: User) => void;
+interface UserSearchProps extends Omit<InputProps, 'onSelect' | 'value' | 'onChange'> {
+  users: UserProfile[];
+  onSelectUser: (user: UserProfile) => void;
   value?: string;
+  onValueChange?: (value: string) => void;
+  placeholder?: string;
 }
 
-export function UserSearch({ users, onSelectUser, value, ...props }: UserSearchProps) {
+export function UserSearch({ users, onSelectUser, value, onValueChange, placeholder, ...props }: UserSearchProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState(value || '');
+
+  useEffect(() => {
+    setSearch(value || '');
+  }, [value]);
 
   const filteredUsers = useMemo(() => {
     if (!search) return [];
@@ -27,39 +33,43 @@ export function UserSearch({ users, onSelectUser, value, ...props }: UserSearchP
     );
   }, [search, users]);
 
-  const handleSelect = (user: User) => {
+  const handleSelect = (user: UserProfile) => {
     onSelectUser(user);
     setSearch(user.name);
+    if(onValueChange) {
+        onValueChange(user.name);
+    }
     setOpen(false);
   };
   
-  const currentInputValue = props.onChange ? value : search;
-
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Input
           {...props}
-          value={currentInputValue}
+          value={search}
           onChange={(e) => {
-            if (props.onChange) {
-                props.onChange(e);
-            } else {
-                setSearch(e.target.value);
+            setSearch(e.target.value);
+            if(onValueChange) {
+                onValueChange(e.target.value);
             }
-            setOpen(true);
+            if(e.target.value) {
+                setOpen(true);
+            }
           }}
-          onFocus={() => setOpen(true)}
-          placeholder={props.placeholder || "Search name..."}
+          onFocus={() => {
+            if(search) setOpen(true);
+          }}
+          placeholder={placeholder || "Search name..."}
           autoComplete="off"
         />
       </PopoverTrigger>
-      {filteredUsers.length > 0 && (
+      {open && filteredUsers.length > 0 && (
         <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
           <div className="max-h-60 overflow-y-auto">
             {filteredUsers.map((user) => (
               <button
-                key={user.uid}
+                key={user.email}
                 type="button"
                 onClick={() => handleSelect(user)}
                 className="w-full p-3 text-left hover:bg-muted text-sm flex justify-between items-center rounded-lg"

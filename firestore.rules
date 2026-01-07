@@ -21,8 +21,9 @@ service cloud.firestore {
     }
 
     match /users/{email} {
-      // Only the user themselves or an admin can read/write their own profile
-      allow read, write: if isSignedIn() && (request.auth.email == email || isAdmin());
+      // Admins can create/update any user.
+      // Users can update their own profile if they are signed in.
+      allow read, write: if isSignedIn() && (isAdmin() || request.auth.email == email);
     }
 
     match /settings/docConfig {
@@ -32,8 +33,13 @@ service cloud.firestore {
     }
 
     match /approvals/{docId} {
-      // Create: Any signed in user can create a document
-      allow create: if isSignedIn();
+      // Create:
+      // - Any signed in user can create a document.
+      // - If there are no approvers, the status must be 'approved'.
+      allow create: if isSignedIn() && (
+        (request.resource.data.approvers.size() > 0 && request.resource.data.status == 'pending') ||
+        (request.resource.data.approvers.size() == 0 && request.resource.data.status == 'approved')
+      );
       
       // Read:
       // - Requester can read
