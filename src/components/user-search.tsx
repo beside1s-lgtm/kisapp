@@ -22,13 +22,19 @@ export function UserSearch({ users, onSelectUser, value, onValueChange, placehol
   const [internalValue, setInternalValue] = useState(value || '');
 
   useEffect(() => {
+    // This effect ensures that if the form is reset or the value is changed externally,
+    // the internal state of UserSearch is updated.
     if(value !== internalValue) {
         setInternalValue(value || '');
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
   const filteredUsers = useMemo(() => {
     if (!internalValue) return [];
+    // Don't filter if the input value exactly matches a user's name (which happens after selection).
+    if (users.some(u => u.name === internalValue)) return [];
+
     return users.filter(
       (u) => u.name.toLowerCase().includes(internalValue.toLowerCase()) || 
              u.email.toLowerCase().includes(internalValue.toLowerCase())
@@ -37,10 +43,10 @@ export function UserSearch({ users, onSelectUser, value, onValueChange, placehol
 
   const handleSelect = (user: UserProfile) => {
     onSelectUser(user);
-    setInternalValue(user.name);
-    if(onValueChange) {
-        onValueChange(user.name);
-    }
+    // The parent form will update the `value` prop via react-hook-form's `setValue`,
+    // which will then be reflected in the input via the useEffect.
+    // We also update internal state to immediately reflect the change.
+    setInternalValue(user.name); 
     setOpen(false);
   };
 
@@ -50,7 +56,13 @@ export function UserSearch({ users, onSelectUser, value, onValueChange, placehol
     if (onValueChange) {
         onValueChange(newValue);
     }
-    setOpen(!!newValue);
+    if (newValue) {
+        setOpen(true)
+    } else {
+        // If the input is cleared, also clear the parent form state.
+        onSelectUser({ name: '', email: '', role: '', uid: '' });
+        setOpen(false);
+    }
   }
   
   return (
@@ -61,6 +73,7 @@ export function UserSearch({ users, onSelectUser, value, onValueChange, placehol
           value={internalValue}
           onChange={handleChange}
           onFocus={() => {
+            // Only open if there's something to search for, or to show the full list.
             if(internalValue) setOpen(true);
           }}
           placeholder={placeholder || "Search name..."}

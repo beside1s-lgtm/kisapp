@@ -418,7 +418,7 @@ export default function DocumentForm() {
                           name={`approvers.${index}.name`}
                           render={({ field: nameField }) => (
                              <FormItem>
-                               <FormControl>
+                                <FormControl>
                                   <UserSearch
                                     users={users}
                                     onSelectUser={(user) => {
@@ -429,8 +429,8 @@ export default function DocumentForm() {
                                     value={nameField.value}
                                     onValueChange={nameField.onChange}
                                   />
-                               </FormControl>
-                               <FormMessage />
+                                </FormControl>
+                                <FormMessage />
                              </FormItem>
                           )}
                         />
@@ -466,7 +466,8 @@ export default function DocumentForm() {
             ))}
              {form.formState.errors.approvers && (
                 <div className="md:col-span-2">
-                    <FormMessage>{form.formState.errors.approvers.root?.message}</FormMessage>
+                    <FormMessage>{form.formState.errors.approvers.root?.message || form.formState.errors.approvers.message}</FormMessage>
+                    {Array.isArray(form.formState.errors.approvers) && form.formState.errors.approvers.map((err, i) => err?.name && <FormMessage key={i}>{i+1}번째 결재자: {err.name.message}</FormMessage>)}
                 </div>
              )}
           </CardContent>
