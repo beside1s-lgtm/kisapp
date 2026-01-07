@@ -60,6 +60,14 @@ const approverSchema = z.object({
   role: z.string(),
   type: z.enum(['normal', 'final', 'proxy']),
   active: z.boolean(),
+}).refine(data => {
+    if (data.active) {
+        return data.name.length > 0 && data.email.length > 0;
+    }
+    return true;
+}, {
+    message: "활성화된 결재자는 이름과 이메일이 필수입니다.",
+    path: ["name"] // Path to show error message on
 });
 
 const formSchema = z.object({
@@ -68,22 +76,13 @@ const formSchema = z.object({
   approvers: z
     .array(approverSchema)
     .superRefine((approvers, ctx) => {
-      approvers.forEach((approver, index) => {
-        if (approver.active) {
-          if (!approver.name) {
-            ctx.addIssue({
-              path: [index, 'name'],
-              message: '결재자 이름은 필수입니다.',
-            });
-          }
-          if (!approver.email) {
-            ctx.addIssue({
-              path: [index, 'email'],
-              message: '결재자 이메일은 필수입니다.',
-            });
-          }
-        }
-      });
+      const activeApprovers = approvers.filter(a => a.active);
+      if (activeApprovers.some(a => !a.name || !a.email)) {
+          ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "활성화된 결재자의 이름과 이메일을 모두 입력해야 합니다.",
+          });
+      }
     }),
   circulars: z.array(
     z.object({ name: z.string(), email: z.string(), role: z.string() })
@@ -201,7 +200,6 @@ export default function DocumentForm() {
         const proceed = window.confirm("결재자 없이 문서를 상신하시겠습니까? 이 문서는 즉시 완료 처리됩니다.");
         if (!proceed) return;
       }
-
 
       if (!profile.signature) {
         const confirmed = window.confirm(
@@ -418,42 +416,54 @@ export default function DocumentForm() {
                   {form.watch(`approvers.${index}.active`) && (
                     <div className="space-y-2">
                        <FormField
-                        control={form.control}
-                        name={`approvers.${index}.name`}
-                        render={({ field: nameField }) => (
-                          <FormItem>
-                            <FormControl>
-                                <UserSearch
-                                users={users}
-                                onSelectUser={(user) => {
-                                    form.setValue(`approvers.${index}.name`, user.name, { shouldValidate: true });
-                                    form.setValue(`approvers.${index}.email`, user.email, { shouldValidate: true });
-                                }}
-                                value={nameField.value}
-                                onValueChange={nameField.onChange}
-                                />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                          control={form.control}
+                          name={`approvers.${index}.name`}
+                          render={({ field }) => (
+                            <FormItem>
+                                <FormLabel className="sr-only">이름</FormLabel>
+                                <FormControl>
+                                    <Input placeholder="이름" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`approvers.${index}.email`}
+                          render={({ field }) => (
+                            <FormItem>
+                                <FormLabel className="sr-only">이메일</FormLabel>
+                                <FormControl>
+                                    <Input placeholder="이메일" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                       <FormField
                         control={form.control}
                         name={`approvers.${index}.type`}
                         render={({ field: selectField }) => (
-                          <Select
-                            onValueChange={selectField.onChange}
-                            defaultValue={selectField.value}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="결재 종류" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="normal">일반</SelectItem>
-                              <SelectItem value="final">전결</SelectItem>
-                              <SelectItem value="proxy">대결</SelectItem>
-                            </SelectContent>
-                          </Select>
+                            <FormItem>
+                                <FormLabel className="sr-only">결재 종류</FormLabel>
+                                <Select
+                                    onValueChange={selectField.onChange}
+                                    defaultValue={selectField.value}
+                                >
+                                    <FormControl>
+                                        <SelectTrigger>
+                                        <SelectValue placeholder="결재 종류" />
+                                        </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                    <SelectItem value="normal">일반</SelectItem>
+                                    <SelectItem value="final">전결</SelectItem>
+                                    <SelectItem value="proxy">대결</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <FormMessage />
+                          </FormItem>
                         )}
                       />
                     </div>
@@ -461,7 +471,7 @@ export default function DocumentForm() {
                 </CardContent>
               </Card>
             ))}
-             <FormMessage>{(form.formState.errors.approvers as any)?.root?.message}</FormMessage>
+             <FormMessage>{form.formState.errors.approvers?.root?.message}</FormMessage>
           </CardContent>
         </Card>
 
@@ -625,3 +635,5 @@ export default function DocumentForm() {
     </Form>
   );
 }
+
+    
