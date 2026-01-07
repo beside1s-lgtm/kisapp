@@ -3,7 +3,7 @@
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/utils';
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useState, useTransition, cloneElement } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,7 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogTrigger,
 } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -26,31 +27,40 @@ import { saveUserProfile } from '@/app/actions';
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 
 type ProfileModalProps = {
-  isOpen: boolean;
-  setIsOpen: (open: boolean) => void;
+  children: React.ReactElement;
 };
 
-export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
-  const { user, profile, fetchProfile } = useAuth();
+export function ProfileModal({ children }: ProfileModalProps) {
+  const { user, profile, fetchProfile, loading: authLoading, profileLoading } = useAuth();
   const { toast } = useToast();
   const [isSaving, startSaving] = useTransition();
-
+  const [isOpen, setIsOpen] = useState(false);
+  
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [sigPreview, setSigPreview] = useState('');
   
-  const isProfileIncomplete = !profile?.name || profile.name === 'NewUser' || !profile.signature;
+  const isProfileIncomplete = !profile?.name || !profile.role || !profile.signature;
 
+  // When the modal opens, populate the state from the profile in auth context
   useEffect(() => {
     if (profile && isOpen) {
-        setName(profile.name);
-        setRole(profile.role);
+        setName(profile.name || '');
+        setRole(profile.role || '');
         setSigPreview(profile.signature || '');
     }
   }, [profile, isOpen]);
 
+  // When user first logs in and profile is incomplete, open the modal automatically.
+  useEffect(() => {
+    if (!authLoading && !profileLoading && user && isProfileIncomplete) {
+        setIsOpen(true);
+    }
+  }, [authLoading, profileLoading, user, isProfileIncomplete])
+
   const handleSave = () => {
     if (!user || !profile) return;
+
     startSaving(async () => {
       let finalSignature = profile.signature || '';
       if (sigPreview !== profile.signature) {
@@ -88,17 +98,26 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
   };
 
   const handleOpenChange = (open: boolean) => {
+    // Prevent closing if profile is incomplete
     if (!open && isProfileIncomplete) {
-        // Prevent closing if profile is incomplete
-        return;
+        toast({
+            variant: 'destructive',
+            title: '프로필 미완성',
+            description: '시스템을 사용하려면 먼저 프로필을 완성해야 합니다.'
+        })
+        return; 
     }
     setIsOpen(open);
   }
-
-  if (!profile) return null;
+  
+  const trigger = cloneElement(children, {
+    onClick: () => setIsOpen(true),
+    ...children.props,
+  });
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>내 프로필</DialogTitle>
@@ -128,7 +147,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
             <Award className="h-5 w-5 text-muted-foreground mt-1" />
             <div className="w-full">
               <Label>직책</Label>
-              {profile.isAdmin ? (
+              {profile?.isAdmin ? (
                 <Select value={role} onValueChange={setRole}>
                     <SelectTrigger className="mt-1">
                         <SelectValue placeholder="직책 선택" />
@@ -139,7 +158,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
                 </Select>
               ) : (
                 <>
-                    <p className="text-sm font-semibold text-foreground mt-2">{profile.role}</p>
+                    <p className="text-sm font-semibold text-foreground mt-2">{profile?.role || '미지정'}</p>
                     <p className="text-xs text-muted-foreground mt-1">직책 변경은 관리자에게 문의하세요.</p>
                 </>
               )}
@@ -149,7 +168,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
             <Mail className="h-5 w-5 text-muted-foreground mt-1" />
             <div>
               <Label>이메일</Label>
-              <p className="text-sm text-muted-foreground mt-2">{profile.email}</p>
+              <p className="text-sm text-muted-foreground mt-2">{profile?.email}</p>
             </div>
           </div>
           <div className="space-y-2">

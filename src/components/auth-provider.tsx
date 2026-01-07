@@ -82,7 +82,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (firebaseUser) {
         if (firebaseUser.email?.endsWith('@kshcm.net') || firebaseUser.email?.endsWith('@kish.kr') || process.env.NODE_ENV === 'development' ) {
             setUser(firebaseUser);
-            await fetchProfile(firebaseUser);
+            // Fetch profile only if user changes or doesn't exist
+            if (!profile || profile.email !== firebaseUser.email) {
+               await fetchProfile(firebaseUser);
+            }
         } else {
             toast({ variant: 'destructive', title: '접근 거부', description: '허용된 도메인 계정으로만 로그인할 수 있습니다.'});
             await signOut(auth);
@@ -94,11 +97,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
       }
       setLoading(false);
+      setProfileLoading(false);
     });
 
     return () => unsubscribe();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchProfile, toast]);
   
   const googleSignIn = async () => {
     try {

@@ -56,48 +56,52 @@ export function AppHeader() {
           {profileLoading ? (
              <Loader2 className="h-5 w-5 animate-spin" />
           ) : (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage src={user?.photoURL || ''} alt={profile?.name || ''} />
-                    <AvatarFallback>
-                        {profile?.name?.charAt(0).toUpperCase() || <UserIcon />}
-                    </AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="end" forceMount>
-                <DropdownMenuLabel className="font-normal">
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">{profile?.name}</p>
-                    <p className="text-xs leading-none text-muted-foreground">
-                      {profile?.email}
-                    </p>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => setShowProfileModal(true)}>
-                  <UserIcon className="mr-2 h-4 w-4" />
-                  <span>프로필</span>
-                </DropdownMenuItem>
-                {profile?.isAdmin && (
-                  <DropdownMenuItem onSelect={() => setShowSettingsModal(true)}>
-                    <Settings className="mr-2 h-4 w-4" />
-                    <span>설정</span>
+            <ProfileModal>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage src={user?.photoURL || ''} alt={profile?.name || ''} />
+                      <AvatarFallback>
+                          {profile?.name?.charAt(0).toUpperCase() || <UserIcon />}
+                      </AvatarFallback>
+                    </Avatar>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56" align="end" forceMount>
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium leading-none">{profile?.name}</p>
+                      <p className="text-xs leading-none text-muted-foreground">
+                        {profile?.email}
+                      </p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  
+                  <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setShowProfileModal(true)}}>
+                    <UserIcon className="mr-2 h-4 w-4" />
+                    <span>프로필</span>
                   </DropdownMenuItem>
-                )}
-                <DropdownMenuItem disabled>
-                  <LifeBuoy className="mr-2 h-4 w-4" />
-                  <span>지원</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={logout}>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>로그아웃</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+
+                  {profile?.isAdmin && (
+                    <DropdownMenuItem onSelect={() => setShowSettingsModal(true)}>
+                      <Settings className="mr-2 h-4 w-4" />
+                      <span>설정</span>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem disabled>
+                    <LifeBuoy className="mr-2 h-4 w-4" />
+                    <span>지원</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={logout}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>로그아웃</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </ProfileModal>
           )}
         </div>
       </header>
@@ -108,11 +112,6 @@ export function AppHeader() {
           setIsOpen={setShowSettingsModal}
         />
       )}
-      
-      <ProfileModal 
-        isOpen={showProfileModal}
-        setIsOpen={setShowProfileModal}
-      />
     </>
   );
 }
