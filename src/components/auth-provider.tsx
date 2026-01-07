@@ -70,6 +70,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const googleSignIn = async () => {
     setLoading(true);
     try {
+      // 명시적으로 모든 Google 계정을 허용하도록 설정
+      googleProvider.setCustomParameters({
+        'prompt': 'select_account'
+      });
       await signInWithPopup(auth, googleProvider);
       // onAuthStateChanged will handle the rest
     } catch (error) {
