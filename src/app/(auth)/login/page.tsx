@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { FileText, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
 
 // Google Icon SVG
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -18,6 +19,7 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 export default function LoginPage() {
   const { user, loading, googleSignIn } = useAuth();
+  const { toast } = useToast();
   const [isSigningIn, setIsSigningIn] = useState(false);
   const router = useRouter();
 
@@ -31,9 +33,17 @@ export default function LoginPage() {
     setIsSigningIn(true);
     try {
       await googleSignIn();
-      // The useEffect will handle redirection
-    } catch (error) {
+      // The useEffect will handle redirection on success
+    } catch (error: any) {
       console.error('Sign-in failed', error);
+      let description = '로그인 중 오류가 발생했습니다.';
+      if (error.code === 'auth/popup-closed-by-user') {
+        description = '로그인 팝업이 닫혔습니다. 다시 시도해주세요.';
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        description = '여러 번의 로그인 시도가 감지되었습니다. 잠시 후 다시 시도해주세요.';
+      }
+      toast({ variant: 'destructive', title: '로그인 실패', description: description });
+    } finally {
       setIsSigningIn(false);
     }
   };

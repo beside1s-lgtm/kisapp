@@ -81,7 +81,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (firebaseUser.email?.endsWith('@kshcm.net') || firebaseUser.email?.endsWith('@kish.kr') || process.env.NODE_ENV === 'development' ) {
             setUser(firebaseUser);
             // Fetch profile only if user changes
-            await fetchProfile(firebaseUser);
+            if (!profile || profile.email !== firebaseUser.email) {
+               await fetchProfile(firebaseUser);
+            }
         } else {
             toast({ variant: 'destructive', title: '접근 거부', description: '허용된 도메인 계정으로만 로그인할 수 있습니다.'});
             await signOut(auth);
@@ -93,11 +95,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
       }
       setLoading(false);
-      setProfileLoading(false); // Also set profile loading to false here
+      if (profileLoading) {
+        setProfileLoading(false);
+      }
     });
 
     return () => unsubscribe();
-  }, [fetchProfile, toast]);
+  }, [fetchProfile, toast, profileLoading, profile]);
   
   const googleSignIn = async () => {
     try {
@@ -108,13 +112,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // onAuthStateChanged will handle the rest
     } catch (error: any) {
       console.error("Google Sign-In Error:", error);
-      let description = '로그인 중 오류가 발생했습니다.';
-      if (error.code === 'auth/popup-closed-by-user') {
-        description = '로그인 팝업이 닫혔습니다. 다시 시도해주세요.';
-      } else if (error.code === 'auth/cancelled-popup-request') {
-        description = '여러 번의 로그인 시도가 감지되었습니다. 잠시 후 다시 시도해주세요.';
-      }
-      toast({ variant: 'destructive', title: '로그인 실패', description: description });
+      // Re-throw the error to be caught by the caller in the login page
+      throw error;
     }
   };
 
