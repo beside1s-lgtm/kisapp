@@ -1,0 +1,37 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check for admin role
+    function isAdmin() {
+      return get(/databases/$(database)/documents/artifacts/kish-standard-v6-fix/users/$(request.auth.uid)/profile/info).data.isAdmin == true;
+    }
+
+    // Match all artifacts for the app
+    match /artifacts/kish-standard-v6-fix/{document=**} {
+      // Deny all access by default
+      allow read, write: if false;
+    }
+
+    // User-specific private data
+    match /artifacts/kish-standard-v6-fix/users/{userId}/{path=**} {
+        // Users can read/write their own data. Admins can access any.
+        allow read, write: if request.auth.uid == userId || isAdmin();
+    }
+    
+    // Public data accessible by all authenticated users
+    match /artifacts/kish-standard-v6-fix/public/data/{path=**} {
+        // Authenticated users can read public data. Admins can write.
+        allow read: if request.auth != null;
+        allow write: if isAdmin();
+    }
+
+    // Approvals can be created by any authenticated user. Admins can write anything.
+    // Reading is handled by the public rule above. More specific read rules can be added.
+    match /artifacts/kish-standard-v6-fix/public/data/approvals/{docId} {
+        allow create: if request.auth != null;
+        allow update, delete: if isAdmin() || request.auth.uid == resource.data.requesterId;
+    }
+  }
+}
