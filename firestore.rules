@@ -1,9 +1,64 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      // 로그인한 사용자만 읽고 쓸 수 있음
-      allow read, write: if request.auth != null;
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    function userExists(email) {
+      return exists(/databases/$(database)/documents/users/$(email));
+    }
+    function getUserData(email) {
+      return get(/databases/$(database)/documents/users/$(email)).data;
+    }
+    function isAdmin() {
+      // Check the custom claim OR the document data for isAdmin flag
+      return request.auth.token.isAdmin == true || getUserData(request.auth.email).isAdmin == true;
+    }
+
+    match /users/{email} {
+      // Only the user themselves or an admin can read/write their own profile
+      allow read, write: if isSignedIn() && (request.auth.email == email || isAdmin());
+    }
+
+    match /settings/docConfig {
+        // Any signed-in user can read settings, only admins can write
+        allow read: if isSignedIn();
+        allow write: if isAdmin();
+    }
+
+    match /approvals/{docId} {
+      // Create: Any signed in user can create a document
+      allow create: if isSignedIn();
+      
+      // Read:
+      // - Requester can read
+      // - Admins can read
+      // - Approvers in the chain can read
+      // - Circular recipients can read
+      // - Any signed-in user can read if it's a public approved document
+      allow read: if isSignedIn() && (
+        resource.data.requesterId == request.auth.uid ||
+        isAdmin() ||
+        resource.data.approvers.hasAny([request.auth.email]) ||
+        resource.data.circulars.hasAny([request.auth.email]) ||
+        (resource.data.status == 'approved' && resource.data.publishStatus == '공개')
+      );
+      
+      // Update:
+      // - Only the current approver can update (to approve the document)
+      // - Admins can update (for administrative changes)
+      allow update: if isSignedIn() && (
+        (resource.data.status == 'pending' && request.auth.email == resource.data.approvers[resource.data.currentStep].email) ||
+        isAdmin()
+      );
+
+      // Delete: Only admins can delete
+      allow delete: if isAdmin();
     }
   }
 }

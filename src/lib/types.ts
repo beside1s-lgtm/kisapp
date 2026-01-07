@@ -9,6 +9,7 @@ export type User = {
 };
 
 export type UserProfile = {
+    uid: string;
     name: string;
     role: string;
     email: string;

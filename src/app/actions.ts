@@ -341,7 +341,8 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
         return { success: false, error: "Database not initialized." };
     }
     
-    const userProfileRef = getUserProfileRef(userId);
+    // We use email as the document ID in the 'users' collection
+    const userProfileRef = doc(db, 'users', email);
     let docExists = false;
 
     try {
@@ -356,12 +357,15 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
             dataToSave = {
                 ...existingData,
                 ...profile,
-                email: email // Ensure email is always correct
+                email: email, // Ensure email is always correct
+                uid: userId, // Update with the latest Firebase Auth UID
             };
             await setDoc(userProfileRef, dataToSave, { merge: true });
         } else {
             // Document does not exist, so we create it.
+            // This case should be rare if users are pre-registered
             dataToSave = {
+                uid: userId,
                 email: email,
                 name: profile.name || 'New User',
                 role: profile.role || '담당',
@@ -372,7 +376,7 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
         }
         
         revalidatePath('/');
-        return { success: true };
+        return { success: true, profile: dataToSave };
     } catch (error: any) {
         // We need docExists from the try block to determine the operation.
         const permissionError = new FirestorePermissionError({
@@ -411,14 +415,6 @@ export async function generateContentAction(input: {
   }
 }
 
-// Function to generate a user ID from an email.
-// This is a placeholder and should be replaced with a more robust method.
-function generateUidFromEmail(email: string): string {
-    // Simple hash function for demonstration. Replace with something better.
-    // In a real app, you'd let Firebase Auth generate the UID. This is for pre-populating.
-    return 'pre_reg_' + email.replace(/[^a-zA-Z0-9]/g, '_');
-}
-
 export async function bulkRegisterUsers(fileData: string): Promise<{ success: boolean; error?: string; summary?: string; }> {
   if (!db) {
     return { success: false, error: '데이터베이스가 초기화되지 않았습니다.' };
@@ -444,8 +440,7 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     }
 
     const batch = writeBatch(db);
-    let createdCount = 0;
-    let updatedCount = 0;
+    let count = 0;
 
     for (const user of usersJson) {
       const { email, name, role } = user;
@@ -454,25 +449,20 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
         continue;
       }
       
-      // Use a consistent, generated UID based on email for pre-registration.
-      // This allows us to find and update the user record later.
-      // IMPORTANT: This assumes we can't get the real Firebase Auth UID beforehand.
-      // When the user actually logs in with Google, a new UID will be created.
-      // The login logic needs to handle this transition.
-      const userId = generateUidFromEmail(email);
-      const userRef = doc(db, 'users', userId);
+      // Use the user's email as the document ID
+      const userRef = doc(db, 'users', email);
 
-      const userProfile: UserProfile = {
+      const userProfile: Partial<UserProfile> = {
         email,
         name,
         role,
-        isAdmin: false, // Default to not admin
+        isAdmin: false, 
         signature: '',
       };
       
-      // We use set with merge to either create a new user or update an existing one.
+      // Use set with merge to create a new user or update an existing one.
       batch.set(userRef, userProfile, { merge: true });
-      updatedCount++; // For simplicity, we'll just count all as updates/creations.
+      count++;
     }
 
     await batch.commit();
@@ -480,7 +470,7 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
 
     return { 
         success: true, 
-        summary: `${updatedCount}명의 사용자가 성공적으로 등록/업데이트되었습니다.`
+        summary: `${count}명의 사용자가 성공적으로 등록/업데이트되었습니다.`
     };
   } catch (error: any) {
     console.error('Bulk user registration failed:', error);
@@ -495,4 +485,20 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     }
     return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
+}
+
+export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
+    if (!db || !email) return null;
+    const docRef = doc(db, 'users', email);
+    try {
+        const snap = await getDoc(docRef);
+        return snap.exists() ? snap.data() as UserProfile : null;
+    } catch (error) {
+        const permissionError = new FirestorePermissionError({
+            path: docRef.path,
+            operation: 'get',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        return null;
+    }
 }

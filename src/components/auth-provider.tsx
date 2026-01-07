@@ -3,7 +3,7 @@
 import { createContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
-import { getUserProfile, saveUserProfile } from '@/app/actions';
+import { getUserProfileByEmail, saveUserProfile } from '@/app/actions';
 import { UserProfile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
@@ -19,7 +19,7 @@ interface AuthContextType {
   googleSignIn: () => Promise<void>;
   logout: () => Promise<void>;
   fetchProfile: (user: FirebaseUser) => Promise<UserProfile | null>;
-  setProfile: (profile: UserProfile | null) => void;
+  setProfile: React.Dispatch<React.SetStateAction<UserProfile | null>>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -51,36 +51,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 
   const fetchProfile = useCallback(async (firebaseUser: FirebaseUser): Promise<UserProfile | null> => {
+    if (!firebaseUser?.email) return null;
     setProfileLoading(true);
     const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
     try {
-      let userProfile = await getUserProfile(firebaseUser.uid);
+      let userProfile = await getUserProfileByEmail(firebaseUser.email);
       
       if (userProfile) {
-        // If user is the hardcoded admin, ensure their admin status is always true in the context
         if (isHardcodedAdmin && !userProfile.isAdmin) {
           userProfile.isAdmin = true;
-          // We don't need to save it back here, the context will reflect it.
-          // The profile modal will save the correct state if changed.
         }
         setProfile(userProfile);
-        return userProfile;
-      } else {
-        // User profile doesn't exist, this might be a new user.
-        // The new login flow will deny them if they aren't pre-registered.
-        // But if they are pre-registered but logging in for the first time, their profile won't exist.
-        // We will create it here.
         
-        // This path is now only for users that are in the user directory but logging in for the first time.
-        // The onAuthStateChanged will handle non-registered users.
+        // If the auth UID in the database doesn't match the current user's UID, update it.
+        // This handles the case where a user was bulk-imported and is logging in for the first time.
+        if (userProfile.uid !== firebaseUser.uid) {
+            await saveUserProfile(firebaseUser.uid, firebaseUser.email, { uid: firebaseUser.uid });
+        }
+        return userProfile;
+
+      } else {
+        // This case should ideally not be hit for a production app where users are pre-registered.
+        // We'll create a profile for them, but they might not have the correct role.
         const newProfile: UserProfile = {
+          uid: firebaseUser.uid,
           name: firebaseUser.displayName || 'New User',
-          email: firebaseUser.email!,
-          role: '담당', // This will be overwritten by DB data if it exists, otherwise it's a default.
+          email: firebaseUser.email,
+          role: '담당', 
           signature: '',
           isAdmin: isHardcodedAdmin, 
         };
-        await saveUserProfile(firebaseUser.uid, firebaseUser.email!, newProfile);
+        await saveUserProfile(firebaseUser.uid, firebaseUser.email, newProfile);
         setProfile(newProfile);
         return newProfile;
       }
@@ -107,25 +108,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             await signOut(auth);
             setUser(null);
             setProfile(null);
-            setLoading(false);
-            setProfileLoading(false);
-            return;
-        }
-
-        // Check if user exists in our Firestore 'users' collection
-        const existingProfile = await getUserProfile(firebaseUser.uid);
-        const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
-        
-        // Allow login if profile exists OR if the user is the hardcoded admin
-        if (existingProfile || isHardcodedAdmin) {
-            setUser(firebaseUser);
-            // Fetch full profile data (this will also create if it's the admin's first login)
-            await fetchProfile(firebaseUser);
         } else {
-            toast({ variant: 'destructive', title: '미승인 사용자', description: '시스템에 등록된 사용자가 아닙니다. 관리자에게 문의하세요.' });
-            await signOut(auth);
-            setUser(null);
-            setProfile(null);
+            // Check if user exists in our Firestore 'users' collection by email
+            const existingProfile = await getUserProfileByEmail(firebaseUser.email);
+            const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
+            
+            if (existingProfile || isHardcodedAdmin) {
+                setUser(firebaseUser);
+                await fetchProfile(firebaseUser);
+            } else {
+                toast({ variant: 'destructive', title: '미승인 사용자', description: '시스템에 등록된 사용자가 아닙니다. 관리자에게 문의하세요.' });
+                await signOut(auth);
+                setUser(null);
+                setProfile(null);
+            }
         }
       } else {
         setUser(null);
