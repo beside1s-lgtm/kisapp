@@ -12,12 +12,11 @@ import {
 } from '../ui/dropdown-menu';
 import { FileText, LifeBuoy, LogOut, Loader2, Settings, User as UserIcon, Languages } from 'lucide-react';
 import { SettingsModal } from '../settings-modal';
-import { useState } from 'react';
 import { ProfileModal } from '../profile-modal';
+import { DropdownMenuTriggerItem } from '../ui/dropdown-menu-trigger-item';
 
 export function AppHeader() {
   const { user, profile, logout, profileLoading } = useAuth();
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   return (
     <>
@@ -46,11 +45,7 @@ export function AppHeader() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {profile?.isAdmin && (
-            <Button variant="ghost" size="icon" onClick={() => setShowSettingsModal(true)}>
-              <Settings className="h-5 w-5 text-muted-foreground" />
-            </Button>
-          )}
+          {profile?.isAdmin && <SettingsModal />}
 
           {profileLoading ? (
              <Loader2 className="h-5 w-5 animate-spin" />
@@ -77,13 +72,20 @@ export function AppHeader() {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 
-                <ProfileModal />
+                <ProfileModal>
+                  <DropdownMenuTriggerItem>
+                    <UserIcon className="mr-2 h-4 w-4" />
+                    <span>내 프로필</span>
+                  </DropdownMenuTriggerItem>
+                </ProfileModal>
 
                 {profile?.isAdmin && (
-                  <DropdownMenuItem onSelect={() => setShowSettingsModal(true)}>
-                    <Settings className="mr-2 h-4 w-4" />
-                    <span>설정</span>
-                  </DropdownMenuItem>
+                  <SettingsModal>
+                     <DropdownMenuTriggerItem>
+                        <Settings className="mr-2 h-4 w-4" />
+                        <span>설정</span>
+                     </DropdownMenuTriggerItem>
+                  </SettingsModal>
                 )}
                 <DropdownMenuItem disabled>
                   <LifeBuoy className="mr-2 h-4 w-4" />
@@ -99,13 +101,6 @@ export function AppHeader() {
           )}
         </div>
       </header>
-      
-      {profile?.isAdmin && (
-        <SettingsModal 
-          isOpen={showSettingsModal}
-          setIsOpen={setShowSettingsModal}
-        />
-      )}
     </>
   );
 }

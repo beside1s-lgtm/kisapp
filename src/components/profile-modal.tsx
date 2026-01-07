@@ -28,7 +28,7 @@ import { Avatar, AvatarImage, AvatarFallback } from './ui/avatar';
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 const ADMIN_EMAIL = 'beside1s@kshcm.net';
 
-export function ProfileModal() {
+export function ProfileModal({ children }: { children: React.ReactNode }) {
   const { user, profile, profileLoading, fetchProfile } = useAuth();
   const { toast } = useToast();
   const [isSaving, startSaving] = useTransition();
@@ -44,7 +44,6 @@ export function ProfileModal() {
   
   const isProfileIncomplete = !profile?.name || !profile.role;
 
-  // When the modal opens, populate the state from the profile in auth context
   useEffect(() => {
     if (profile) {
         setName(profile.name || '');
@@ -53,12 +52,11 @@ export function ProfileModal() {
     }
   }, [profile, isOpen]);
 
-  // When user first logs in and profile is incomplete, open the modal automatically.
   useEffect(() => {
-    if (!profileLoading && user && isProfileIncomplete) {
+    if (!profileLoading && user && isProfileIncomplete && !isOpen) {
         setIsOpen(true);
     }
-  }, [profileLoading, user, isProfileIncomplete])
+  }, [profileLoading, user, isProfileIncomplete, isOpen]);
 
   const handleSave = () => {
     if (!user || !profile) return;
@@ -69,8 +67,7 @@ export function ProfileModal() {
         finalSignature = sigPreview ? await compressImage(sigPreview) : '';
       }
       
-      const updatedProfileData: UserProfile = {
-        ...profile,
+      const updatedProfileData: Partial<UserProfile> = {
         name,
         role,
         signature: finalSignature,
@@ -80,7 +77,7 @@ export function ProfileModal() {
       const result = await saveUserProfile(user.uid, user.email!, updatedProfileData);
 
       if (result.success) {
-        await fetchProfile(user); // Refetch profile to update context
+        await fetchProfile(user);
         toast({ title: '프로필 업데이트됨' });
         setIsOpen(false);
       } else {
@@ -102,13 +99,14 @@ export function ProfileModal() {
   };
 
   const handleOpenChange = (open: boolean) => {
-     if (isProfileIncomplete && !open) {
+    if (isProfileIncomplete && !open) {
       toast({
         variant: "destructive",
         title: "프로필 미완성",
         description: "시스템을 사용하려면 먼저 이름과 직책을 설정해야 합니다."
-      })
-      return;
+      });
+      // Don't allow closing if profile is incomplete
+      return; 
     }
     setIsOpen(open);
   }
@@ -116,14 +114,7 @@ export function ProfileModal() {
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-         <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-            <Avatar className="h-10 w-10">
-                <AvatarImage src={user?.photoURL || ''} alt={profile?.name || ''} />
-                <AvatarFallback>
-                    {profile?.name?.charAt(0).toUpperCase() || <UserIcon />}
-                </AvatarFallback>
-            </Avatar>
-        </Button>
+        {children}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>

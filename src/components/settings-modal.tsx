@@ -11,6 +11,7 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogTrigger,
 } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -25,12 +26,12 @@ import { Switch } from './ui/switch';
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 
 type SettingsModalProps = {
-  isOpen: boolean;
-  setIsOpen: (open: boolean) => void;
+  children: React.ReactNode;
 };
 
-export function SettingsModal({ isOpen, setIsOpen }: SettingsModalProps) {
+export function SettingsModal({ children }: SettingsModalProps) {
   const { toast } = useToast();
+  const [isOpen, setIsOpen] = useState(false);
   const [isSaving, startSaving] = useTransition();
   const [config, setConfig] = useState<DocConfig>({});
   const [headerPreview, setHeaderPreview] = useState<string>('');
@@ -89,6 +90,9 @@ export function SettingsModal({ isOpen, setIsOpen }: SettingsModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogTrigger asChild>
+            {children}
+        </DialogTrigger>
       <DialogContent className="sm:max-w-2xl max-h-[90vh]">
         <DialogHeader>
           <DialogTitle>시스템 설정</DialogTitle>
