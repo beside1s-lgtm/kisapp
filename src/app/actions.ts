@@ -187,8 +187,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     return { success: true, docId: newDocRef.id, docNo: finalDocNoStr };
 
   } catch (error: any) {
-    console.error("Failed to create document:", error);
-    
+    // DO NOT USE console.error here as it will terminate the server action unexpectedly.
     const permissionError = new FirestorePermissionError({
         path: newDocRef.path,
         operation: 'create',
