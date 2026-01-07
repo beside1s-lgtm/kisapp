@@ -4,13 +4,12 @@ import {
   createDocument,
   getUsersDirectory,
   generateContentAction,
-  getDocConfig
+  getDocConfig,
 } from '@/app/actions';
 import { useAuth } from '@/hooks/use-auth';
 import {
   ApprovalDocPayload,
   Approver,
-  Attachment,
   Circular,
   DocConfig,
   UserProfile,
@@ -55,18 +54,26 @@ import {
   FormMessage,
 } from './ui/form';
 
+const approverSchema = z.object({
+  name: z.string(),
+  email: z.string(),
+  role: z.string(),
+  type: z.enum(['normal', 'final', 'proxy']),
+  active: z.boolean(),
+});
+
 const formSchema = z.object({
   title: z.string().min(1, '제목은 필수입니다.'),
   content: z.string().min(1, '내용은 필수입니다.'),
-  approvers: z.array(
-    z.object({
-      name: z.string(),
-      email: z.string(),
-      role: z.string(),
-      type: z.enum(['normal', 'final', 'proxy']),
-      active: z.boolean(),
-    })
-  ),
+  approvers: z
+    .array(approverSchema)
+    .refine(
+      (approvers) => approvers.some((a) => a.active && a.name && a.email),
+      {
+        message: '최소 한 명의 활성화된 결재자를 지정해야 합니다.',
+      }
+    )
+    .or(z.array(approverSchema).length(0)),
   circulars: z.array(
     z.object({ name: z.string(), email: z.string(), role: z.string() })
   ),
@@ -114,7 +121,7 @@ export default function DocumentForm() {
     },
   });
 
-  const { fields: approverFields, update: updateApprover } = useFieldArray({
+  const { fields: approverFields } = useFieldArray({
     control: form.control,
     name: 'approvers',
   });
@@ -146,12 +153,22 @@ export default function DocumentForm() {
         .filter((a) => a.active)
         .map((a) => ({ name: a.name, role: a.role }));
 
-      const result = await generateContentAction({ title, approvers: activeApprovers });
+      const result = await generateContentAction({
+        title,
+        approvers: activeApprovers,
+      });
       if (result.success) {
         form.setValue('content', result.content);
-        toast({ title: '내용 생성됨', description: 'AI가 문서 내용을 생성했습니다.' });
+        toast({
+          title: '내용 생성됨',
+          description: 'AI가 문서 내용을 생성했습니다.',
+        });
       } else {
-        toast({ variant: 'destructive', title: '생성 실패', description: result.error });
+        toast({
+          variant: 'destructive',
+          title: '생성 실패',
+          description: result.error,
+        });
       }
     });
   };
@@ -166,33 +183,49 @@ export default function DocumentForm() {
         });
         return;
       }
+      
+      const activeApprovers = data.approvers.filter(a => a.active && a.name && a.email);
+
+      // This is a temporary check for the testing phase, allowing no approvers.
+      // if (activeApprovers.length === 0) {
+      //   const proceed = window.confirm("결재자 없이 문서를 상신하시겠습니까? 이 문서는 즉시 완료 처리됩니다.");
+      //   if (!proceed) return;
+      // }
+
 
       if (!profile.signature) {
-        const confirmed = window.confirm("저장된 서명이 없습니다. 서명 없이 계속하시겠습니까?");
+        const confirmed = window.confirm(
+          '저장된 서명이 없습니다. 서명 없이 계속하시겠습니까?'
+        );
         if (!confirmed) return;
       }
-      
-      if (data.docType === 'external' && (!data.receiverName || !data.receiverEmail)) {
-          form.setError('receiverName', { message: '외부 문서에는 수신처가 필요합니다.'});
-          form.setError('receiverEmail', { message: '외부 문서에는 이메일이 필요합니다.'});
-          return;
+
+      if (
+        data.docType === 'external' &&
+        (!data.receiverName || !data.receiverEmail)
+      ) {
+        form.setError('receiverName', {
+          message: '외부 문서에는 수신처가 필요합니다.',
+        });
+        form.setError('receiverEmail', {
+          message: '외부 문서에는 이메일이 필요합니다.',
+        });
+        return;
       }
-      
+
       const payload: ApprovalDocPayload = {
         title: data.title,
         content: data.content,
-        approvers: data.approvers
-          .filter((a) => a.active && a.name && a.email)
-          .map(
-            (a) =>
-              ({
-                name: a.name,
-                email: a.email,
-                role: a.role,
-                type: a.type,
-                status: 'pending',
-              } as Approver)
-          ),
+        approvers: activeApprovers.map(
+          (a) =>
+            ({
+              name: a.name,
+              email: a.email,
+              role: a.role,
+              type: a.type,
+              status: 'pending',
+            } as Approver)
+        ),
         circulars: data.circulars,
         attachments: data.attachments,
         publishStatus: data.publishStatus,
@@ -211,35 +244,30 @@ export default function DocumentForm() {
         },
       };
 
-      try {
-        const result = await createDocument(payload, user.uid, profile);
+      const result = await createDocument(payload, user.uid, profile);
 
-        if (result.success && result.docId) {
-          toast({
-            title: '문서 제출 완료!',
-            description: `문서(번호: ${result.docNo})가 결재를 위해 전송되었습니다.`,
-          });
-          router.push(`/documents/${result.docId}`);
-        } else {
-          toast({
-            variant: 'destructive',
-            title: '제출 실패',
-            description: result.error || "알 수 없는 오류가 발생했습니다.",
-          });
-        }
-      } catch (e: any) {
-         toast({
-            variant: 'destructive',
-            title: '제출 중 심각한 오류 발생',
-            description: e.message || "알 수 없는 오류가 발생했습니다.",
-          });
+      if (result.success && result.docId) {
+        toast({
+          title: '문서 제출 완료!',
+          description: `문서(번호: ${result.docNo})가 결재를 위해 전송되었습니다.`,
+        });
+        router.push(`/documents/${result.docId}`);
+      } else {
+        toast({
+          variant: 'destructive',
+          title: '제출 실패',
+          description: result.error || '알 수 없는 오류가 발생했습니다.',
+        });
       }
     });
   };
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 md:space-y-8">
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        className="space-y-6 md:space-y-8"
+      >
         <Card>
           <CardContent className="p-4 md:p-6 space-y-6">
             <FormField
@@ -247,9 +275,15 @@ export default function DocumentForm() {
               name="title"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-base md:text-lg font-bold">제목</FormLabel>
+                  <FormLabel className="text-base md:text-lg font-bold">
+                    제목
+                  </FormLabel>
                   <FormControl>
-                    <Input placeholder="문서 제목" {...field} className="h-12 text-base md:text-lg" />
+                    <Input
+                      placeholder="문서 제목"
+                      {...field}
+                      className="h-12 text-base md:text-lg"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -257,80 +291,88 @@ export default function DocumentForm() {
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-               <FormField
+              <FormField
+                control={form.control}
+                name="docType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>문서 종류</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="문서 종류 선택" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="internal">내부결재</SelectItem>
+                        <SelectItem value="external">대외공문</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="publishStatus"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>공개여부</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="공개여부 선택" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="공개">공개</SelectItem>
+                        <SelectItem value="비공개">비공개</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            {docType === 'external' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 p-4 border rounded-lg bg-secondary/50">
+                <FormField
                   control={form.control}
-                  name="docType"
+                  name="receiverName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>문서 종류</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="문서 종류 선택" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="internal">내부결재</SelectItem>
-                          <SelectItem value="external">대외공문</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <FormLabel>수신처</FormLabel>
+                      <FormControl>
+                        <Input placeholder="예: 교육부" {...field} />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                 <FormField
+                <FormField
                   control={form.control}
-                  name="publishStatus"
+                  name="receiverEmail"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>공개여부</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="공개여부 선택" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="공개">공개</SelectItem>
-                          <SelectItem value="비공개">비공개</SelectItem>
-                        </SelectContent>
-                      </Select>
-                       <FormMessage />
+                      <FormLabel>수신처 이메일</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="예: contact@moe.gov"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
-            </div>
-             {docType === 'external' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 p-4 border rounded-lg bg-secondary/50">
-                     <FormField
-                        control={form.control}
-                        name="receiverName"
-                        render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>수신처</FormLabel>
-                                <FormControl>
-                                    <Input placeholder="예: 교육부" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                            </FormItem>
-                        )}
-                        />
-                    <FormField
-                        control={form.control}
-                        name="receiverEmail"
-                        render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>수신처 이메일</FormLabel>
-                                <FormControl>
-                                    <Input placeholder="예: contact@moe.gov" {...field} />
-                                </FormControl>
-                                 <FormMessage />
-                            </FormItem>
-                        )}
-                        />
-                </div>
-             )}
-
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -340,7 +382,10 @@ export default function DocumentForm() {
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {approverFields.map((field, index) => (
-              <Card key={field.id} className={cn(!field.active && 'bg-muted/50')}>
+              <Card
+                key={field.id}
+                className={cn(!field.active && 'bg-muted/50')}
+              >
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <Label className="font-bold">{field.role}</Label>
@@ -350,14 +395,17 @@ export default function DocumentForm() {
                       render={({ field }) => (
                         <FormItem className="flex items-center gap-2 space-y-0">
                           <FormControl>
-                             <Switch checked={field.value} onCheckedChange={field.onChange} />
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
                           </FormControl>
                           <FormLabel>활성</FormLabel>
                         </FormItem>
                       )}
                     />
                   </div>
-                  {field.active && (
+                  {form.watch(`approvers.${index}.active`) && (
                     <div className="space-y-2">
                       <Controller
                         control={form.control}
@@ -366,8 +414,16 @@ export default function DocumentForm() {
                           <UserSearch
                             users={users}
                             onSelectUser={(user) => {
-                                form.setValue(`approvers.${index}.name`, user.name);
-                                form.setValue(`approvers.${index}.email`, user.email);
+                              form.setValue(
+                                `approvers.${index}.name`,
+                                user.name,
+                                { shouldValidate: true }
+                              );
+                              form.setValue(
+                                `approvers.${index}.email`,
+                                user.email,
+                                { shouldValidate: true }
+                              );
                             }}
                             value={nameField.value}
                             onValueChange={(value) => {
@@ -378,52 +434,70 @@ export default function DocumentForm() {
                             }}
                           />
                         )}
-                       />
-                        <FormField
-                            control={form.control}
-                            name={`approvers.${index}.type`}
-                            render={({ field: selectField }) => (
-                            <Select onValueChange={selectField.onChange} defaultValue={selectField.value}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="결재 종류" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="normal">일반</SelectItem>
-                                    <SelectItem value="final">전결</SelectItem>
-                                    <SelectItem value="proxy">대결</SelectItem>
-                                </SelectContent>
-                            </Select>
-                            )}
-                        />
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`approvers.${index}.type`}
+                        render={({ field: selectField }) => (
+                          <Select
+                            onValueChange={selectField.onChange}
+                            defaultValue={selectField.value}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="결재 종류" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="normal">일반</SelectItem>
+                              <SelectItem value="final">전결</SelectItem>
+                              <SelectItem value="proxy">대결</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
                     </div>
                   )}
                 </CardContent>
               </Card>
             ))}
+             <FormMessage>{form.formState.errors.approvers?.message}</FormMessage>
           </CardContent>
         </Card>
-        
+
         <Card>
-            <CardHeader>
-                <CardTitle>공람</CardTitle>
-                <FormDescription>결재는 필요 없지만 문서를 확인해야 하는 사용자를 추가하세요.</FormDescription>
-            </CardHeader>
-            <CardContent>
-                <div className="mb-4">
-                    <UserSearch users={users} onSelectUser={(user) => appendCircular(user)} placeholder="추가할 사용자 검색..."/>
+          <CardHeader>
+            <CardTitle>공람</CardTitle>
+            <FormDescription>
+              결재는 필요 없지만 문서를 확인해야 하는 사용자를 추가하세요.
+            </FormDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-4">
+              <UserSearch
+                users={users}
+                onSelectUser={(user) => appendCircular(user)}
+                placeholder="추가할 사용자 검색..."
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {circularFields.map((field, index) => (
+                <div
+                  key={field.id}
+                  className="flex items-center gap-2 bg-muted p-2 rounded-lg"
+                >
+                  <UserIcon className="h-4 w-4" />
+                  <span className="text-sm font-medium">{field.name}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => removeCircular(index)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                    {circularFields.map((field, index) => (
-                        <div key={field.id} className="flex items-center gap-2 bg-muted p-2 rounded-lg">
-                           <UserIcon className="h-4 w-4"/>
-                           <span className="text-sm font-medium">{field.name}</span>
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeCircular(index)}>
-                                <X className="h-4 w-4"/>
-                            </Button>
-                        </div>
-                    ))}
-                </div>
-            </CardContent>
+              ))}
+            </div>
+          </CardContent>
         </Card>
 
         <Card>
@@ -432,7 +506,13 @@ export default function DocumentForm() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-end">
-              <Button type="button" size="sm" variant="outline" onClick={handleGenerateContent} disabled={isGenerating}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleGenerateContent}
+                disabled={isGenerating}
+              >
                 {isGenerating ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
@@ -486,7 +566,11 @@ export default function DocumentForm() {
                     if (file.type.startsWith('image/')) {
                       data = await compressImage(data);
                     }
-                    appendAttachment({ name: file.name, size: file.size, data });
+                    appendAttachment({
+                      name: file.name,
+                      size: file.size,
+                      data,
+                    });
                   };
                   reader.readAsDataURL(file);
                 });
@@ -518,13 +602,20 @@ export default function DocumentForm() {
                 </div>
               ))}
               {attachmentFields.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">첨부된 파일이 없습니다.</p>
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  첨부된 파일이 없습니다.
+                </p>
               )}
             </div>
           </CardContent>
         </Card>
 
-        <Button type="submit" disabled={isPending} size="lg" className="w-full h-12 md:h-14 text-base md:text-lg">
+        <Button
+          type="submit"
+          disabled={isPending}
+          size="lg"
+          className="w-full h-12 md:h-14 text-base md:text-lg"
+        >
           {isPending && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
           결재 요청
         </Button>
