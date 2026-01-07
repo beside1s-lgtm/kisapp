@@ -16,18 +16,20 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Loader2, AlertTriangle, User, Mail, Award } from 'lucide-react';
+import { Loader2, AlertTriangle, User as UserIcon, Mail, Award } from 'lucide-react';
 import Image from 'next/image';
 import { Alert, AlertDescription } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { saveUserProfile } from '@/app/actions';
 import type { UserProfile } from '@/lib/types';
+import { Avatar, AvatarImage, AvatarFallback } from './ui/avatar';
 
 
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
+const ADMIN_EMAIL = 'beside1s@kshcm.net';
 
 export function ProfileModal() {
-  const { user, profile, loading: authLoading, profileLoading, fetchProfile } = useAuth();
+  const { user, profile, profileLoading, fetchProfile } = useAuth();
   const { toast } = useToast();
   const [isSaving, startSaving] = useTransition();
 
@@ -36,6 +38,9 @@ export function ProfileModal() {
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [sigPreview, setSigPreview] = useState('');
+
+  const isHardcodedAdmin = profile?.email === ADMIN_EMAIL;
+  const effectiveIsAdmin = profile?.isAdmin || isHardcodedAdmin;
   
   const isProfileIncomplete = !profile?.name || !profile.role;
 
@@ -50,10 +55,10 @@ export function ProfileModal() {
 
   // When user first logs in and profile is incomplete, open the modal automatically.
   useEffect(() => {
-    if (!authLoading && !profileLoading && user && isProfileIncomplete) {
+    if (!profileLoading && user && isProfileIncomplete) {
         setIsOpen(true);
     }
-  }, [authLoading, profileLoading, user, isProfileIncomplete])
+  }, [profileLoading, user, isProfileIncomplete])
 
   const handleSave = () => {
     if (!user || !profile) return;
@@ -64,10 +69,12 @@ export function ProfileModal() {
         finalSignature = sigPreview ? await compressImage(sigPreview) : '';
       }
       
-      const updatedProfileData: Partial<UserProfile> = {
+      const updatedProfileData: UserProfile = {
+        ...profile,
         name,
         role,
         signature: finalSignature,
+        isAdmin: effectiveIsAdmin
       };
       
       const result = await saveUserProfile(user.uid, user.email!, updatedProfileData);
@@ -101,7 +108,7 @@ export function ProfileModal() {
         title: "프로필 미완성",
         description: "시스템을 사용하려면 먼저 이름과 직책을 설정해야 합니다."
       })
-      return; //
+      return;
     }
     setIsOpen(open);
   }
@@ -137,7 +144,7 @@ export function ProfileModal() {
 
         <div className="grid gap-6 py-4">
           <div className="flex items-center gap-4">
-            <User className="h-5 w-5 text-muted-foreground" />
+            <UserIcon className="h-5 w-5 text-muted-foreground" />
             <div className="w-full">
               <Label htmlFor="name">이름</Label>
               <Input id="name" value={name} onChange={(e) => setName(e.target.value)} className="mt-1" />
@@ -147,7 +154,7 @@ export function ProfileModal() {
             <Award className="h-5 w-5 text-muted-foreground mt-1" />
             <div className="w-full">
               <Label>직책</Label>
-              {profile?.isAdmin ? (
+              {effectiveIsAdmin ? (
                 <Select value={role} onValueChange={setRole}>
                     <SelectTrigger className="mt-1">
                         <SelectValue placeholder="직책 선택" />
