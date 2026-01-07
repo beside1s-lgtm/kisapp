@@ -31,7 +31,7 @@ type ProfileModalProps = {
 };
 
 export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
-  const { user, profile, fetchProfile, setProfile } = useAuth();
+  const { user, profile, fetchProfile } = useAuth();
   const { toast } = useToast();
   const [isSaving, startSaving] = useTransition();
 
@@ -39,7 +39,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
   const [role, setRole] = useState('');
   const [sigPreview, setSigPreview] = useState('');
   
-  const isProfileIncomplete = !profile?.name || profile.name === 'New User' || !profile.signature;
+  const isProfileIncomplete = !profile?.name || profile.name === 'NewUser' || !profile.signature;
 
   useEffect(() => {
     if (profile && isOpen) {
@@ -57,8 +57,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
         finalSignature = sigPreview ? await compressImage(sigPreview) : '';
       }
 
-      const updatedProfileData: UserProfile = {
-        ...profile, // Keep existing fields like email, isAdmin
+      const updatedProfileData: Partial<UserProfile> = {
         name,
         role,
         signature: finalSignature,
@@ -67,7 +66,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
       const result = await saveUserProfile(user.uid, user.email!, updatedProfileData);
 
       if (result.success) {
-        setProfile(updatedProfileData);
+        await fetchProfile(user); // Re-fetch the profile to update the auth context
         toast({ title: '프로필 업데이트됨' });
         setIsOpen(false);
       } else {
@@ -88,10 +87,18 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
     }
   };
 
+  const handleOpenChange = (open: boolean) => {
+    if (!open && isProfileIncomplete) {
+        // Prevent closing if profile is incomplete
+        return;
+    }
+    setIsOpen(open);
+  }
+
   if (!profile) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={isProfileIncomplete ? () => {} : setIsOpen}>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>내 프로필</DialogTitle>

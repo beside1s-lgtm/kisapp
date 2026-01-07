@@ -108,7 +108,7 @@ export function AppHeader() {
           setIsOpen={setShowSettingsModal}
         />
       )}
-      {/* ProfileModal is now only controlled here */}
+      
       <ProfileModal 
         isOpen={showProfileModal}
         setIsOpen={setShowProfileModal}
