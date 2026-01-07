@@ -73,15 +73,7 @@ const approverSchema = z.object({
 const formSchema = z.object({
   title: z.string().min(1, '제목은 필수입니다.'),
   content: z.string().min(1, '내용은 필수입니다.'),
-  approvers: z.array(approverSchema).superRefine((approvers, ctx) => {
-    const activeApprovers = approvers.filter(a => a.active);
-    if (activeApprovers.some(a => !a.name || !a.email)) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "활성화된 결재자의 이름과 이메일을 모두 입력해야 합니다.",
-        });
-    }
-  }),
+  approvers: z.array(approverSchema),
   circulars: z.array(
     z.object({ name: z.string(), email: z.string(), role: z.string() })
   ),
@@ -96,6 +88,13 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>;
 
+const defaultApprovers: Omit<Approver, 'status'>[] = [
+    { name: '', email: '', role: '부장', type: 'normal' },
+    { name: '', email: '', role: '교감', type: 'normal' },
+    { name: '', email: '', role: '협조', type: 'normal' },
+    { name: '', email: '', role: '교장', type: 'final' },
+];
+
 export default function DocumentForm() {
   const router = useRouter();
   const { toast } = useToast();
@@ -106,28 +105,40 @@ export default function DocumentForm() {
   const [docConfig, setDocConfig] = useState<DocConfig>({});
   const attachmentInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    getUsersDirectory().then(setUsers);
-    getDocConfig().then(setDocConfig);
-  }, []);
-
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       title: '',
       content: '',
-      approvers: [
-        { name: '', email: '', role: '부장', type: 'normal', active: true },
-        { name: '', email: '', role: '교감', type: 'normal', active: true },
-        { name: '', email: '', role: '협조', type: 'normal', active: false },
-        { name: '', email: '', role: '교장', type: 'final', active: true },
-      ],
+      approvers: defaultApprovers.map(ap => ({...ap, active: ap.role !== '협조'})),
       circulars: [],
       attachments: [],
       publishStatus: '공개',
       docType: 'internal',
     },
   });
+
+  useEffect(() => {
+    async function fetchData() {
+        const userList = await getUsersDirectory();
+        setUsers(userList);
+        
+        const config = await getDocConfig();
+        setDocConfig(config);
+        
+        // Pre-fill approvers
+        const currentApprovers = form.getValues('approvers');
+        const updatedApprovers = currentApprovers.map(approver => {
+            const foundUser = userList.find(u => u.role === approver.role);
+            if (foundUser) {
+                return { ...approver, name: foundUser.name, email: foundUser.email };
+            }
+            return approver;
+        });
+        form.setValue('approvers', updatedApprovers);
+    }
+    fetchData();
+  }, []);
 
   const { fields: approverFields } = useFieldArray({
     control: form.control,
@@ -390,7 +401,7 @@ export default function DocumentForm() {
             {approverFields.map((field, index) => (
               <Card
                 key={field.id}
-                className={cn(!field.active && 'bg-muted/50')}
+                className={cn(!form.watch(`approvers.${index}.active`) && 'bg-muted/50')}
               >
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-center justify-between">
@@ -415,24 +426,23 @@ export default function DocumentForm() {
                     <div className="space-y-2">
                        <Controller
                           control={form.control}
-                          name={`approvers.${index}`}
-                          render={({ field: controllerField, fieldState }) => (
-                            <div className="space-y-2">
-                                <UserSearch
+                          name={`approvers.${index}.name`}
+                          render={({ field: nameField }) => (
+                             <FormItem>
+                               <FormControl>
+                                  <UserSearch
                                     users={users}
                                     onSelectUser={(user) => {
                                         form.setValue(`approvers.${index}.name`, user.name, { shouldValidate: true });
                                         form.setValue(`approvers.${index}.email`, user.email, { shouldValidate: true });
                                     }}
                                     placeholder="결재자 검색..."
-                                    value={controllerField.value.name}
-                                    onValueChange={(value) => {
-                                        form.setValue(`approvers.${index}.name`, value, { shouldValidate: true });
-                                    }}
-                                />
-                                {fieldState.error?.name && <FormMessage>{fieldState.error.name.message}</FormMessage>}
-                                {!fieldState.error?.name && fieldState.error?.email && <FormMessage>{fieldState.error.email.message}</FormMessage>}
-                            </div>
+                                    value={nameField.value}
+                                    onValueChange={nameField.onChange}
+                                  />
+                               </FormControl>
+                               <FormMessage />
+                             </FormItem>
                           )}
                         />
                       <FormField
@@ -465,7 +475,11 @@ export default function DocumentForm() {
                 </CardContent>
               </Card>
             ))}
-             <FormMessage>{form.formState.errors.approvers?.message}</FormMessage>
+             {form.formState.errors.approvers && (
+                <div className="md:col-span-2">
+                    <FormMessage>{form.formState.errors.approvers.root?.message}</FormMessage>
+                </div>
+             )}
           </CardContent>
         </Card>
 
@@ -480,7 +494,7 @@ export default function DocumentForm() {
             <div className="mb-4">
               <UserSearch
                 users={users}
-                onSelectUser={(user) => appendCircular(user)}
+                onSelectUser={(user) => appendCircular({name: user.name, email: user.email, role: user.role})}
                 placeholder="추가할 사용자 검색..."
               />
             </div>
@@ -629,5 +643,3 @@ export default function DocumentForm() {
     </Form>
   );
 }
-
-    
