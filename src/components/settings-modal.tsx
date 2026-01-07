@@ -38,13 +38,20 @@ export function SettingsModal() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
+  const fetchUsers = () => {
+    getUsersDirectory().then(data => {
+      const uniqueUsers = Array.from(new Map(data.map(user => [user.email, user])).values());
+      setUsers(uniqueUsers);
+    });
+  };
+
   useEffect(() => {
     if (isOpen) {
       getDocConfig().then(data => {
         setConfig(data);
         setHeaderPreview(data.headerImage || '');
       });
-      getUsersDirectory().then(setUsers);
+      fetchUsers();
     }
   }, [isOpen]);
 
@@ -103,7 +110,7 @@ export function SettingsModal() {
             if (result.success) {
                 toast({ title: '사용자 일괄 등록 성공', description: result.summary });
                 // Refresh user list
-                getUsersDirectory().then(setUsers);
+                fetchUsers();
             } else {
                 toast({ variant: 'destructive', title: '일괄 등록 실패', description: result.error, duration: 8000 });
             }
