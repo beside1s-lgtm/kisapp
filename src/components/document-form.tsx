@@ -56,7 +56,7 @@ import {
 
 const approverSchema = z.object({
   name: z.string(),
-  email: z.string(),
+  email: z.string().email().or(z.literal('')),
   role: z.string(),
   type: z.enum(['normal', 'final', 'proxy']),
   active: z.boolean(),
@@ -416,7 +416,7 @@ export default function DocumentForm() {
                        <Controller
                           control={form.control}
                           name={`approvers.${index}.name`}
-                          render={({ field: nameField }) => (
+                          render={({ field: { onChange, value } }) => (
                              <FormItem>
                                 <FormControl>
                                   <UserSearch
@@ -426,8 +426,8 @@ export default function DocumentForm() {
                                         form.setValue(`approvers.${index}.email`, user.email, { shouldValidate: true });
                                     }}
                                     placeholder="결재자 검색..."
-                                    value={nameField.value}
-                                    onValueChange={nameField.onChange}
+                                    value={value}
+                                    onValueChange={onChange}
                                   />
                                 </FormControl>
                                 <FormMessage />
