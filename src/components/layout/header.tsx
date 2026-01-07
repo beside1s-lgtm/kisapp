@@ -16,7 +16,7 @@ import { useState } from 'react';
 import { ProfileModal } from '../profile-modal';
 
 export function AppHeader() {
-  const { user, profile, logout, profileLoading } = useAuth();
+  const { user, profile, logout, profileLoading, setProfile } = useAuth();
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   
@@ -113,6 +113,9 @@ export function AppHeader() {
             <ProfileModal 
               isOpen={showProfileModal}
               setIsOpen={setShowProfileModal}
+              user={user}
+              profile={profile}
+              setProfile={setProfile}
             />
           </>
       )}

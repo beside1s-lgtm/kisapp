@@ -19,24 +19,29 @@ import { Loader2, AlertTriangle, User, Mail, Award } from 'lucide-react';
 import Image from 'next/image';
 import { Alert, AlertDescription } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import type { User as FirebaseUser } from 'firebase/auth';
+import type { UserProfile } from '@/lib/types';
+
 
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 
 type ProfileModalProps = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
+  user: FirebaseUser;
+  profile: UserProfile;
+  setProfile: (profile: UserProfile | null) => void;
 };
 
-export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
-  const { user, profile, setProfile } = useAuth();
+export function ProfileModal({ isOpen, setIsOpen, user, profile, setProfile }: ProfileModalProps) {
   const { toast } = useToast();
   const [isSaving, startSaving] = useTransition();
 
-  const [name, setName] = useState(profile?.name || '');
-  const [role, setRole] = useState(profile?.role || '');
-  const [sigPreview, setSigPreview] = useState(profile?.signature || '');
+  const [name, setName] = useState(profile.name || '');
+  const [role, setRole] = useState(profile.role || '');
+  const [sigPreview, setSigPreview] = useState(profile.signature || '');
 
-  const isProfileIncomplete = profile?.name === 'New User' || !profile?.signature;
+  const isProfileIncomplete = profile.name === 'New User' || !profile.signature;
 
   useEffect(() => {
     if (profile) {
@@ -44,29 +49,25 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
         setRole(profile.role);
         setSigPreview(profile.signature || '');
     }
-  }, [profile]);
+  }, [profile, isOpen]);
 
   const handleSave = () => {
     startSaving(async () => {
-      if (!user || !profile) return;
-      
       let finalSignature = profile.signature || '';
       if (sigPreview !== profile.signature) {
         finalSignature = sigPreview ? await compressImage(sigPreview) : '';
       }
 
-      // Build the payload for saving.
       const updatedProfileData = {
         name,
         role,
         signature: finalSignature,
-        isAdmin: profile.isAdmin, // Preserve the isAdmin status
+        isAdmin: profile.isAdmin,
       };
 
       const result = await saveUserProfile(user.uid, user.email!, updatedProfileData);
 
       if (result.success) {
-        // Create a new profile object for the state update, ensuring all fields are preserved
         const newProfileState = {
             ...profile,
             ...updatedProfileData
@@ -120,10 +121,10 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
             </div>
           </div>
           <div className="flex items-start gap-4">
-            <Award className="h-5 w-5 text-muted-foreground" />
+            <Award className="h-5 w-5 text-muted-foreground mt-1" />
             <div className="w-full">
               <Label>직책</Label>
-              {profile?.isAdmin ? (
+              {profile.isAdmin ? (
                 <Select value={role} onValueChange={setRole}>
                     <SelectTrigger className="mt-1">
                         <SelectValue placeholder="직책 선택" />
@@ -134,17 +135,17 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
                 </Select>
               ) : (
                 <>
-                    <p className="text-sm font-semibold text-foreground mt-2">{profile?.role}</p>
+                    <p className="text-sm font-semibold text-foreground mt-2">{profile.role}</p>
                     <p className="text-xs text-muted-foreground mt-1">직책 변경은 관리자에게 문의하세요.</p>
                 </>
               )}
             </div>
           </div>
            <div className="flex items-start gap-4">
-            <Mail className="h-5 w-5 text-muted-foreground" />
+            <Mail className="h-5 w-5 text-muted-foreground mt-1" />
             <div>
               <Label>이메일</Label>
-              <p className="text-sm text-muted-foreground mt-2">{profile?.email}</p>
+              <p className="text-sm text-muted-foreground mt-2">{profile.email}</p>
             </div>
           </div>
           <div className="grid grid-cols-4 items-start gap-4">
