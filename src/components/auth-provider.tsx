@@ -95,13 +95,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
       }
       setLoading(false);
-      if (profileLoading) {
+      if (profileLoading && !firebaseUser) {
         setProfileLoading(false);
       }
     });
 
     return () => unsubscribe();
-  }, [fetchProfile, toast, profileLoading, profile]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   
   const googleSignIn = async () => {
     try {
