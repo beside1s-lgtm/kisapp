@@ -69,8 +69,7 @@ function serializeDocs(docs: any[]): any[] {
 }
 
 export async function getInboxDocuments(userEmail: string) {
-  if (!db) return [];
-  if (!userEmail) return [];
+  if (!db || !userEmail) return [];
   const q = query(
     getApprovalsCol(),
     where('status', '==', 'pending'),
@@ -82,16 +81,14 @@ export async function getInboxDocuments(userEmail: string) {
 }
 
 export async function getSentDocuments(userId: string) {
-  if (!db) return [];
-  if (!userId) return [];
+  if (!db || !userId) return [];
   const q = query(getApprovalsCol(), where('requesterId', '==', userId), orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
   return serializeDocs(snapshot.docs);
 }
 
 export async function getRegistryDocuments(userId: string, userEmail: string) {
-    if (!db) return [];
-    if (!userId || !userEmail) return [];
+    if (!db || !userId || !userEmail) return [];
     
     const q = query(getApprovalsCol(), where('status', '==', 'approved'), orderBy('createdAt', 'desc'));
     const snapshot = await getDocs(q);
@@ -205,7 +202,7 @@ export async function approveDocument(docId: string, userId: string, userProfile
 export async function getUsersDirectory(): Promise<User[]> {
   if (!db) return [];
   const snapshot = await getDocs(getUsersDirCol());
-  return snapshot.docs.map(d => d.data() as User);
+  return snapshot.docs.map(d => ({ ...d.data(), uid: d.id }) as User);
 }
 
 export async function getDocConfig(): Promise<DocConfig> {
@@ -237,20 +234,29 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
 
 export async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>) {
   if (!db) return { success: false, error: "Database not initialized." };
-  const userProfileRef = getUserProfileRef(userId);
-  const userDirectoryRef = getUserDirectoryRef(userId);
+  
   try {
-    await setDoc(userProfileRef, profile, { merge: true });
-    const directoryData = {
-      name: profile.name,
-      email: email,
-      role: profile.role,
-      uid: userId
-    };
-    await setDoc(userDirectoryRef, directoryData, { merge: true });
+    await runTransaction(db, async (transaction) => {
+        const userProfileRef = getUserProfileRef(userId);
+        const userDirectoryRef = getUserDirectoryRef(userId);
+        
+        transaction.set(userProfileRef, profile, { merge: true });
+
+        const directoryData: Partial<User> = {
+            name: profile.name,
+            email: email,
+            role: profile.role,
+        };
+        // Remove undefined values to avoid Firestore errors
+        Object.keys(directoryData).forEach(key => directoryData[key as keyof typeof directoryData] === undefined && delete directoryData[key as keyof typeof directoryData]);
+
+        transaction.set(userDirectoryRef, directoryData, { merge: true });
+    });
+    
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
+    console.error("Error saving user profile:", error);
     return { success: false, error: error.message };
   }
 }

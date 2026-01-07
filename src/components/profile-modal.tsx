@@ -15,14 +15,7 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle, User, Mail, Award } from 'lucide-react';
 import Image from 'next/image';
 import { Alert, AlertDescription } from './ui/alert';
 
@@ -31,15 +24,12 @@ type ProfileModalProps = {
   setIsOpen: (open: boolean) => void;
 };
 
-const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
-
 export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
   const { user, profile, setProfile } = useAuth();
   const { toast } = useToast();
   const [isSaving, startSaving] = useTransition();
 
   const [name, setName] = useState(profile?.name || '');
-  const [role, setRole] = useState(profile?.role || '담당');
   const [sigPreview, setSigPreview] = useState(profile?.signature || '');
 
   const isProfileIncomplete = profile?.name === 'New User' || !profile?.signature;
@@ -47,7 +37,6 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
   useEffect(() => {
     if (profile) {
         setName(profile.name);
-        setRole(profile.role);
         setSigPreview(profile.signature || '');
     }
   }, [profile]);
@@ -64,7 +53,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
       const updatedProfile = {
         ...profile,
         name,
-        role,
+        // Role is not updated here anymore
         signature: finalSignature,
         email: user.email!,
       };
@@ -99,7 +88,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
         <DialogHeader>
           <DialogTitle>내 프로필</DialogTitle>
           <DialogDescription>
-            이름, 직책, 서명을 업데이트하세요. 결재 시스템을 사용하려면 모든 정보가 필요합니다.
+            결재 시스템에서 사용할 이름과 서명을 설정하세요.
           </DialogDescription>
         </DialogHeader>
 
@@ -112,29 +101,28 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
             </Alert>
         )}
 
-        <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="name" className="text-right">
-              이름
-            </Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} className="col-span-3" />
+        <div className="grid gap-6 py-4">
+          <div className="flex items-center gap-4">
+            <User className="h-5 w-5 text-muted-foreground" />
+            <div className="w-full">
+              <Label htmlFor="name">이름</Label>
+              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} className="mt-1" />
+            </div>
           </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="role" className="text-right">
-              직책
-            </Label>
-            <Select value={role} onValueChange={setRole}>
-              <SelectTrigger className="col-span-3">
-                <SelectValue placeholder="직책 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLES.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {r}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-start gap-4">
+            <Award className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <Label>직책</Label>
+              <p className="text-sm font-semibold text-foreground mt-1">{profile?.role}</p>
+              <p className="text-xs text-muted-foreground mt-1">직책 변경은 관리자에게 문의하세요.</p>
+            </div>
+          </div>
+           <div className="flex items-start gap-4">
+            <Mail className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <Label>이메일</Label>
+              <p className="text-sm text-muted-foreground mt-1">{profile?.email}</p>
+            </div>
           </div>
           <div className="grid grid-cols-4 items-start gap-4">
             <Label className="text-right pt-2">서명</Label>
@@ -153,7 +141,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={handleSave} disabled={isSaving || !name || !role || !sigPreview}>
+          <Button onClick={handleSave} disabled={isSaving || !name || !sigPreview}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             변경사항 저장
           </Button>
