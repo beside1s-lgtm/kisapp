@@ -81,11 +81,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       setProfileLoading(true);
       if (firebaseUser) {
-        if (firebaseUser.email?.endsWith('@kshcm.net')) {
+        if (firebaseUser.email?.endsWith('@kshcm.net') || firebaseUser.email?.endsWith('@kish.kr') || process.env.NODE_ENV === 'development' ) {
             setUser(firebaseUser);
             await fetchProfile(firebaseUser);
         } else {
-            toast({ variant: 'destructive', title: '접근 거부', description: 'kshcm.net 도메인 계정으로만 로그인할 수 있습니다.'});
+            toast({ variant: 'destructive', title: '접근 거부', description: '허용된 도메인 계정으로만 로그인할 수 있습니다.'});
             await signOut(auth);
             setUser(null);
             setProfile(null);

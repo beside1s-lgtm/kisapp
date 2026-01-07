@@ -1,6 +1,6 @@
 'use client';
 import { getDocConfig, saveDocConfig, getUsersDirectory, saveUserProfile } from '@/app/actions';
-import { DocConfig, User } from '@/lib/types';
+import { DocConfig, User, UserProfile } from '@/lib/types';
 import { compressImage } from '@/lib/utils';
 import { useEffect, useState, useTransition } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -20,6 +20,7 @@ import NextImage from 'next/image';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ScrollArea } from './ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Switch } from './ui/switch';
 
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 
@@ -33,7 +34,7 @@ export function SettingsModal({ isOpen, setIsOpen }: SettingsModalProps) {
   const [isSaving, startSaving] = useTransition();
   const [config, setConfig] = useState<DocConfig>({});
   const [headerPreview, setHeaderPreview] = useState<string>('');
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<(User & UserProfile)[]>([]);
 
   useEffect(() => {
     if (isOpen) {
@@ -75,11 +76,11 @@ export function SettingsModal({ isOpen, setIsOpen }: SettingsModalProps) {
     });
   };
   
-  const handleRoleChange = async (uid: string, email: string, role: string) => {
-    const result = await saveUserProfile(uid, email, { role });
+  const handleUserUpdate = async (uid: string, email: string, field: 'role' | 'isAdmin', value: string | boolean) => {
+    const result = await saveUserProfile(uid, email, { [field]: value });
     if (result.success) {
-      toast({ title: '직책 업데이트됨' });
-      setUsers(prev => prev.map(u => u.uid === uid ? { ...u, role } : u));
+      toast({ title: '사용자 정보 업데이트됨' });
+      setUsers(prev => prev.map(u => u.uid === uid ? { ...u, [field]: value } : u));
     } else {
       toast({ variant: 'destructive', title: '업데이트 실패', description: result.error });
     }
@@ -170,18 +171,28 @@ export function SettingsModal({ isOpen, setIsOpen }: SettingsModalProps) {
                       <p className="font-semibold">{user.name}</p>
                       <p className="text-sm text-muted-foreground">{user.email}</p>
                     </div>
-                    <div className="w-40">
-                       <Select 
-                          defaultValue={user.role} 
-                          onValueChange={(newRole) => handleRoleChange(user.uid, user.email, newRole)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="직책 선택" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center space-x-2">
+                            <Switch 
+                                id={`admin-${user.uid}`} 
+                                checked={user.isAdmin}
+                                onCheckedChange={(checked) => handleUserUpdate(user.uid, user.email, 'isAdmin', checked)}
+                            />
+                            <Label htmlFor={`admin-${user.uid}`} className="text-sm">관리자</Label>
+                        </div>
+                        <div className="w-40">
+                           <Select 
+                              defaultValue={user.role} 
+                              onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="직책 선택" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                        </div>
                     </div>
                   </div>
                 ))}

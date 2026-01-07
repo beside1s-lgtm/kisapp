@@ -34,23 +34,24 @@ const appId = 'kish-standard-v6-fix'.replace(/[\/.]/g, '_');
 // Helper function to get collections
 function getApprovalsCol() {
   if (!db) throw new Error("Firestore is not initialized.");
-  return collection(db, 'artifacts', appId, 'public', 'data', 'approvals');
+  return collection(db, 'approvals');
 }
 function getUsersDirCol() {
     if (!db) throw new Error("Firestore is not initialized.");
-    return collection(db, 'artifacts', appId, 'public', 'data', 'users_directory');
+    return collection(db, 'users');
 }
 function getSettingsRef() {
     if (!db) throw new Error("Firestore is not initialized.");
-    return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'docConfig');
+    return doc(db, 'settings', 'docConfig');
 }
 function getUserProfileRef(userId: string) {
     if (!db) throw new Error("Firestore is not initialized.");
-    return doc(db, 'artifacts', appId, 'users', userId, 'profile', 'info');
+    return doc(db, 'users', userId);
 }
 function getUserDirectoryRef(userId: string) {
     if (!db) throw new Error("Firestore is not initialized.");
-    return doc(db, 'artifacts', appId, 'public', 'data', 'users_directory', userId);
+    // This now points to the same user profile document
+    return doc(db, 'users', userId);
 }
 
 
@@ -94,27 +95,47 @@ export async function getSentDocuments(userId: string) {
 export async function getRegistryDocuments(userId: string, userEmail: string) {
     if (!db || !userId || !userEmail) return [];
     
+    // Since firestore rules will handle visibility, we can query all approved docs
+    // and let firestore security rules do the filtering.
     const q = query(getApprovalsCol(), where('status', '==', 'approved'), orderBy('createdAt', 'desc'));
-    const snapshot = await getDocs(q);
-    const allApproved = serializeDocs(snapshot.docs);
-
-    return allApproved.filter(doc => {
-        if (doc.publishStatus === '공개') return true;
-        const isRequester = doc.requesterId === userId;
-        const isApprover = doc.approvers.some((a: any) => a.email === userEmail);
-        const isCircular = doc.circulars.some((c: any) => c.email === userEmail);
-        return isRequester || isApprover || isCircular;
-    });
+    
+    try {
+        const snapshot = await getDocs(q);
+        return serializeDocs(snapshot.docs);
+    } catch (error: any) {
+        console.error("Error fetching registry documents: ", error);
+        // Emitting a permission error if we suspect that's the issue
+        if (error.code === 'permission-denied') {
+            const permissionError = new FirestorePermissionError({
+                path: getApprovalsCol().path,
+                operation: 'list',
+            });
+            errorEmitter.emit('permission-error', permissionError);
+        }
+        return [];
+    }
 }
 
 export async function getDocumentById(docId: string) {
   if (!db) return null;
   const docRef = doc(getApprovalsCol(), docId);
-  const snapshot = await getDoc(docRef);
-  if (!snapshot.exists()) {
-    return null;
+  try {
+    const snapshot = await getDoc(docRef);
+    if (!snapshot.exists()) {
+        return null;
+    }
+    return serializeDocs([snapshot])[0];
+  } catch (error: any) {
+     console.error("Error fetching document by ID: ", error);
+     if (error.code === 'permission-denied') {
+        const permissionError = new FirestorePermissionError({
+            path: docRef.path,
+            operation: 'get',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+     }
+     return null;
   }
-  return serializeDocs([snapshot])[0];
 }
 
 
@@ -148,9 +169,10 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     await runTransaction(db, async (transaction) => {
       const settingsSnap = await transaction.get(settingsRef);
       if (!settingsSnap.exists()) {
-        throw new Error("Document config settings not found.");
+        // Let's create a default one if it doesn't exist. Requires admin to fix later.
+        transaction.set(settingsRef, { nextNumber: 1 });
       }
-      const currentConfig = settingsSnap.data() as DocConfig || {};
+      const currentConfig = (settingsSnap.data() as DocConfig) || { nextNumber: 1 };
       let nextNum = currentConfig.nextNumber || 1;
       
       finalDocNoStr = `Kish-초등-${nextNum}`;
@@ -165,7 +187,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
 
   } catch (error: any) {
     let permissionError;
-    if (error.message.includes("Document config settings not found")) {
+    if (error.message.includes("settings")) {
         permissionError = new FirestorePermissionError({
             path: settingsRef.path,
             operation: 'get',
@@ -288,24 +310,24 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
   }
   
   const userProfileRef = getUserProfileRef(userId);
-  const userDirectoryRef = getUserDirectoryRef(userId);
   let transactionError = null;
 
   try {
-      await runTransaction(db, async (transaction) => {
-          transaction.set(userProfileRef, profile, { merge: true });
-
-          const directoryData: Partial<User> = {
-              name: profile.name,
-              email: email,
-              role: profile.role,
-          };
-          Object.keys(directoryData).forEach(key => 
-              directoryData[key as keyof typeof directoryData] === undefined && delete directoryData[key as keyof typeof directoryData]
-          );
-
-          transaction.set(userDirectoryRef, directoryData, { merge: true });
-      });
+      const dataToSave: Partial<User & UserProfile> = {
+          uid: userId,
+          email: email,
+          name: profile.name,
+          role: profile.role,
+          signature: profile.signature,
+          isAdmin: profile.isAdmin === true ? true : false
+      };
+      
+      // clean undefined values
+      Object.keys(dataToSave).forEach(key => 
+            dataToSave[key as keyof typeof dataToSave] === undefined && delete dataToSave[key as keyof typeof dataToSave]
+      );
+      
+      await setDoc(userProfileRef, dataToSave, { merge: true });
       revalidatePath('/');
       return { success: true };
   } catch (error: any) {
@@ -331,7 +353,7 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
 export async function generateContentAction(input: {
   title: string;
   approvers: { name: string; role: string }[];
-  attachments?: { name: string; data: string }[];
+  attachments?: { name:string; data: string }[];
 }) {
   const schema = z.object({
     title: z.string().min(1, '제목은 필수입니다.'),

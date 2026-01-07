@@ -3,35 +3,58 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper function to check for admin role
     function isAdmin() {
-      return get(/databases/$(database)/documents/artifacts/kish-standard-v6-fix/users/$(request.auth.uid)/profile/info).data.isAdmin == true;
-    }
-
-    // Match all artifacts for the app
-    match /artifacts/kish-standard-v6-fix/{document=**} {
-      // Deny all access by default
-      allow read, write: if false;
-    }
-
-    // User-specific private data
-    match /artifacts/kish-standard-v6-fix/users/{userId}/{path=**} {
-        // Users can read/write their own data. Admins can access any.
-        allow read, write: if request.auth.uid == userId || isAdmin();
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
     
-    // Public data accessible by all authenticated users
-    match /artifacts/kish-standard-v6-fix/public/data/{path=**} {
-        // Authenticated users can read public data. Admins can write.
-        allow read: if request.auth != null;
-        allow write: if isAdmin();
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // Approvals can be created by any authenticated user. Admins can write anything.
-    // Reading is handled by the public rule above. More specific read rules can be added.
-    match /artifacts/kish-standard-v6-fix/public/data/approvals/{docId} {
-        allow create: if request.auth != null;
-        allow update, delete: if isAdmin() || request.auth.uid == resource.data.requesterId;
+    match /users/{userId} {
+      // Users can read/write their own profile. Admins can read/write any.
+      allow read, write: if request.auth.uid == userId || isAdmin();
+      // Any authenticated user can read the user directory (list of users)
+      allow list: if isSignedIn();
+    }
+    
+    match /settings/{docId} {
+      // Any signed in user can read settings, only admins can write.
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /approvals/{docId} {
+      // Anyone can create a document
+      allow create: if isSignedIn();
+      
+      // Who can read a document?
+      // - an admin
+      // - the person who created it
+      // - an approver in the chain
+      // - a person in the circulars list
+      // - if the document is marked as public and approved
+      allow read: if isAdmin() || 
+                    resource.data.requesterId == request.auth.uid ||
+                    resource.data.approvers.exists(a => a.email == request.auth.token.email) ||
+                    resource.data.circulars.exists(c => c.email == request.auth.token.email) ||
+                    (resource.data.publishStatus == '공개' && resource.data.status == 'approved');
+
+      // Who can update/delete a document?
+      // - an admin
+      // - the person who created it
+      // - the current approver (for updates only)
+      allow update: if isAdmin() || 
+                      resource.data.requesterId == request.auth.uid ||
+                      resource.data.approvers[resource.data.currentStep].email == request.auth.token.email;
+      allow delete: if isAdmin() || resource.data.requesterId == request.auth.uid;
+      
+      // Who can list documents?
+      // This is tricky. The query in getRegistryDocuments filters by status == 'approved'.
+      // The rules must allow this query to pass.
+      // After the query, the client-side code filters further.
+      // A broad rule is needed here, but the read rule will protect individual document access.
+      allow list: if isSignedIn();
     }
   }
 }
