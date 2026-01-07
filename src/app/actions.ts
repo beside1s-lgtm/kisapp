@@ -16,7 +16,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/firebase';
+import { db } from '@/lib/firebase-admin';
 import type {
   ApprovalDoc,
   ApprovalDocPayload,
