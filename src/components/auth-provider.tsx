@@ -15,9 +15,11 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   profileLoading: boolean;
+  isProfileIncomplete: boolean;
   googleSignIn: () => Promise<void>;
   logout: () => Promise<void>;
   setProfile: (profile: UserProfile | null) => void;
+  setShowProfileModal: (show: boolean) => void;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,6 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [isProfileIncomplete, setIsProfileIncomplete] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -36,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast({
         variant: 'destructive',
         title: '권한 오류',
-        description: '데이터베이스 작업에 실패했습니다. 보안 규칙을 확인하세요.',
+        description: error.message || '데이터베이스 작업에 실패했습니다. 보안 규칙을 확인하세요.',
         duration: 10000,
       });
     };
@@ -51,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchProfile = useCallback(async (firebaseUser: FirebaseUser) => {
     setProfileLoading(true);
+    let incomplete = false;
     try {
       let userProfile = await getUserProfile(firebaseUser.uid);
       if (!userProfile) {
@@ -63,11 +67,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
         await saveUserProfile(firebaseUser.uid, firebaseUser.email!, newProfile);
         userProfile = newProfile;
-        setShowProfileModal(true); // Show modal for new users
+        incomplete = true;
       } else if (userProfile.name === 'New User' || !userProfile.signature) {
-        setShowProfileModal(true); // Show modal if profile is incomplete
+        incomplete = true;
       }
       setProfile(userProfile);
+      setIsProfileIncomplete(incomplete);
+      if (incomplete) {
+        setShowProfileModal(true);
+      }
     } catch (error) {
       console.error("Failed to fetch or create profile", error);
       toast({ variant: 'destructive', title: 'Profile Error', description: 'Could not load your profile.' });
@@ -93,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setUser(null);
         setProfile(null);
+        setIsProfileIncomplete(false);
       }
       setProfileLoading(false);
       setLoading(false);
@@ -123,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut(auth);
   };
   
-  const value = { user, profile, loading, profileLoading, googleSignIn, logout, setProfile };
+  const value = { user, profile, loading, profileLoading, googleSignIn, logout, setProfile, isProfileIncomplete, setShowProfileModal };
 
   if (loading) {
     return (
