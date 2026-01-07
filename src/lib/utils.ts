@@ -5,7 +5,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export const compressImage = (base64Str: string, maxWidth = 400): Promise<string> => {
+export const compressImage = (base64Str: string, maxWidth = 200): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.src = base64Str;
@@ -17,7 +17,7 @@ export const compressImage = (base64Str: string, maxWidth = 400): Promise<string
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/png', 0.8));
+        resolve(canvas.toDataURL('image/png', 0.7)); // Adjusted quality
       } else {
         // Fallback to original if canvas fails
         resolve(base64Str);
