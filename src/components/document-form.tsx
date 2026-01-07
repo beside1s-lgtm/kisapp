@@ -211,44 +211,52 @@ export default function DocumentForm() {
         },
       };
 
-      const result = await createDocument(payload, user.uid, profile);
+      try {
+        const result = await createDocument(payload, user.uid, profile);
 
-      if (result.success && result.docId) {
-        toast({
-          title: '문서 제출 완료!',
-          description: `문서(번호: ${result.docNo})가 결재를 위해 전송되었습니다.`,
-        });
-        router.push(`/documents/${result.docId}`);
-      } else {
-        toast({
-          variant: 'destructive',
-          title: '제출 실패',
-          description: result.error || "알 수 없는 오류가 발생했습니다.",
-        });
+        if (result.success && result.docId) {
+          toast({
+            title: '문서 제출 완료!',
+            description: `문서(번호: ${result.docNo})가 결재를 위해 전송되었습니다.`,
+          });
+          router.push(`/documents/${result.docId}`);
+        } else {
+          toast({
+            variant: 'destructive',
+            title: '제출 실패',
+            description: result.error || "알 수 없는 오류가 발생했습니다.",
+          });
+        }
+      } catch (e: any) {
+         toast({
+            variant: 'destructive',
+            title: '제출 중 심각한 오류 발생',
+            description: e.message || "알 수 없는 오류가 발생했습니다.",
+          });
       }
     });
   };
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 md:space-y-8">
         <Card>
-          <CardContent className="p-6 space-y-6">
+          <CardContent className="p-4 md:p-6 space-y-6">
             <FormField
               control={form.control}
               name="title"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-lg font-bold">제목</FormLabel>
+                  <FormLabel className="text-base md:text-lg font-bold">제목</FormLabel>
                   <FormControl>
-                    <Input placeholder="문서 제목" {...field} className="h-12 text-lg" />
+                    <Input placeholder="문서 제목" {...field} className="h-12 text-base md:text-lg" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                <FormField
                   control={form.control}
                   name="docType"
@@ -293,7 +301,7 @@ export default function DocumentForm() {
                 />
             </div>
              {docType === 'external' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 border rounded-lg bg-secondary/50">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 p-4 border rounded-lg bg-secondary/50">
                      <FormField
                         control={form.control}
                         name="receiverName"
@@ -362,7 +370,12 @@ export default function DocumentForm() {
                                 form.setValue(`approvers.${index}.email`, user.email);
                             }}
                             value={nameField.value}
-                            onValueChange={nameField.onChange}
+                            onValueChange={(value) => {
+                              nameField.onChange(value);
+                              if (value === '') {
+                                form.setValue(`approvers.${index}.email`, '');
+                              }
+                            }}
                           />
                         )}
                        />
@@ -511,7 +524,7 @@ export default function DocumentForm() {
           </CardContent>
         </Card>
 
-        <Button type="submit" disabled={isPending} size="lg" className="w-full h-14 text-lg">
+        <Button type="submit" disabled={isPending} size="lg" className="w-full h-12 md:h-14 text-base md:text-lg">
           {isPending && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
           결재 요청
         </Button>
