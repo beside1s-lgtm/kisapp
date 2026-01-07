@@ -52,9 +52,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
 
       const updatedProfile = {
         name,
-        role: profile.role, // role is needed for display but not changed here
         signature: finalSignature,
-        email: user.email!,
       };
 
       const result = await saveUserProfile(user.uid, user.email!, updatedProfile);
