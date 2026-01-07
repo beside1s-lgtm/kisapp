@@ -118,27 +118,22 @@ export async function getDocumentById(docId: string) {
 }
 
 
-export async function createDocument(payload: ApprovalDocPayload, userId: string, userProfile: UserProfile) {
+export async function createDocument(payload: ApprovalDocPayload, userId: string, userProfile: UserProfile): Promise<{ success: boolean; error?: string; docId?: string; docNo?: string; }> {
   if (!db) return { success: false, error: "Database not initialized." };
+  
   const settingsRef = getSettingsRef();
-
+  const approvalsCol = getApprovalsCol();
+  
   let finalDocNoStr = "";
+  let newDocId: string | undefined = undefined;
+
   try {
-    await runTransaction(db, async (transaction) => {
-      const settingsSnap = await transaction.get(settingsRef);
-      if (!settingsSnap.exists()) {
-        throw new Error("Document config settings not found.");
-      }
-      const currentConfig = settingsSnap.data() as DocConfig || {};
-      let nextNum = currentConfig.nextNumber || 1;
-      
-      finalDocNoStr = `Kish-초등-${nextNum}`;
-      transaction.set(settingsRef, { nextNumber: nextNum + 1 }, { merge: true });
-    });
+    const newDocRef = doc(approvalsCol); // Generate a new ref with an ID
+    newDocId = newDocRef.id;
 
     const newDoc: Omit<ApprovalDoc, 'id'> = {
       ...payload,
-      docNo: finalDocNoStr,
+      docNo: '', // Will be set in transaction
       requesterId: userId,
       requesterName: userProfile.name,
       requesterEmail: userProfile.email,
@@ -149,32 +144,39 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       createdAt: serverTimestamp() as Timestamp,
       completedAt: null,
     };
-    
-    addDoc(getApprovalsCol(), newDoc)
-      .then(docRef => {
-        revalidatePath('/sent');
-        // This part runs on the server, we can't directly return to the client form submission
-        // But revalidation helps. For client-side navigation, it should be handled in the component.
-      })
-      .catch((error) => {
-        const permissionError = new FirestorePermissionError({
-          path: getApprovalsCol().path,
-          operation: 'create',
-          requestResourceData: newDoc,
-        });
-        errorEmitter.emit('permission-error', permissionError);
-      });
 
-    // We can't return the docId here directly if we don't `await` addDoc.
-    // The form submission flow might need adjustment if the ID is needed immediately.
-    return { success: true, docNo: finalDocNoStr };
-  } catch (error: any) {
-    // This will catch errors from the transaction itself
-    const permissionError = new FirestorePermissionError({
-      path: settingsRef.path,
-      operation: 'update',
-      requestResourceData: { nextNumber: '...'}, // Redacted for simplicity
+    await runTransaction(db, async (transaction) => {
+      const settingsSnap = await transaction.get(settingsRef);
+      if (!settingsSnap.exists()) {
+        throw new Error("Document config settings not found.");
+      }
+      const currentConfig = settingsSnap.data() as DocConfig || {};
+      let nextNum = currentConfig.nextNumber || 1;
+      
+      finalDocNoStr = `Kish-초등-${nextNum}`;
+      newDoc.docNo = finalDocNoStr;
+      
+      transaction.set(settingsRef, { nextNumber: nextNum + 1 }, { merge: true });
+      transaction.set(newDocRef, newDoc);
     });
+
+    revalidatePath('/sent');
+    return { success: true, docId: newDocId, docNo: finalDocNoStr };
+
+  } catch (error: any) {
+    let permissionError;
+    if (error.message.includes("Document config settings not found")) {
+        permissionError = new FirestorePermissionError({
+            path: settingsRef.path,
+            operation: 'get',
+        });
+    } else {
+       permissionError = new FirestorePermissionError({
+          path: approvalsCol.path, 
+          operation: 'create',
+          requestResourceData: payload,
+      });
+    }
     errorEmitter.emit('permission-error', permissionError);
     return { success: false, error: permissionError.message };
   }
@@ -252,19 +254,21 @@ export async function getDocConfig(): Promise<DocConfig> {
 export async function saveDocConfig(payload: DocConfig) {
   if (!db) return { success: false, error: "Database not initialized." };
   const settingsRef = getSettingsRef();
-  try {
-    await setDoc(settingsRef, payload, { merge: true });
-    revalidatePath('/'); // Revalidate all pages that might use this
-    return { success: true };
-  } catch (error: any) {
-     const permissionError = new FirestorePermissionError({
-      path: settingsRef.path,
-      operation: 'update',
-      requestResourceData: payload,
+  
+  return setDoc(settingsRef, payload, { merge: true })
+    .then(() => {
+        revalidatePath('/'); // Revalidate all pages that might use this
+        return { success: true };
+    })
+    .catch((error) => {
+        const permissionError = new FirestorePermissionError({
+            path: settingsRef.path,
+            operation: 'update',
+            requestResourceData: payload,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        return { success: false, error: permissionError.message };
     });
-    errorEmitter.emit('permission-error', permissionError);
-    return { success: false, error: permissionError.message };
-  }
 }
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
@@ -286,34 +290,42 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
   
   const userProfileRef = getUserProfileRef(userId);
   const userDirectoryRef = getUserDirectoryRef(userId);
+  let transactionError = null;
 
   try {
-    await runTransaction(db, async (transaction) => {
-        transaction.set(userProfileRef, profile, { merge: true });
+      await runTransaction(db, async (transaction) => {
+          transaction.set(userProfileRef, profile, { merge: true });
 
-        const directoryData: Partial<User> = {
-            name: profile.name,
-            email: email,
-            role: profile.role,
-        };
-        Object.keys(directoryData).forEach(key => 
-            directoryData[key as keyof typeof directoryData] === undefined && delete directoryData[key as keyof typeof directoryData]
-        );
+          const directoryData: Partial<User> = {
+              name: profile.name,
+              email: email,
+              role: profile.role,
+          };
+          Object.keys(directoryData).forEach(key => 
+              directoryData[key as keyof typeof directoryData] === undefined && delete directoryData[key as keyof typeof directoryData]
+          );
 
-        transaction.set(userDirectoryRef, directoryData, { merge: true });
-    });
-      
-    revalidatePath('/');
-    return { success: true };
+          transaction.set(userDirectoryRef, directoryData, { merge: true });
+      });
+      revalidatePath('/');
+      return { success: true };
   } catch (error: any) {
-    const permissionError = new FirestorePermissionError({
-        path: userProfileRef.path, // This might be one of two paths
-        operation: 'update',
-        requestResourceData: profile,
-    });
-    errorEmitter.emit('permission-error', permissionError);
-    return { success: false, error: permissionError.message };
+      transactionError = error;
   }
+
+  // Handle errors outside the transaction block to ensure we can emit
+  if (transactionError) {
+      const permissionError = new FirestorePermissionError({
+          path: userProfileRef.path, // This might be one of two paths
+          operation: 'update',
+          requestResourceData: profile,
+      });
+      errorEmitter.emit('permission-error', permissionError);
+      return { success: false, error: permissionError.message };
+  }
+
+  // This part should not be reached, but as a fallback
+  return { success: false, error: "An unknown error occurred." };
 }
 
 
