@@ -79,14 +79,6 @@ export function AppHeader() {
                   </DropdownMenuTriggerItem>
                 </ProfileModal>
 
-                {profile?.isAdmin && (
-                  <SettingsModal>
-                     <DropdownMenuTriggerItem>
-                        <Settings className="mr-2 h-4 w-4" />
-                        <span>설정</span>
-                     </DropdownMenuTriggerItem>
-                  </SettingsModal>
-                )}
                 <DropdownMenuItem disabled>
                   <LifeBuoy className="mr-2 h-4 w-4" />
                   <span>지원</span>
