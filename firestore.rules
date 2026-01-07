@@ -1,66 +1,9 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    function isAdmin() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
-    }
-    
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    match /users/{userId} {
-      // Any authenticated user can read the user directory (list of users)
-      allow list: if isSignedIn();
-      // Users can read their own profile. Admins can read any.
-      allow get: if request.auth.uid == userId || isAdmin();
-
-      // Users can create their own profile, but cannot set isAdmin to true.
-      allow create: if request.auth.uid == userId && request.resource.data.isAdmin == false;
-      
-      // Users can update their own profile, but cannot change the isAdmin field.
-      // Admins can update any profile.
-      allow update: if (request.auth.uid == userId && request.resource.data.isAdmin == resource.data.isAdmin) || isAdmin();
-      
-      // Only admins can delete users.
-      allow delete: if isAdmin();
-    }
-    
-    match /settings/{docId} {
-      // Any signed in user can read settings, only admins can write.
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /approvals/{docId} {
-      // Anyone can create a document
-      allow create: if isSignedIn();
-      
-      // Who can read a document?
-      // - an admin
-      // - the person who created it
-      // - an approver in the chain
-      // - a person in the circulars list
-      // - if the document is marked as public and approved
-      allow read: if isAdmin() || 
-                    resource.data.requesterId == request.auth.uid ||
-                    (resource.data.approvers.size() > 0 && resource.data.approvers.exists(approver, approver.email == request.auth.token.email)) ||
-                    (resource.data.circulars.size() > 0 && resource.data.circulars.exists(circular, circular.email == request.auth.token.email)) ||
-                    (resource.data.publishStatus == '공개' && resource.data.status == 'approved');
-
-      // Who can update/delete a document?
-      // - an admin
-      // - the person who created it (if not yet approved by anyone)
-      // - the current approver (for updates only, to approve)
-      allow update: if isAdmin() || 
-                      (resource.data.requesterId == request.auth.uid && resource.data.currentStep == 0) ||
-                      (resource.data.approvers.size() > resource.data.currentStep && resource.data.approvers[resource.data.currentStep].email == request.auth.token.email);
-      allow delete: if isAdmin() || resource.data.requesterId == request.auth.uid;
-      
-      // Allow list queries based on status or user involvement.
-      allow list: if isSignedIn();
+    match /{document=**} {
+      // 로그인한 사용자만 읽고 쓸 수 있음
+      allow read, write: if request.auth != null;
     }
   }
 }
