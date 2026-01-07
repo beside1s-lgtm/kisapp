@@ -54,11 +54,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        if (firebaseUser.email?.endsWith('@kish.or.kr')) {
+        if (firebaseUser.email?.endsWith('@kshcm.net')) {
             setUser(firebaseUser);
             await fetchProfile(firebaseUser);
         } else {
-            toast({ variant: 'destructive', title: '접근 거부', description: 'KISH 도메인 계정으로만 로그인할 수 있습니다.'});
+            toast({ variant: 'destructive', title: '접근 거부', description: 'kshcm.net 도메인 계정으로만 로그인할 수 있습니다.'});
             await signOut(auth);
             setUser(null);
             setProfile(null);
@@ -78,8 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       googleProvider.setCustomParameters({
-        prompt: 'select_account',
-        hd: 'kish.or.kr'
+        prompt: 'select_account'
       });
       await signInWithPopup(auth, googleProvider);
       // onAuthStateChanged will handle the rest
