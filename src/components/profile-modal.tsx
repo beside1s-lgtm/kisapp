@@ -60,6 +60,7 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
         signature: finalSignature,
       };
 
+      // Only include the role if the user is an admin
       if (profile.isAdmin) {
         updatedProfile.role = role;
       }
@@ -67,7 +68,14 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
       const result = await saveUserProfile(user.uid, user.email!, updatedProfile);
 
       if (result.success) {
-        setProfile({ ...profile, ...updatedProfile });
+        // Create a new profile object for the state update
+        const newProfileState = {
+            ...profile,
+            name: updatedProfile.name,
+            signature: updatedProfile.signature,
+            role: updatedProfile.role ?? profile.role // Use new role if defined, otherwise keep old
+        };
+        setProfile(newProfileState);
         toast({ title: '프로필 업데이트됨' });
         setIsOpen(false);
       } else {
