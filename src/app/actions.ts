@@ -148,22 +148,20 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
   if (!db) return { success: false, error: "Database not initialized." };
   
   const settingsRef = getSettingsRef();
-  const approvalsCol = getApprovalsCol();
-  const newDocRef = doc(approvalsCol);
-  const newDocId = newDocRef.id;
+  const newDocRef = doc(getApprovalsCol());
 
   try {
     const finalDocNoStr = await runTransaction(db, async (transaction) => {
-        const settingsSnap = await transaction.get(settingsRef);
-        if (!settingsSnap.exists()) {
-            throw new Error("Document config settings not found.");
-        }
-        const currentConfig = settingsSnap.data() as DocConfig;
-        const nextNum = currentConfig.nextNumber || 1;
-        const docNo = `Kish-초등-${nextNum}`;
-        
-        transaction.update(settingsRef, { nextNumber: nextNum + 1 });
-        return docNo;
+      const settingsSnap = await transaction.get(settingsRef);
+      if (!settingsSnap.exists()) {
+        throw new Error("Document config settings not found.");
+      }
+      const currentConfig = settingsSnap.data() as DocConfig;
+      const nextNum = currentConfig.nextNumber || 1;
+      const docNo = `Kish-초등-${nextNum}`;
+      
+      transaction.update(settingsRef, { nextNumber: nextNum + 1 });
+      return docNo;
     });
 
     const hasApprovers = payload.approvers && payload.approvers.length > 0;
@@ -185,11 +183,11 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     await setDoc(newDocRef, newDocData);
 
     revalidatePath('/sent');
-    return { success: true, docId: newDocId, docNo: finalDocNoStr };
+    return { success: true, docId: newDocRef.id, docNo: finalDocNoStr };
 
   } catch (error: any) {
     console.error("Failed to create document:", error);
-
+    
     // Create a specific permission error if it's a firestore permission issue
     if (error.code === 'permission-denied') {
         const permissionError = new FirestorePermissionError({
@@ -197,8 +195,9 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
             operation: 'create',
             requestResourceData: payload,
         });
+        // Emit for centralized logging/overlay, but also return a user-friendly message
         errorEmitter.emit('permission-error', permissionError);
-        return { success: false, error: `권한 오류: ${error.message}` };
+        return { success: false, error: `권한 오류: 문서를 생성할 수 없습니다. 보안 규칙을 확인하세요.` };
     }
     
     return { success: false, error: error.message || "문서 생성 중 알 수 없는 오류가 발생했습니다." };
@@ -499,3 +498,5 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
 }
+
+    

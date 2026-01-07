@@ -62,28 +62,26 @@ const approverSchema = z.object({
   active: z.boolean(),
 }).refine(data => {
     if (data.active) {
-        return data.name.length > 0 && data.email.length > 0;
+        return data.name.length > 0 && z.string().email().safeParse(data.email).success;
     }
     return true;
 }, {
     message: "활성화된 결재자는 이름과 이메일이 필수입니다.",
-    path: ["name"] // Path to show error message on
+    path: ["name"]
 });
 
 const formSchema = z.object({
   title: z.string().min(1, '제목은 필수입니다.'),
   content: z.string().min(1, '내용은 필수입니다.'),
-  approvers: z
-    .array(approverSchema)
-    .superRefine((approvers, ctx) => {
-      const activeApprovers = approvers.filter(a => a.active);
-      if (activeApprovers.some(a => !a.name || !a.email)) {
-          ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: "활성화된 결재자의 이름과 이메일을 모두 입력해야 합니다.",
-          });
-      }
-    }),
+  approvers: z.array(approverSchema).superRefine((approvers, ctx) => {
+    const activeApprovers = approvers.filter(a => a.active);
+    if (activeApprovers.some(a => !a.name || !a.email)) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "활성화된 결재자의 이름과 이메일을 모두 입력해야 합니다.",
+        });
+    }
+  }),
   circulars: z.array(
     z.object({ name: z.string(), email: z.string(), role: z.string() })
   ),
@@ -400,12 +398,12 @@ export default function DocumentForm() {
                     <FormField
                       control={form.control}
                       name={`approvers.${index}.active`}
-                      render={({ field }) => (
+                      render={({ field: switchField }) => (
                         <FormItem className="flex items-center gap-2 space-y-0">
                           <FormControl>
                             <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
+                              checked={switchField.value}
+                              onCheckedChange={switchField.onChange}
                             />
                           </FormControl>
                           <FormLabel>활성</FormLabel>
@@ -415,30 +413,26 @@ export default function DocumentForm() {
                   </div>
                   {form.watch(`approvers.${index}.active`) && (
                     <div className="space-y-2">
-                       <FormField
+                       <Controller
                           control={form.control}
-                          name={`approvers.${index}.name`}
-                          render={({ field }) => (
-                            <FormItem>
-                                <FormLabel className="sr-only">이름</FormLabel>
-                                <FormControl>
-                                    <Input placeholder="이름" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`approvers.${index}.email`}
-                          render={({ field }) => (
-                            <FormItem>
-                                <FormLabel className="sr-only">이메일</FormLabel>
-                                <FormControl>
-                                    <Input placeholder="이메일" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                            </FormItem>
+                          name={`approvers.${index}`}
+                          render={({ field: controllerField, fieldState }) => (
+                            <div className="space-y-2">
+                                <UserSearch
+                                    users={users}
+                                    onSelectUser={(user) => {
+                                        form.setValue(`approvers.${index}.name`, user.name, { shouldValidate: true });
+                                        form.setValue(`approvers.${index}.email`, user.email, { shouldValidate: true });
+                                    }}
+                                    placeholder="결재자 검색..."
+                                    value={controllerField.value.name}
+                                    onValueChange={(value) => {
+                                        form.setValue(`approvers.${index}.name`, value, { shouldValidate: true });
+                                    }}
+                                />
+                                {fieldState.error?.name && <FormMessage>{fieldState.error.name.message}</FormMessage>}
+                                {!fieldState.error?.name && fieldState.error?.email && <FormMessage>{fieldState.error.email.message}</FormMessage>}
+                            </div>
                           )}
                         />
                       <FormField
@@ -471,7 +465,7 @@ export default function DocumentForm() {
                 </CardContent>
               </Card>
             ))}
-             <FormMessage>{form.formState.errors.approvers?.root?.message}</FormMessage>
+             <FormMessage>{form.formState.errors.approvers?.message}</FormMessage>
           </CardContent>
         </Card>
 
