@@ -188,19 +188,13 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
   } catch (error: any) {
     console.error("Failed to create document:", error);
     
-    // Create a specific permission error if it's a firestore permission issue
-    if (error.code === 'permission-denied') {
-        const permissionError = new FirestorePermissionError({
-            path: newDocRef.path,
-            operation: 'create',
-            requestResourceData: payload,
-        });
-        // Emit for centralized logging/overlay, but also return a user-friendly message
-        errorEmitter.emit('permission-error', permissionError);
-        return { success: false, error: `권한 오류: 문서를 생성할 수 없습니다. 보안 규칙을 확인하세요.` };
-    }
-    
-    return { success: false, error: error.message || "문서 생성 중 알 수 없는 오류가 발생했습니다." };
+    const permissionError = new FirestorePermissionError({
+        path: newDocRef.path,
+        operation: 'create',
+        requestResourceData: payload,
+    });
+    errorEmitter.emit('permission-error', permissionError);
+    return { success: false, error: `문서 생성 실패: ${error.message}` };
   }
 }
 
@@ -498,5 +492,3 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
 }
-
-    
