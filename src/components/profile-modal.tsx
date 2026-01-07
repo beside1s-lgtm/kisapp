@@ -41,7 +41,7 @@ export function ProfileModal({ isOpen, setIsOpen, user, profile, setProfile }: P
   const [role, setRole] = useState(profile.role || '');
   const [sigPreview, setSigPreview] = useState(profile.signature || '');
 
-  const isProfileIncomplete = profile.name === 'New User' || !profile.signature;
+  const isProfileIncomplete = !profile.name || profile.name === 'New User' || !profile.signature;
 
   useEffect(() => {
     if (profile) {
@@ -62,15 +62,25 @@ export function ProfileModal({ isOpen, setIsOpen, user, profile, setProfile }: P
         name,
         role,
         signature: finalSignature,
+        // Preserve existing fields that are not editable in this modal
+        email: profile.email,
         isAdmin: profile.isAdmin,
       };
 
-      const result = await saveUserProfile(user.uid, user.email!, updatedProfileData);
+      const result = await saveUserProfile(user.uid, user.email!, {
+          name,
+          role,
+          signature: finalSignature,
+          isAdmin: profile.isAdmin,
+      });
 
       if (result.success) {
-        const newProfileState = {
+        // Construct the full new profile state to avoid partial updates
+        const newProfileState: UserProfile = {
             ...profile,
-            ...updatedProfileData
+            name,
+            role,
+            signature: finalSignature,
         };
         setProfile(newProfileState);
         toast({ title: '프로필 업데이트됨' });
@@ -148,24 +158,22 @@ export function ProfileModal({ isOpen, setIsOpen, user, profile, setProfile }: P
               <p className="text-sm text-muted-foreground mt-2">{profile.email}</p>
             </div>
           </div>
-          <div className="grid grid-cols-4 items-start gap-4">
-            <Label className="text-right pt-2 col-span-1">서명</Label>
-            <div className="col-span-3 space-y-2">
-                <div className="p-4 border-2 border-dashed rounded-lg text-center h-32 flex items-center justify-center">
-                    <Input type="file" id="sig-upload" accept="image/png, image/jpeg" onChange={onFileChange} className="hidden" />
-                    <Label htmlFor="sig-upload" className="cursor-pointer">
-                        {sigPreview ? (
-                            <Image src={sigPreview} alt="서명 미리보기" width={120} height={120} className="max-h-24 object-contain" />
-                        ) : (
-                            <span className="text-sm text-muted-foreground">이미지 업로드</span>
-                        )}
-                    </Label>
-                </div>
+          <div className="space-y-2">
+            <Label>서명</Label>
+            <div className="p-4 border-2 border-dashed rounded-lg text-center h-32 flex items-center justify-center">
+                <Input type="file" id="sig-upload" accept="image/png, image/jpeg" onChange={onFileChange} className="hidden" />
+                <Label htmlFor="sig-upload" className="cursor-pointer">
+                    {sigPreview ? (
+                        <Image src={sigPreview} alt="서명 미리보기" width={120} height={120} className="max-h-24 object-contain" />
+                    ) : (
+                        <span className="text-sm text-muted-foreground">이미지 업로드</span>
+                    )}
+                </Label>
             </div>
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={handleSave} disabled={isSaving || !name || !sigPreview}>
+          <Button onClick={handleSave} disabled={isSaving || !name || !role || !sigPreview}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             변경사항 저장
           </Button>

@@ -76,14 +76,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setLoading(true);
       if (firebaseUser) {
         if (firebaseUser.email?.endsWith('@kshcm.net') || firebaseUser.email?.endsWith('@kish.kr') || process.env.NODE_ENV === 'development' ) {
             setUser(firebaseUser);
-            // Fetch profile only if user changes
-            if (!profile || profile.email !== firebaseUser.email) {
-               await fetchProfile(firebaseUser);
-            }
+            // Fetch profile only if user object changes
+            await fetchProfile(firebaseUser);
         } else {
             toast({ variant: 'destructive', title: '접근 거부', description: '허용된 도메인 계정으로만 로그인할 수 있습니다.'});
             await signOut(auth);
@@ -93,11 +90,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setUser(null);
         setProfile(null);
-      }
-      setLoading(false);
-      if (profileLoading && !firebaseUser) {
         setProfileLoading(false);
       }
+      setLoading(false);
     });
 
     return () => unsubscribe();
