@@ -16,7 +16,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/firebase'; // firebase-admin 대신 client firebase 사용
+import { db } from '@/lib/firebase';
 import type {
   ApprovalDoc,
   ApprovalDocPayload,
@@ -29,7 +29,7 @@ import { z } from 'zod';
 
 const appId = 'kish-standard-v6-fix'.replace(/[\/.]/g, '_');
 
-// Helper function to get collections, handles null db
+// Helper function to get collections
 function getApprovalsCol() {
   if (!db) throw new Error("Firestore is not initialized.");
   return collection(db, 'artifacts', appId, 'public', 'data', 'approvals');
@@ -53,17 +53,19 @@ function getUserDirectoryRef(userId: string) {
 
 
 function serializeDocs(docs: any[]): any[] {
+  if (!docs) return [];
   return docs.map(d => {
     const data = d.data();
+    if (!data) return { id: d.id };
     return {
       ...data,
       id: d.id,
-      createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : null,
-      completedAt: data.completedAt instanceof Timestamp ? data.completedAt.toDate().toISOString() : null,
-      approvers: data.approvers.map((approver: any) => ({
+      createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : data.createdAt,
+      completedAt: data.completedAt instanceof Timestamp ? data.completedAt.toDate().toISOString() : data.completedAt,
+      approvers: data.approvers?.map((approver: any) => ({
         ...approver,
-        approvedAt: approver.approvedAt ? new Date(approver.approvedAt).toISOString() : null,
-      })),
+        approvedAt: approver.approvedAt instanceof Timestamp ? approver.approvedAt.toDate().toISOString() : approver.approvedAt,
+      })) || [],
     }
   })
 }
@@ -143,6 +145,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       currentStep: 0,
       status: 'pending',
       createdAt: serverTimestamp() as Timestamp,
+      completedAt: null,
     };
     
     const docRef = await addDoc(getApprovalsCol(), newDoc);
@@ -206,7 +209,7 @@ export async function getUsersDirectory(): Promise<User[]> {
   if (!db) return [];
   const snapshot = await getDocs(getUsersDirCol());
   if (snapshot.empty) return [];
-  return snapshot.docs.map(d => ({ ...d.data(), uid: d.id }) as User);
+  return snapshot.docs.map(d => ({ ...(d.data() as object), uid: d.id }) as User);
 }
 
 export async function getDocConfig(): Promise<DocConfig> {
@@ -229,41 +232,52 @@ export async function saveDocConfig(payload: DocConfig) {
 }
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
-    if (!db) return null;
-    if (!userId) return null;
+    if (!db || !userId) return null;
     const docRef = getUserProfileRef(userId);
-    const snap = await getDoc(docRef);
-    return snap.exists() ? snap.data() as UserProfile : null;
+    try {
+        const snap = await getDoc(docRef);
+        return snap.exists() ? snap.data() as UserProfile : null;
+    } catch (error) {
+        console.error("Error fetching user profile:", error);
+        return null;
+    }
 }
 
 export async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>) {
-  if (!db) return { success: false, error: "Database not initialized." };
+  if (!db) {
+      console.error("Database not initialized in saveUserProfile.");
+      return { success: false, error: "Database not initialized." };
+  }
   
   try {
-    await runTransaction(db, async (transaction) => {
-        const userProfileRef = getUserProfileRef(userId);
-        const userDirectoryRef = getUserDirectoryRef(userId);
-        
-        transaction.set(userProfileRef, profile, { merge: true });
+      await runTransaction(db, async (transaction) => {
+          const userProfileRef = getUserProfileRef(userId);
+          const userDirectoryRef = getUserDirectoryRef(userId);
+          
+          transaction.set(userProfileRef, profile, { merge: true });
 
-        const directoryData: Partial<User> = {
-            name: profile.name,
-            email: email,
-            role: profile.role,
-        };
-        // Remove undefined values to avoid Firestore errors
-        Object.keys(directoryData).forEach(key => directoryData[key as keyof typeof directoryData] === undefined && delete directoryData[key as keyof typeof directoryData]);
+          const directoryData: Partial<User> = {
+              name: profile.name,
+              email: email,
+              role: profile.role,
+          };
+          Object.keys(directoryData).forEach(key => 
+              directoryData[key as keyof typeof directoryData] === undefined && delete directoryData[key as keyof typeof directoryData]
+          );
 
-        transaction.set(userDirectoryRef, directoryData, { merge: true });
-    });
-    
-    revalidatePath('/');
-    return { success: true };
+          transaction.set(userDirectoryRef, directoryData, { merge: true });
+      });
+      
+      revalidatePath('/');
+      return { success: true };
   } catch (error: any) {
-    console.error("Error saving user profile:", error);
-    return { success: false, error: error.message };
+      console.error("Error saving user profile:", error);
+      // Here we can add the contextual error reporting in the future if needed.
+      // For now, just returning the raw error message is better than crashing.
+      return { success: false, error: error.message || "An unknown error occurred while saving the profile." };
   }
 }
+
 
 export async function generateContentAction(input: {
   title: string;
