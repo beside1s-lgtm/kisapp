@@ -14,11 +14,38 @@ import { FileText, LifeBuoy, LogOut, Loader2, Settings, User as UserIcon, Langua
 import { SettingsModal } from '../settings-modal';
 import { useState } from 'react';
 import { ProfileModal } from '../profile-modal';
+import { UserProfile } from '@/lib/types';
+import { useToast } from '@/hooks/use-toast';
+import { saveUserProfile } from '@/app/actions';
 
 export function AppHeader() {
   const { user, profile, logout, profileLoading, setProfile } = useAuth();
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const { toast } = useToast();
+
+  const handleProfileSave = async (updatedData: Partial<UserProfile>) => {
+    if (!user || !profile) return;
+    
+    const result = await saveUserProfile(user.uid, user.email!, updatedData);
+
+    if (result.success) {
+      const newProfile: UserProfile = {
+        ...profile,
+        ...updatedData,
+      };
+      setProfile(newProfile);
+      toast({ title: '프로필 업데이트됨' });
+      return true;
+    } else {
+      toast({
+        variant: 'destructive',
+        title: '업데이트 실패',
+        description: result.error,
+      });
+      return false;
+    }
+  };
   
   return (
     <>
@@ -113,9 +140,8 @@ export function AppHeader() {
             <ProfileModal 
               isOpen={showProfileModal}
               setIsOpen={setShowProfileModal}
-              user={user}
               profile={profile}
-              setProfile={setProfile}
+              onSave={handleProfileSave}
             />
           </>
       )}

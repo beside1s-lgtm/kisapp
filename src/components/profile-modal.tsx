@@ -1,8 +1,7 @@
 'use client';
-import { useAuth } from '@/hooks/use-auth';
+
 import { useToast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/utils';
-import { saveUserProfile } from '@/app/actions';
 import { useEffect, useState, useTransition } from 'react';
 import {
   Dialog,
@@ -19,7 +18,6 @@ import { Loader2, AlertTriangle, User, Mail, Award } from 'lucide-react';
 import Image from 'next/image';
 import { Alert, AlertDescription } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import type { User as FirebaseUser } from 'firebase/auth';
 import type { UserProfile } from '@/lib/types';
 
 
@@ -28,13 +26,11 @@ const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무�
 type ProfileModalProps = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-  user: FirebaseUser;
   profile: UserProfile;
-  setProfile: (profile: UserProfile | null) => void;
+  onSave: (data: Partial<UserProfile>) => Promise<boolean>;
 };
 
-export function ProfileModal({ isOpen, setIsOpen, user, profile, setProfile }: ProfileModalProps) {
-  const { toast } = useToast();
+export function ProfileModal({ isOpen, setIsOpen, profile, onSave }: ProfileModalProps) {
   const [isSaving, startSaving] = useTransition();
 
   const [name, setName] = useState(profile.name || '');
@@ -44,7 +40,7 @@ export function ProfileModal({ isOpen, setIsOpen, user, profile, setProfile }: P
   const isProfileIncomplete = !profile.name || profile.name === 'New User' || !profile.signature;
 
   useEffect(() => {
-    if (profile) {
+    if (profile && isOpen) {
         setName(profile.name);
         setRole(profile.role);
         setSigPreview(profile.signature || '');
@@ -58,39 +54,15 @@ export function ProfileModal({ isOpen, setIsOpen, user, profile, setProfile }: P
         finalSignature = sigPreview ? await compressImage(sigPreview) : '';
       }
 
-      const updatedProfileData = {
+      const updatedProfileData: Partial<UserProfile> = {
         name,
         role,
         signature: finalSignature,
-        // Preserve existing fields that are not editable in this modal
-        email: profile.email,
-        isAdmin: profile.isAdmin,
       };
-
-      const result = await saveUserProfile(user.uid, user.email!, {
-          name,
-          role,
-          signature: finalSignature,
-          isAdmin: profile.isAdmin,
-      });
-
-      if (result.success) {
-        // Construct the full new profile state to avoid partial updates
-        const newProfileState: UserProfile = {
-            ...profile,
-            name,
-            role,
-            signature: finalSignature,
-        };
-        setProfile(newProfileState);
-        toast({ title: '프로필 업데이트됨' });
+      
+      const success = await onSave(updatedProfileData);
+      if (success) {
         setIsOpen(false);
-      } else {
-        toast({
-          variant: 'destructive',
-          title: '업데이트 실패',
-          description: result.error,
-        });
       }
     });
   };

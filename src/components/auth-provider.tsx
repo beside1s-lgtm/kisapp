@@ -8,6 +8,7 @@ import { UserProfile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { errorEmitter } from '@/lib/error-emitter';
+import { ProfileModal } from './profile-modal';
 
 interface AuthContextType {
   user: FirebaseUser | null;
@@ -76,16 +77,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true);
+      setProfileLoading(true);
+
       if (firebaseUser) {
         if (firebaseUser.email?.endsWith('@kshcm.net') || firebaseUser.email?.endsWith('@kish.kr') || process.env.NODE_ENV === 'development' ) {
             setUser(firebaseUser);
-            // Fetch profile only if user object changes
-            await fetchProfile(firebaseUser);
+            // Fetch profile only if user object changes or profile is not loaded
+             if (!profile || profile.email !== firebaseUser.email) {
+                await fetchProfile(firebaseUser);
+             } else {
+                setProfileLoading(false);
+             }
         } else {
             toast({ variant: 'destructive', title: '접근 거부', description: '허용된 도메인 계정으로만 로그인할 수 있습니다.'});
             await signOut(auth);
             setUser(null);
             setProfile(null);
+            setProfileLoading(false);
         }
       } else {
         setUser(null);
@@ -97,7 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchProfile]);
   
   const googleSignIn = async () => {
     try {
