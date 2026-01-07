@@ -333,45 +333,47 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
     }
 }
 
-export async function saveUserProfile(userId: string, email: string, profile: Partial<Omit<UserProfile, 'isAdmin'>>) {
-  if (!db) {
-      return { success: false, error: "Database not initialized." };
-  }
-  
-  const userProfileRef = getUserProfileRef(userId);
-  let docExists = false;
+export async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>) {
+    if (!db) {
+        return { success: false, error: "Database not initialized." };
+    }
+    
+    const userProfileRef = getUserProfileRef(userId);
+    let docExists = false;
 
-  try {
-      const docSnap = await getDoc(userProfileRef);
-      docExists = docSnap.exists();
-      
-      const dataToSave: Partial<UserProfile> = {};
-
-      if (profile.name !== undefined) dataToSave.name = profile.name;
-      if (profile.role !== undefined) dataToSave.role = profile.role;
-      if (profile.signature !== undefined) dataToSave.signature = profile.signature;
-
-      if (!docExists) {
-        // If document does not exist (new user), set email and default isAdmin
-        dataToSave.email = email;
-        dataToSave.isAdmin = false;
-        await setDoc(userProfileRef, dataToSave);
-      } else {
-        // If document exists, update it. Exclude email and other immutable fields.
-        await updateDoc(userProfileRef, dataToSave);
-      }
-      
-      revalidatePath('/');
-      return { success: true };
-  } catch (error: any) {
-      const permissionError = new FirestorePermissionError({
-          path: userProfileRef.path,
-          operation: docExists ? 'update' : 'create',
-          requestResourceData: profile,
-      });
-      errorEmitter.emit('permission-error', permissionError);
-      return { success: false, error: permissionError.message };
-  }
+    try {
+        const docSnap = await getDoc(userProfileRef);
+        docExists = docSnap.exists();
+        
+        if (docExists) {
+            // Document exists, so we update.
+            // The `profile` object should contain all fields for update.
+            await updateDoc(userProfileRef, profile);
+        } else {
+            // Document does not exist, so we create it.
+            // This is typically for new users. Ensure all necessary fields are present.
+            const newProfileData: UserProfile = {
+                email: email,
+                name: profile.name || 'New User',
+                role: profile.role || '담당',
+                signature: profile.signature || '',
+                isAdmin: profile.isAdmin === true ? true : false, // Explicitly set to false if not true
+            };
+            await setDoc(userProfileRef, newProfileData);
+        }
+        
+        revalidatePath('/');
+        return { success: true };
+    } catch (error: any) {
+        // We need docExists from the try block to determine the operation.
+        const permissionError = new FirestorePermissionError({
+            path: userProfileRef.path,
+            operation: docExists ? 'update' : 'create',
+            requestResourceData: profile,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        return { success: false, error: permissionError.message };
+    }
 }
 
 

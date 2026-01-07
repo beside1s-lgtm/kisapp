@@ -55,25 +55,21 @@ export function ProfileModal({ isOpen, setIsOpen }: ProfileModalProps) {
         finalSignature = sigPreview ? await compressImage(sigPreview) : '';
       }
 
-      const updatedProfile: { name: string; signature: string; role?: string; } = {
+      // Build the payload for saving.
+      const updatedProfileData = {
         name,
+        role,
         signature: finalSignature,
+        isAdmin: profile.isAdmin, // Preserve the isAdmin status
       };
 
-      // Only include the role if the user is an admin
-      if (profile.isAdmin) {
-        updatedProfile.role = role;
-      }
-
-      const result = await saveUserProfile(user.uid, user.email!, updatedProfile);
+      const result = await saveUserProfile(user.uid, user.email!, updatedProfileData);
 
       if (result.success) {
-        // Create a new profile object for the state update
+        // Create a new profile object for the state update, ensuring all fields are preserved
         const newProfileState = {
             ...profile,
-            name: updatedProfile.name,
-            signature: updatedProfile.signature,
-            role: updatedProfile.role ?? profile.role // Use new role if defined, otherwise keep old
+            ...updatedProfileData
         };
         setProfile(newProfileState);
         toast({ title: '프로필 업데이트됨' });
