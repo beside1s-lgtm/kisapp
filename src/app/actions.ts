@@ -74,17 +74,34 @@ export async function getInboxDocuments(userEmail: string) {
     getApprovalsCol(),
     where('status', '==', 'pending'),
   );
-  const snapshot = await getDocs(q);
-  const allPending = serializeDocs(snapshot.docs);
-
-  return allPending.filter(doc => doc.approvers[doc.currentStep]?.email === userEmail);
+  try {
+    const snapshot = await getDocs(q);
+    const allPending = serializeDocs(snapshot.docs);
+    return allPending.filter(doc => doc.approvers[doc.currentStep]?.email === userEmail);
+  } catch (error) {
+    const permissionError = new FirestorePermissionError({
+      path: getApprovalsCol().path,
+      operation: 'list',
+    });
+    errorEmitter.emit('permission-error', permissionError);
+    return [];
+  }
 }
 
 export async function getSentDocuments(userId: string) {
   if (!db || !userId) return [];
   const q = query(getApprovalsCol(), where('requesterId', '==', userId), orderBy('createdAt', 'desc'));
-  const snapshot = await getDocs(q);
-  return serializeDocs(snapshot.docs);
+  try {
+    const snapshot = await getDocs(q);
+    return serializeDocs(snapshot.docs);
+  } catch (error) {
+     const permissionError = new FirestorePermissionError({
+      path: getApprovalsCol().path,
+      operation: 'list',
+    });
+    errorEmitter.emit('permission-error', permissionError);
+    return [];
+  }
 }
 
 export async function getRegistryDocuments(userId: string, userEmail: string) {
@@ -249,9 +266,18 @@ export async function approveDocument(docId: string, userId: string, userProfile
 
 export async function getUsersDirectory(): Promise<User[]> {
   if (!db) return [];
-  const snapshot = await getDocs(getUsersDirCol());
-  if (snapshot.empty) return [];
-  return snapshot.docs.map(d => ({ ...(d.data() as object), uid: d.id }) as User);
+  try {
+    const snapshot = await getDocs(getUsersDirCol());
+    if (snapshot.empty) return [];
+    return snapshot.docs.map(d => ({ ...(d.data() as object), uid: d.id }) as User);
+  } catch (error) {
+    const permissionError = new FirestorePermissionError({
+      path: getUsersDirCol().path,
+      operation: 'list',
+    });
+    errorEmitter.emit('permission-error', permissionError);
+    return [];
+  }
 }
 
 export async function getDocConfig(): Promise<DocConfig> {
