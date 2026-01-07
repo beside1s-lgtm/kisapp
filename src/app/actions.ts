@@ -150,26 +150,18 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       completedAt: null,
     };
     
-    const docRef = await addDoc(getApprovalsCol(), newDoc)
-    .catch((serverError) => {
-        const permissionError = new FirestorePermissionError({
-          path: getApprovalsCol().path,
-          operation: 'create',
-          requestResourceData: newDoc,
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        throw permissionError;
-      });
-
+    const docRef = await addDoc(getApprovalsCol(), newDoc);
 
     revalidatePath('/sent');
     return { success: true, docId: docRef.id, docNo: finalDocNoStr };
   } catch (error: any) {
-    if (error instanceof FirestorePermissionError) {
-        return { success: false, error: error.message };
-    }
-    console.error("제출 오류:", error);
-    return { success: false, error: error.message };
+    const permissionError = new FirestorePermissionError({
+      path: getApprovalsCol().path,
+      operation: 'create',
+      requestResourceData: payload,
+    });
+    errorEmitter.emit('permission-error', permissionError);
+    return { success: false, error: permissionError.message };
   }
 }
 
@@ -216,16 +208,13 @@ export async function approveDocument(docId: string, userId: string, userProfile
         revalidatePath(`/documents/${docId}`);
         return { success: true, docId };
     } catch (error: any) {
-        if (!(error instanceof FirestorePermissionError)) { // Avoid double-wrapping
-            const permissionError = new FirestorePermissionError({
-                path: docRef.path,
-                operation: 'update',
-                requestResourceData: updatedData,
-            });
-            errorEmitter.emit('permission-error', permissionError);
-        }
-        console.error("결재 오류:", error);
-        return { success: false, error: error.message };
+        const permissionError = new FirestorePermissionError({
+            path: docRef.path,
+            operation: 'update',
+            requestResourceData: updatedData,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        return { success: false, error: permissionError.message };
     }
 }
 
