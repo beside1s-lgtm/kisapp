@@ -147,11 +147,11 @@ export async function getDocumentById(docId: string) {
 export async function createDocument(payload: ApprovalDocPayload, userId: string, userProfile: UserProfile): Promise<{ success: boolean; error?: string; docId?: string; docNo?: string; }> {
   if (!db) return { success: false, error: "Database not initialized." };
   
-  const settingsRef = getSettingsRef();
   const newDocRef = doc(getApprovalsCol());
 
   try {
     const finalDocNoStr = await runTransaction(db, async (transaction) => {
+      const settingsRef = getSettingsRef();
       const settingsSnap = await transaction.get(settingsRef);
       if (!settingsSnap.exists()) {
         throw new Error("Document config settings not found.");
@@ -188,12 +188,16 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
   } catch (error: any) {
     console.error("Failed to create document:", error);
     
+    // Create a contextual error and emit it.
+    // This will be caught by the client-side error listener.
     const permissionError = new FirestorePermissionError({
         path: newDocRef.path,
         operation: 'create',
         requestResourceData: payload,
     });
     errorEmitter.emit('permission-error', permissionError);
+
+    // Also return a clear error message for the form's toast notification.
     return { success: false, error: `문서 생성 실패: ${error.message}` };
   }
 }
