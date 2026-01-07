@@ -16,7 +16,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/firebase-admin';
+import { db } from '@/lib/firebase'; // firebase-admin 대신 client firebase 사용
 import type {
   ApprovalDoc,
   ApprovalDocPayload,
@@ -122,6 +122,9 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
   try {
     await runTransaction(db, async (transaction) => {
       const settingsSnap = await transaction.get(settingsRef);
+      if (!settingsSnap.exists()) {
+        throw new Error("Document config settings not found.");
+      }
       const currentConfig = settingsSnap.data() as DocConfig || {};
       let nextNum = currentConfig.nextNumber || 1;
       
@@ -202,6 +205,7 @@ export async function approveDocument(docId: string, userId: string, userProfile
 export async function getUsersDirectory(): Promise<User[]> {
   if (!db) return [];
   const snapshot = await getDocs(getUsersDirCol());
+  if (snapshot.empty) return [];
   return snapshot.docs.map(d => ({ ...d.data(), uid: d.id }) as User);
 }
 
