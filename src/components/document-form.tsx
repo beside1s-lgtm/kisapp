@@ -58,19 +58,15 @@ import {
 const formSchema = z.object({
   title: z.string().min(1, '제목은 필수입니다.'),
   content: z.string().min(1, '내용은 필수입니다.'),
-  approvers: z
-    .array(
-      z.object({
-        name: z.string().min(1, '결재자 이름은 필수입니다.'),
-        email: z.string().email(),
-        role: z.string(),
-        type: z.enum(['normal', 'final', 'proxy']),
-        active: z.boolean(),
-      })
-    )
-    .refine((approvers) => approvers.filter((a) => a.active).length > 0, {
-      message: '최소 한 명의 결재자가 활성화되어야 합니다.',
-    }),
+  approvers: z.array(
+    z.object({
+      name: z.string().min(1, '결재자 이름은 필수입니다.'),
+      email: z.string().email(),
+      role: z.string(),
+      type: z.enum(['normal', 'final', 'proxy']),
+      active: z.boolean(),
+    })
+  ),
   circulars: z.array(
     z.object({ name: z.string(), email: z.string(), role: z.string() })
   ),
