@@ -14,6 +14,7 @@ import {
   updateDoc,
   where,
   Timestamp,
+  DocumentSnapshot,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/firebase';
@@ -338,31 +339,26 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
   }
   
   const userProfileRef = getUserProfileRef(userId);
+  let docExists = false;
 
   try {
       const docSnap = await getDoc(userProfileRef);
+      docExists = docSnap.exists();
       
-      // Data to save, starts clean.
       const dataToSave: Partial<UserProfile> = {};
 
       if (profile.name !== undefined) dataToSave.name = profile.name;
       if (profile.role !== undefined) dataToSave.role = profile.role;
       if (profile.signature !== undefined) dataToSave.signature = profile.signature;
 
-      // For admin changes, only allow 'isAdmin' field to be updated
-      if (profile.isAdmin !== undefined) {
-         await setDoc(userProfileRef, { isAdmin: profile.isAdmin }, { merge: true });
+      if (!docExists) {
+        // If document does not exist (new user), set email and default isAdmin
+        dataToSave.email = email;
+        dataToSave.isAdmin = false;
+        await setDoc(userProfileRef, dataToSave);
       } else {
-        // For regular user updates
-        if (!docSnap.exists()) {
-          // If document does not exist (new user), set email and default isAdmin
-          dataToSave.email = email;
-          dataToSave.isAdmin = false;
-          await setDoc(userProfileRef, dataToSave);
-        } else {
-          // If document exists, update it. Exclude email.
-          await updateDoc(userProfileRef, dataToSave);
-        }
+        // If document exists, update it. Exclude email and other immutable fields.
+        await updateDoc(userProfileRef, dataToSave);
       }
       
       revalidatePath('/');
@@ -370,7 +366,7 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
   } catch (error: any) {
       const permissionError = new FirestorePermissionError({
           path: userProfileRef.path,
-          operation: docSnap.exists() ? 'update' : 'create',
+          operation: docExists ? 'update' : 'create',
           requestResourceData: profile,
       });
       errorEmitter.emit('permission-error', permissionError);
