@@ -178,7 +178,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     if (error.message.includes("settings")) {
         permissionError = new FirestorePermissionError({
             path: settingsRef.path,
-            operation: 'get',
+            operation: 'update',
         });
     } else {
        permissionError = new FirestorePermissionError({
