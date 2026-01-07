@@ -357,7 +357,7 @@ export default function DocumentForm() {
                                 form.setValue(`approvers.${index}.name`, user.name);
                                 form.setValue(`approvers.${index}.email`, user.email);
                             }}
-                            value={field.name}
+                            value={form.watch(`approvers.${index}.name`)}
                             onChange={(e) => form.setValue(`approvers.${index}.name`, e.target.value)}
                         />
                         <FormField
@@ -513,3 +513,5 @@ export default function DocumentForm() {
     </Form>
   );
 }
+
+    
