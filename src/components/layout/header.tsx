@@ -13,10 +13,12 @@ import {
 import { FileText, LifeBuoy, LogOut, Loader2, Settings, User as UserIcon, Languages } from 'lucide-react';
 import { SettingsModal } from '../settings-modal';
 import { useState } from 'react';
+import { ProfileModal } from '../profile-modal';
 
 export function AppHeader() {
-  const { user, profile, logout, profileLoading, setShowProfileModal } = useAuth();
+  const { user, profile, logout, profileLoading } = useAuth();
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   
   return (
     <>
@@ -100,11 +102,19 @@ export function AppHeader() {
         </div>
       </header>
       
-      {user && profile && profile.isAdmin && (
-          <SettingsModal 
-            isOpen={showSettingsModal}
-            setIsOpen={setShowSettingsModal}
-          />
+      {user && profile && (
+          <>
+            {profile.isAdmin && (
+              <SettingsModal 
+                isOpen={showSettingsModal}
+                setIsOpen={setShowSettingsModal}
+              />
+            )}
+            <ProfileModal 
+              isOpen={showProfileModal}
+              setIsOpen={setShowProfileModal}
+            />
+          </>
       )}
     </>
   );

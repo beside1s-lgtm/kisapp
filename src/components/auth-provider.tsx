@@ -8,8 +8,6 @@ import { UserProfile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { errorEmitter } from '@/lib/error-emitter';
-import { AppHeader } from './layout/header';
-import { ProfileModal } from './profile-modal';
 
 interface AuthContextType {
   user: FirebaseUser | null;
@@ -20,7 +18,7 @@ interface AuthContextType {
   googleSignIn: () => Promise<void>;
   logout: () => Promise<void>;
   setProfile: (profile: UserProfile | null) => void;
-  setShowProfileModal: (show: boolean) => void;
+  fetchProfile: (user: FirebaseUser) => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -30,7 +28,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
-  const [showProfileModal, setShowProfileModal] = useState(false);
   const [isProfileIncomplete, setIsProfileIncomplete] = useState(false);
   const { toast } = useToast();
 
@@ -55,29 +52,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchProfile = useCallback(async (firebaseUser: FirebaseUser) => {
     setProfileLoading(true);
-    let incomplete = false;
     try {
-      let userProfile = await getUserProfile(firebaseUser.uid);
-      if (!userProfile) {
-        // This is a new user, let's create a default profile.
+      const userProfile = await getUserProfile(firebaseUser.uid);
+      if (userProfile) {
+        setProfile(userProfile);
+        setIsProfileIncomplete(!userProfile.signature || userProfile.name === 'New User' || !userProfile.role);
+      } else {
+         // Create a default profile for new users
         const newProfile: UserProfile = {
           name: firebaseUser.displayName || 'New User',
-          role: '담당', // default role
           email: firebaseUser.email!,
+          role: '담당',
           signature: '',
           isAdmin: false,
         };
-        await saveUserProfile(firebaseUser.uid, firebaseUser.email!, newProfile);
-        userProfile = newProfile;
-        incomplete = true; // Mark as incomplete to suggest user to update it
-      } else if (!userProfile.signature || userProfile.name === 'New User') {
-        incomplete = true;
+        await saveUserProfile(firebaseUser.uid, newProfile);
+        setProfile(newProfile);
+        setIsProfileIncomplete(true);
       }
-      setProfile(userProfile);
-      setIsProfileIncomplete(incomplete);
     } catch (error) {
       console.error("Failed to fetch or create profile", error);
-      toast({ variant: 'destructive', title: 'Profile Error', description: 'Could not load your profile.' });
+      toast({ variant: 'destructive', title: 'Profile Error', description: '프로필을 불러오는 데 실패했습니다.' });
     } finally {
       setProfileLoading(false);
     }
@@ -85,12 +80,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setLoading(true);
-      setProfileLoading(true);
       if (firebaseUser) {
         if (firebaseUser.email?.endsWith('@kshcm.net') || firebaseUser.email?.endsWith('@kish.kr') || process.env.NODE_ENV === 'development' ) {
             setUser(firebaseUser);
-            await fetchProfile(firebaseUser);
+            if (!profile || profile.email !== firebaseUser.email) {
+                await fetchProfile(firebaseUser);
+            }
         } else {
             toast({ variant: 'destructive', title: '접근 거부', description: '허용된 도메인 계정으로만 로그인할 수 있습니다.'});
             await signOut(auth);
@@ -102,12 +97,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         setIsProfileIncomplete(false);
       }
-      setProfileLoading(false);
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [fetchProfile, toast]);
+  }, [fetchProfile, toast, profile]);
   
   const googleSignIn = async () => {
     try {
@@ -115,6 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         prompt: 'select_account'
       });
       await signInWithPopup(auth, googleProvider);
+      // onAuthStateChanged will handle the rest
     } catch (error: any) {
       console.error("Google Sign-In Error:", error);
       let description = '로그인 중 오류가 발생했습니다.';
@@ -131,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut(auth);
   };
   
-  const value = { user, profile, loading, profileLoading, googleSignIn, logout, setProfile, isProfileIncomplete, setShowProfileModal };
+  const value = { user, profile, loading, profileLoading, googleSignIn, logout, setProfile, isProfileIncomplete, fetchProfile };
 
   if (loading) {
     return (
@@ -144,12 +139,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={value}>
         {children}
-        {user && profile && (
-            <ProfileModal 
-                isOpen={showProfileModal} 
-                setIsOpen={setShowProfileModal}
-            />
-        )}
     </AuthContext.Provider>
   );
 }
