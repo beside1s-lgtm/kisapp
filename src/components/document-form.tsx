@@ -177,12 +177,12 @@ export default function DocumentForm() {
           form.setError('receiverEmail', { message: '외부 문서에는 이메일이 필요합니다.'});
           return;
       }
-
+      
       const payload: ApprovalDocPayload = {
         title: data.title,
         content: data.content,
         approvers: data.approvers
-          .filter((a) => a.active)
+          .filter((a) => a.active && a.name && a.email)
           .map(
             (a) =>
               ({
@@ -213,7 +213,7 @@ export default function DocumentForm() {
 
       const result = await createDocument(payload, user.uid, profile);
 
-      if (result.success) {
+      if (result.success && result.docId) {
         toast({
           title: '문서 제출 완료!',
           description: `문서(번호: ${result.docNo})가 결재를 위해 전송되었습니다.`,
@@ -223,7 +223,7 @@ export default function DocumentForm() {
         toast({
           variant: 'destructive',
           title: '제출 실패',
-          description: result.error,
+          description: result.error || "알 수 없는 오류가 발생했습니다.",
         });
       }
     });

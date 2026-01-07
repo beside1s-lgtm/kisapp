@@ -149,16 +149,13 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
   const settingsRef = getSettingsRef();
   const approvalsCol = getApprovalsCol();
   
-  let finalDocNoStr = "";
-  let newDocId: string | undefined = undefined;
+  const newDocRef = doc(approvalsCol);
+  const newDocId = newDocRef.id;
 
   try {
-    const newDocRef = doc(approvalsCol); // Generate a new ref with an ID
-    newDocId = newDocRef.id;
-
     const hasApprovers = payload.approvers && payload.approvers.length > 0;
 
-    const newDoc: Omit<ApprovalDoc, 'id'> = {
+    const newDocData: Omit<ApprovalDoc, 'id'> = {
       ...payload,
       docNo: '', // Will be set in transaction
       requesterId: userId,
@@ -172,42 +169,48 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       completedAt: hasApprovers ? null : serverTimestamp() as Timestamp,
     };
 
-    await runTransaction(db, async (transaction) => {
+    const finalDocNoStr = await runTransaction(db, async (transaction) => {
       const settingsSnap = await transaction.get(settingsRef);
-      if (!settingsSnap.exists()) {
-        // Let's create a default one if it doesn't exist. Requires admin to fix later.
-        transaction.set(settingsRef, { nextNumber: 1 });
-      }
       const currentConfig = (settingsSnap.data() as DocConfig) || { nextNumber: 1 };
       let nextNum = currentConfig.nextNumber || 1;
       
-      finalDocNoStr = `Kish-초등-${nextNum}`;
-      newDoc.docNo = finalDocNoStr;
+      const docNo = `Kish-초등-${nextNum}`;
+      newDocData.docNo = docNo;
       
       transaction.set(settingsRef, { nextNumber: nextNum + 1 }, { merge: true });
-      transaction.set(newDocRef, newDoc);
+      transaction.set(newDocRef, newDocData);
+      
+      return docNo;
     });
 
     revalidatePath('/sent');
     return { success: true, docId: newDocId, docNo: finalDocNoStr };
 
   } catch (error: any) {
-    let permissionError;
-    const requestData = { ...payload };
-    if (error.message.includes("settings")) {
-        permissionError = new FirestorePermissionError({
-            path: settingsRef.path,
-            operation: 'update',
-        });
+    console.error("Failed to create document:", error); // Log the full error on the server
+    
+    // Create a more user-friendly error message
+    let errorMessage = "An unknown error occurred while creating the document.";
+    if (error.name === 'FirebaseError') {
+       if (error.code === 'permission-denied') {
+          errorMessage = "Permission denied. Please check Firestore security rules.";
+       } else {
+          errorMessage = `Firestore error: ${error.code}.`;
+       }
     } else {
-       permissionError = new FirestorePermissionError({
-          path: newDocId ? doc(approvalsCol, newDocId).path : approvalsCol.path, 
-          operation: 'create',
-          requestResourceData: requestData,
-      });
+        errorMessage = error.message;
     }
+    
+    // Optionally emit a specific permission error if that's what we suspect
+    const permissionError = new FirestorePermissionError({
+        path: newDocId ? doc(approvalsCol, newDocId).path : approvalsCol.path, 
+        operation: 'create',
+        requestResourceData: payload,
+    });
     errorEmitter.emit('permission-error', permissionError);
-    return { success: false, error: permissionError.message };
+
+    // Return the specific error to the client
+    return { success: false, error: errorMessage };
   }
 }
 
