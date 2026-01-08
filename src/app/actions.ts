@@ -104,8 +104,19 @@ export async function saveUserProfile(userId: string, email: string, profileData
     
     // 중요: 클라이언트로 반환하기 전에 직렬화할 수 없는 필드(타임스탬프)를 제거합니다.
     const { updatedAt, createdAt, ...returnProfile } = dataToSave;
+    
+    // 최종 반환 객체에도 uid가 있는지 확인
+    const finalProfile: UserProfile = {
+      name: returnProfile.name || '',
+      email: returnProfile.email || email,
+      role: returnProfile.role || '',
+      signature: returnProfile.signature || '',
+      isAdmin: returnProfile.isAdmin || false,
+      uid: returnProfile.uid || userId,
+    };
 
-    return { success: true, profile: returnProfile };
+
+    return { success: true, profile: finalProfile };
   } catch (error: any) {
       return { success: false, error: `저장 실패: ${error.message}` };
   }
@@ -141,9 +152,7 @@ export async function getInboxDocuments(userEmail: string) {
   
   try {
     // Firestore 쿼리는 배열의 특정 인덱스에 접근하는 것을 직접 지원하지 않습니다.
-    // 따라서, 모든 'pending' 문서를 가져와서 클라이언트 측에서 필터링해야 합니다.
-    // 이는 문서가 많아질 경우 비효율적일 수 있으므로, 나중에 구조 변경을 고려해야 합니다.
-    // (예: 각 단계마다 결재자 이메일을 별도 필드로 저장)
+    // 따라서, 모든 'pending' 문서를 가져와서 서버 측에서 필터링합니다.
     const allPendingSnapshot = await getDocs(query(approvalsCol, where('status', '==', 'pending'), orderBy('createdAt', 'desc')));
     
     const allPending = serializeDocs(allPendingSnapshot.docs);
@@ -172,6 +181,7 @@ export async function getSentDocuments(userId: string, userEmail: string) {
   if (!userId && !userEmail) return [];
   const approvalsCol = getApprovalsCol();
 
+  // requesterId가 없거나 비어있는 아주 오래된 문서를 대비해 or 쿼리 사용
   const q = query(
     approvalsCol, 
     or(
@@ -186,14 +196,7 @@ export async function getSentDocuments(userId: string, userEmail: string) {
     return serializeDocs(snapshot.docs);
   } catch (error) {
     console.error("Get Sent Docs Error:", error);
-    // Try a simpler query if the composite one fails (for very old Firestore versions)
-     try {
-        const snapshot = await getDocs(query(approvalsCol, where('requesterId', '==', userId), orderBy('createdAt', 'desc')));
-        return serializeDocs(snapshot.docs);
-    } catch (e) {
-        console.error("Fallback Get Sent Docs Error:", e);
-        return [];
-    }
+    return [];
   }
 }
 
@@ -202,6 +205,7 @@ export async function getPendingDocuments(userId: string, userEmail: string) {
   if (!userId && !userEmail) return [];
   const approvalsCol = getApprovalsCol();
   
+  // 'requesterId' 또는 'requesterEmail'이 일치하고, 'status'가 'pending'인 문서를 찾습니다.
   const q = query(
     approvalsCol,
     and(
@@ -226,6 +230,8 @@ export async function getPendingDocuments(userId: string, userEmail: string) {
 // [4] 문서등록대장 (Registry): 결재 완료된 모든 공개 문서
 export async function getRegistryDocuments(userId: string, userEmail: string) {
     const approvalsCol = getApprovalsCol();
+    // 'approved' 상태인 모든 문서를 가져옵니다.
+    // 참고: 비공개 문서도 일단 목록에는 표시될 수 있으나, 접근 시 권한 확인이 필요합니다. (향후 구현)
     const q = query(approvalsCol, where('status', '==', 'approved'), orderBy('completedAt', 'desc'));
     try {
         const snapshot = await getDocs(q);
@@ -239,6 +245,8 @@ export async function getRegistryDocuments(userId: string, userEmail: string) {
 export async function getDocumentById(docId: string) {
   try {
     const snapshot = await getDoc(doc(getApprovalsCol(), docId));
+    // 참고: 현재는 문서 존재 여부만 확인합니다. 향후 여기서 사용자 권한 검사를 추가할 수 있습니다.
+    // (예: 기안자, 결재선 참여자, 공람자, 관리자인지 확인)
     return snapshot.exists() ? serializeDocs([snapshot])[0] : null;
   } catch (error) {
      console.error("Get Doc By ID Error:", error);
@@ -267,7 +275,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     const newDocData: any = {
       ...payload,
       docNo: finalDocNoStr,
-      requesterId: userProfile.uid,
+      requesterId: userProfile.uid, // userProfile에서 정확한 uid를 사용합니다.
       requesterName: userProfile.name,
       requesterEmail: userProfile.email,
       requesterRole: userProfile.role,
@@ -326,21 +334,85 @@ export async function approveDocument(docId: string, userId: string, userProfile
         revalidatePath('/pending'); // 기안자의 진행함 갱신
         revalidatePath('/sent');    // 완료 시 기안자의 상신함 갱신
         revalidatePath('/registry'); // 완료 시 대장 갱신
+        revalidatePath(`/documents/${docId}`); // 현재 문서 페이지 갱신
         return { success: true, docId };
     } catch (error: any) {
         return { success: false, error: error.message };
     }
 }
 
-// (나머지 generateContentAction, bulkRegisterUsers, config 관련 함수는 기존 유지)
 export async function generateContentAction(input: any) {
-    // ... 기존 코드 유지 ...
-    return { success: false, error: "구현 필요" }; // 축약됨
-}
-export async function bulkRegisterUsers(fileData: string) { return { success: false }; }
-export async function getDocConfig() { return {}; }
-export async function saveDocConfig(payload: any) { return { success: true }; }
+    const parsedInput = z.object({
+        title: z.string(),
+        approvers: z.array(z.any()),
+        attachments: z.array(z.any()).optional(),
+    }).safeParse(input);
 
+    if (!parsedInput.success) {
+        return { success: false, error: '유효하지 않은 입력입니다.' };
+    }
+    try {
+        const result = await generateDocumentContent(parsedInput.data);
+        return { success: true, content: result.content };
+    } catch (e: any) {
+        console.error("AI Generation Error: ", e);
+        return { success: false, error: 'AI 콘텐츠 생성에 실패했습니다: ' + e.message };
+    }
+}
+export async function bulkRegisterUsers(fileData: string) {
+    try {
+        const base64Data = fileData.split(',')[1];
+        const buffer = Buffer.from(base64Data, 'base64');
+        const workbook = xlsx.read(buffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const users = xlsx.utils.sheet_to_json(worksheet) as { email: string; name: string; role: string }[];
+        
+        if (!users.length) return { success: false, error: '엑셀 파일에 데이터가 없습니다.' };
+
+        const batch = writeBatch(db);
+        let count = 0;
+
+        for (const user of users) {
+            if (user.email && user.name && user.role) {
+                const userRef = doc(db, "users", user.email.toLowerCase());
+                // uid는 인증 시 자동으로 연결되므로, 여기서는 프로필 정보만 설정합니다.
+                batch.set(userRef, {
+                    name: user.name,
+                    role: user.role,
+                    email: user.email.toLowerCase(),
+                    isAdmin: false, // 기본값
+                    signature: '', // 기본값
+                }, { merge: true });
+                count++;
+            }
+        }
+        await batch.commit();
+        revalidatePath('/settings');
+        return { success: true, summary: `${count}명의 사용자가 등록/업데이트되었습니다.` };
+
+    } catch (error: any) {
+        return { success: false, error: `일괄 등록 실패: ${error.message}` };
+    }
+}
+
+export async function getDocConfig() {
+    try {
+        const snap = await getDoc(doc(getSettingsCol(), 'docConfig'));
+        return snap.exists() ? (snap.data() as DocConfig) : {};
+    } catch (e) {
+        return {};
+    }
+}
+export async function saveDocConfig(payload: any) {
+    try {
+        await setDoc(doc(getSettingsCol(), 'docConfig'), payload, { merge: true });
+        revalidatePath('/'); // 전체 앱에 영향을 줄 수 있으므로 넓게 revalidate
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
 
 export async function deleteUser(email: string) {
     if (!email) {
@@ -349,9 +421,6 @@ export async function deleteUser(email: string) {
     try {
       const userRef = doc(db, 'users', email);
       await deleteDoc(userRef);
-      // 참고: 이 함수는 Firestore의 사용자 프로필만 삭제합니다.
-      // Firebase Authentication의 사용자를 삭제하려면 별도의 Admin SDK 로직이 필요합니다.
-      // 현재 앱에서는 Firestore 프로필 삭제만 구현합니다.
       revalidatePath('/settings'); // 사용자 목록 갱신
       return { success: true };
     } catch (error: any) {
