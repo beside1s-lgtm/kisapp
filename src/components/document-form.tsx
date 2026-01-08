@@ -88,7 +88,7 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>;
 
-const defaultApprovers: Omit<Approver, 'status'>[] = [
+const defaultApprovers: Omit<Approver, 'status' | 'signature' | 'approvedAt' | 'approverName'>[] = [
     { name: '', email: '', role: '부장', type: 'normal' },
     { name: '', email: '', role: '교감', type: 'normal' },
     { name: '', email: '', role: '협조', type: 'normal' },
@@ -237,8 +237,8 @@ export default function DocumentForm() {
         publishStatus: data.publishStatus,
         docType: data.docType,
         receiverInfo:
-          data.docType === 'external'
-            ? { name: data.receiverName!, email: data.receiverEmail! }
+          data.docType === 'external' && data.receiverName && data.receiverEmail
+            ? { name: data.receiverName, email: data.receiverEmail }
             : null,
         headerImage: docConfig.headerImage || '',
         footerInfo: {
@@ -252,13 +252,13 @@ export default function DocumentForm() {
       
       const result = await createDocument(payload, user.uid, profile);
 
-      if (result.success && result.docId) {
+      if (result?.success && result.docId) {
         toast({
           title: '문서 제출 완료!',
           description: `문서(번호: ${result.docNo})가 결재를 위해 전송되었습니다.`,
         });
         router.push(`/documents/${result.docId}`);
-      } else {
+      } else if (result?.error) {
         toast({
           variant: 'destructive',
           title: '제출 실패',
@@ -416,8 +416,9 @@ export default function DocumentForm() {
                        <Controller
                           control={form.control}
                           name={`approvers.${index}.name`}
-                          render={({ field: { onChange, value } }) => (
+                          render={({ field }) => (
                              <FormItem>
+                               <FormLabel className="sr-only">결재자</FormLabel>
                                 <FormControl>
                                   <UserSearch
                                     users={users}
@@ -426,8 +427,8 @@ export default function DocumentForm() {
                                         form.setValue(`approvers.${index}.email`, user.email, { shouldValidate: true });
                                     }}
                                     placeholder="결재자 검색..."
-                                    value={value}
-                                    onValueChange={onChange}
+                                    value={field.value}
+                                    onValueChange={field.onChange}
                                   />
                                 </FormControl>
                                 <FormMessage />
@@ -633,3 +634,5 @@ export default function DocumentForm() {
     </Form>
   );
 }
+
+    

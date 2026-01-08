@@ -18,7 +18,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/firebase';
+import { db } from '@/lib/firebase-admin'; // Use admin db for server actions
 import type {
   ApprovalDoc,
   ApprovalDocPayload,
@@ -143,7 +143,7 @@ export async function getDocumentById(docId: string) {
 }
 
 
-export async function createDocument(payload: ApprovalDocPayload, userId: string, userProfile: UserProfile): Promise<{ success: boolean; error?: string; docId?: string; docNo?: string; } | void> {
+export async function createDocument(payload: ApprovalDocPayload, userId: string, userProfile: UserProfile): Promise<{ success: boolean; error?: string; docId?: string; docNo?: string; }> {
   if (!db) return { success: false, error: "Database not initialized." };
   
   const newDocRef = doc(getApprovalsCol());
@@ -175,8 +175,8 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       requesterSignature: userProfile.signature || '',
       currentStep: 0,
       status: hasApprovers ? 'pending' : 'approved',
-      createdAt: serverTimestamp() as Timestamp,
-      completedAt: hasApprovers ? null : serverTimestamp() as Timestamp,
+      createdAt: serverTimestamp(),
+      completedAt: hasApprovers ? null : serverTimestamp(),
     };
 
     await setDoc(newDocRef, newDocData);
@@ -186,18 +186,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     return { success: true, docId: newDocRef.id, docNo: finalDocNoStr };
 
   } catch (error: any) {
-    if (error.code === 'permission-denied') {
-        const permissionError = new FirestorePermissionError({
-            path: newDocRef.path,
-            operation: 'create',
-            requestResourceData: payload,
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        // Explicitly return nothing to prevent double error handling
-        return; 
-    }
-    
-    // For all other errors, return an error object for the client to handle
+    console.error("Failed to create document:", error); // Log the actual error to the server console for debugging.
     return { success: false, error: `문서 생성 실패: ${error.message}` };
   }
 }
@@ -496,3 +485,5 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
 }
+
+    
