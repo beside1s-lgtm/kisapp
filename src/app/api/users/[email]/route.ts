@@ -1,25 +1,28 @@
-'use server';
 import { getDb } from '@/lib/firebase-admin';
 import { NextRequest, NextResponse } from 'next/server';
-import { doc, getDoc, setDoc } from 'firebase-admin/firestore';
 import { UserProfile } from '@/lib/types';
 
+// [중요] firebase-admin은 'doc', 'getDoc' 같은 모듈식 함수를 쓰지 않고
+// db.collection('users').doc('id') 방식을 사용합니다.
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { email: string } }
+  { params }: { params: Promise<{ email: string }> } // Next.js 15: params는 Promise
 ) {
-    const db = getDb();
-    const email = params.email;
-    if (!email) {
-        return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
-    }
-    
     try {
-        const userDocRef = doc(db, 'users', email);
-        const snap = await getDoc(userDocRef);
+        const { email } = await params; // await 필수
+        const decodedEmail = decodeURIComponent(email); // URL 인코딩 문자(@ 등) 처리
+
+        if (!decodedEmail) {
+            return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+        }
+
+        const db = getDb();
+        // [수정] Admin SDK 문법으로 변경
+        const userDocRef = db.collection('users').doc(decodedEmail);
+        const snap = await userDocRef.get();
         
-        if (!snap.exists()) {
+        if (!snap.exists) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
         
@@ -28,22 +31,19 @@ export async function GET(
             return NextResponse.json({ error: 'User data is empty' }, { status: 404 });
         }
 
-        // Safely construct the profile object with fallbacks.
         const profile: UserProfile = {
             name: data.name || '',
             role: data.role || '',
             signature: data.signature || '',
-            // Safely access uid, default to the doc id (email) if it doesn't exist.
             uid: data.uid || snap.id,
-            email: snap.id, // Email is the document ID.
+            email: snap.id,
             isAdmin: data.isAdmin || false,
         };
 
         return NextResponse.json(profile);
 
     } catch (error) {
-       console.error(`[API] getUserProfileByEmail failed for ${email}:`, error);
-       // Provide a more informative error message in the response body.
+       console.error(`[API] getUserProfileByEmail failed:`, error);
        return NextResponse.json({ error: 'Internal Server Error', details: (error as Error).message }, { status: 500 });
     }
 }
@@ -51,42 +51,49 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { email: string } }
+  { params }: { params: Promise<{ email: string }> }
 ) {
-  const db = getDb();
-  const email = params.email;
-  const { uid, profileData } = await request.json();
-
-  if (!email || !uid || !profileData) {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
-  }
-
-  const userProfileRef = doc(db, 'users', email);
-  
   try {
-      // Use merge:true to prevent overwriting existing fields unintentionally
-      await setDoc(userProfileRef, { ...profileData, email, uid }, { merge: true });
-      
-      const newProfileSnap = await getDoc(userProfileRef);
-      if (!newProfileSnap.exists()) {
-          throw new Error("Failed to retrieve profile after saving.");
+      const { email } = await params;
+      const decodedEmail = decodeURIComponent(email);
+      const { uid, profileData } = await request.json();
+      const db = getDb();
+
+      if (!decodedEmail || !profileData) {
+        return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+      }
+
+      const userProfileRef = db.collection('users').doc(decodedEmail);
+      const docSnap = await userProfileRef.get();
+
+      if (docSnap.exists) {
+          await userProfileRef.set({
+             ...profileData,
+             ...(uid ? { uid } : {}),
+             updatedAt: new Date().toISOString() 
+          }, { merge: true });
+      } else {
+          await userProfileRef.set({
+              email: decodedEmail,
+              uid: uid || '',
+              ...profileData,
+              createdAt: new Date().toISOString()
+          });
       }
       
-      const savedData = newProfileSnap.data() as UserProfile;
-      
       const newProfile: UserProfile = {
-          name: savedData.name || '',
-          role: savedData.role || '',
-          signature: savedData.signature || '',
-          email: newProfileSnap.id,
-          uid: savedData.uid || uid, // Ensure UID is consistent
-          isAdmin: savedData.isAdmin || false,
+          name: profileData.name || '',
+          role: profileData.role || '',
+          signature: profileData.signature || '',
+          email: decodedEmail,
+          uid: uid || '',
+          isAdmin: profileData.isAdmin || false,
       };
 
       return NextResponse.json({ success: true, profile: newProfile });
 
   } catch (error: any) {
-      console.error(`[API] saveUserProfile failed for ${email}:`, error);
+      console.error(`[API] saveUserProfile failed:`, error);
       return NextResponse.json({ success: false, error: `프로필 저장 실패: ${error.message}` }, { status: 500 });
   }
 }

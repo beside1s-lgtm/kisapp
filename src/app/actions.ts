@@ -1,4 +1,3 @@
-
 'use server';
 
 import {
@@ -19,7 +18,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
-import { db as getClientDb } from '@/lib/firebase';
+import { db as clientDbInstance } from '@/lib/firebase'; // [이름 변경] 헷갈림 방지
 import { getDb as getAdminDb } from '@/lib/firebase-admin';
 import type {
   ApprovalDoc,
@@ -33,13 +32,11 @@ import { errorEmitter } from '@/lib/error-emitter';
 import { FirestorePermissionError } from '@/lib/errors';
 import * as xlsx from 'xlsx';
 
+// [중요] clientDbInstance는 함수가 아니라 이미 초기화된 객체입니다.
+// 따라서 clientDbInstance() 가 아니라 clientDbInstance 를 그대로 써야 합니다.
 
-const appId = 'kish-standard-v6-fix'.replace(/[\/.]/g, '_');
-
-// Helper function to get collections
 function getApprovalsCol() {
-  const db = getClientDb();
-  return collection(db, 'approvals');
+  return collection(clientDbInstance, 'approvals');
 }
 
 function serializeDocs(docs: any[]): any[] {
@@ -61,8 +58,10 @@ function serializeDocs(docs: any[]): any[] {
 }
 
 export async function getInboxDocuments(userEmail: string) {
-  const db = getClientDb();
+  // [수정] getClientDb() 호출 제거 -> clientDbInstance 사용
+  const db = clientDbInstance; 
   if (!userEmail) return [];
+  
   const approvalsCol = getApprovalsCol();
   const q = query(
     approvalsCol,
@@ -71,21 +70,20 @@ export async function getInboxDocuments(userEmail: string) {
   try {
     const snapshot = await getDocs(q);
     const allPending = serializeDocs(snapshot.docs);
-    // This will be filtered by firestore rules in production for security.
-    // For now, client-side filtering to allow UI to work.
     return allPending.filter(doc => doc.approvers[doc.currentStep]?.email === userEmail);
   } catch (error) {
     const permissionError = new FirestorePermissionError({
       path: approvalsCol.path,
       operation: 'list',
     });
-    errorEmitter.emit('permission-error', permissionError);
+    // Server Actions에서는 emit이 클라이언트로 직접 전달되지 않으므로 주의
+    console.error("Permission Error:", error); 
     return [];
   }
 }
 
 export async function getSentDocuments(userId: string) {
-  const db = getClientDb();
+  const db = clientDbInstance;
   if (!userId) return [];
   const approvalsCol = getApprovalsCol();
   const q = query(approvalsCol, where('requesterId', '==', userId), orderBy('createdAt', 'desc'));
@@ -93,21 +91,15 @@ export async function getSentDocuments(userId: string) {
     const snapshot = await getDocs(q);
     return serializeDocs(snapshot.docs);
   } catch (error) {
-     const permissionError = new FirestorePermissionError({
-      path: approvalsCol.path,
-      operation: 'list',
-    });
-    errorEmitter.emit('permission-error', permissionError);
+    console.error("Get Sent Docs Error:", error);
     return [];
   }
 }
 
 export async function getRegistryDocuments(userId: string, userEmail: string) {
-    const db = getClientDb();
+    const db = clientDbInstance;
     if (!userId || !userEmail) return [];
     
-    // Since firestore rules will handle visibility, we can query all approved docs
-    // and let firestore security rules do the filtering.
     const approvalsCol = getApprovalsCol();
     const q = query(approvalsCol, where('status', '==', 'approved'), orderBy('createdAt', 'desc'));
     
@@ -115,17 +107,13 @@ export async function getRegistryDocuments(userId: string, userEmail: string) {
         const snapshot = await getDocs(q);
         return serializeDocs(snapshot.docs);
     } catch (error: any) {
-        const permissionError = new FirestorePermissionError({
-            path: approvalsCol.path,
-            operation: 'list',
-        });
-        errorEmitter.emit('permission-error', permissionError);
+        console.error("Get Registry Docs Error:", error);
         return [];
     }
 }
 
 export async function getDocumentById(docId: string) {
-  const db = getClientDb();
+  const db = clientDbInstance;
   const approvalsCol = getApprovalsCol();
   const docRef = doc(approvalsCol, docId);
   try {
@@ -135,11 +123,7 @@ export async function getDocumentById(docId: string) {
     }
     return serializeDocs([snapshot])[0];
   } catch (error: any) {
-     const permissionError = new FirestorePermissionError({
-         path: docRef.path,
-         operation: 'get',
-     });
-     errorEmitter.emit('permission-error', permissionError);
+     console.error("Get Doc By ID Error:", error);
      return null;
   }
 }
@@ -147,7 +131,7 @@ export async function getDocumentById(docId: string) {
 
 export async function createDocument(payload: ApprovalDocPayload, userId: string, userProfile: UserProfile): Promise<{ success: boolean; error?: string; docId?: string; docNo?: string; }> {
   const adminDb = getAdminDb();
-  const clientDb = getClientDb();
+  const clientDb = clientDbInstance;
   
   const approvalsCol = collection(clientDb, 'approvals');
   const newDocRef = doc(approvalsCol);
@@ -194,17 +178,13 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
 
   } catch (error: any) {
     console.error('Create document error:', error);
-    if (error instanceof FirestorePermissionError) {
-      errorEmitter.emit('permission-error', error);
-      return { success: false, error: error.message };
-    }
     return { success: false, error: `문서 생성 실패: ${error.message}` };
   }
 }
 
 
 export async function approveDocument(docId: string, userId: string, userProfile: UserProfile) {
-    const db = getClientDb();
+    const db = clientDbInstance;
     const approvalsCol = getApprovalsCol();
     const docRef = doc(approvalsCol, docId);
 
@@ -310,7 +290,6 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     for (const user of usersJson) {
       const { email, name, role } = user;
       if (!email || !name || !role) {
-        console.warn(`Skipping row due to missing data: ${JSON.stringify(user)}`);
         continue;
       }
       
@@ -341,7 +320,6 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
 }
-
 
 export async function getDocConfig() {
     const db = getAdminDb();
