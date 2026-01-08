@@ -109,7 +109,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 <Printer className="mr-2 h-4 w-4" /> 인쇄 / PDF로 저장
             </Button>
         </div>
-        <div className="bg-white p-4 md:p-12 shadow-lg rounded-lg max-w-4xl mx-auto A4-page">
+        <div className="bg-white p-4 md:p-12 shadow-lg rounded-lg max-w-4xl mx-auto printable-area">
             <style jsx global>{`
                 @media print {
                     body * {
@@ -127,7 +127,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                         padding: 1cm;
                         margin: 0;
                     }
-                    .print-hidden {
+                    .no-print {
                         display: none;
                     }
                 }
@@ -136,7 +136,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     margin: 0;
                 }
             `}</style>
-            <div className="printable-area">
+            <div>
                 <header className="text-center mb-8">
                     <p className="text-xs md:text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
                     {initialDoc.headerImage ? (
@@ -191,7 +191,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                                 <div className="flex items-center gap-1">
                                     <span className="font-semibold">{initialDoc.requesterName}</span>
                                     {initialDoc.requesterSignature && <div className="w-8 h-8 md:w-12 md:h-12 flex items-center justify-center"><img src={initialDoc.requesterSignature} className="max-h-full max-w-full object-contain" alt="requester-sig" /></div>}
-                                </div>
+                                inudiv>
                             </div>
                             {mainApprovers.map((ap, idx) => (
                                 <div key={idx} className="flex items-center gap-1 md:gap-2">

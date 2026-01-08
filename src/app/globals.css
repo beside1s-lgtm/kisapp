@@ -78,11 +78,7 @@
 
 /* KSHCM 공문 인쇄용 스타일 */
 @media print {
-  body {
-    background: white !important;
-  }
-  /* 인쇄 시 헤더, 사이드바 등 숨김 처리 */
-  header, nav, aside, .no-print {
+  .no-print {
     display: none !important;
   }
   .print-container {
@@ -92,9 +88,6 @@
     max-width: none !important;
     box-shadow: none !important;
     border: none !important;
-  }
-  @page {
-    size: A4;
-    margin: 20mm;
+    background: white !important;
   }
 }
