@@ -422,7 +422,7 @@ export default function DocumentForm() {
                                 <FormControl>
                                   <UserSearch
                                     users={users}
-                                    value={nameField.value}
+                                    value={form.watch(`approvers.${index}.name`)}
                                     onChange={nameField.onChange}
                                     onSelectUser={(user) => {
                                         form.setValue(`approvers.${index}.name`, user.name, { shouldValidate: true });
@@ -486,6 +486,7 @@ export default function DocumentForm() {
               <UserSearch
                 users={users}
                 value=""
+                onChange={() => {}}
                 onSelectUser={(user) => {
                   if (!circularFields.some(f => f.email === user.email)) {
                     appendCircular({name: user.name, email: user.email, role: user.role})

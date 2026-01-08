@@ -9,11 +9,9 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-interface UserSearchProps extends Omit<InputProps, 'onSelect' | 'value' | 'onChange'> {
+interface UserSearchProps extends Omit<InputProps, 'onSelect' > {
   users: UserProfile[];
   onSelectUser: (user: UserProfile) => void;
-  value: string;
-  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string;
 }
 
@@ -21,12 +19,13 @@ export function UserSearch({ users, onSelectUser, value, onChange, placeholder, 
   const [open, setOpen] = useState(false);
 
   const filteredUsers = useMemo(() => {
-    if (!value) return [];
-    if (users.some(u => u.name === value)) return [];
+    const stringValue = String(value || '');
+    if (!stringValue) return [];
+    if (users.some(u => u.name === stringValue)) return [];
 
     return users.filter(
-      (u) => u.name.toLowerCase().includes(value.toLowerCase()) || 
-             u.email.toLowerCase().includes(value.toLowerCase())
+      (u) => u.name.toLowerCase().includes(stringValue.toLowerCase()) || 
+             u.email.toLowerCase().includes(stringValue.toLowerCase())
     );
   }, [value, users]);
 
@@ -36,7 +35,9 @@ export function UserSearch({ users, onSelectUser, value, onChange, placeholder, 
   };
   
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
-    onChange(e); // Forward the event to react-hook-form
+    if (onChange) {
+      onChange(e); 
+    }
     if (e.target.value) {
         setOpen(true);
     } else {
