@@ -137,12 +137,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true);
+      setProfileLoading(true);
       if (firebaseUser && firebaseUser.email) {
         if (!isDomainAllowed(firebaseUser.email)) {
           toast({ variant: 'destructive', title: '로그인 실패', description: '허용되지 않은 도메인입니다.' });
           await signOut(auth);
           setUser(null);
           setProfile(null);
+          setProfileLoading(false);
         } else {
           setUser(firebaseUser);
           await fetchProfile(firebaseUser);
@@ -150,14 +153,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setUser(null);
         setProfile(null);
+        setProfileLoading(false);
       }
       setLoading(false);
-      setProfileLoading(false);
     });
 
     return () => unsubscribe();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchProfile, toast]);
 
   const googleSignIn = async () => {
     try {
