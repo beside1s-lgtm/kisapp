@@ -97,17 +97,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     document.body.removeChild(link);
   };
 
-  // Badge 컴포넌트 대체
-  const getStatusBadge = (status: 'pending' | 'approved' | 'rejected') => {
-    const baseClass = "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2";
-    switch(status) {
-        case 'approved': return <span className={`${baseClass} border-transparent bg-blue-600 text-white hover:bg-blue-700`}>결재 완료</span>;
-        case 'rejected': return <span className={`${baseClass} border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80`}>반려</span>;
-        case 'pending': return <span className={`${baseClass} border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80`}>진행중</span>;
-        default: return null;
-    }
-  }
-
   return (
     <div className="relative">
         <div className="no-print p-4 md:p-0 flex justify-end gap-2 mb-4 max-w-4xl mx-auto">

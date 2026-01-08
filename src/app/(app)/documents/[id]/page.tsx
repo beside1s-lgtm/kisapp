@@ -6,17 +6,15 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, use } from "react";
+import { useEffect, useState } from "react";
 import { ApprovalDoc } from "@/lib/types";
 
-// params 타입을 Promise로 정의합니다.
 type DocumentPageProps = {
-    params: Promise<{ id: string }>;
+    params: { id: string };
 };
 
 export default function DocumentPage({ params }: DocumentPageProps) {
-    // React.use()를 사용하여 params Promise를 언랩합니다.
-    const { id } = use(params);
+    const { id } = params;
 
     const [docData, setDocData] = useState<ApprovalDoc | null>(null);
     const [configData, setConfigData] = useState<any>(null);
@@ -27,7 +25,6 @@ export default function DocumentPage({ params }: DocumentPageProps) {
         const fetchData = async () => {
             setLoading(true);
             try {
-                // params.id 대신 언랩된 id 변수를 사용합니다.
                 const [docResult, configResult] = await Promise.all([
                     getDocumentById(id),
                     getDocConfig()
