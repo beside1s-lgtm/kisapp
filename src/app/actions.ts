@@ -263,7 +263,7 @@ export async function approveDocument(docId: string, userId: string, userProfile
     }
 }
 
-export async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>) {
+export async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>): Promise<{ success: boolean; error?: string; profile?: UserProfile; }> {
     const db = getAdminDb();
     
     const userProfileRef = doc(db, 'users', email);
