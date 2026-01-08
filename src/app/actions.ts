@@ -42,24 +42,25 @@ function serializeDocs(docs: any[]): any[] {
     const data = d.data();
     if (!data) return { id: d.id };
     
-    // 이 함수가 오류의 원인이었습니다. createdAt이 항상 Timestamp라고 가정했지만,
-    // 직렬화/역직렬화 과정에서 문자열로 변환될 수 있습니다.
     const safeToISOString = (timestamp: any) => {
       if (!timestamp) return null;
       if (timestamp instanceof Timestamp) {
         return timestamp.toDate().toISOString();
       }
-      // 이미 문자열인 경우 그대로 반환
       if (typeof timestamp === 'string') {
-        return timestamp;
+        // 이미 ISO 문자열 형식인지 간단히 확인
+        if (!isNaN(Date.parse(timestamp))) {
+          return timestamp;
+        }
       }
-      // toDate 메서드가 있는 다른 객체일 경우 처리
       if (timestamp.toDate && typeof timestamp.toDate === 'function') {
         return timestamp.toDate().toISOString();
       }
       try {
+        // 숫자로 된 타임스탬프 등 다른 경우 처리 시도
         return new Date(timestamp).toISOString();
       } catch (e) {
+        console.warn('Could not serialize timestamp:', timestamp);
         return null;
       }
     };
@@ -118,7 +119,6 @@ export async function saveUserProfile(userId: string, email: string, profileData
     
     await setDoc(userProfileRef, dataToSave, { merge: true });
     
-    // Server actions must return plain objects.
     const { ...returnProfile } = dataToSave;
     
     const finalProfile: UserProfile = {
@@ -142,7 +142,6 @@ export async function getUsersDirectory(): Promise<UserProfile[]> {
   try {
     const snapshot = await getDocs(getUsersCol());
     if (snapshot.empty) return [];
-    // Firestore 문서 ID를 이메일로 사용하고, 문서 내의 다른 필드와 결합
     return snapshot.docs.map(d => {
         const data = d.data();
         return {
@@ -166,8 +165,6 @@ export async function getInboxDocuments(userEmail: string) {
   const approvalsCol = getApprovalsCol();
   
   try {
-    // Firestore에서는 배열의 특정 인덱스에 대한 조건부 쿼리를 직접 지원하지 않으므로,
-    // 먼저 'pending' 상태의 모든 문서를 가져온 후 클라이언트 측(여기서는 서버 액션)에서 필터링합니다.
     const allPendingSnapshot = await getDocs(query(approvalsCol, where('status', '==', 'pending'), orderBy('createdAt', 'desc')));
     
     const allPending = serializeDocs(allPendingSnapshot.docs);
