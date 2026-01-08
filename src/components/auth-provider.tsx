@@ -88,10 +88,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchProfile = useCallback(async (firebaseUser: FirebaseUser): Promise<UserProfile | null> => {
     if (!firebaseUser?.email) return null;
     setProfileLoading(true);
+    const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
+
     try {
       let userProfile = await getUserProfileByEmail(firebaseUser.email);
-      const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
       
+      // If user has a profile, ensure it's up-to-date
       if (userProfile) {
          if (isHardcodedAdmin && !userProfile.isAdmin) {
           userProfile.isAdmin = true;
@@ -106,7 +108,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return userProfile;
 
       } else {
+        // If user has no profile
         if (isHardcodedAdmin) {
+            // If they are the hardcoded admin, create a profile for them and let them in.
             const adminProfile: Partial<UserProfile> = {
                 uid: firebaseUser.uid,
                 name: firebaseUser.displayName || '관리자',

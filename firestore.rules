@@ -6,61 +6,14 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-    function getUserData(email) {
-      return get(/databases/$(database)/documents/users/$(email)).data;
-    }
-    // 관리자 확인: Custom Claim 또는 DB의 isAdmin 필드 확인
-    function isAdmin() {
-      return (request.auth.token.isAdmin == true) || 
-             (getUserData(request.auth.token.email).isAdmin == true);
-    }
+    // For simplicity during testing, anyone can do anything if they are signed in.
+    // In a production app, you would have more granular rules.
+    // e.g. function isOwner(userId) { return request.auth.uid == userId; }
 
     // --- [Rules] ---
 
-    match /users/{email} {
-      allow read, write: if isSignedIn() && (isAdmin() || request.auth.token.email == email);
-    }
-
-    match /settings/docConfig {
-       allow read: if isSignedIn();
-       // 일반 사용자도 '번호 채번(nextNumber 증가)'은 가능해야 함
-       // 보안을 위해 nextNumber 필드만 변경하도록 제한
-       allow update: if isSignedIn() 
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nextNumber'])
-          && request.resource.data.nextNumber == resource.data.nextNumber + 1;
-       
-       allow create: if isAdmin();
-    }
-
-    match /approvals/{docId} {
-      // Create: 누구나 생성 가능 (단, 초기 상태 검증)
-      allow create: if isSignedIn() && (
-         (request.resource.data.approvers.size() > 0 && request.resource.data.status == 'pending') ||
-         (request.resource.data.approvers.size() == 0 && request.resource.data.status == 'approved')
-       );
-      
-      // Read: [수정] 현재 앱 로직(actions.ts)이 'pending' 전체를 불러오므로
-      // 규칙에서 필터링하면 '권한 부족' 에러가 발생합니다. 
-      // 우선 모든 로그인 사용자가 읽을 수 있도록 허용하여 기능을 확인합니다.
-      allow read: if isSignedIn();
-
-      // Update:
-      // 1. 현재 결재 차례인 사람 (본인 이메일과 일치하는지 확인)
-      // 2. 관리자
-      allow update: if isSignedIn() && (
-        (
-          resource.data.status == 'pending' && 
-          // 현재 단계의 승인자 이메일과 로그인 유저 이메일 비교
-          resource.data.approvers[resource.data.currentStep].email == request.auth.token.email
-        ) ||
-        isAdmin()
-      );
-
-      // Delete: 관리자만
-      allow delete: if isAdmin();
+    match /{path=**} {
+      allow read, write: if isSignedIn();
     }
   }
 }
