@@ -14,7 +14,7 @@ async function getUserProfileByEmail(email: string): Promise<UserProfile | null>
     try {
         const response = await fetch(`/api/users/${email}`);
         if (response.status === 404) {
-            return null; // User not found is not an error in this context
+            return null;
         }
         if (!response.ok) {
             const errorBody = await response.text();
@@ -24,7 +24,6 @@ async function getUserProfileByEmail(email: string): Promise<UserProfile | null>
         return await response.json();
     } catch (error) {
         console.error("Failed to fetch profile from API", error);
-        // Re-throw to be caught by the caller
         throw error;
     }
 }
@@ -69,7 +68,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const handlePermissionError = (error: Error) => {
-      // In a real app, you might want to log this to an error tracking service
       console.error("A Firestore permission error was globally caught:", error);
       toast({
         variant: 'destructive',
@@ -95,29 +93,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       let userProfile = await getUserProfileByEmail(firebaseUser.email);
       
-      // If user has a profile, ensure it's up-to-date
       if (userProfile) {
-         if (isHardcodedAdmin && !userProfile.isAdmin) {
+        let profileNeedsUpdate = false;
+        if (isHardcodedAdmin && !userProfile.isAdmin) {
           userProfile.isAdmin = true;
-          await saveUserProfile(firebaseUser.uid, firebaseUser.email, { isAdmin: true });
+          profileNeedsUpdate = true;
         }
         
-        if (userProfile.uid !== firebaseUser.uid || !userProfile.uid) {
+        if (!userProfile.uid || userProfile.uid !== firebaseUser.uid) {
             userProfile.uid = firebaseUser.uid;
-            await saveUserProfile(firebaseUser.uid, firebaseUser.email, { uid: firebaseUser.uid });
+            profileNeedsUpdate = true;
         }
+
+        if (profileNeedsUpdate) {
+            const result = await saveUserProfile(firebaseUser.uid, firebaseUser.email, { isAdmin: userProfile.isAdmin, uid: userProfile.uid });
+            if(result.success && result.profile) {
+                setProfile(result.profile);
+                return result.profile;
+            }
+        }
+        
         setProfile(userProfile);
         return userProfile;
 
       } else {
-        // If user has no profile, create a default one for them to allow login.
         const defaultProfile: Partial<UserProfile> = {
             uid: firebaseUser.uid,
             name: firebaseUser.displayName || '새 사용자',
             email: firebaseUser.email,
-            role: '교사', // Default role
+            role: '교사',
             signature: '',
-            isAdmin: isHardcodedAdmin, // Grant admin rights if it's the admin email
+            isAdmin: isHardcodedAdmin,
         };
 
         const result = await saveUserProfile(firebaseUser.uid, firebaseUser.email, defaultProfile);
@@ -125,13 +131,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setProfile(result.profile);
             return result.profile;
         } else {
-            // This can happen if the save fails. We should log out.
             throw new Error(result.error || "Failed to create default user profile.");
         }
       }
     } catch (error) {
       console.error("Failed to fetch or create profile", error);
-      toast({ variant: 'destructive', title: 'Profile Error', description: '프로필을 불러오는 데 실패했습니다.' });
+      toast({ variant: 'destructive', title: 'Profile Error', description: `프로필을 불러오는 데 실패했습니다: ${(error as Error).message}` });
       return null;
     } finally {
       setProfileLoading(false);
@@ -158,7 +163,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               if (fetchedProfile) {
                   setUser(firebaseUser);
               } else {
-                  // This block should ideally not be reached with the new logic, but as a safeguard:
                   toast({ variant: 'destructive', title: '로그인 실패', description: '프로필을 설정하는 중에 오류가 발생했습니다.' });
                   await signOut(auth);
                   setUser(null);
@@ -188,10 +192,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         prompt: 'select_account'
       });
       await signInWithPopup(auth, googleProvider);
-      // onAuthStateChanged will handle the rest
     } catch (error: any) {
       console.error("Google Sign-In Error:", error);
-      // Re-throw the error to be caught by the caller in the login page
       throw error;
     }
   };

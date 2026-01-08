@@ -26,7 +26,6 @@ export async function GET(
         const data = snap.data() as Omit<UserProfile, 'uid' | 'email'>;
 
         // Safely construct the profile object.
-        // The main issue was accessing `data.uid` which might not exist, causing a server error.
         const profile: UserProfile = {
             name: data.name,
             role: data.role,
