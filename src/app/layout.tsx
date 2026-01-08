@@ -15,8 +15,8 @@ const notoSansKr = Noto_Sans_KR({
 });
 
 export const metadata: Metadata = {
-  title: 'KISH 결재 시스템',
-  description: 'KISH 전자 결재 시스템',
+  title: 'KSHCM 결재 시스템',
+  description: 'KSHCM 전자 결재 시스템',
 };
 
 export default function RootLayout({

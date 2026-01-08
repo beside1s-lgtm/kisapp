@@ -273,7 +273,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       } else {
         transaction.set(settingsRef, { nextNumber: 2 });
       }
-      return `Kish-초등-${nextNum}`;
+      return `KSHCM-초등-${nextNum}`;
     });
 
     const hasApprovers = payload.approvers && payload.approvers.length > 0;

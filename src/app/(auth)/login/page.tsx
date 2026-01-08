@@ -63,10 +63,10 @@ export default function LoginPage() {
           <FileText className="h-10 w-10" />
         </div>
         <h1 className="font-headline text-4xl font-bold text-foreground mb-2">
-          KISH 결재 시스템
+          KSHCM 결재 시스템
         </h1>
         <p className="text-muted-foreground mb-8">
-          KISH Google Workspace 계정으로 로그인해주세요.
+          KSHCM Google Workspace 계정으로 로그인해주세요.
         </p>
 
         <Button
@@ -83,7 +83,7 @@ export default function LoginPage() {
           Google로 로그인
         </Button>
          <p className="text-xs text-muted-foreground mt-8">
-          KISH 도메인의 승인된 사용자만 이 시스템에 접근할 수 있습니다.
+          KSHCM 도메인의 승인된 사용자만 이 시스템에 접근할 수 있습니다.
         </p>
       </main>
     </div>
