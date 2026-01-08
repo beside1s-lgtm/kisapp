@@ -60,19 +60,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfileLoading(true);
 
     try {
-      // 1. API로 프로필 조회 시도
       let userProfile = await getUserProfileByEmail(firebaseUser.email);
       const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
       
-      // Firestore에서 가져온 데이터에도 uid를 firebaseUser의 것으로 보장
-      if (userProfile) {
-          userProfile.uid = firebaseUser.uid;
-      }
+      let needsSave = false;
+      const profileUpdates: Partial<UserProfile> = {};
 
-      // 2. 프로필이 없으면 -> 신규 프로필 객체 생성 및 저장
+      // 1. 프로필이 없으면 -> 신규 프로필 객체 생성
       if (!userProfile) {
         console.log("No profile found. Creating new profile.");
-        const newProfileData: Partial<UserProfile> = {
+        needsSave = true;
+        userProfile = {
             uid: firebaseUser.uid,
             name: firebaseUser.displayName || '사용자',
             email: firebaseUser.email,
@@ -80,27 +78,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             signature: '',
             isAdmin: isHardcodedAdmin,
         };
-        
-        const saveResult = await saveUserProfile(firebaseUser.uid, firebaseUser.email, newProfileData);
-        if (saveResult.success && saveResult.profile) {
-            userProfile = saveResult.profile as UserProfile;
-             // 새로 만든 프로필에도 uid가 확실히 들어가도록 보장
-            userProfile.uid = firebaseUser.uid;
-        } else {
-             throw new Error(saveResult.error || "Failed to save new user profile.");
-        }
+      }
+
+      // 2. UID가 다르면 -> 최신 UID로 업데이트 준비
+      if (userProfile.uid !== firebaseUser.uid) {
+        console.log(`UID mismatch. DB: ${userProfile.uid}, Auth: ${firebaseUser.uid}. Updating.`);
+        needsSave = true;
+        profileUpdates.uid = firebaseUser.uid;
+        userProfile.uid = firebaseUser.uid; // 즉시 반영
       }
 
       // 3. 관리자 권한 강제 보정
       if (isHardcodedAdmin && !userProfile.isAdmin) {
-          userProfile.isAdmin = true;
-          // Also save this back to ensure consistency
-          await saveUserProfile(firebaseUser.uid, firebaseUser.email, { isAdmin: true });
+          console.log("Forcing admin status for hardcoded admin email.");
+          needsSave = true;
+          profileUpdates.isAdmin = true;
+          userProfile.isAdmin = true; // 즉시 반영
       }
 
-      // 최종적으로 반환되는 프로필에 UID가 있는지 다시 한 번 확인
-      if (!userProfile.uid) {
-        userProfile.uid = firebaseUser.uid;
+      // 4. 변경사항이 있으면 저장
+      if (needsSave) {
+          const combinedUpdates = { ...userProfile, ...profileUpdates };
+          const saveResult = await saveUserProfile(firebaseUser.uid, firebaseUser.email, combinedUpdates);
+          if (!saveResult.success) {
+               throw new Error(saveResult.error || "Failed to save updated user profile.");
+          }
+           // 저장 후 반환된 프로필을 최종본으로 사용
+          if(saveResult.profile) {
+            userProfile = saveResult.profile;
+          }
       }
       
       setProfile(userProfile);
@@ -113,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           title: '프로필 로딩 실패',
           description: '프로필을 불러오는 중 심각한 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
       });
+      // 비상시를 위한 최소한의 폴백 프로필
       const fallbackProfile: UserProfile = {
           uid: firebaseUser.uid,
           name: firebaseUser.displayName || 'Unknown',

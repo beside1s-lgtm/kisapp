@@ -86,9 +86,10 @@ export async function saveUserProfile(userId: string, email: string, profileData
       email: email,
     };
     
-    // Ensure UID is always present if it exists on the doc
-    if (docSnap.exists() && docSnap.data().uid && !dataToSave.uid) {
-        dataToSave.uid = docSnap.data().uid;
+    // Ensure UID is always present if it exists on the doc or passed in
+    if (!dataToSave.uid) {
+        if(userId) dataToSave.uid = userId;
+        else if(docSnap.exists() && docSnap.data().uid) dataToSave.uid = docSnap.data().uid;
     }
     
     const timestamp = serverTimestamp();
@@ -102,10 +103,9 @@ export async function saveUserProfile(userId: string, email: string, profileData
     
     revalidatePath('/');
     
-    // 중요: 클라이언트로 반환하기 전에 직렬화할 수 없는 필드(타임스탬프)를 제거합니다.
+    // Server actions must return plain objects.
     const { updatedAt, createdAt, ...returnProfile } = dataToSave;
     
-    // 최종 반환 객체에도 uid가 있는지 확인
     const finalProfile: UserProfile = {
       name: returnProfile.name || '',
       email: returnProfile.email || email,
@@ -275,7 +275,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     const newDocData: any = {
       ...payload,
       docNo: finalDocNoStr,
-      requesterId: userProfile.uid, // userProfile에서 정확한 uid를 사용합니다.
+      requesterId: userProfile.uid,
       requesterName: userProfile.name,
       requesterEmail: userProfile.email,
       requesterRole: userProfile.role,
