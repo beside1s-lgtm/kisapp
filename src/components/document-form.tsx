@@ -42,7 +42,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { Switch } from './ui/switch';
-import { UserSearch } from './user-search';
+import UserSearch from './user-search';
 import { cn, compressImage } from '@/lib/utils';
 import {
   Form,
@@ -104,6 +104,8 @@ export default function DocumentForm() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [docConfig, setDocConfig] = useState<DocConfig>({});
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+  
+  const [circularSearch, setCircularSearch] = useState('');
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -422,7 +424,7 @@ export default function DocumentForm() {
                                 <FormControl>
                                   <UserSearch
                                     users={users}
-                                    value={form.watch(`approvers.${index}.name`)}
+                                    value={nameField.value}
                                     onChange={nameField.onChange}
                                     onSelectUser={(user) => {
                                         form.setValue(`approvers.${index}.name`, user.name, { shouldValidate: true });
@@ -485,12 +487,13 @@ export default function DocumentForm() {
             <div className="mb-4">
               <UserSearch
                 users={users}
-                value=""
-                onChange={() => {}}
+                value={circularSearch}
+                onChange={setCircularSearch}
                 onSelectUser={(user) => {
                   if (!circularFields.some(f => f.email === user.email)) {
                     appendCircular({name: user.name, email: user.email, role: user.role})
                   }
+                  setCircularSearch(''); 
                 }}
                 placeholder="추가할 사용자 검색..."
               />
