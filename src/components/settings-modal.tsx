@@ -321,70 +321,72 @@ export function SettingsModal() {
                         </TableHeader>
                     </Table>
                     <ScrollArea className="h-[34vh]">
-                        <TableBody>
-                        {isAddingNewUser && (
-                            <TableRow>
-                                <TableCell className="flex gap-2 items-center">
-                                <Input 
-                                    placeholder="이름" 
-                                    value={newUser.name}
-                                    onChange={(e) => setNewUser(p => ({ ...p, name: e.target.value }))}
-                                    className="w-24"
-                                />
-                                <Input 
-                                    placeholder="이메일" 
-                                    value={newUser.email} 
-                                    onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
-                                />
+                        <Table>
+                            <TableBody>
+                            {isAddingNewUser && (
+                                <TableRow>
+                                    <TableCell className="flex gap-2 items-center">
+                                    <Input 
+                                        placeholder="이름" 
+                                        value={newUser.name}
+                                        onChange={(e) => setNewUser(p => ({ ...p, name: e.target.value }))}
+                                        className="w-24"
+                                    />
+                                    <Input 
+                                        placeholder="이메일" 
+                                        value={newUser.email} 
+                                        onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
+                                    />
+                                    </TableCell>
+                                    <TableCell>
+                                        <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r }))}>
+                                            <SelectTrigger><SelectValue /></SelectTrigger>
+                                            <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+                                        </Select>
+                                    </TableCell>
+                                    <TableCell></TableCell>
+                                    <TableCell className="text-right">
+                                        <Button size="icon" variant="ghost" onClick={handleAddNewUser}><Save className="h-4 w-4 text-primary"/></Button>
+                                        <Button size="icon" variant="ghost" onClick={() => setIsAddingNewUser(false)}><XCircle className="h-4 w-4 text-muted-foreground"/></Button>
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                            {users.map(user => (
+                            <TableRow key={user.email}>
+                                <TableCell>
+                                <p className="font-medium">{user.name}</p>
+                                <p className="text-xs text-muted-foreground">{user.email}</p>
                                 </TableCell>
                                 <TableCell>
-                                    <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r }))}>
-                                        <SelectTrigger><SelectValue /></SelectTrigger>
-                                        <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+                                <Select 
+                                    value={user.role} 
+                                    onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
+                                    >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="직책 선택" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                                    </SelectContent>
                                     </Select>
                                 </TableCell>
-                                <TableCell></TableCell>
+                                <TableCell>
+                                    <Switch 
+                                        id={`admin-${user.email}`} 
+                                        checked={user.isAdmin}
+                                        onCheckedChange={(checked) => handleUserUpdate(user.uid, user.email, 'isAdmin', checked)}
+                                        disabled={user.email === 'beside1s@kshcm.net'}
+                                    />
+                                </TableCell>
                                 <TableCell className="text-right">
-                                    <Button size="icon" variant="ghost" onClick={handleAddNewUser}><Save className="h-4 w-4 text-primary"/></Button>
-                                    <Button size="icon" variant="ghost" onClick={() => setIsAddingNewUser(false)}><XCircle className="h-4 w-4 text-muted-foreground"/></Button>
+                                    <Button variant="ghost" size="icon" onClick={() => confirmDeleteUser(user)}>
+                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
                                 </TableCell>
                             </TableRow>
-                        )}
-                        {users.map(user => (
-                        <TableRow key={user.email}>
-                            <TableCell>
-                            <p className="font-medium">{user.name}</p>
-                            <p className="text-xs text-muted-foreground">{user.email}</p>
-                            </TableCell>
-                            <TableCell>
-                            <Select 
-                                value={user.role} 
-                                onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
-                                >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="직책 선택" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                                </SelectContent>
-                                </Select>
-                            </TableCell>
-                            <TableCell>
-                                <Switch 
-                                    id={`admin-${user.email}`} 
-                                    checked={user.isAdmin}
-                                    onCheckedChange={(checked) => handleUserUpdate(user.uid, user.email, 'isAdmin', checked)}
-                                    disabled={user.email === 'beside1s@kshcm.net'}
-                                />
-                            </TableCell>
-                            <TableCell className="text-right">
-                                <Button variant="ghost" size="icon" onClick={() => confirmDeleteUser(user)}>
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                            </TableCell>
-                        </TableRow>
-                        ))}
-                        </TableBody>
+                            ))}
+                            </TableBody>
+                        </Table>
                     </ScrollArea>
                 </div>
             </div>
