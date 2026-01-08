@@ -103,8 +103,8 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   }
 
   return (
-    <div>
-        <div className="print-hidden flex justify-end gap-2 mb-4">
+    <div className="print-container">
+        <div className="no-print flex justify-end gap-2 mb-4">
             <Button variant="outline" onClick={() => window.print()}>
                 <Printer className="mr-2 h-4 w-4" /> 인쇄 / PDF로 저장
             </Button>
@@ -245,7 +245,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </div>
         </div>
         {isMyTurn && (
-            <div className="fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-50 print-hidden flex gap-4">
+            <div className="fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-50 no-print flex gap-4">
                 <AlertDialog>
                     <AlertDialogTrigger asChild>
                         <Button

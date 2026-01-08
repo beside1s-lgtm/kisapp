@@ -76,7 +76,7 @@
   }
 }
 
-/* KISH 공문 인쇄용 스타일 */
+/* KSHCM 공문 인쇄용 스타일 */
 @media print {
   body {
     background: white !important;
