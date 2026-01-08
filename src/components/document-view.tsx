@@ -191,7 +191,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                                 <div className="flex items-center gap-1">
                                     <span className="font-semibold">{initialDoc.requesterName}</span>
                                     {initialDoc.requesterSignature && <div className="w-8 h-8 md:w-12 md:h-12 flex items-center justify-center"><img src={initialDoc.requesterSignature} className="max-h-full max-w-full object-contain" alt="requester-sig" /></div>}
-                                inudiv>
+                                </div>
                             </div>
                             {mainApprovers.map((ap, idx) => (
                                 <div key={idx} className="flex items-center gap-1 md:gap-2">
