@@ -108,7 +108,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   }
 
   return (
-    <div className="print-container">
+    <div>
         <div className="no-print p-4 md:p-0 flex justify-end gap-2 mb-4 max-w-4xl mx-auto">
             <Button variant="outline" onClick={handlePrint}>
                 <Printer className="mr-2 h-4 w-4" /> 인쇄 / PDF로 저장
