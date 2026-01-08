@@ -3,6 +3,8 @@
 import {
   createDocument,
   generateContentAction,
+  getUsersDirectory,
+  getDocConfig,
 } from '@/app/actions';
 import { useAuth } from '@/hooks/use-auth';
 import {
@@ -92,29 +94,6 @@ const defaultApprovers: Omit<Approver, 'status' | 'signature' | 'approvedAt' | '
     { name: '', email: '', role: '협조', type: 'normal' },
     { name: '', email: '', role: '교장', type: 'final' },
 ];
-
-async function getUsersDirectory(): Promise<UserProfile[]> {
-    try {
-        const response = await fetch('/api/users');
-        if (!response.ok) return [];
-        return await response.json();
-    } catch (e) {
-        console.error(e);
-        return [];
-    }
-}
-
-async function getDocConfig(): Promise<DocConfig> {
-    try {
-        const response = await fetch('/api/config');
-        if (!response.ok) return {};
-        return await response.json();
-    } catch (e) {
-        console.error(e);
-        return {};
-    }
-}
-
 
 export default function DocumentForm() {
   const router = useRouter();

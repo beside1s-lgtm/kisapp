@@ -7,56 +7,12 @@ import { UserProfile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { errorEmitter } from '@/lib/error-emitter';
+import { getUserProfileByEmail, saveUserProfile } from '@/app/actions';
 
 // 관리자 이메일 하드코딩
 const ADMIN_EMAIL = 'beside1s@kshcm.net';
 const ALLOWED_DOMAIN = 'kshcm.net';
 
-// --- [API Helper Functions] ---
-
-// API가 실패해도 에러를 던지지 않고 null을 반환하도록 수정
-async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
-  try {
-    const response = await fetch(`/api/users/${email}`);
-    if (response.status === 404) return null;
-    
-    if (!response.ok) {
-      console.warn(`Profile fetch failed with status: ${response.status}`);
-      return null; // 에러를 던지지 않고 null 반환 (신규 생성 유도)
-    }
-    
-    const text = await response.text();
-    if (!text) return null; // 빈 응답이면 null
-    
-    return JSON.parse(text);
-  } catch (error) {
-    console.warn("API connection failed, proceeding with fallback:", error);
-    return null; // 네트워크 에러 시에도 null 반환
-  }
-}
-
-async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>): Promise<{ success: boolean; error?: string; profile?: UserProfile }> {
-  try {
-    const response = await fetch(`/api/users/${email}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid: userId, profileData: profile }),
-    });
-    
-    if (!response.ok) {
-      // [수정] 서버가 보낸 구체적인 에러 내용을 확인합니다.
-      const errorText = await response.text();
-      console.error(`[saveUserProfile] API Error: ${response.status} ${response.statusText}`);
-      console.error(`[saveUserProfile] Server Response: ${errorText}`);
-      
-      return { success: false, error: `API Error (${response.status}): ${errorText}` };
-    }
-    return await response.json();
-  } catch (error: any) {
-    console.error("Failed to save profile via API", error);
-    return { success: false, error: error.message };
-  }
-}
 
 // --- [Context & Provider] ---
 
@@ -108,10 +64,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let userProfile = await getUserProfileByEmail(firebaseUser.email);
       const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
 
-      // 2. 프로필이 없거나 API가 실패했다면 -> 임시/신규 프로필 객체 생성
+      // 2. 프로필이 없으면 -> 신규 프로필 객체 생성 및 저장
       if (!userProfile) {
-        console.log("No profile found or API failed. Creating temporary/new profile.");
-        userProfile = {
+        console.log("No profile found. Creating new profile.");
+        const newProfileData: Partial<UserProfile> = {
             uid: firebaseUser.uid,
             name: firebaseUser.displayName || '사용자',
             email: firebaseUser.email,
@@ -119,9 +75,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             signature: '',
             isAdmin: isHardcodedAdmin,
         };
-
-        // 백그라운드에서 저장 시도 (실패해도 유저는 로그인 상태 유지)
-        saveUserProfile(firebaseUser.uid, firebaseUser.email, userProfile).catch(err => console.error("Background save failed:", err));
+        
+        const saveResult = await saveUserProfile(firebaseUser.uid, firebaseUser.email, newProfileData);
+        if (saveResult.success && saveResult.profile) {
+            userProfile = saveResult.profile;
+        } else {
+             throw new Error(saveResult.error || "Failed to save new user profile.");
+        }
       }
 
       // 3. 관리자 권한 강제 보정
@@ -134,11 +94,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     } catch (error) {
       console.error("Critical Profile Error:", error);
+      toast({
+          variant: 'destructive',
+          title: '프로필 로딩 실패',
+          description: '프로필을 불러오는 중 심각한 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+      });
       // 최악의 경우에도 로그인 상태를 유지하기 위해 깡통 프로필 리턴
       const fallbackProfile: UserProfile = {
           uid: firebaseUser.uid,
           name: firebaseUser.displayName || 'Unknown',
-          email: firebaseUser.email,
+          email: firebaseUser.email!,
           role: 'Guest',
           isAdmin: false,
       };
@@ -147,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setProfileLoading(false);
     }
-  }, []); // 의존성 제거
+  }, [toast]); // fetchProfile이 toast에만 의존하도록 수정
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {

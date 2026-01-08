@@ -21,27 +21,7 @@ import Image from 'next/image';
 import { Alert, AlertDescription } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import type { UserProfile } from '@/lib/types';
-import { Avatar, AvatarImage, AvatarFallback } from './ui/avatar';
-
-
-async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>): Promise<{ success: boolean; error?: string; profile?: UserProfile }> {
-     try {
-        const response = await fetch(`/api/users/${email}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uid: userId, profileData: profile }),
-        });
-        if (!response.ok) {
-            const data = await response.json();
-            throw new Error(data.error || 'Failed to save profile');
-        }
-        return await response.json();
-    } catch (error: any) {
-        console.error("Failed to save profile via API", error);
-        return { success: false, error: error.message };
-    }
-}
-
+import { saveUserProfile } from '@/app/actions';
 
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 const ADMIN_EMAIL = 'beside1s@kshcm.net';

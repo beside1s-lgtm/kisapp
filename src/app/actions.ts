@@ -14,11 +14,10 @@ import {
   updateDoc,
   where,
   Timestamp,
-  DocumentSnapshot,
   writeBatch,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
-import { db as clientDbInstance } from '@/lib/firebase'; // [이름 변경] 헷갈림 방지
+import { db as clientDbInstance } from '@/lib/firebase';
 import { getDb as getAdminDb } from '@/lib/firebase-admin';
 import type {
   ApprovalDoc,
@@ -31,9 +30,6 @@ import { z } from 'zod';
 import { errorEmitter } from '@/lib/error-emitter';
 import { FirestorePermissionError } from '@/lib/errors';
 import * as xlsx from 'xlsx';
-
-// [중요] clientDbInstance는 함수가 아니라 이미 초기화된 객체입니다.
-// 따라서 clientDbInstance() 가 아니라 clientDbInstance 를 그대로 써야 합니다.
 
 function getApprovalsCol() {
   return collection(clientDbInstance, 'approvals');
@@ -57,8 +53,108 @@ function serializeDocs(docs: any[]): any[] {
   })
 }
 
+export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
+  if (!email) return null;
+  const db = getAdminDb();
+  const userDocRef = db.collection('users').doc(email);
+  const snap = await userDocRef.get();
+
+  if (!snap.exists) {
+    return null;
+  }
+  
+  const data = snap.data();
+  if (!data) {
+      return null;
+  }
+  
+  const profile: UserProfile = {
+      name: data.name || '',
+      role: data.role || '',
+      signature: data.signature || '',
+      uid: data.uid || snap.id,
+      email: snap.id,
+      isAdmin: data.isAdmin || false,
+  };
+
+  return profile;
+}
+
+export async function saveUserProfile(userId: string, email: string, profileData: Partial<UserProfile>): Promise<{ success: boolean; error?: string; profile?: UserProfile }> {
+  const db = getAdminDb();
+  if (!email || !profileData) {
+    return { success: false, error: 'Invalid request body' };
+  }
+
+  const userProfileRef = db.collection('users').doc(email);
+  try {
+    const docSnap = await userProfileRef.get();
+    
+    if (docSnap.exists) {
+        await userProfileRef.set({
+           ...profileData,
+           ...(userId ? { uid: userId } : {}),
+           updatedAt: new Date().toISOString() 
+        }, { merge: true });
+    } else {
+        await userProfileRef.set({
+            email: email,
+            uid: userId || '',
+            ...profileData,
+            createdAt: new Date().toISOString()
+        });
+    }
+    
+    const newProfile: UserProfile = {
+        name: profileData.name || '',
+        role: profileData.role || '',
+        signature: profileData.signature || '',
+        email: email,
+        uid: userId || '',
+        isAdmin: profileData.isAdmin || false,
+    };
+
+    revalidatePath('/'); // Revalidate relevant paths
+    return { success: true, profile: newProfile };
+
+  } catch (error: any) {
+      console.error(`[Action] saveUserProfile failed:`, error);
+      return { success: false, error: `프로필 저장 실패: ${error.message}` };
+  }
+}
+
+export async function getUsersDirectory(): Promise<UserProfile[]> {
+  const db = getAdminDb();
+  
+  try {
+    const snapshot = await db.collection('users').get();
+
+    if (snapshot.empty) {
+      return [];
+    }
+    
+    const users = snapshot.docs.map(d => {
+        const data = d.data();
+        return {
+            name: data.name || '',
+            role: data.role || '',
+            signature: data.signature || '',
+            isAdmin: data.isAdmin || false,
+            email: d.id,
+            uid: data.uid || '', 
+        } as UserProfile
+    });
+    
+    const uniqueUsers = Array.from(new Map(users.map(user => [user.email, user])).values());
+    return uniqueUsers;
+
+  } catch (error) {
+    console.error("[Action] getUsersDirectory failed:", error);
+    return [];
+  }
+}
+
 export async function getInboxDocuments(userEmail: string) {
-  // [수정] getClientDb() 호출 제거 -> clientDbInstance 사용
   const db = clientDbInstance; 
   if (!userEmail) return [];
   
@@ -76,7 +172,6 @@ export async function getInboxDocuments(userEmail: string) {
       path: approvalsCol.path,
       operation: 'list',
     });
-    // Server Actions에서는 emit이 클라이언트로 직접 전달되지 않으므로 주의
     console.error("Permission Error:", error); 
     return [];
   }
@@ -261,10 +356,6 @@ export async function generateContentAction(input: {
 
 export async function bulkRegisterUsers(fileData: string): Promise<{ success: boolean; error?: string; summary?: string; }> {
   const db = getAdminDb();
-  if (!db) {
-    return { success: false, error: 'Database not initialized.' };
-  }
-
   try {
     const base64Data = fileData.split(',')[1];
     const buffer = Buffer.from(base64Data, 'base64');
@@ -321,9 +412,8 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
   }
 }
 
-export async function getDocConfig() {
+export async function getDocConfig(): Promise<DocConfig> {
     const db = getAdminDb();
-    if (!db) return {};
     const settingsRef = doc(db, 'settings', 'docConfig');
     try {
         const snap = await getDoc(settingsRef);
@@ -331,5 +421,19 @@ export async function getDocConfig() {
     } catch(error) {
         console.error("[actions] getDocConfig failed:", error);
         return {};
+    }
+}
+
+export async function saveDocConfig(payload: DocConfig): Promise<{ success: boolean, error?: string}> {
+    const db = getAdminDb();
+    const settingsRef = doc(db, 'settings', 'docConfig');
+    
+    try {
+        await setDoc(settingsRef, payload, { merge: true });
+        revalidatePath('/');
+        return { success: true };
+    } catch (error: any) {
+        console.error("[Action] saveDocConfig failed:", error);
+        return { success: false, error: error.message };
     }
 }
