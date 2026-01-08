@@ -1,4 +1,5 @@
 'use client';
+
 import {
   ApprovalDoc,
   DocConfig,
@@ -7,14 +8,10 @@ import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { approveDocument, rejectDocument } from '@/app/actions';
 import { useRouter } from 'next/navigation';
-import { Button } from './ui/button';
-import { CheckCircle2, Download, Printer, Loader2, XCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { CheckCircle2, Printer, Loader2, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
-import { useState, useTransition, useRef } from 'react';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
-import { Textarea } from './ui/textarea';
-import { Label } from './ui/label';
-import { Badge } from './ui/badge';
+import { useState, useTransition } from 'react';
 
 type DocumentViewProps = {
   initialDoc: ApprovalDoc;
@@ -27,12 +24,13 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const router = useRouter();
   const [isApproving, startApproveTransition] = useTransition();
   const [isRejecting, startRejectTransition] = useTransition();
+  
+  const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
   const handlePrint = () => {
     window.print();
   };
-
 
   if (!user || !profile) return null;
 
@@ -81,6 +79,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
         const result = await rejectDocument(initialDoc.id, user.uid, profile, rejectionReason);
         if (result.success) {
             toast({ title: '반려 처리됨', description: '문서가 반려되었습니다.'});
+            setShowRejectModal(false);
             router.push('/inbox');
             router.refresh();
         } else {
@@ -88,7 +87,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
         }
     });
   };
-
 
   const downloadFile = (file: { data: string; name: string }) => {
     const link = document.createElement('a');
@@ -99,21 +97,25 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     document.body.removeChild(link);
   };
 
+  // Badge 컴포넌트 대체
   const getStatusBadge = (status: 'pending' | 'approved' | 'rejected') => {
+    const baseClass = "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2";
     switch(status) {
-        case 'approved': return <Badge variant="default" className="bg-blue-600">결재 완료</Badge>;
-        case 'rejected': return <Badge variant="destructive">반려</Badge>;
-        case 'pending': return <Badge variant="secondary">진행중</Badge>;
+        case 'approved': return <span className={`${baseClass} border-transparent bg-blue-600 text-white hover:bg-blue-700`}>결재 완료</span>;
+        case 'rejected': return <span className={`${baseClass} border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80`}>반려</span>;
+        case 'pending': return <span className={`${baseClass} border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80`}>진행중</span>;
+        default: return null;
     }
   }
 
   return (
-    <div>
+    <div className="relative">
         <div className="no-print p-4 md:p-0 flex justify-end gap-2 mb-4 max-w-4xl mx-auto">
-            <Button variant="outline" onClick={handlePrint}>
+            <Button variant="outline" type="button" onClick={handlePrint}>
                 <Printer className="mr-2 h-4 w-4" /> 인쇄 / PDF로 저장
             </Button>
         </div>
+
         <div className="printable-area bg-white p-4 md:p-12 shadow-lg rounded-lg max-w-4xl mx-auto">
             <div>
                 <header className="text-center mb-8">
@@ -160,7 +162,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 )}
                 
                 <footer className="mt-16">
-                     <div className="text-center mb-16 h-[60px] flex items-center justify-center">
+                      <div className="text-center mb-16 h-[60px] flex items-center justify-center">
                         {initialDoc.docType === 'external' && <h2 className="text-2xl md:text-3xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
                     </div>
                     <div className="border-t-2 border-black pt-4 pb-2">
@@ -223,45 +225,19 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </footer>
             </div>
         </div>
+
         {isMyTurn && (
             <div className="no-print fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-50 flex gap-4">
-                <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                        <Button
-                            variant="destructive"
-                            size="lg"
-                            className="h-14 text-base md:text-lg rounded-full shadow-2xl animate-in slide-in-from-bottom-10 fade-in"
-                            disabled={isApproving || isRejecting}
-                        >
-                            <XCircle className="mr-2 h-5 w-5" />
-                            반려
-                        </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                        <AlertDialogHeader>
-                            <AlertDialogTitle>문서를 반려하시겠습니까?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                                반려 사유를 입력해주세요. 반려된 문서는 기안자에게 돌아가며, 결재가 중단됩니다.
-                            </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <div className="grid gap-2">
-                           <Label htmlFor="rejection-reason">반려 사유</Label>
-                           <Textarea 
-                             id="rejection-reason" 
-                             value={rejectionReason}
-                             onChange={(e) => setRejectionReason(e.target.value)}
-                             placeholder="예: 첨부파일 누락, 내용 수정 필요 등"
-                           />
-                        </div>
-                        <AlertDialogFooter>
-                            <AlertDialogCancel>취소</AlertDialogCancel>
-                            <AlertDialogAction onClick={handleReject} disabled={isRejecting || !rejectionReason}>
-                                {isRejecting && <Loader2 className="animate-spin mr-2" />}
-                                반려 확인
-                            </AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
+                <Button
+                    variant="destructive"
+                    size="lg"
+                    className="h-14 text-base md:text-lg rounded-full shadow-2xl animate-in slide-in-from-bottom-10 fade-in"
+                    disabled={isApproving || isRejecting}
+                    onClick={() => setShowRejectModal(true)}
+                >
+                    <XCircle className="mr-2 h-5 w-5" />
+                    반려
+                </Button>
 
                 <Button 
                     size="lg"
@@ -272,6 +248,42 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     {isApproving ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CheckCircle2 className="mr-2 h-5 w-5" />}
                     결재 및 서명
                 </Button>
+            </div>
+        )}
+
+        {showRejectModal && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                <div className="bg-background w-full max-w-lg rounded-lg shadow-lg border p-6 space-y-4">
+                    <div className="space-y-2 text-center sm:text-left">
+                        <h2 className="text-lg font-semibold tracking-tight">문서를 반려하시겠습니까?</h2>
+                        <p className="text-sm text-muted-foreground">
+                            반려 사유를 입력해주세요. 반려된 문서는 기안자에게 돌아가며, 결재가 중단됩니다.
+                        </p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                         <label htmlFor="rejection-reason" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">반려 사유</label>
+                         <textarea 
+                            id="rejection-reason"
+                            className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            placeholder="예: 첨부파일 누락, 내용 수정 필요 등"
+                            value={rejectionReason}
+                            onChange={(e) => setRejectionReason(e.target.value)}
+                         />
+                    </div>
+
+                    <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 gap-2">
+                        <Button variant="outline" onClick={() => setShowRejectModal(false)}>취소</Button>
+                        <Button 
+                            variant="destructive" 
+                            onClick={handleReject} 
+                            disabled={isRejecting || !rejectionReason}
+                        >
+                            {isRejecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            반려 확인
+                        </Button>
+                    </div>
+                </div>
             </div>
         )}
     </div>

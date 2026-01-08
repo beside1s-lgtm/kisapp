@@ -1,85 +1,67 @@
-import { Timestamp } from "firebase/firestore";
-
-export type User = {
-    uid: string;
-    email: string;
-    name: string;
-    role: string;
-    photoURL?: string;
-};
-
 export type UserProfile = {
-    uid: string; // The Firebase Auth user ID. This is set upon first login.
-    name: string;
-    role: string;
-    email: string; // This is the unique identifier for documents in 'users' collection.
-    signature: string;
-    isAdmin: boolean;
+  uid: string;
+  email: string;
+  name: string;
+  role: string;
+  signature?: string;
+  isAdmin?: boolean;
 };
 
+// [수정] Approver 타입에 rejected 상태와 comment(반려 사유) 필드를 추가했습니다.
 export type Approver = {
-    email: string;
-    name: string;
-    role: string;
-    type: 'normal' | 'final' | 'proxy';
-    status: 'pending' | 'approved';
-    signature?: string;
-    approvedAt?: string | null;
-    approverName?: string;
+  name: string;
+  email: string;
+  role: string;
+  type: 'normal' | 'final' | 'proxy';
+  status: 'pending' | 'approved' | 'rejected'; 
+  approverName?: string;
+  signature?: string;
+  approvedAt?: string;
+  comment?: string; 
+};
+
+export type Attachment = {
+  name: string;
+  data: string;
 };
 
 export type Circular = {
     name: string;
     email: string;
-    role: string;
 };
-
-export type Attachment = {
-    name: string;
-    size: number;
-    data: string; // base64
-};
-
-export type ApprovalDoc = {
-    id: string;
-    title: string;
-    content: string;
-    approvers: Approver[];
-    circulars: Circular[];
-    attachments: Attachment[];
-    currentStep: number;
-    requesterId: string;
-    requesterName: string;
-    requesterEmail: string;
-    requesterRole: string;
-    requesterSignature: string;
-    status: 'pending' | 'approved' | 'rejected';
-    createdAt: Timestamp | string;
-    completedAt?: Timestamp | string | null;
-    docNo: string;
-    publishStatus: '공개' | '비공개';
-    docType: 'internal' | 'external';
-    receiverInfo?: { name: string; email: string } | null;
-    headerImage: string;
-    footerInfo: {
-        address: string;
-        phone: string;
-        fax: string;
-        email: string;
-        homepage: string;
-    }
-};
-
-export type ApprovalDocPayload = Omit<ApprovalDoc, 'id' | 'requesterId' | 'requesterName' | 'requesterEmail' | 'requesterRole' | 'requesterSignature' | 'currentStep' | 'status' | 'createdAt' | 'completedAt' | 'docNo'>;
 
 export type DocConfig = {
-    nextNumber?: number;
-    headerImage?: string;
     address?: string;
     phone?: string;
     fax?: string;
     email?: string;
     homepage?: string;
+    nextNumber?: number;
 };
 
-export type Language = 'ko' | 'en' | 'vi';
+export type ApprovalDocPayload = {
+  title: string;
+  content: string;
+  docType: 'internal' | 'external';
+  publishStatus: 'public' | 'private';
+  approvers: Approver[];
+  attachments: Attachment[];
+  circulars?: Circular[];
+  receiverInfo?: { name: string };
+  headerImage?: string;
+};
+
+// [수정] ApprovalDoc 타입에도 rejected 상태를 추가했습니다.
+export type ApprovalDoc = ApprovalDocPayload & {
+  id: string;
+  docNo: string;
+  requesterId: string;
+  requesterName: string;
+  requesterEmail: string;
+  requesterRole: string;
+  requesterSignature: string;
+  currentStep: number;
+  status: 'pending' | 'approved' | 'rejected'; 
+  createdAt: any;
+  completedAt?: any;
+};
