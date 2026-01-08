@@ -2,9 +2,7 @@
 
 import {
   createDocument,
-  getUsersDirectory,
   generateContentAction,
-  getDocConfig,
 } from '@/app/actions';
 import { useAuth } from '@/hooks/use-auth';
 import {
@@ -95,6 +93,29 @@ const defaultApprovers: Omit<Approver, 'status' | 'signature' | 'approvedAt' | '
     { name: '', email: '', role: '교장', type: 'final' },
 ];
 
+async function getUsersDirectory(): Promise<UserProfile[]> {
+    try {
+        const response = await fetch('/api/users');
+        if (!response.ok) return [];
+        return await response.json();
+    } catch (e) {
+        console.error(e);
+        return [];
+    }
+}
+
+async function getDocConfig(): Promise<DocConfig> {
+    try {
+        const response = await fetch('/api/config');
+        if (!response.ok) return {};
+        return await response.json();
+    } catch (e) {
+        console.error(e);
+        return {};
+    }
+}
+
+
 export default function DocumentForm() {
   const router = useRouter();
   const { toast } = useToast();
@@ -168,7 +189,7 @@ export default function DocumentForm() {
         approvers: activeApprovers,
       });
       if (result.success) {
-        form.setValue('content', result.content);
+        form.setValue('content', result.content as string);
         toast({
           title: '내용 생성됨',
           description: 'AI가 문서 내용을 생성했습니다.',
@@ -424,7 +445,7 @@ export default function DocumentForm() {
                                 <FormControl>
                                   <UserSearch
                                     users={users}
-                                    value={nameField.value}
+                                    value={form.watch(`approvers.${index}.name`)}
                                     onChange={nameField.onChange}
                                     onSelectUser={(user) => {
                                         form.setValue(`approvers.${index}.name`, user.name, { shouldValidate: true });

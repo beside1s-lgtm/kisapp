@@ -3,13 +3,47 @@
 import { createContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
-import { getUserProfileByEmail, saveUserProfile } from '@/app/actions';
 import { UserProfile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { errorEmitter } from '@/lib/error-emitter';
 
 const ADMIN_EMAIL = 'beside1s@kshcm.net';
+
+async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
+    try {
+        const response = await fetch(`/api/users/${email}`);
+        if (response.status === 404) {
+            return null;
+        }
+        if (!response.ok) {
+            throw new Error('Failed to fetch profile');
+        }
+        return await response.json();
+    } catch (error) {
+        console.error("Failed to fetch profile from API", error);
+        return null;
+    }
+}
+
+async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>): Promise<{ success: boolean; error?: string; profile?: UserProfile }> {
+     try {
+        const response = await fetch(`/api/users/${email}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uid: userId, profileData: profile }),
+        });
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.error || 'Failed to save profile');
+        }
+        return await response.json();
+    } catch (error: any) {
+        console.error("Failed to save profile via API", error);
+        return { success: false, error: error.message };
+    }
+}
+
 
 interface AuthContextType {
   user: FirebaseUser | null;

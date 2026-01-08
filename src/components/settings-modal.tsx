@@ -1,5 +1,5 @@
 'use client';
-import { getDocConfig, saveDocConfig, getUsersDirectory, saveUserProfile, bulkRegisterUsers } from '@/app/actions';
+import { bulkRegisterUsers } from '@/app/actions';
 import { DocConfig, UserProfile } from '@/lib/types';
 import { compressImage } from '@/lib/utils';
 import { ChangeEvent, useEffect, useState, useTransition } from 'react';
@@ -24,6 +24,64 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Switch } from './ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import * as xlsx from 'xlsx';
+
+
+async function getDocConfig(): Promise<DocConfig> {
+    try {
+        const response = await fetch('/api/config');
+        if (!response.ok) return {};
+        return await response.json();
+    } catch (e) {
+        console.error(e);
+        return {};
+    }
+}
+
+async function saveDocConfig(payload: DocConfig): Promise<{ success: boolean; error?: string }> {
+     try {
+        const response = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.error || 'Failed to save config');
+        }
+        return await response.json();
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+async function getUsersDirectory(): Promise<UserProfile[]> {
+    try {
+        const response = await fetch('/api/users');
+        if (!response.ok) return [];
+        return await response.json();
+    } catch (e) {
+        console.error(e);
+        return [];
+    }
+}
+
+async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>): Promise<{ success: boolean; error?: string; profile?: UserProfile }> {
+     try {
+        const response = await fetch(`/api/users/${email}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uid: userId, profileData: profile }),
+        });
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.error || 'Failed to save profile');
+        }
+        return await response.json();
+    } catch (error: any) {
+        console.error("Failed to save profile via API", error);
+        return { success: false, error: error.message };
+    }
+}
 
 
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
@@ -104,7 +162,7 @@ export function SettingsModal() {
           toast({ variant: 'destructive', title: '입력 오류', description: '이메일, 이름, 직책을 모두 입력해야 합니다.' });
           return;
       }
-      const result = await saveUserProfile('', newUser.email, newUser);
+      const result = await saveUserProfile('', newUser.email, newUser as any);
       if (result.success) {
           toast({ title: '사용자 추가됨' });
           fetchUsers(); // Refresh the list

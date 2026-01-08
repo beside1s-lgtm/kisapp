@@ -19,7 +19,8 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { getDb as getClientDb } from '@/lib/firebase';
+import { getDb as getAdminDb } from '@/lib/firebase-admin';
 import type {
   ApprovalDoc,
   ApprovalDocPayload,
@@ -37,18 +38,15 @@ const appId = 'kish-standard-v6-fix'.replace(/[\/.]/g, '_');
 
 // Helper function to get collections
 function getApprovalsCol() {
-  const db = getDb();
-  if (!db) throw new Error("Firestore is not initialized.");
+  const db = getClientDb();
   return collection(db, 'approvals');
 }
 function getUsersDirCol() {
-    const db = getDb();
-    if (!db) throw new Error("Firestore is not initialized.");
+    const db = getAdminDb();
     return collection(db, 'users');
 }
 function getSettingsRef() {
-    const db = getDb();
-    if (!db) throw new Error("Firestore is not initialized.");
+    const db = getAdminDb();
     return doc(db, 'settings', 'docConfig');
 }
 
@@ -72,8 +70,8 @@ function serializeDocs(docs: any[]): any[] {
 }
 
 export async function getInboxDocuments(userEmail: string) {
-  const db = getDb();
-  if (!db || !userEmail) return [];
+  const db = getClientDb();
+  if (!userEmail) return [];
   const approvalsCol = getApprovalsCol();
   const q = query(
     approvalsCol,
@@ -96,8 +94,8 @@ export async function getInboxDocuments(userEmail: string) {
 }
 
 export async function getSentDocuments(userId: string) {
-  const db = getDb();
-  if (!db || !userId) return [];
+  const db = getClientDb();
+  if (!userId) return [];
   const approvalsCol = getApprovalsCol();
   const q = query(approvalsCol, where('requesterId', '==', userId), orderBy('createdAt', 'desc'));
   try {
@@ -114,8 +112,8 @@ export async function getSentDocuments(userId: string) {
 }
 
 export async function getRegistryDocuments(userId: string, userEmail: string) {
-    const db = getDb();
-    if (!db || !userId || !userEmail) return [];
+    const db = getClientDb();
+    if (!userId || !userEmail) return [];
     
     // Since firestore rules will handle visibility, we can query all approved docs
     // and let firestore security rules do the filtering.
@@ -136,8 +134,7 @@ export async function getRegistryDocuments(userId: string, userEmail: string) {
 }
 
 export async function getDocumentById(docId: string) {
-  const db = getDb();
-  if (!db) return null;
+  const db = getClientDb();
   const approvalsCol = getApprovalsCol();
   const docRef = doc(approvalsCol, docId);
   try {
@@ -158,15 +155,15 @@ export async function getDocumentById(docId: string) {
 
 
 export async function createDocument(payload: ApprovalDocPayload, userId: string, userProfile: UserProfile): Promise<{ success: boolean; error?: string; docId?: string; docNo?: string; }> {
-  const db = getDb();
-  if (!db) return { success: false, error: "Database not initialized." };
+  const adminDb = getAdminDb();
+  const clientDb = getClientDb();
   
-  const approvalsCol = getApprovalsCol();
+  const approvalsCol = collection(clientDb, 'approvals');
   const newDocRef = doc(approvalsCol);
 
   try {
-    const finalDocNoStr = await runTransaction(db, async (transaction) => {
-      const settingsRef = getSettingsRef();
+    const finalDocNoStr = await runTransaction(adminDb, async (transaction) => {
+      const settingsRef = doc(adminDb, 'settings', 'docConfig');
       const settingsSnap = await transaction.get(settingsRef);
       
       let nextNum = 1;
@@ -175,9 +172,6 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
         nextNum = currentConfig.nextNumber || 1;
         transaction.update(settingsRef, { nextNumber: nextNum + 1 });
       } else {
-        // If docConfig doesn't exist, this is the first document.
-        // Start with 1, and set the next number to 2.
-        // This transaction will create the docConfig document.
         transaction.set(settingsRef, { nextNumber: 2 });
       }
       
@@ -208,9 +202,9 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     return { success: true, docId: newDocRef.id, docNo: finalDocNoStr };
 
   } catch (error: any) {
+    console.error('Create document error:', error);
     if (error instanceof FirestorePermissionError) {
       errorEmitter.emit('permission-error', error);
-      // Don't return anything here, let the emitter handle it.
       return { success: false, error: error.message };
     }
     return { success: false, error: `문서 생성 실패: ${error.message}` };
@@ -219,8 +213,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
 
 
 export async function approveDocument(docId: string, userId: string, userProfile: UserProfile) {
-    const db = getDb();
-    if (!db) return { success: false, error: "Database not initialized." };
+    const db = getClientDb();
     const approvalsCol = getApprovalsCol();
     const docRef = doc(approvalsCol, docId);
 
@@ -270,84 +263,8 @@ export async function approveDocument(docId: string, userId: string, userProfile
     }
 }
 
-
-export async function getUsersDirectory(): Promise<UserProfile[]> {
-  const db = getDb();
-  if (!db) return [];
-  try {
-    const usersDirCol = getUsersDirCol();
-    const snapshot = await getDocs(usersDirCol);
-    if (snapshot.empty) return [];
-    
-    const users = snapshot.docs.map(d => {
-        const data = d.data() as Omit<UserProfile, 'uid'> & { uid?: string };
-        return {
-            ...data,
-            email: d.id,
-            uid: data.uid || d.id, 
-        } as UserProfile
-    });
-    const uniqueUsers = Array.from(new Map(users.map(user => [user.email, user])).values());
-    return uniqueUsers;
-
-  } catch (error) {
-    console.error("getUsersDirectory failed:", error);
-    return [];
-  }
-}
-
-export async function getDocConfig(): Promise<DocConfig> {
-  const db = getDb();
-  if (!db) return {};
-  const settingsRef = getSettingsRef();
-  try {
-    const snap = await getDoc(settingsRef);
-    return snap.exists() ? snap.data() as DocConfig : {};
-  } catch(error) {
-    console.error("getDocConfig failed:", error);
-    return {};
-  }
-}
-
-export async function saveDocConfig(payload: DocConfig) {
-  const db = getDb();
-  if (!db) return { success: false, error: "Database not initialized." };
-  const settingsRef = getSettingsRef();
-  
-  try {
-    await setDoc(settingsRef, payload, { merge: true });
-    revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    console.error("saveDocConfig failed:", error);
-    return { success: false, error: error.message };
-  }
-}
-
-export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
-    const db = getDb();
-    if (!db || !email) return null;
-    const userDocRef = doc(db, 'users', email);
-    try {
-        const snap = await getDoc(userDocRef);
-        if (!snap.exists()) return null;
-        const data = snap.data() as Omit<UserProfile, 'uid'> & { uid?: string };
-        return {
-            ...data,
-            email: snap.id,
-            uid: data.uid || snap.id
-        } as UserProfile;
-    } catch (error) {
-       console.error("getUserProfileByEmail failed:", error);
-       return null;
-    }
-}
-
 export async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>) {
-    const db = getDb();
-    if (!db) {
-        return { success: false, error: "Database not initialized." };
-    }
+    const db = getAdminDb();
     
     const userProfileRef = doc(db, 'users', email);
     
@@ -379,7 +296,8 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
         await setDoc(userProfileRef, dataToSave, { merge: true });
         
         revalidatePath('/');
-        return { success: true, profile: dataToSave as UserProfile };
+        const newProfile = (await getDoc(userProfileRef)).data() as UserProfile;
+        return { success: true, profile: newProfile };
 
     } catch (error: any) {
         console.error("saveUserProfile failed:", error);
@@ -414,10 +332,7 @@ export async function generateContentAction(input: {
 }
 
 export async function bulkRegisterUsers(fileData: string): Promise<{ success: boolean; error?: string; summary?: string; }> {
-  const db = getDb();
-  if (!db) {
-    return { success: false, error: '데이터베이스가 초기화되지 않았습니다.' };
-  }
+  const db = getAdminDb();
 
   try {
     const base64Data = fileData.split(',')[1];
