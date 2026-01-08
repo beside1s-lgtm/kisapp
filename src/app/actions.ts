@@ -15,6 +15,7 @@ import {
   where,
   Timestamp,
   writeBatch,
+  deleteDoc,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/firebase';
@@ -473,5 +474,20 @@ export async function saveDocConfig(payload: DocConfig): Promise<{ success: bool
     } catch (error: any) {
         console.error("[Action] saveDocConfig failed:", error);
         return { success: false, error: error.message };
+    }
+}
+
+export async function deleteUser(email: string): Promise<{ success: boolean; error?: string; }> {
+    if (!email) {
+        return { success: false, error: '이메일이 필요합니다.'};
+    }
+    const userRef = doc(db, 'users', email);
+    try {
+        await deleteDoc(userRef);
+        revalidatePath('/'); // Revalidate to refresh user lists
+        return { success: true };
+    } catch (error: any) {
+        console.error(`[Action] deleteUser for ${email} failed:`, error);
+        return { success: false, error: `사용자 삭제 실패: ${error.message}`};
     }
 }

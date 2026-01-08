@@ -1,5 +1,5 @@
 'use client';
-import { bulkRegisterUsers, getUsersDirectory, saveUserProfile, getDocConfig, saveDocConfig } from '@/app/actions';
+import { bulkRegisterUsers, getUsersDirectory, saveUserProfile, getDocConfig, saveDocConfig, deleteUser } from '@/app/actions';
 import { DocConfig, UserProfile } from '@/lib/types';
 import { compressImage } from '@/lib/utils';
 import { ChangeEvent, useEffect, useState, useTransition } from 'react';
@@ -13,10 +13,20 @@ import {
   DialogFooter,
   DialogTrigger,
 } from './ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Loader2, Image as ImageIcon, Users, Settings as SettingsIcon, FileUp, Download, PlusCircle, Save, XCircle } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Users, Settings as SettingsIcon, FileUp, Download, PlusCircle, Save, XCircle, Trash2 } from 'lucide-react';
 import NextImage from 'next/image';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ScrollArea } from './ui/scroll-area';
@@ -24,10 +34,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Switch } from './ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import * as xlsx from 'xlsx';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { useAuth } from '@/hooks/use-auth';
 
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 
 export function SettingsModal() {
+  const { profile } = useAuth();
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, startSaving] = useTransition();
@@ -37,13 +57,12 @@ export function SettingsModal() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // For adding a new user
   const [isAddingNewUser, setIsAddingNewUser] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', name: '', role: '교사' });
+  const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
 
   const fetchUsers = async () => {
     const data = await getUsersDirectory();
-    // Ensure uniqueness by email client-side as a fallback
     const uniqueUsers = Array.from(new Map(data.map(user => [user.email, user])).values());
     setUsers(uniqueUsers.sort((a,b) => a.name.localeCompare(b.name)));
   };
@@ -128,7 +147,6 @@ export function SettingsModal() {
             const result = await bulkRegisterUsers(fileData);
             if (result.success) {
                 toast({ title: '사용자 일괄 등록 성공', description: result.summary });
-                // Refresh user list
                 fetchUsers();
             } else {
                 toast({ variant: 'destructive', title: '일괄 등록 실패', description: result.error, duration: 8000 });
@@ -157,6 +175,27 @@ export function SettingsModal() {
     xlsx.writeFile(workbook, 'user_template.xlsx');
   };
 
+  const confirmDeleteUser = (user: UserProfile) => {
+    if (user.email === profile?.email) {
+      toast({ variant: 'destructive', title: '삭제 불가', description: '자기 자신을 삭제할 수 없습니다.' });
+      return;
+    }
+    setUserToDelete(user);
+  };
+
+  const executeDelete = async () => {
+    if (!userToDelete) return;
+
+    const result = await deleteUser(userToDelete.email);
+    if (result.success) {
+      toast({ title: '사용자 삭제됨', description: `${userToDelete.name} (${userToDelete.email}) 사용자가 삭제되었습니다.`});
+      fetchUsers();
+    } else {
+      toast({ variant: 'destructive', title: '삭제 실패', description: result.error });
+    }
+    setUserToDelete(null);
+  }
+
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -165,7 +204,7 @@ export function SettingsModal() {
                 <SettingsIcon className="h-5 w-5 text-muted-foreground" />
             </Button>
         </DialogTrigger>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh]">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh]">
         <DialogHeader>
           <DialogTitle>시스템 설정</DialogTitle>
           <DialogDescription>
@@ -173,7 +212,7 @@ export function SettingsModal() {
           </DialogDescription>
         </DialogHeader>
         
-        <Tabs defaultValue="general">
+        <Tabs defaultValue="users">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="general"><SettingsIcon className="mr-2"/>일반 설정</TabsTrigger>
             <TabsTrigger value="users"><Users className="mr-2"/>사용자 관리</TabsTrigger>
@@ -270,69 +309,100 @@ export function SettingsModal() {
                         </Button>
                     )}
                 </div>
-                <ScrollArea className="h-[40vh] p-1">
-                  <div className="space-y-2 p-4">
+                <ScrollArea className="h-[40vh] p-1 border rounded-lg">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>사용자</TableHead>
+                        <TableHead className="w-[120px]">직책</TableHead>
+                        <TableHead className="w-[100px]">관리자</TableHead>
+                        <TableHead className="w-[80px] text-right">관리</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                     {isAddingNewUser && (
-                        <div className="flex items-center gap-2 p-3 bg-secondary/50 rounded-lg border border-dashed">
-                             <Input 
-                                placeholder="이메일" 
-                                value={newUser.email} 
-                                onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
-                                className="w-1/3"
-                             />
-                             <Input 
+                        <TableRow>
+                             <TableCell className="flex gap-2 items-center">
+                               <Input 
                                 placeholder="이름" 
                                 value={newUser.name}
                                 onChange={(e) => setNewUser(p => ({ ...p, name: e.target.value }))}
-                                className="w-1/4"
-                             />
-                             <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r }))}>
-                                <SelectTrigger className="w-1/4"><SelectValue /></SelectTrigger>
-                                <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
-                             </Select>
-                             <div className="flex gap-1">
+                                className="w-24"
+                               />
+                               <Input 
+                                placeholder="이메일" 
+                                value={newUser.email} 
+                                onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
+                               />
+                             </TableCell>
+                              <TableCell>
+                                <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r }))}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+                                </Select>
+                              </TableCell>
+                              <TableCell></TableCell>
+                             <TableCell className="text-right">
                                 <Button size="icon" variant="ghost" onClick={handleAddNewUser}><Save className="h-4 w-4 text-primary"/></Button>
-                                <Button size="icon" variant="ghost" onClick={() => setIsAddingNewUser(false)}><XCircle className="h-4 w-4 text-destructive"/></Button>
-                             </div>
-                        </div>
+                                <Button size="icon" variant="ghost" onClick={() => setIsAddingNewUser(false)}><XCircle className="h-4 w-4 text-muted-foreground"/></Button>
+                             </TableCell>
+                        </TableRow>
                     )}
                     {users.map(user => (
-                      <div key={user.email} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-card rounded-lg border gap-4">
-                        <div className="flex-grow">
-                          <p className="font-semibold">{user.name}</p>
-                          <p className="text-sm text-muted-foreground">{user.email}</p>
-                        </div>
-                        <div className="flex items-center gap-4 w-full sm:w-auto">
-                            <div className="flex items-center space-x-2">
-                                <Switch 
-                                    id={`admin-${user.email}`} 
-                                    checked={user.isAdmin}
-                                    onCheckedChange={(checked) => handleUserUpdate(user.uid, user.email, 'isAdmin', checked)}
-                                    disabled={user.email === 'beside1s@kshcm.net'}
-                                />
-                                <Label htmlFor={`admin-${user.email}`} className="text-sm shrink-0">관리자</Label>
-                            </div>
-                            <div className="w-40">
-                               <Select 
-                                  value={user.role} 
-                                  onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="직책 선택" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                                  </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
-                      </div>
+                      <TableRow key={user.email}>
+                        <TableCell>
+                          <p className="font-medium">{user.name}</p>
+                          <p className="text-xs text-muted-foreground">{user.email}</p>
+                        </TableCell>
+                        <TableCell>
+                           <Select 
+                              value={user.role} 
+                              onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="직책 선택" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                        </TableCell>
+                        <TableCell>
+                            <Switch 
+                                id={`admin-${user.email}`} 
+                                checked={user.isAdmin}
+                                onCheckedChange={(checked) => handleUserUpdate(user.uid, user.email, 'isAdmin', checked)}
+                                disabled={user.email === 'beside1s@kshcm.net'}
+                            />
+                        </TableCell>
+                        <TableCell className="text-right">
+                            <Button variant="ghost" size="icon" onClick={() => confirmDeleteUser(user)}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </div>
+                    </TableBody>
+                  </Table>
                 </ScrollArea>
             </div>
           </TabsContent>
         </Tabs>
+
+        <AlertDialog open={!!userToDelete} onOpenChange={(open) => !open && setUserToDelete(null)}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                <AlertDialogTitle>정말로 삭제하시겠습니까?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    {userToDelete?.name} ({userToDelete?.email}) 사용자를 삭제합니다. 이 작업은 되돌릴 수 없습니다.
+                </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setUserToDelete(null)}>취소</AlertDialogCancel>
+                <AlertDialogAction onClick={executeDelete} className="bg-destructive hover:bg-destructive/90">삭제</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
