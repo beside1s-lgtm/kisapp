@@ -3,7 +3,7 @@
 import { ApprovalDoc } from '@/lib/types';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { ChevronRight, EyeOff, User } from 'lucide-react';
+import { ChevronRight, EyeOff, User, XCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 
@@ -22,6 +22,14 @@ export function DocumentList({ documents }: DocumentListProps) {
     );
   }
 
+  const getStatusBadge = (status: 'pending' | 'approved' | 'rejected') => {
+    switch(status) {
+        case 'approved': return <Badge variant="default" className="bg-blue-600">결재 완료</Badge>;
+        case 'rejected': return <Badge variant="destructive">반려</Badge>;
+        case 'pending': return <Badge variant="secondary">진행중</Badge>;
+    }
+  }
+
   return (
     <div className="space-y-4">
       {documents.map((doc) => (
@@ -33,10 +41,7 @@ export function DocumentList({ documents }: DocumentListProps) {
             <div className="p-6 flex justify-between items-center">
                 <div>
                     <div className="flex items-center gap-3 mb-2">
-                        <Badge variant={doc.status === 'approved' ? 'default' : 'secondary'} 
-                            className={doc.status === 'approved' ? 'bg-accent text-accent-foreground' : ''}>
-                            {doc.status === 'approved' ? '결재완료' : '진행중'}
-                        </Badge>
+                        {getStatusBadge(doc.status)}
                         <span className="text-xs font-mono text-muted-foreground uppercase">{doc.docNo}</span>
                         {doc.publishStatus === '비공개' && (
                             <Badge variant="outline" className="text-xs">

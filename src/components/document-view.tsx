@@ -5,12 +5,16 @@ import {
 } from '@/lib/types';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
-import { approveDocument } from '@/app/actions';
+import { approveDocument, rejectDocument } from '@/app/actions';
 import { useRouter } from 'next/navigation';
 import { Button } from './ui/button';
-import { CheckCircle2, Download, Printer, Loader2 } from 'lucide-react';
+import { CheckCircle2, Download, Printer, Loader2, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
+import { Textarea } from './ui/textarea';
+import { Label } from './ui/label';
+import { Badge } from './ui/badge';
 
 type DocumentViewProps = {
   initialDoc: ApprovalDoc;
@@ -22,6 +26,8 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const { toast } = useToast();
   const router = useRouter();
   const [isApproving, startApproveTransition] = useTransition();
+  const [isRejecting, startRejectTransition] = useTransition();
+  const [rejectionReason, setRejectionReason] = useState('');
 
   if (!user || !profile) return null;
 
@@ -60,6 +66,25 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     });
   };
   
+  const handleReject = async () => {
+    if (!rejectionReason) {
+        toast({ variant: 'destructive', title: '반려 사유 필요', description: '반려 사유를 입력해야 합니다.' });
+        return;
+    }
+    startRejectTransition(async () => {
+        if (!user || !profile) return;
+        const result = await rejectDocument(initialDoc.id, user.uid, profile, rejectionReason);
+        if (result.success) {
+            toast({ title: '반려 처리됨', description: '문서가 반려되었습니다.'});
+            router.push('/inbox');
+            router.refresh();
+        } else {
+            toast({ variant: 'destructive', title: '반려 실패', description: result.error });
+        }
+    });
+  };
+
+
   const downloadFile = (file: { data: string; name: string }) => {
     const link = document.createElement('a');
     link.href = file.data;
@@ -68,6 +93,14 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     link.click();
     document.body.removeChild(link);
   };
+
+  const getStatusBadge = (status: 'pending' | 'approved' | 'rejected') => {
+    switch(status) {
+        case 'approved': return <Badge variant="default" className="bg-blue-600">결재 완료</Badge>;
+        case 'rejected': return <Badge variant="destructive">반려</Badge>;
+        case 'pending': return <Badge variant="secondary">진행중</Badge>;
+    }
+  }
 
   return (
     <div>
@@ -169,6 +202,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                                     <div className="flex items-center gap-1">
                                         <span className="font-semibold">{ap.approverName || ap.name}</span>
                                         {ap.status === 'approved' && ap.signature && <div className="w-8 h-8 md:w-12 md:h-12 flex items-center justify-center"><img src={ap.signature} className="max-h-full max-w-full object-contain" alt="signature" /></div>}
+                                        {ap.status === 'rejected' && <span className="text-destructive font-bold text-xs">반려</span>}
                                     </div>
                                 </div>
                             ))}
@@ -179,10 +213,17 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                                 <div className="flex items-center gap-1">
                                     <span className="font-semibold">{assistant.approverName || assistant.name}</span>
                                     {assistant.status === 'approved' && assistant.signature && <div className="w-8 h-8 md:w-12 md:h-12 flex items-center justify-center"><img src={assistant.signature} className="max-h-full max-w-full object-contain" alt="assistant-sig" /></div>}
+                                    {assistant.status === 'rejected' && <span className="text-destructive font-bold text-xs">반려</span>}
                                 </div>
                             </div>
                          )}
                     </div>
+                    {initialDoc.status === 'rejected' && (
+                        <div className="mt-4 p-3 bg-destructive/10 border border-destructive/50 rounded-lg">
+                            <p className="text-sm font-bold text-destructive">반려 사유:</p>
+                            <p className="text-sm text-destructive-foreground mt-1">{initialDoc.approvers.find(ap => ap.status === 'rejected')?.comment}</p>
+                        </div>
+                    )}
                     <div className="mt-2 text-[10px] md:text-xs font-medium text-gray-700 space-y-1.5 border-t border-gray-200 pt-4">
                         <div className="flex gap-4">
                             <span><strong>시행</strong> {initialDoc.docNo} ({format(approvalDate, 'yyyy. MM. dd.')})</span>
@@ -204,12 +245,50 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </div>
         </div>
         {isMyTurn && (
-            <div className="fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-50 print-hidden">
+            <div className="fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-50 print-hidden flex gap-4">
+                <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                        <Button
+                            variant="destructive"
+                            size="lg"
+                            className="h-14 text-base md:text-lg rounded-full shadow-2xl animate-in slide-in-from-bottom-10 fade-in"
+                            disabled={isApproving || isRejecting}
+                        >
+                            <XCircle className="mr-2 h-5 w-5" />
+                            반려
+                        </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>문서를 반려하시겠습니까?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                반려 사유를 입력해주세요. 반려된 문서는 기안자에게 돌아가며, 결재가 중단됩니다.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <div className="grid gap-2">
+                           <Label htmlFor="rejection-reason">반려 사유</Label>
+                           <Textarea 
+                             id="rejection-reason" 
+                             value={rejectionReason}
+                             onChange={(e) => setRejectionReason(e.target.value)}
+                             placeholder="예: 첨부파일 누락, 내용 수정 필요 등"
+                           />
+                        </div>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>취소</AlertDialogCancel>
+                            <AlertDialogAction onClick={handleReject} disabled={isRejecting || !rejectionReason}>
+                                {isRejecting && <Loader2 className="animate-spin mr-2" />}
+                                반려 확인
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+
                 <Button 
                     size="lg"
                     className="h-14 text-base md:text-lg rounded-full shadow-2xl animate-in slide-in-from-bottom-10 fade-in"
                     onClick={handleApprove}
-                    disabled={isApproving}
+                    disabled={isApproving || isRejecting}
                 >
                     {isApproving ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CheckCircle2 className="mr-2 h-5 w-5" />}
                     결재 및 서명

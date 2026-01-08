@@ -41,18 +41,38 @@ function serializeDocs(docs: any[]): any[] {
   return docs.map(d => {
     const data = d.data();
     if (!data) return { id: d.id };
+    
+    // 이 함수가 오류의 원인이었습니다. createdAt이 항상 Timestamp라고 가정했지만,
+    // 직렬화/역직렬화 과정에서 문자열로 변환될 수 있습니다.
+    const safeToISOString = (timestamp: any) => {
+      if (!timestamp) return null;
+      if (timestamp instanceof Timestamp) {
+        return timestamp.toDate().toISOString();
+      }
+      // 이미 문자열인 경우 그대로 반환
+      if (typeof timestamp === 'string') {
+        return timestamp;
+      }
+      // toDate 메서드가 있는 다른 객체일 경우 처리
+      if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+        return timestamp.toDate().toISOString();
+      }
+      return new Date(timestamp).toISOString();
+    };
+
     return {
       ...data,
       id: d.id,
-      createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : data.createdAt,
-      completedAt: data.completedAt instanceof Timestamp ? data.completedAt.toDate().toISOString() : (data.completedAt || null),
+      createdAt: safeToISOString(data.createdAt),
+      completedAt: safeToISOString(data.completedAt),
       approvers: data.approvers?.map((approver: any) => ({
         ...approver,
-        approvedAt: approver.approvedAt instanceof Timestamp ? approver.approvedAt.toDate().toISOString() : approver.approvedAt,
+        approvedAt: safeToISOString(approver.approvedAt),
       })) || [],
     }
   })
 }
+
 
 export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
   if (!email) return null;
@@ -142,18 +162,13 @@ export async function getInboxDocuments(userEmail: string) {
   const approvalsCol = getApprovalsCol();
   
   try {
-    // Firestore 쿼리는 배열의 특정 인덱스에 접근하는 것을 직접 지원하지 않습니다.
-    // 따라서, 모든 'pending' 문서를 가져와서 서버 측에서 필터링합니다.
     const allPendingSnapshot = await getDocs(query(approvalsCol, where('status', '==', 'pending'), orderBy('createdAt', 'desc')));
     
     const allPending = serializeDocs(allPendingSnapshot.docs);
     
     const myTurnDocs = allPending.filter(doc => {
-        // currentStep이 유효한 인덱스인지 확인
         if (doc.currentStep >= 0 && doc.currentStep < doc.approvers.length) {
-            // 현재 결재자 정보에 접근
             const currentApprover = doc.approvers[doc.currentStep];
-            // 이메일 주소를 비교 (대소문자 구분 없이)
             return currentApprover?.email?.toLowerCase() === userEmail?.toLowerCase();
         }
         return false;
@@ -172,7 +187,6 @@ export async function getSentDocuments(userId: string, userEmail: string) {
   if (!userId && !userEmail) return [];
   const approvalsCol = getApprovalsCol();
 
-  // requesterId가 없거나 비어있는 아주 오래된 문서를 대비해 or 쿼리 사용
   const q = query(
     approvalsCol, 
     or(
@@ -196,7 +210,6 @@ export async function getPendingDocuments(userId: string, userEmail: string) {
   if (!userId && !userEmail) return [];
   const approvalsCol = getApprovalsCol();
   
-  // 'requesterId' 또는 'requesterEmail'이 일치하고, 'status'가 'pending'인 문서를 찾습니다.
   const q = query(
     approvalsCol,
     and(
@@ -221,8 +234,6 @@ export async function getPendingDocuments(userId: string, userEmail: string) {
 // [4] 문서등록대장 (Registry): 결재 완료된 모든 공개 문서
 export async function getRegistryDocuments(userId: string, userEmail: string) {
     const approvalsCol = getApprovalsCol();
-    // 'approved' 상태인 모든 문서를 가져옵니다.
-    // 참고: 비공개 문서도 일단 목록에는 표시될 수 있으나, 접근 시 권한 확인이 필요합니다. (향후 구현)
     const q = query(approvalsCol, where('status', '==', 'approved'), orderBy('completedAt', 'desc'));
     try {
         const snapshot = await getDocs(q);
@@ -236,9 +247,8 @@ export async function getRegistryDocuments(userId: string, userEmail: string) {
 export async function getDocumentById(docId: string) {
   try {
     const snapshot = await getDoc(doc(getApprovalsCol(), docId));
-    // 참고: 현재는 문서 존재 여부만 확인합니다. 향후 여기서 사용자 권한 검사를 추가할 수 있습니다.
-    // (예: 기안자, 결재선 참여자, 공람자, 관리자인지 확인)
-    return snapshot.exists() ? serializeDocs([snapshot])[0] : null;
+    if (!snapshot.exists()) return null;
+    return serializeDocs([snapshot])[0];
   } catch (error) {
      console.error("Get Doc By ID Error:", error);
      return null;
@@ -272,7 +282,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       requesterRole: userProfile.role,
       requesterSignature: userProfile.signature || '',
       currentStep: 0,
-      status: hasApprovers ? 'pending' : 'approved', // 결재자 없으면 즉시 완료
+      status: hasApprovers ? 'pending' : 'approved',
       createdAt: serverTimestamp(),
       completedAt: hasApprovers ? null : serverTimestamp(),
     };
@@ -294,7 +304,6 @@ export async function approveDocument(docId: string, userId: string, userProfile
             const data = docSnap.data() as ApprovalDoc;
             const step = data.currentStep;
             
-            // 현재 결재 차례인지 확인
             if (data.approvers[step]?.email?.toLowerCase() !== userProfile.email?.toLowerCase()) {
                 throw new Error("결재 권한이 없거나 차례가 아닙니다.");
             }
@@ -312,11 +321,13 @@ export async function approveDocument(docId: string, userId: string, userProfile
             
             transaction.update(docRef, {
                 approvers: updatedApprovers,
-                currentStep: isFinal ? step : step + 1, // 완료되면 step 유지, 아니면 증가
-                status: isFinal ? 'approved' : 'pending', // 완료되면 approved -> 상신함/대장으로 이동됨
+                currentStep: isFinal ? step : step + 1,
+                status: isFinal ? 'approved' : 'pending',
                 completedAt: isFinal ? serverTimestamp() : null,
             });
         });
+        revalidatePath(`/documents/${docId}`);
+        revalidatePath('/inbox');
         return { success: true, docId };
     } catch (error: any) {
         return { success: false, error: error.message };
@@ -358,13 +369,12 @@ export async function bulkRegisterUsers(fileData: string) {
         for (const user of users) {
             if (user.email && user.name && user.role) {
                 const userRef = doc(db, "users", user.email.toLowerCase());
-                // uid는 인증 시 자동으로 연결되므로, 여기서는 프로필 정보만 설정합니다.
                 batch.set(userRef, {
                     name: user.name,
                     role: user.role,
                     email: user.email.toLowerCase(),
-                    isAdmin: false, // 기본값
-                    signature: '', // 기본값
+                    isAdmin: false,
+                    signature: '',
                 }, { merge: true });
                 count++;
             }
@@ -389,7 +399,7 @@ export async function getDocConfig() {
 export async function saveDocConfig(payload: any) {
     try {
         await setDoc(doc(getSettingsCol(), 'docConfig'), payload, { merge: true });
-        revalidatePath('/'); // 전체 앱에 영향을 줄 수 있으므로 넓게 revalidate
+        revalidatePath('/');
         return { success: true };
     } catch (error: any) {
         return { success: false, error: error.message };
@@ -403,10 +413,48 @@ export async function deleteUser(email: string) {
     try {
       const userRef = doc(db, 'users', email);
       await deleteDoc(userRef);
-      revalidatePath('/settings'); // 사용자 목록 갱신
+      revalidatePath('/settings');
       return { success: true };
     } catch (error: any) {
       console.error('사용자 삭제 실패:', error);
       return { success: false, error: `사용자 삭제 중 오류가 발생했습니다: ${error.message}` };
+    }
+}
+
+export async function rejectDocument(docId: string, userId: string, userProfile: UserProfile, reason: string) {
+    const docRef = doc(getApprovalsCol(), docId);
+    try {
+        await runTransaction(db, async (transaction) => {
+            const docSnap = await transaction.get(docRef);
+            if (!docSnap.exists()) throw new Error("문서가 없습니다.");
+            
+            const data = docSnap.data() as ApprovalDoc;
+            const step = data.currentStep;
+            
+            if (data.approvers[step]?.email?.toLowerCase() !== userProfile.email?.toLowerCase()) {
+                throw new Error("반려 권한이 없거나 결재 차례가 아닙니다.");
+            }
+
+            const updatedApprovers = [...data.approvers];
+            updatedApprovers[step] = {
+                ...updatedApprovers[step],
+                status: 'rejected',
+                signature: userProfile.signature || '',
+                approvedAt: new Date().toISOString(), // 반려일
+                approverName: userProfile.name,
+                comment: reason, // 반려 사유
+            };
+            
+            transaction.update(docRef, {
+                approvers: updatedApprovers,
+                status: 'rejected',
+                completedAt: serverTimestamp(),
+            });
+        });
+        revalidatePath(`/documents/${docId}`);
+        revalidatePath('/inbox');
+        return { success: true, docId };
+    } catch (error: any) {
+        return { success: false, error: error.message };
     }
 }
