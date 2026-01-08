@@ -76,18 +76,23 @@
   }
 }
 
-/* KSHCM 공문 인쇄용 스타일 */
 @media print {
+  body {
+    background: white !important;
+  }
   .no-print {
     display: none !important;
   }
-  .print-container {
+  .printable-area {
+    box-shadow: none !important;
+    border: none !important;
     padding: 0 !important;
     margin: 0 !important;
     width: 100% !important;
-    max-width: none !important;
-    box-shadow: none !important;
-    border: none !important;
-    background: white !important;
+    max-width: 100% !important;
+  }
+  @page {
+    size: A4;
+    margin: 1cm;
   }
 }

@@ -10,7 +10,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from './ui/button';
 import { CheckCircle2, Download, Printer, Loader2, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useRef } from 'react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
@@ -28,6 +28,11 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const [isApproving, startApproveTransition] = useTransition();
   const [isRejecting, startRejectTransition] = useTransition();
   const [rejectionReason, setRejectionReason] = useState('');
+
+  const handlePrint = () => {
+    window.print();
+  };
+
 
   if (!user || !profile) return null;
 
@@ -104,38 +109,12 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
   return (
     <div className="print-container">
-        <div className="no-print flex justify-end gap-2 mb-4">
-            <Button variant="outline" onClick={() => window.print()}>
+        <div className="no-print p-4 md:p-0 flex justify-end gap-2 mb-4 max-w-4xl mx-auto">
+            <Button variant="outline" onClick={handlePrint}>
                 <Printer className="mr-2 h-4 w-4" /> 인쇄 / PDF로 저장
             </Button>
         </div>
-        <div className="bg-white p-4 md:p-12 shadow-lg rounded-lg max-w-4xl mx-auto printable-area">
-            <style jsx global>{`
-                @media print {
-                    body * {
-                        visibility: hidden;
-                    }
-                    .printable-area, .printable-area * {
-                        visibility: visible;
-                    }
-                    .printable-area {
-                        position: absolute;
-                        left: 0;
-                        top: 0;
-                        width: 100%;
-                        height: 100%;
-                        padding: 1cm;
-                        margin: 0;
-                    }
-                    .no-print {
-                        display: none;
-                    }
-                }
-                 @page {
-                    size: A4;
-                    margin: 0;
-                }
-            `}</style>
+        <div className="printable-area bg-white p-4 md:p-12 shadow-lg rounded-lg max-w-4xl mx-auto">
             <div>
                 <header className="text-center mb-8">
                     <p className="text-xs md:text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
@@ -245,7 +224,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </div>
         </div>
         {isMyTurn && (
-            <div className="fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-50 no-print flex gap-4">
+            <div className="no-print fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-50 flex gap-4">
                 <AlertDialog>
                     <AlertDialogTrigger asChild>
                         <Button
