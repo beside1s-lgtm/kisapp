@@ -256,7 +256,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     const newDocData: Omit<ApprovalDoc, 'id'> = {
       ...payload,
       docNo: finalDocNoStr,
-      requesterId: userId,
+      requesterId: userProfile.uid,
       requesterName: userProfile.name,
       requesterEmail: userProfile.email,
       requesterRole: userProfile.role,
