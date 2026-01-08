@@ -140,15 +140,32 @@ export async function getInboxDocuments(userEmail: string) {
   const approvalsCol = getApprovalsCol();
   
   try {
+    // Firestore 쿼리는 배열의 특정 인덱스에 접근하는 것을 직접 지원하지 않습니다.
+    // 따라서, 모든 'pending' 문서를 가져와서 클라이언트 측에서 필터링해야 합니다.
+    // 이는 문서가 많아질 경우 비효율적일 수 있으므로, 나중에 구조 변경을 고려해야 합니다.
+    // (예: 각 단계마다 결재자 이메일을 별도 필드로 저장)
     const allPendingSnapshot = await getDocs(query(approvalsCol, where('status', '==', 'pending'), orderBy('createdAt', 'desc')));
+    
     const allPending = serializeDocs(allPendingSnapshot.docs);
-    const myTurnDocs = allPending.filter(doc => doc.approvers[doc.currentStep]?.email?.toLowerCase() === userEmail?.toLowerCase());
+    
+    const myTurnDocs = allPending.filter(doc => {
+        // currentStep이 유효한 인덱스인지 확인
+        if (doc.currentStep >= 0 && doc.currentStep < doc.approvers.length) {
+            // 현재 결재자 정보에 접근
+            const currentApprover = doc.approvers[doc.currentStep];
+            // 이메일 주소를 비교 (대소문자 구분 없이)
+            return currentApprover?.email?.toLowerCase() === userEmail?.toLowerCase();
+        }
+        return false;
+    });
+
     return myTurnDocs;
   } catch (error) {
     console.error("Get Inbox Error:", error);
     return [];
   }
 }
+
 
 // [2] 상신함 (Sent Box): 내가 상신한 모든 문서 (과거 데이터 포함)
 export async function getSentDocuments(userId: string, userEmail: string) {
