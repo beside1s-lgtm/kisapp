@@ -45,10 +45,10 @@ function serializeDocs(docs: any[]): any[] {
       ...data,
       id: d.id,
       createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : data.createdAt,
-      completedAt: data.completedAt instanceof Timestamp ? data.completedAt.toDate().toISOString() : data.completedAt,
+      completedAt: data.completedAt instanceof Timestamp ? data.completedAt.toDate().toISOString() : (data.completedAt || null),
       approvers: data.approvers?.map((approver: any) => ({
         ...approver,
-        approvedAt: approver.approvedAt instanceof Timestamp ? approver.approvedAt.toDate().toISOString() : approver.approvedAt,
+        approvedAt: approver.approvedAt instanceof Timestamp ? approver.approvedAt.toDate().toISOString() : (approver.approvedAt || null),
       })) || [],
     }
   })
@@ -167,20 +167,35 @@ export async function getInboxDocuments(userEmail: string) {
   if (!userEmail) return [];
   
   const approvalsCol = getApprovalsCol();
+  // Firestore does not support querying array elements by index.
+  // The logic needs to be: Get all pending docs, then filter in code.
+  // This is inefficient but a limitation of Firestore's querying capabilities
+  // for this data model. A better model would be to have a subcollection of approvers.
+  // Or to denormalize the current approver's email to a top-level field.
+  
+  // Let's try to query with what we have. A user's inbox is where they are the current approver.
   const q = query(
     approvalsCol,
     where('status', '==', 'pending'),
+    // This is not a valid Firestore query. We must filter client-side.
+    // where(`approvers.${doc.currentStep}.email`, '==', userEmail)
   );
+
   try {
     const snapshot = await getDocs(q);
-    const allPending = serializeDocs(snapshot.docs);
-    return allPending.filter(doc => doc.approvers[doc.currentStep]?.email === userEmail);
-  } catch (error) {
-    const permissionError = new FirestorePermissionError({
-      path: approvalsCol.path,
-      operation: 'list',
+    const allPendingDocs = serializeDocs(snapshot.docs);
+    
+    // Filter in application code
+    const inboxDocs = allPendingDocs.filter(doc => {
+        if (doc.currentStep >= 0 && doc.currentStep < doc.approvers.length) {
+            return doc.approvers[doc.currentStep]?.email === userEmail;
+        }
+        return false;
     });
-    console.error("Permission Error:", error); 
+
+    return inboxDocs;
+  } catch (error) {
+    console.error("Get Inbox Docs Error:", error);
     return [];
   }
 }
@@ -221,7 +236,8 @@ export async function getRegistryDocuments(userId: string, userEmail: string) {
     if (!userId || !userEmail) return [];
     
     const approvalsCol = getApprovalsCol();
-    const q = query(approvalsCol, where('status', '==', 'approved'), orderBy('createdAt', 'desc'));
+    // Registry should show all approved documents, not just ones related to the current user.
+    const q = query(approvalsCol, where('status', '==', 'approved'), orderBy('completedAt', 'desc'));
     
     try {
         const snapshot = await getDocs(q);
@@ -291,6 +307,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     revalidatePath('/sent');
     revalidatePath('/inbox');
     revalidatePath('/pending');
+    revalidatePath('/registry');
     return { success: true, docId: newDocRef.id, docNo: finalDocNoStr };
 
   } catch (error: any) {
@@ -343,6 +360,8 @@ export async function approveDocument(docId: string, userId: string, userProfile
 
         revalidatePath('/inbox');
         revalidatePath('/pending');
+        revalidatePath('/sent');
+        revalidatePath('/registry');
         revalidatePath(`/documents/${docId}`);
         return { success: true, docId };
     } catch (error: any) {
