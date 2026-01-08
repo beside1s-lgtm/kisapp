@@ -83,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         const saveResult = await saveUserProfile(firebaseUser.uid, firebaseUser.email, newProfileData);
         if (saveResult.success && saveResult.profile) {
-            userProfile = saveResult.profile;
+            userProfile = saveResult.profile as UserProfile;
              // 새로 만든 프로필에도 uid가 확실히 들어가도록 보장
             userProfile.uid = firebaseUser.uid;
         } else {
@@ -94,6 +94,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // 3. 관리자 권한 강제 보정
       if (isHardcodedAdmin && !userProfile.isAdmin) {
           userProfile.isAdmin = true;
+          // Also save this back to ensure consistency
+          await saveUserProfile(firebaseUser.uid, firebaseUser.email, { isAdmin: true });
+      }
+
+      // 최종적으로 반환되는 프로필에 UID가 있는지 다시 한 번 확인
+      if (!userProfile.uid) {
+        userProfile.uid = firebaseUser.uid;
       }
       
       setProfile(userProfile);

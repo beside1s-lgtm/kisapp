@@ -8,18 +8,20 @@ import { FileClock, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export default function PendingPage() {
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
     const [docs, setDocs] = useState<ApprovalDoc[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (user?.uid) {
-            getPendingDocuments(user.uid).then(data => {
+        if (user?.uid && profile?.email) {
+            getPendingDocuments(user.uid, profile.email).then(data => {
                 setDocs(data);
                 setLoading(false);
             });
+        } else if (!user) {
+            setLoading(false);
         }
-    }, [user]);
+    }, [user, profile]);
 
     if (loading) {
         return (

@@ -15,6 +15,8 @@ import {
   Timestamp,
   writeBatch,
   deleteDoc,
+  or,
+  and,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/firebase';
@@ -103,7 +105,7 @@ export async function saveUserProfile(userId: string, email: string, profileData
     // 중요: 클라이언트로 반환하기 전에 직렬화할 수 없는 필드(타임스탬프)를 제거합니다.
     const { updatedAt, createdAt, ...returnProfile } = dataToSave;
 
-    return { success: true, profile: returnProfile as UserProfile };
+    return { success: true, profile: returnProfile };
   } catch (error: any) {
       return { success: false, error: `저장 실패: ${error.message}` };
   }
@@ -148,34 +150,53 @@ export async function getInboxDocuments(userEmail: string) {
   }
 }
 
-// [2] 상신함 (Sent Box): 내가 상신한 모든 문서
-export async function getSentDocuments(userId: string) {
-  if (!userId) return [];
+// [2] 상신함 (Sent Box): 내가 상신한 모든 문서 (과거 데이터 포함)
+export async function getSentDocuments(userId: string, userEmail: string) {
+  if (!userId && !userEmail) return [];
   const approvalsCol = getApprovalsCol();
+
   const q = query(
     approvalsCol, 
-    where('requesterId', '==', userId),
+    or(
+        where('requesterId', '==', userId),
+        where('requesterEmail', '==', userEmail)
+    ),
     orderBy('createdAt', 'desc')
   );
+
   try {
     const snapshot = await getDocs(q);
     return serializeDocs(snapshot.docs);
   } catch (error) {
     console.error("Get Sent Docs Error:", error);
-    return [];
+    // Try a simpler query if the composite one fails (for very old Firestore versions)
+     try {
+        const snapshot = await getDocs(query(approvalsCol, where('requesterId', '==', userId), orderBy('createdAt', 'desc')));
+        return serializeDocs(snapshot.docs);
+    } catch (e) {
+        console.error("Fallback Get Sent Docs Error:", e);
+        return [];
+    }
   }
 }
 
-// [3] 진행 문서함 (Pending Box): 내가 상신했고, 아직 "진행 중인" 문서
-export async function getPendingDocuments(userId: string) {
-  if (!userId) return [];
+// [3] 진행 문서함 (Pending Box): 내가 상신했고, 아직 "진행 중인" 문서 (과거 데이터 포함)
+export async function getPendingDocuments(userId: string, userEmail: string) {
+  if (!userId && !userEmail) return [];
   const approvalsCol = getApprovalsCol();
+  
   const q = query(
     approvalsCol,
-    where('requesterId', '==', userId),
-    where('status', '==', 'pending'),
+    and(
+        or(
+            where('requesterId', '==', userId),
+            where('requesterEmail', '==', userEmail)
+        ),
+        where('status', '==', 'pending')
+    ),
     orderBy('createdAt', 'desc')
   );
+
   try {
     const snapshot = await getDocs(q);
     return serializeDocs(snapshot.docs);
