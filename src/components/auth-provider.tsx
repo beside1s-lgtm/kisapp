@@ -144,7 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfileLoading(true);
 
       if (firebaseUser && firebaseUser.email) {
-        const allowedDomains = ['@kshcm.net', '@kish.kr'];
+        const allowedDomains = ['@kshcm.net'];
         const isAllowedDomain = allowedDomains.some(domain => firebaseUser.email!.endsWith(domain)) || process.env.NODE_ENV === 'development';
 
         if (!isAllowedDomain) {
