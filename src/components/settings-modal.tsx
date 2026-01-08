@@ -309,82 +309,84 @@ export function SettingsModal() {
                         </Button>
                     )}
                 </div>
-                <ScrollArea className="h-[40vh] p-1 border rounded-lg">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>사용자</TableHead>
-                        <TableHead className="w-[120px]">직책</TableHead>
-                        <TableHead className="w-[100px]">관리자</TableHead>
-                        <TableHead className="w-[80px] text-right">관리</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                    {isAddingNewUser && (
+                <div className="border rounded-lg">
+                    <Table>
+                        <TableHeader>
                         <TableRow>
-                             <TableCell className="flex gap-2 items-center">
-                               <Input 
-                                placeholder="이름" 
-                                value={newUser.name}
-                                onChange={(e) => setNewUser(p => ({ ...p, name: e.target.value }))}
-                                className="w-24"
-                               />
-                               <Input 
-                                placeholder="이메일" 
-                                value={newUser.email} 
-                                onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
-                               />
-                             </TableCell>
-                              <TableCell>
-                                <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r }))}>
-                                    <SelectTrigger><SelectValue /></SelectTrigger>
-                                    <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell></TableCell>
-                             <TableCell className="text-right">
-                                <Button size="icon" variant="ghost" onClick={handleAddNewUser}><Save className="h-4 w-4 text-primary"/></Button>
-                                <Button size="icon" variant="ghost" onClick={() => setIsAddingNewUser(false)}><XCircle className="h-4 w-4 text-muted-foreground"/></Button>
-                             </TableCell>
+                            <TableHead>사용자</TableHead>
+                            <TableHead className="w-[120px]">직책</TableHead>
+                            <TableHead className="w-[100px]">관리자</TableHead>
+                            <TableHead className="w-[80px] text-right">관리</TableHead>
                         </TableRow>
-                    )}
-                    {users.map(user => (
-                      <TableRow key={user.email}>
-                        <TableCell>
-                          <p className="font-medium">{user.name}</p>
-                          <p className="text-xs text-muted-foreground">{user.email}</p>
-                        </TableCell>
-                        <TableCell>
-                           <Select 
-                              value={user.role} 
-                              onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="직책 선택" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                        </TableCell>
-                        <TableCell>
-                            <Switch 
-                                id={`admin-${user.email}`} 
-                                checked={user.isAdmin}
-                                onCheckedChange={(checked) => handleUserUpdate(user.uid, user.email, 'isAdmin', checked)}
-                                disabled={user.email === 'beside1s@kshcm.net'}
-                            />
-                        </TableCell>
-                        <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" onClick={() => confirmDeleteUser(user)}>
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
+                        </TableHeader>
+                    </Table>
+                    <ScrollArea className="h-[34vh]">
+                        <TableBody>
+                        {isAddingNewUser && (
+                            <TableRow>
+                                <TableCell className="flex gap-2 items-center">
+                                <Input 
+                                    placeholder="이름" 
+                                    value={newUser.name}
+                                    onChange={(e) => setNewUser(p => ({ ...p, name: e.target.value }))}
+                                    className="w-24"
+                                />
+                                <Input 
+                                    placeholder="이메일" 
+                                    value={newUser.email} 
+                                    onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
+                                />
+                                </TableCell>
+                                <TableCell>
+                                    <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r }))}>
+                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+                                    </Select>
+                                </TableCell>
+                                <TableCell></TableCell>
+                                <TableCell className="text-right">
+                                    <Button size="icon" variant="ghost" onClick={handleAddNewUser}><Save className="h-4 w-4 text-primary"/></Button>
+                                    <Button size="icon" variant="ghost" onClick={() => setIsAddingNewUser(false)}><XCircle className="h-4 w-4 text-muted-foreground"/></Button>
+                                </TableCell>
+                            </TableRow>
+                        )}
+                        {users.map(user => (
+                        <TableRow key={user.email}>
+                            <TableCell>
+                            <p className="font-medium">{user.name}</p>
+                            <p className="text-xs text-muted-foreground">{user.email}</p>
+                            </TableCell>
+                            <TableCell>
+                            <Select 
+                                value={user.role} 
+                                onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
+                                >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="직책 선택" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                                </SelectContent>
+                                </Select>
+                            </TableCell>
+                            <TableCell>
+                                <Switch 
+                                    id={`admin-${user.email}`} 
+                                    checked={user.isAdmin}
+                                    onCheckedChange={(checked) => handleUserUpdate(user.uid, user.email, 'isAdmin', checked)}
+                                    disabled={user.email === 'beside1s@kshcm.net'}
+                                />
+                            </TableCell>
+                            <TableCell className="text-right">
+                                <Button variant="ghost" size="icon" onClick={() => confirmDeleteUser(user)}>
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                            </TableCell>
+                        </TableRow>
+                        ))}
+                        </TableBody>
+                    </ScrollArea>
+                </div>
             </div>
           </TabsContent>
         </Tabs>
