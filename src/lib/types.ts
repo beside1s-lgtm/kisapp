@@ -13,8 +13,8 @@ export type UserProfile = {
     name: string;
     role: string;
     email: string; // This is the unique identifier for documents in 'users' collection.
-    signature?: string;
-    isAdmin?: boolean;
+    signature: string;
+    isAdmin: boolean;
 };
 
 export type Approver = {

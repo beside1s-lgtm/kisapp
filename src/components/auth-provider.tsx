@@ -63,6 +63,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // 1. API로 프로필 조회 시도
       let userProfile = await getUserProfileByEmail(firebaseUser.email);
       const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
+      
+      // Firestore에서 가져온 데이터에도 uid를 firebaseUser의 것으로 보장
+      if (userProfile) {
+          userProfile.uid = firebaseUser.uid;
+      }
 
       // 2. 프로필이 없으면 -> 신규 프로필 객체 생성 및 저장
       if (!userProfile) {
@@ -79,6 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const saveResult = await saveUserProfile(firebaseUser.uid, firebaseUser.email, newProfileData);
         if (saveResult.success && saveResult.profile) {
             userProfile = saveResult.profile;
+             // 새로 만든 프로필에도 uid가 확실히 들어가도록 보장
+            userProfile.uid = firebaseUser.uid;
         } else {
              throw new Error(saveResult.error || "Failed to save new user profile.");
         }
@@ -99,20 +106,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           title: '프로필 로딩 실패',
           description: '프로필을 불러오는 중 심각한 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
       });
-      // 최악의 경우에도 로그인 상태를 유지하기 위해 깡통 프로필 리턴
       const fallbackProfile: UserProfile = {
           uid: firebaseUser.uid,
           name: firebaseUser.displayName || 'Unknown',
           email: firebaseUser.email!,
           role: 'Guest',
           isAdmin: false,
+          signature: ''
       };
       setProfile(fallbackProfile);
       return fallbackProfile;
     } finally {
       setProfileLoading(false);
     }
-  }, [toast]); // toast를 의존성 배열에 유지하되, useToast 훅이 안정적이라고 가정합니다.
+  }, [toast]); 
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -144,6 +151,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await signInWithPopup(auth, googleProvider);
     } catch (error: any) {
       console.error("Login Error:", error);
+      if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+        // 사용자가 팝업을 닫은 경우엔 조용히 처리
+        return;
+      }
       toast({ variant: 'destructive', title: '로그인 오류', description: error.message });
     }
   };
