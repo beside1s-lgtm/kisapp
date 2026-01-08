@@ -426,9 +426,12 @@ export default function DocumentForm() {
                                         form.setValue(`approvers.${index}.name`, user.name, { shouldValidate: true });
                                         form.setValue(`approvers.${index}.email`, user.email, { shouldValidate: true });
                                     }}
-                                    placeholder="결재자 검색..."
+                                    onClear={() => {
+                                        form.setValue(`approvers.${index}.name`, '', { shouldValidate: true });
+                                        form.setValue(`approvers.${index}.email`, '', { shouldValidate: true });
+                                    }}
                                     value={field.value}
-                                    onValueChange={field.onChange}
+                                    placeholder="결재자 검색..."
                                   />
                                 </FormControl>
                                 <FormMessage />
@@ -485,7 +488,12 @@ export default function DocumentForm() {
             <div className="mb-4">
               <UserSearch
                 users={users}
-                onSelectUser={(user) => appendCircular({name: user.name, email: user.email, role: user.role})}
+                onSelectUser={(user) => {
+                  if (!circularFields.some(f => f.email === user.email)) {
+                    appendCircular({name: user.name, email: user.email, role: user.role})
+                  }
+                }}
+                onClear={() => {}}
                 placeholder="추가할 사용자 검색..."
               />
             </div>

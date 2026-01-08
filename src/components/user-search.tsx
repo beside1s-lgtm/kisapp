@@ -12,23 +12,23 @@ import {
 interface UserSearchProps extends Omit<InputProps, 'onSelect' | 'value' | 'onChange'> {
   users: UserProfile[];
   onSelectUser: (user: UserProfile) => void;
+  onClear: () => void; // Add an onClear callback
   value?: string;
-  onValueChange?: (value: string) => void;
   placeholder?: string;
 }
 
-export function UserSearch({ users, onSelectUser, value, onValueChange, placeholder, ...props }: UserSearchProps) {
+export function UserSearch({ users, onSelectUser, onClear, value, placeholder, ...props }: UserSearchProps) {
   const [open, setOpen] = useState(false);
-  // This internalValue is for controlling the input text for searching
   const [internalValue, setInternalValue] = useState(value || '');
 
-  // This effect synchronizes the display value when the form's value changes externally
+  // Sync internalValue when the external value changes.
+  // This is useful for when the form is reset or initialized.
   useEffect(() => {
     setInternalValue(value || '');
   }, [value]);
 
   const filteredUsers = useMemo(() => {
-    if (!internalValue) return users; // Show all users if input is empty
+    if (!internalValue) return users;
     // Don't filter if the input value exactly matches a user's name (which happens after selection).
     if (users.some(u => u.name === internalValue)) return [];
 
@@ -40,8 +40,6 @@ export function UserSearch({ users, onSelectUser, value, onValueChange, placehol
 
   const handleSelect = (user: UserProfile) => {
     onSelectUser(user);
-    // The parent form will update the `value` prop via react-hook-form's `setValue`,
-    // which will then be reflected in the input via the useEffect.
     setInternalValue(user.name); 
     setOpen(false);
   };
@@ -49,18 +47,11 @@ export function UserSearch({ users, onSelectUser, value, onValueChange, placehol
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     setInternalValue(newValue);
-    if (onValueChange) {
-        onValueChange(newValue);
-    }
     if (newValue) {
         setOpen(true)
     } else {
-        // If the input is cleared, also clear the parent form state for both name and email.
-        if (onValueChange) {
-            onValueChange(''); // Clear name
-        }
-        // A bit of a hack to clear the email field in the parent form
-        onSelectUser({ name: '', email: '', role: '', uid: '' });
+        // If the input is cleared, call the onClear callback
+        onClear();
         setOpen(false);
     }
   }
@@ -73,7 +64,8 @@ export function UserSearch({ users, onSelectUser, value, onValueChange, placehol
           value={internalValue}
           onChange={handleChange}
           onFocus={() => {
-            if(internalValue || filteredUsers.length > 0) setOpen(true);
+            // Re-filter and open if there's text
+            if(internalValue && filteredUsers.length > 0) setOpen(true);
           }}
           placeholder={placeholder || "Search name..."}
           autoComplete="off"
