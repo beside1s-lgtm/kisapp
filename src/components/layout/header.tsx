@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { FileText, LifeBuoy, LogOut, Loader2, Settings, User as UserIcon, Languages } from 'lucide-react';
+import { FileText, LifeBuoy, LogOut, Loader2, Settings, User as UserIcon } from 'lucide-react';
 import { SettingsModal } from '../settings-modal';
 import { ProfileModal } from '../profile-modal';
 import { DropdownMenuTriggerItem } from '../ui/dropdown-menu-trigger-item';
@@ -30,21 +30,6 @@ export function AppHeader() {
           </h1>
         </div>
         <div className="flex items-center gap-4">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
-                    <Languages className="h-5 w-5 text-muted-foreground" />
-                </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-40" align="end">
-                <DropdownMenuLabel>언어 선택</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>한국어</DropdownMenuItem>
-                <DropdownMenuItem>English</DropdownMenuItem>
-                <DropdownMenuItem>Tiếng Việt</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
           {profile?.isAdmin && <SettingsModal />}
 
           {profileLoading ? (
