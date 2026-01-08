@@ -22,11 +22,11 @@ export async function GET(
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
         const data = snap.data() as Omit<UserProfile, 'uid'> & { uid?: string };
-        const profile = {
+        const profile: UserProfile = {
             ...data,
             email: snap.id,
             uid: data.uid || '',
-        } as UserProfile;
+        };
 
         return NextResponse.json(profile);
 
@@ -55,7 +55,7 @@ export async function POST(
       const docSnap = await getDoc(userProfileRef);
       const existingData = docSnap.exists() ? docSnap.data() : {};
       
-      const dataToSave = { 
+      const dataToSave: Partial<UserProfile> = { 
         ...existingData, 
         ...profileData,
         email: email, 
@@ -64,7 +64,13 @@ export async function POST(
       
       await setDoc(userProfileRef, dataToSave, { merge: true });
       
-      const newProfile = (await getDoc(userProfileRef)).data() as UserProfile;
+      const newProfileSnap = await getDoc(userProfileRef);
+      const newProfile: UserProfile = {
+          ...newProfileSnap.data(),
+          email: newProfileSnap.id,
+          uid: newProfileSnap.data()?.uid || uid,
+      } as UserProfile;
+
       return NextResponse.json({ success: true, profile: newProfile });
 
   } catch (error: any) {
