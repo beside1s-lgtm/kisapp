@@ -1,3 +1,4 @@
+'use server';
 import { getDb } from '@/lib/firebase-admin';
 import { NextRequest, NextResponse } from 'next/server';
 import { doc, getDoc, setDoc } from 'firebase-admin/firestore';
@@ -21,6 +22,7 @@ export async function GET(
         if (!snap.exists()) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
+        
         const data = snap.data() as Omit<UserProfile, 'uid'> & { uid?: string };
         const profile: UserProfile = {
             ...data,
