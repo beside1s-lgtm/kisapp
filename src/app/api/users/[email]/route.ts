@@ -19,7 +19,7 @@ export async function GET(
         const snap = await getDoc(userDocRef);
         
         if (!snap.exists()) {
-            return NextResponse.json(null);
+            return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
         const data = snap.data() as Omit<UserProfile, 'uid'> & { uid?: string };
         const profile = {
