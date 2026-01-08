@@ -19,7 +19,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
-import { getDb as getClientDb } from '@/lib/firebase';
+import { db as getClientDb } from '@/lib/firebase';
 import { getDb as getAdminDb } from '@/lib/firebase-admin';
 import type {
   ApprovalDoc,
@@ -389,4 +389,17 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     console.error('Bulk user registration failed:', error);
     return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
+}
+
+
+export async function getDocConfig() {
+    const db = getAdminDb();
+    const settingsRef = doc(db, 'settings', 'docConfig');
+    try {
+        const snap = await getDoc(settingsRef);
+        return snap.exists() ? (snap.data() as DocConfig) : {};
+    } catch(error) {
+        console.error("[actions] getDocConfig failed:", error);
+        return {};
+    }
 }
