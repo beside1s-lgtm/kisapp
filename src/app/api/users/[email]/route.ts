@@ -23,18 +23,26 @@ export async function GET(
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
         
-        const data = snap.data() as Omit<UserProfile, 'uid'> & { uid?: string };
+        const data = snap.data() as Omit<UserProfile, 'uid' | 'email'>;
+
+        // Safely construct the profile object.
+        // The main issue was accessing `data.uid` which might not exist, causing a server error.
         const profile: UserProfile = {
-            ...data,
-            email: snap.id,
-            uid: data.uid || '',
+            name: data.name,
+            role: data.role,
+            signature: data.signature || '',
+            // Safely access uid, default to the doc id (email) if it doesn't exist.
+            uid: (data as any).uid || snap.id,
+            email: snap.id, // Email is the document ID.
+            isAdmin: data.isAdmin || false,
         };
 
         return NextResponse.json(profile);
 
     } catch (error) {
        console.error(`[API] getUserProfileByEmail failed for ${email}:`, error);
-       return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+       // Provide a more informative error message in the response body.
+       return NextResponse.json({ error: 'Internal Server Error', details: (error as Error).message }, { status: 500 });
     }
 }
 
@@ -54,24 +62,21 @@ export async function POST(
   const userProfileRef = doc(db, 'users', email);
   
   try {
-      const docSnap = await getDoc(userProfileRef);
-      const existingData = docSnap.exists() ? docSnap.data() : {};
-      
-      const dataToSave: Partial<UserProfile> = { 
-        ...existingData, 
-        ...profileData,
-        email: email, 
-        uid: uid,
-      };
-      
-      await setDoc(userProfileRef, dataToSave, { merge: true });
+      // Use a transaction or merge to prevent data loss
+      await setDoc(userProfileRef, { ...profileData, email, uid }, { merge: true });
       
       const newProfileSnap = await getDoc(userProfileRef);
+      if (!newProfileSnap.exists()) {
+          throw new Error("Failed to retrieve profile after saving.");
+      }
+      
+      const savedData = newProfileSnap.data() as UserProfile;
+      
       const newProfile: UserProfile = {
-          ...newProfileSnap.data(),
+          ...savedData,
           email: newProfileSnap.id,
-          uid: newProfileSnap.data()?.uid || uid,
-      } as UserProfile;
+          uid: savedData.uid || uid, // Ensure UID is consistent
+      };
 
       return NextResponse.json({ success: true, profile: newProfile });
 
