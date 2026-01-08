@@ -62,13 +62,13 @@ export default function AppSidebar() {
 
   return (
     <aside className="w-64 space-y-4 shrink-0 p-4 h-[calc(100vh-65px)] sticky top-16 hidden md:block">
-      <Button asChild size="lg" className="w-full font-bold text-base h-12 rounded-lg shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow">
+      <Button asChild size="lg" className="w-full font-bold text-base h-12 rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow">
         <Link href="/new">
           <Plus className="mr-2 h-5 w-5" />
           신규 기안 작성
         </Link>
       </Button>
-      <Card className="p-2">
+      <Card className="p-2 bg-card shadow-sm">
         <NavItem href="/inbox" label="미결재함" icon={<Inbox size={18} />} count={inboxCount} />
         <NavItem href="/sent" label="상신함" icon={<Send size={18} />} />
         <div className="h-px bg-border my-1 mx-2"></div>

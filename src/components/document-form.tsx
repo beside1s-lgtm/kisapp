@@ -277,14 +277,14 @@ export default function DocumentForm() {
         onSubmit={form.handleSubmit(onSubmit)}
         className="space-y-6 md:space-y-8"
       >
-        <Card>
+        <Card className="shadow-lg">
           <CardHeader>
               <CardTitle className="flex items-center gap-2 text-xl">
                   <PenTool className="w-6 h-6" />
                   신규 기안
               </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                     control={form.control}
@@ -293,7 +293,7 @@ export default function DocumentForm() {
                     <FormItem>
                         <FormLabel>문서 구분</FormLabel>
                         <FormControl>
-                            <div className="flex space-x-2">
+                            <div className="flex space-x-2 mt-2">
                                 <Button type="button" variant={field.value === 'internal' ? 'default' : 'outline'} onClick={() => field.onChange('internal')} className="flex-1">내부결재</Button>
                                 <Button type="button" variant={field.value === 'external' ? 'default' : 'outline'} onClick={() => field.onChange('external')} className="flex-1">외부발송</Button>
                             </div>
@@ -308,9 +308,9 @@ export default function DocumentForm() {
                     <FormItem>
                         <FormLabel>공개 설정</FormLabel>
                         <FormControl>
-                            <div className="flex space-x-2">
-                                <Button type="button" variant={field.value === '공개' ? 'secondary' : 'outline'} onClick={() => field.onChange('공개')} className={`flex-1 ${field.value === '공개' ? 'bg-gray-800 text-white' : ''}`}>공개</Button>
-                                <Button type="button" variant={field.value === '비공개' ? 'secondary' : 'outline'} onClick={() => field.onChange('비공개')} className={`flex-1 ${field.value === '비공개' ? 'bg-gray-800 text-white' : ''}`}>비공개</Button>
+                            <div className="flex space-x-2 mt-2">
+                                <Button type="button" variant={field.value === '공개' ? 'secondary' : 'outline'} onClick={() => field.onChange('공개')} className={`flex-1 ${field.value === '공개' ? 'bg-foreground text-background' : ''}`}>공개</Button>
+                                <Button type="button" variant={field.value === '비공개' ? 'secondary' : 'outline'} onClick={() => field.onChange('비공개')} className={`flex-1 ${field.value === '비공개' ? 'bg-foreground text-background' : ''}`}>비공개</Button>
                             </div>
                         </FormControl>
                     </FormItem>
@@ -360,7 +360,7 @@ export default function DocumentForm() {
                     <Input
                       placeholder="제목을 입력하세요"
                       {...field}
-                      className="h-12 text-base"
+                      className="h-12 text-base bg-secondary border-none"
                     />
                   </FormControl>
                   <FormMessage />
@@ -370,7 +370,7 @@ export default function DocumentForm() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-lg">
           <CardHeader>
             <CardTitle>결재선 지정</CardTitle>
           </CardHeader>
@@ -410,7 +410,7 @@ export default function DocumentForm() {
                                     defaultValue={selectField.value}
                                 >
                                     <FormControl>
-                                        <SelectTrigger className="w-24">
+                                        <SelectTrigger className="w-24 bg-secondary border-none">
                                         <SelectValue placeholder="결재 종류" />
                                         </SelectTrigger>
                                     </FormControl>
@@ -465,7 +465,7 @@ export default function DocumentForm() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-lg">
           <CardHeader>
             <CardTitle>공람</CardTitle>
             <FormDescription>
@@ -509,7 +509,7 @@ export default function DocumentForm() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-lg">
           <CardHeader>
             <CardTitle>내용</CardTitle>
           </CardHeader>
@@ -550,7 +550,7 @@ export default function DocumentForm() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>첨부파일</CardTitle>
             <Button

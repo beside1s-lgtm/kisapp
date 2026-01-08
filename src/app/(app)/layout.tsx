@@ -30,23 +30,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // If profile doesn't exist or is incomplete, the modals in AuthProvider/Header will handle it.
-  
   return (
     <div className="min-h-screen bg-background text-foreground font-body">
-        <AppHeader />
-        <div className="flex">
-            <AppSidebar />
-            <main className="flex-1 p-4 md:p-8 overflow-auto h-[calc(100vh-65px)]">
-                {children}
-            </main>
-        </div>
-        <Button asChild className="md:hidden fixed bottom-6 right-6 h-16 w-16 rounded-full shadow-lg z-40" size="icon">
-          <Link href="/new">
-            <Plus className="h-8 w-8" />
-            <span className="sr-only">새 결재문서 작성</span>
-          </Link>
-        </Button>
+      <AppHeader />
+      <div className="flex">
+        <AppSidebar />
+        <main className="flex-1 p-4 md:p-8 overflow-auto h-[calc(100vh-65px)]">
+            {children}
+        </main>
+      </div>
+      <Button asChild className="md:hidden fixed bottom-6 right-6 h-16 w-16 rounded-full shadow-lg z-40" size="icon">
+        <Link href="/new">
+          <Plus className="h-8 w-8" />
+          <span className="sr-only">새 결재문서 작성</span>
+        </Link>
+      </Button>
     </div>
   );
 }
