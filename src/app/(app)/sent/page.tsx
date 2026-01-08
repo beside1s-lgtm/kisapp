@@ -18,7 +18,7 @@ export default function SentPage() {
                 setDocs(data);
                 setLoading(false);
             });
-        } else if (!user) {
+        } else if (!user || !profile) {
              setLoading(false);
         }
     }, [user, profile]);
@@ -32,7 +32,7 @@ export default function SentPage() {
     }
     
     return (
-        <div>
+        <div className="p-4 md:p-8">
             <div className="mb-8">
                 <h1 className="font-headline text-3xl font-bold flex items-center gap-3">
                     <Send className="h-8 w-8 text-primary" />

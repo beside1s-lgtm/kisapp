@@ -18,7 +18,7 @@ export default function PendingPage() {
                 setDocs(data);
                 setLoading(false);
             });
-        } else if (!user) {
+        } else if (!user || !profile) {
             setLoading(false);
         }
     }, [user, profile]);
@@ -32,11 +32,11 @@ export default function PendingPage() {
     }
     
     return (
-        <div>
+        <div className="p-4 md:p-8">
             <div className="mb-8">
                 <h1 className="font-headline text-3xl font-bold flex items-center gap-3">
                     <FileClock className="h-8 w-8 text-primary" />
-                    진행 문서함
+                    내가 상신한 진행중 문서
                 </h1>
                 <p className="text-muted-foreground mt-1">내가 상신한 문서 중 결재 진행 중인 문서입니다.</p>
             </div>

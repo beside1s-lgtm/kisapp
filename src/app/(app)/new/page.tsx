@@ -3,7 +3,7 @@ import DocumentForm from "@/components/document-form";
 
 export default function NewDocumentPage() {
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-4xl mx-auto p-4 md:p-8">
        <div className="mb-8">
             <h1 className="font-headline text-3xl font-bold flex items-center gap-3">
                 <PenTool className="h-8 w-8 text-primary" />
