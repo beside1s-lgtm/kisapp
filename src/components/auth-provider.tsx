@@ -17,6 +17,8 @@ async function getUserProfileByEmail(email: string): Promise<UserProfile | null>
             return null; // User not found is not an error in this context
         }
         if (!response.ok) {
+            const errorBody = await response.text();
+            console.error('Failed to fetch profile response:', errorBody);
             throw new Error('Failed to fetch profile');
         }
         return await response.json();
@@ -108,28 +110,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return userProfile;
 
       } else {
-        // If user has no profile
-        if (isHardcodedAdmin) {
-            // If they are the hardcoded admin, create a profile for them and let them in.
-            const adminProfile: Partial<UserProfile> = {
-                uid: firebaseUser.uid,
-                name: firebaseUser.displayName || '관리자',
-                email: firebaseUser.email,
-                role: '관리자', 
-                signature: '',
-                isAdmin: true, 
-            };
-            const result = await saveUserProfile(firebaseUser.uid, firebaseUser.email, adminProfile);
-            if(result.success && result.profile) {
-              setProfile(result.profile);
-              return result.profile;
-            } else {
-              // This can happen if the save fails. We should log out.
-              throw new Error(result.error || "Failed to create admin profile.");
-            }
+        // If user has no profile, create a default one for them to allow login.
+        const defaultProfile: Partial<UserProfile> = {
+            uid: firebaseUser.uid,
+            name: firebaseUser.displayName || '새 사용자',
+            email: firebaseUser.email,
+            role: '교사', // Default role
+            signature: '',
+            isAdmin: isHardcodedAdmin, // Grant admin rights if it's the admin email
+        };
+
+        const result = await saveUserProfile(firebaseUser.uid, firebaseUser.email, defaultProfile);
+        if (result.success && result.profile) {
+            setProfile(result.profile);
+            return result.profile;
+        } else {
+            // This can happen if the save fails. We should log out.
+            throw new Error(result.error || "Failed to create default user profile.");
         }
-        // If not an admin and no profile, they are not a registered user.
-        return null;
       }
     } catch (error) {
       console.error("Failed to fetch or create profile", error);
@@ -160,7 +158,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               if (fetchedProfile) {
                   setUser(firebaseUser);
               } else {
-                  toast({ variant: 'destructive', title: '미승인 사용자', description: '시스템에 등록된 사용자가 아닙니다. 관리자에게 문의하세요.' });
+                  // This block should ideally not be reached with the new logic, but as a safeguard:
+                  toast({ variant: 'destructive', title: '로그인 실패', description: '프로필을 설정하는 중에 오류가 발생했습니다.' });
                   await signOut(auth);
                   setUser(null);
                   setProfile(null);
