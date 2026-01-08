@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Inbox, ListFilter, Plus, Send } from 'lucide-react';
+import { FileClock, Inbox, ListFilter, Plus, Send } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
@@ -71,6 +71,7 @@ export default function AppSidebar() {
       <Card className="p-2 bg-card shadow-sm">
         <NavItem href="/inbox" label="미결재함" icon={<Inbox size={18} />} count={inboxCount} />
         <NavItem href="/sent" label="상신함" icon={<Send size={18} />} />
+        <NavItem href="/pending" label="진행 문서함" icon={<FileClock size={18} />} />
         <div className="h-px bg-border my-1 mx-2"></div>
         <NavItem href="/registry" label="문서등록대장" icon={<ListFilter size={18} />} />
       </Card>

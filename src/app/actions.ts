@@ -198,6 +198,25 @@ export async function getSentDocuments(userId: string) {
   }
 }
 
+export async function getPendingDocuments(userId: string) {
+  if (!userId) return [];
+  const approvalsCol = getApprovalsCol();
+  const q = query(
+    approvalsCol,
+    where('requesterId', '==', userId),
+    where('status', '==', 'pending'),
+    orderBy('createdAt', 'desc')
+  );
+  try {
+    const snapshot = await getDocs(q);
+    return serializeDocs(snapshot.docs);
+  } catch (error) {
+    console.error("Get Pending Docs Error:", error);
+    return [];
+  }
+}
+
+
 export async function getRegistryDocuments(userId: string, userEmail: string) {
     if (!userId || !userEmail) return [];
     
@@ -271,6 +290,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
 
     revalidatePath('/sent');
     revalidatePath('/inbox');
+    revalidatePath('/pending');
     return { success: true, docId: newDocRef.id, docNo: finalDocNoStr };
 
   } catch (error: any) {
@@ -322,6 +342,7 @@ export async function approveDocument(docId: string, userId: string, userProfile
         });
 
         revalidatePath('/inbox');
+        revalidatePath('/pending');
         revalidatePath(`/documents/${docId}`);
         return { success: true, docId };
     } catch (error: any) {
