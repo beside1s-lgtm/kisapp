@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useEffect, useState } from 'react';
 import { getInboxDocuments } from '@/app/actions';
 import { cn } from '@/lib/utils';
+import { Card } from '../ui/card';
 
 type NavItemProps = {
   href: string;
@@ -24,9 +25,9 @@ const NavItem = ({ href, label, icon, count }: NavItemProps) => {
     <Link
       href={href}
       className={cn(
-        'flex items-center justify-between p-3.5 rounded-xl font-bold transition-all text-sm',
+        'flex items-center justify-between p-3 rounded-lg font-medium transition-all text-sm',
         isActive
-          ? 'bg-primary/10 text-primary'
+          ? 'bg-primary/10 text-primary font-bold'
           : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
       )}
     >
@@ -54,26 +55,25 @@ export default function AppSidebar() {
         setInboxCount(inboxItems.length);
       };
       fetchCount();
-      // Polling for updates, in a real app this would be a WebSocket/realtime subscription
       const interval = setInterval(fetchCount, 30000); 
       return () => clearInterval(interval);
     }
   }, [user]);
 
   return (
-    <aside className="w-64 space-y-4 shrink-0 p-4 border-r bg-card h-[calc(100vh-65px)] sticky top-16 hidden md:block">
-      <Button asChild size="lg" className="w-full font-bold text-base h-14 rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow">
+    <aside className="w-64 space-y-4 shrink-0 p-4 h-[calc(100vh-65px)] sticky top-16 hidden md:block">
+      <Button asChild size="lg" className="w-full font-bold text-base h-12 rounded-lg shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow">
         <Link href="/new">
           <Plus className="mr-2 h-5 w-5" />
-          새 결재문서
+          신규 기안 작성
         </Link>
       </Button>
-      <div className="bg-background rounded-xl p-2 space-y-1">
-        <NavItem href="/inbox" label="결재함" icon={<Inbox size={18} />} count={inboxCount} />
-        <NavItem href="/sent" label="보낸 문서" icon={<Send size={18} />} />
+      <Card className="p-2">
+        <NavItem href="/inbox" label="미결재함" icon={<Inbox size={18} />} count={inboxCount} />
+        <NavItem href="/sent" label="상신함" icon={<Send size={18} />} />
         <div className="h-px bg-border my-1 mx-2"></div>
-        <NavItem href="/registry" label="문서대장" icon={<ListFilter size={18} />} />
-      </div>
+        <NavItem href="/registry" label="문서등록대장" icon={<ListFilter size={18} />} />
+      </Card>
     </aside>
   );
 }

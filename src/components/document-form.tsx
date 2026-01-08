@@ -27,6 +27,7 @@ import {
   Upload,
   User as UserIcon,
   X,
+  PenTool
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from './ui/input';
@@ -277,78 +278,46 @@ export default function DocumentForm() {
         className="space-y-6 md:space-y-8"
       >
         <Card>
-          <CardContent className="p-4 md:p-6 space-y-6">
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-base md:text-lg font-bold">
-                    제목
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="문서 제목"
-                      {...field}
-                      className="h-12 text-base md:text-lg"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-              <FormField
-                control={form.control}
-                name="docType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>문서 종류</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="문서 종류 선택" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="internal">내부결재</SelectItem>
-                        <SelectItem value="external">대외공문</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="publishStatus"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>공개여부</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="공개여부 선택" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="공개">공개</SelectItem>
-                        <SelectItem value="비공개">비공개</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-xl">
+                  <PenTool className="w-6 h-6" />
+                  신규 기안
+              </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                    control={form.control}
+                    name="docType"
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>문서 구분</FormLabel>
+                        <FormControl>
+                            <div className="flex space-x-2">
+                                <Button type="button" variant={field.value === 'internal' ? 'default' : 'outline'} onClick={() => field.onChange('internal')} className="flex-1">내부결재</Button>
+                                <Button type="button" variant={field.value === 'external' ? 'default' : 'outline'} onClick={() => field.onChange('external')} className="flex-1">외부발송</Button>
+                            </div>
+                        </FormControl>
+                    </FormItem>
+                    )}
+                />
+                <FormField
+                    control={form.control}
+                    name="publishStatus"
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>공개 설정</FormLabel>
+                        <FormControl>
+                            <div className="flex space-x-2">
+                                <Button type="button" variant={field.value === '공개' ? 'secondary' : 'outline'} onClick={() => field.onChange('공개')} className={`flex-1 ${field.value === '공개' ? 'bg-gray-800 text-white' : ''}`}>공개</Button>
+                                <Button type="button" variant={field.value === '비공개' ? 'secondary' : 'outline'} onClick={() => field.onChange('비공개')} className={`flex-1 ${field.value === '비공개' ? 'bg-gray-800 text-white' : ''}`}>비공개</Button>
+                            </div>
+                        </FormControl>
+                    </FormItem>
+                    )}
+                />
             </div>
-            {docType === 'external' && (
+             {docType === 'external' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 p-4 border rounded-lg bg-secondary/50">
                 <FormField
                   control={form.control}
@@ -381,12 +350,29 @@ export default function DocumentForm() {
                 />
               </div>
             )}
+            <FormField
+              control={form.control}
+              name="title"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>공문 제목</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="제목을 입력하세요"
+                      {...field}
+                      className="h-12 text-base"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>결재선</CardTitle>
+            <CardTitle>결재선 지정</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {approverFields.map((field, index) => (
@@ -396,59 +382,35 @@ export default function DocumentForm() {
               >
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <Label className="font-bold">{field.role}</Label>
-                    <FormField
-                      control={form.control}
-                      name={`approvers.${index}.active`}
-                      render={({ field: switchField }) => (
-                        <FormItem className="flex items-center gap-2 space-y-0">
-                          <FormControl>
-                            <Switch
-                              checked={switchField.value}
-                              onCheckedChange={switchField.onChange}
-                            />
-                          </FormControl>
-                          <FormLabel>활성</FormLabel>
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  {form.watch(`approvers.${index}.active`) && (
-                    <div className="space-y-2">
-                       <Controller
-                          control={form.control}
-                          name={`approvers.${index}.name`}
-                          render={({ field: nameField }) => (
-                             <FormItem>
-                               <FormLabel className="sr-only">결재자</FormLabel>
+                    <div className="flex items-center gap-2">
+                        <FormField
+                            control={form.control}
+                            name={`approvers.${index}.active`}
+                            render={({ field: switchField }) => (
+                                <FormItem className="flex items-center gap-2 space-y-0">
                                 <FormControl>
-                                  <UserSearch
-                                    users={users}
-                                    value={form.watch(`approvers.${index}.name`)}
-                                    onChange={nameField.onChange}
-                                    onSelectUser={(user) => {
-                                        form.setValue(`approvers.${index}.name`, user.name, { shouldValidate: true });
-                                        form.setValue(`approvers.${index}.email`, user.email, { shouldValidate: true });
-                                    }}
-                                    placeholder="결재자 검색..."
-                                  />
+                                    <Switch
+                                    checked={switchField.value}
+                                    onCheckedChange={switchField.onChange}
+                                    />
                                 </FormControl>
-                                <FormMessage />
-                             </FormItem>
-                          )}
+                                </FormItem>
+                            )}
                         />
-                      <FormField
+                        <Label className="font-bold">{field.role}</Label>
+                    </div>
+                    {form.watch(`approvers.${index}.active`) && (
+                        <FormField
                         control={form.control}
                         name={`approvers.${index}.type`}
                         render={({ field: selectField }) => (
                             <FormItem>
-                                <FormLabel className="sr-only">결재 종류</FormLabel>
                                 <Select
                                     onValueChange={selectField.onChange}
                                     defaultValue={selectField.value}
                                 >
                                     <FormControl>
-                                        <SelectTrigger>
+                                        <SelectTrigger className="w-24">
                                         <SelectValue placeholder="결재 종류" />
                                         </SelectTrigger>
                                     </FormControl>
@@ -458,11 +420,38 @@ export default function DocumentForm() {
                                     <SelectItem value="proxy">대결</SelectItem>
                                     </SelectContent>
                                 </Select>
-                                <FormMessage />
                           </FormItem>
                         )}
-                      />
-                    </div>
+                        />
+                    )}
+                  </div>
+                  {form.watch(`approvers.${index}.active`) && (
+                       <Controller
+                          control={form.control}
+                          name={`approvers.${index}.name`}
+                          render={({ field: nameField }) => (
+                             <FormItem>
+                               <FormControl>
+                                  <UserSearch
+                                    users={users}
+                                    value={form.watch(`approvers.${index}.name`)}
+                                    onChange={(val) => {
+                                        nameField.onChange(val);
+                                        if (users.find(u => u.name === val)) {
+                                          form.setValue(`approvers.${index}.email`, users.find(u => u.name === val)!.email, { shouldValidate: true });
+                                        }
+                                    }}
+                                    onSelectUser={(user) => {
+                                        form.setValue(`approvers.${index}.name`, user.name, { shouldValidate: true });
+                                        form.setValue(`approvers.${index}.email`, user.email, { shouldValidate: true });
+                                    }}
+                                    placeholder={`${field.role} 성명`}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                             </FormItem>
+                          )}
+                        />
                   )}
                 </CardContent>
               </Card>
