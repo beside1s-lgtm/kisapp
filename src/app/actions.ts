@@ -1,3 +1,4 @@
+
 'use server';
 
 import {
@@ -76,6 +77,8 @@ export async function getInboxDocuments(userEmail: string) {
   try {
     const snapshot = await getDocs(q);
     const allPending = serializeDocs(snapshot.docs);
+    // This will be filtered by firestore rules in production for security.
+    // For now, client-side filtering to allow UI to work.
     return allPending.filter(doc => doc.approvers[doc.currentStep]?.email === userEmail);
   } catch (error) {
     const permissionError = new FirestorePermissionError({
@@ -192,6 +195,11 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     return { success: true, docId: newDocRef.id, docNo: finalDocNoStr };
 
   } catch (error: any) {
+    if (error instanceof FirestorePermissionError) {
+      errorEmitter.emit('permission-error', error);
+      // Don't return anything here, let the emitter handle it.
+      return { success: false, error: error.message };
+    }
     return { success: false, error: `문서 생성 실패: ${error.message}` };
   }
 }
@@ -200,7 +208,6 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
 export async function approveDocument(docId: string, userId: string, userProfile: UserProfile) {
     if (!db) return { success: false, error: "Database not initialized." };
     const docRef = doc(getApprovalsCol(), docId);
-    let updatedData: any = {};
 
     try {
         await runTransaction(db, async (transaction) => {
@@ -212,7 +219,10 @@ export async function approveDocument(docId: string, userId: string, userProfile
             const data = docSnap.data() as ApprovalDoc;
             const step = data.currentStep;
 
-            if (data.approvers[step]?.email !== userProfile.email) {
+            const approverEmail = data.approvers[step]?.email?.toLowerCase().trim();
+            const userEmail = userProfile.email?.toLowerCase().trim();
+
+            if (approverEmail !== userEmail) {
                 throw new Error("결재할 차례가 아닙니다.");
             }
 
@@ -227,7 +237,7 @@ export async function approveDocument(docId: string, userId: string, userProfile
 
             const isFinal = updatedApprovers[step].type === 'final' || step === updatedApprovers.length - 1;
             
-            updatedData = {
+            const updatedData = {
                 approvers: updatedApprovers,
                 currentStep: isFinal ? step : step + 1,
                 status: isFinal ? 'approved' : 'pending',
@@ -240,8 +250,6 @@ export async function approveDocument(docId: string, userId: string, userProfile
         revalidatePath(`/documents/${docId}`);
         return { success: true, docId };
     } catch (error: any) {
-        // Since we are using admin SDK, permission errors are less likely
-        // but transaction can fail for other reasons.
         console.error("Approve document failed:", error);
         return { success: false, error: error.message };
     }
@@ -254,13 +262,11 @@ export async function getUsersDirectory(): Promise<UserProfile[]> {
     const snapshot = await getDocs(getUsersDirCol());
     if (snapshot.empty) return [];
     
-    // We are using user's email as the document ID, but the actual auth UID is stored in the 'uid' field.
-    // The profile type expects 'uid' so we map the document's 'uid' field to the returned object.
     const users = snapshot.docs.map(d => {
         const data = d.data() as Omit<UserProfile, 'uid'> & { uid?: string };
         return {
             ...data,
-            email: d.id, // Ensure email is the doc id
+            email: d.id,
             uid: data.uid || d.id, 
         } as UserProfile
     });
@@ -268,7 +274,6 @@ export async function getUsersDirectory(): Promise<UserProfile[]> {
     return uniqueUsers;
 
   } catch (error) {
-    // With admin sdk, this is less likely to be a permission error
     console.error("getUsersDirectory failed:", error);
     return [];
   }
@@ -292,7 +297,7 @@ export async function saveDocConfig(payload: DocConfig) {
   
   try {
     await setDoc(settingsRef, payload, { merge: true });
-    revalidatePath('/'); // Revalidate all pages that might use this
+    revalidatePath('/');
     return { success: true };
   } catch (error: any) {
     console.error("saveDocConfig failed:", error);
@@ -323,7 +328,6 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
         return { success: false, error: "Database not initialized." };
     }
     
-    // We use email as the document ID in the 'users' collection
     const userProfileRef = doc(db, 'users', email);
     
     let dataToSave: Partial<UserProfile>;
@@ -422,25 +426,23 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
         continue;
       }
       
-      // Use the user's email as the document ID
       const userRef = doc(db, 'users', email);
 
       const userProfile: Partial<UserProfile> = {
         email,
         name,
         role,
-        uid: '', // UID will be set on first login
+        uid: '', 
         isAdmin: false, 
         signature: '',
       };
       
-      // Use set with merge to create a new user or update an existing one.
       batch.set(userRef, userProfile, { merge: true });
       count++;
     }
 
     await batch.commit();
-    revalidatePath('/'); // Revalidate to reflect changes
+    revalidatePath('/');
 
     return { 
         success: true, 
@@ -451,3 +453,5 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
 }
+
+    
