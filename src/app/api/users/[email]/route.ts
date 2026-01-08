@@ -23,7 +23,10 @@ export async function GET(
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
         
-        const data = snap.data() as Omit<UserProfile, 'uid' | 'email'>;
+        const data = snap.data();
+        if (!data) {
+            return NextResponse.json({ error: 'User data is empty' }, { status: 404 });
+        }
 
         // Safely construct the profile object.
         const profile: UserProfile = {
@@ -31,7 +34,7 @@ export async function GET(
             role: data.role,
             signature: data.signature || '',
             // Safely access uid, default to the doc id (email) if it doesn't exist.
-            uid: (data as any).uid || snap.id,
+            uid: data.uid || snap.id,
             email: snap.id, // Email is the document ID.
             isAdmin: data.isAdmin || false,
         };
