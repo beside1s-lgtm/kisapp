@@ -32,7 +32,11 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     window.print();
   };
 
-  if (!user || !profile) return null;
+  if (!user || !profile || !initialDoc) return (
+    <div className="flex h-full w-full items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  );
 
   const isMyTurn = initialDoc.approvers[initialDoc.currentStep]?.email === user.email && initialDoc.status === 'pending';
   const approvalDate = initialDoc.completedAt 

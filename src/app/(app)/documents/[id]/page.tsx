@@ -1,5 +1,3 @@
-'use server';
-
 import { getDocConfig, getDocumentById } from "@/app/actions";
 import DocumentView from "@/components/document-view";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
