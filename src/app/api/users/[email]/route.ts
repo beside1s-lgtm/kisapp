@@ -1,8 +1,8 @@
 import { getDb } from '@/lib/firebase-admin';
 import { NextRequest, NextResponse } from 'next/server';
-import { doc, getDoc } from 'firebase-admin/firestore';
+import { doc, getDoc, setDoc } from 'firebase-admin/firestore';
 import { UserProfile } from '@/lib/types';
-import { saveUserProfile as saveProfileToDb } from '@/app/actions';
+
 
 export async function GET(
   request: NextRequest,
@@ -10,7 +10,7 @@ export async function GET(
 ) {
     const db = getDb();
     const email = params.email;
-    if (!db || !email) {
+    if (!email) {
         return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
     }
     
@@ -25,7 +25,7 @@ export async function GET(
         const profile = {
             ...data,
             email: snap.id,
-            uid: data.uid || snap.id
+            uid: data.uid || '',
         } as UserProfile;
 
         return NextResponse.json(profile);
@@ -41,6 +41,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { email: string } }
 ) {
+  const db = getDb();
   const email = params.email;
   const { uid, profileData } = await request.json();
 
@@ -48,11 +49,26 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const result = await saveProfileToDb(uid, email, profileData);
+  const userProfileRef = doc(db, 'users', email);
+  
+  try {
+      const docSnap = await getDoc(userProfileRef);
+      const existingData = docSnap.exists() ? docSnap.data() : {};
+      
+      const dataToSave = { 
+        ...existingData, 
+        ...profileData,
+        email: email, 
+        uid: uid,
+      };
+      
+      await setDoc(userProfileRef, dataToSave, { merge: true });
+      
+      const newProfile = (await getDoc(userProfileRef)).data() as UserProfile;
+      return NextResponse.json({ success: true, profile: newProfile });
 
-  if (result.success) {
-    return NextResponse.json(result);
-  } else {
-    return NextResponse.json({ error: result.error }, { status: 500 });
+  } catch (error: any) {
+      console.error(`[API] saveUserProfile failed for ${email}:`, error);
+      return NextResponse.json({ success: false, error: `프로필 저장 실패: ${error.message}` }, { status: 500 });
   }
 }

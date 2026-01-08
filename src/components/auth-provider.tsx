@@ -14,7 +14,7 @@ async function getUserProfileByEmail(email: string): Promise<UserProfile | null>
     try {
         const response = await fetch(`/api/users/${email}`);
         if (response.status === 404) {
-            return null;
+            return null; // User not found is not an error in this context
         }
         if (!response.ok) {
             throw new Error('Failed to fetch profile');
@@ -22,7 +22,8 @@ async function getUserProfileByEmail(email: string): Promise<UserProfile | null>
         return await response.json();
     } catch (error) {
         console.error("Failed to fetch profile from API", error);
-        return null;
+        // Re-throw to be caught by the caller
+        throw error;
     }
 }
 
@@ -34,7 +35,7 @@ async function saveUserProfile(userId: string, email: string, profile: Partial<U
             body: JSON.stringify({ uid: userId, profileData: profile }),
         });
         if (!response.ok) {
-            const data = await response.json();
+            const data = await response.json().catch(() => ({ error: 'Failed to save profile and parse error' }));
             throw new Error(data.error || 'Failed to save profile');
         }
         return await response.json();
@@ -118,8 +119,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if(result.success && result.profile) {
               setProfile(result.profile);
               return result.profile;
+            } else {
+              // This can happen if the save fails. We should log out.
+              throw new Error(result.error || "Failed to create admin profile.");
             }
         }
+        // If not an admin and no profile, they are not a registered user.
         return null;
       }
     } catch (error) {
@@ -146,15 +151,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(null);
             setProfile(null);
         } else {
-            const fetchedProfile = await fetchProfile(firebaseUser);
-            
-            if (fetchedProfile) {
-                setUser(firebaseUser);
-            } else {
-                toast({ variant: 'destructive', title: '미승인 사용자', description: '시스템에 등록된 사용자가 아닙니다. 관리자에게 문의하세요.' });
-                await signOut(auth);
-                setUser(null);
-                setProfile(null);
+            try {
+              const fetchedProfile = await fetchProfile(firebaseUser);
+              if (fetchedProfile) {
+                  setUser(firebaseUser);
+              } else {
+                  toast({ variant: 'destructive', title: '미승인 사용자', description: '시스템에 등록된 사용자가 아닙니다. 관리자에게 문의하세요.' });
+                  await signOut(auth);
+                  setUser(null);
+                  setProfile(null);
+              }
+            } catch (e) {
+               console.error("Login failed during profile fetch:", e);
+               await signOut(auth);
+               setUser(null);
+               setProfile(null);
             }
         }
       } else {

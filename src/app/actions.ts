@@ -41,15 +41,6 @@ function getApprovalsCol() {
   const db = getClientDb();
   return collection(db, 'approvals');
 }
-function getUsersDirCol() {
-    const db = getAdminDb();
-    return collection(db, 'users');
-}
-function getSettingsRef() {
-    const db = getAdminDb();
-    return doc(db, 'settings', 'docConfig');
-}
-
 
 function serializeDocs(docs: any[]): any[] {
   if (!docs) return [];
@@ -263,49 +254,6 @@ export async function approveDocument(docId: string, userId: string, userProfile
     }
 }
 
-export async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>): Promise<{ success: boolean; error?: string; profile?: UserProfile; }> {
-    const db = getAdminDb();
-    
-    const userProfileRef = doc(db, 'users', email);
-    
-    let dataToSave: Partial<UserProfile>;
-
-    try {
-        const docSnap = await getDoc(userProfileRef);
-        const docExists = docSnap.exists();
-        const existingData = docSnap.data() as UserProfile | undefined;
-        
-        if (docExists && existingData) {
-            dataToSave = { ...existingData, ...profile };
-        } else {
-             dataToSave = {
-                uid: userId || '',
-                email: email,
-                name: profile.name || 'New User',
-                role: profile.role || '담당',
-                signature: profile.signature || '',
-                isAdmin: profile.isAdmin === true ? true : false,
-            };
-        }
-        
-        dataToSave.email = email;
-        if (userId) {
-          dataToSave.uid = userId;
-        }
-        
-        await setDoc(userProfileRef, dataToSave, { merge: true });
-        
-        revalidatePath('/');
-        const newProfile = (await getDoc(userProfileRef)).data() as UserProfile;
-        return { success: true, profile: newProfile };
-
-    } catch (error: any) {
-        console.error("saveUserProfile failed:", error);
-        return { success: false, error: `프로필 저장 실패: ${error.message}` };
-    }
-}
-
-
 export async function generateContentAction(input: {
   title: string;
   approvers: { name: string; role: string }[];
@@ -333,6 +281,9 @@ export async function generateContentAction(input: {
 
 export async function bulkRegisterUsers(fileData: string): Promise<{ success: boolean; error?: string; summary?: string; }> {
   const db = getAdminDb();
+  if (!db) {
+    return { success: false, error: 'Database not initialized.' };
+  }
 
   try {
     const base64Data = fileData.split(',')[1];
@@ -394,6 +345,7 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
 
 export async function getDocConfig() {
     const db = getAdminDb();
+    if (!db) return {};
     const settingsRef = doc(db, 'settings', 'docConfig');
     try {
         const snap = await getDoc(settingsRef);
