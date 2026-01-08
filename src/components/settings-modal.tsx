@@ -41,11 +41,11 @@ export function SettingsModal() {
   const [isAddingNewUser, setIsAddingNewUser] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', name: '', role: '교사' });
 
-  const fetchUsers = () => {
-    getUsersDirectory().then(data => {
-      const uniqueUsers = Array.from(new Map(data.map(user => [user.email, user])).values());
-      setUsers(uniqueUsers.sort((a,b) => a.name.localeCompare(b.name)));
-    });
+  const fetchUsers = async () => {
+    const data = await getUsersDirectory();
+    // Ensure uniqueness by email client-side as a fallback
+    const uniqueUsers = Array.from(new Map(data.map(user => [user.email, user])).values());
+    setUsers(uniqueUsers.sort((a,b) => a.name.localeCompare(b.name)));
   };
 
   useEffect(() => {

@@ -73,7 +73,7 @@ export async function getUserProfileByEmail(email: string): Promise<UserProfile 
         name: data.name || '',
         role: data.role || '',
         signature: data.signature || '',
-        uid: data.uid || snap.id,
+        uid: data.uid || '',
         email: snap.id,
         isAdmin: data.isAdmin || false,
     };
@@ -95,17 +95,21 @@ export async function saveUserProfile(userId: string, email: string, profileData
   try {
     const docSnap = await getDoc(userProfileRef);
     
+    // Always include the UID in the data to be saved.
+    const dataToSave = {
+      ...profileData,
+      uid: userId || profileData.uid || (docSnap.exists() ? docSnap.data().uid : ''), // Preserve existing UID if not provided
+      email: email, // Ensure email is part of the data
+    };
+
     if (docSnap.exists()) {
         await setDoc(userProfileRef, {
-           ...profileData,
-           ...(userId ? { uid: userId } : {}),
+           ...dataToSave,
            updatedAt: serverTimestamp() 
         }, { merge: true });
     } else {
         await setDoc(userProfileRef, {
-            email: email,
-            uid: userId || '',
-            ...profileData,
+            ...dataToSave,
             createdAt: serverTimestamp()
         });
     }
@@ -115,7 +119,7 @@ export async function saveUserProfile(userId: string, email: string, profileData
         role: profileData.role || '',
         signature: profileData.signature || '',
         email: email,
-        uid: userId || '',
+        uid: dataToSave.uid,
         isAdmin: profileData.isAdmin || false,
     };
 
@@ -138,16 +142,18 @@ export async function getUsersDirectory(): Promise<UserProfile[]> {
     
     const users = snapshot.docs.map(d => {
         const data = d.data();
+        // The document ID `d.id` is the email.
         return {
+            email: d.id, 
             name: data.name || '',
             role: data.role || '',
             signature: data.signature || '',
             isAdmin: data.isAdmin || false,
-            email: d.id,
-            uid: data.uid || d.id, 
+            uid: data.uid || '', // Get UID from the document field
         } as UserProfile
     });
     
+    // The query now correctly maps email from doc ID, so post-processing for uniqueness is more robust
     const uniqueUsers = Array.from(new Map(users.map(user => [user.email, user])).values());
     return uniqueUsers;
 
