@@ -20,14 +20,17 @@ export async function GET() {
         return {
             ...data,
             email: d.id,
-            uid: data.uid || d.id, 
+            uid: data.uid || d.id, // Ensure uid is always populated, defaulting to email if missing.
         } as UserProfile
     });
+    
+    // The previous implementation already handled uniqueness, this is good.
     const uniqueUsers = Array.from(new Map(users.map(user => [user.email, user])).values());
     return NextResponse.json(uniqueUsers);
 
   } catch (error) {
     console.error("[API] getUsersDirectory failed:", error);
-    return NextResponse.json([]);
+    // Return a more informative error response
+    return NextResponse.json({ error: 'Failed to retrieve users' }, { status: 500 });
   }
 }
