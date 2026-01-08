@@ -8,18 +8,20 @@ import { ListFilter, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export default function RegistryPage() {
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
     const [docs, setDocs] = useState<ApprovalDoc[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (user?.uid && user?.email) {
-            getRegistryDocuments(user.uid, user.email).then(data => {
+        if (user?.uid && profile?.email) {
+            getRegistryDocuments(user.uid, profile.email).then(data => {
                 setDocs(data);
                 setLoading(false);
             });
+        } else if (!user) {
+            setLoading(false);
         }
-    }, [user]);
+    }, [user, profile]);
 
     if (loading) {
         return (

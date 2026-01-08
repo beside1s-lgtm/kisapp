@@ -8,18 +8,20 @@ import { Inbox, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export default function InboxPage() {
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
     const [docs, setDocs] = useState<ApprovalDoc[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (user?.email) {
-            getInboxDocuments(user.email).then(data => {
+        if (profile?.email) {
+            getInboxDocuments(profile.email).then(data => {
                 setDocs(data);
                 setLoading(false);
             });
+        } else if (!user) {
+            setLoading(false);
         }
-    }, [user]);
+    }, [user, profile]);
 
     if (loading) {
         return (
