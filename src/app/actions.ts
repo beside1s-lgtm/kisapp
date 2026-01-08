@@ -19,7 +19,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/firebase-admin'; // Use admin db for server actions
+import { ensureDbInitialized } from '@/lib/firebase-admin';
 import type {
   ApprovalDoc,
   ApprovalDocPayload,
@@ -36,15 +36,18 @@ import * as xlsx from 'xlsx';
 const appId = 'kish-standard-v6-fix'.replace(/[\/.]/g, '_');
 
 // Helper function to get collections
-function getApprovalsCol() {
+async function getApprovalsCol() {
+  const db = await ensureDbInitialized();
   if (!db) throw new Error("Firestore is not initialized.");
   return collection(db, 'approvals');
 }
-function getUsersDirCol() {
+async function getUsersDirCol() {
+    const db = await ensureDbInitialized();
     if (!db) throw new Error("Firestore is not initialized.");
     return collection(db, 'users');
 }
-function getSettingsRef() {
+async function getSettingsRef() {
+    const db = await ensureDbInitialized();
     if (!db) throw new Error("Firestore is not initialized.");
     return doc(db, 'settings', 'docConfig');
 }
@@ -69,9 +72,11 @@ function serializeDocs(docs: any[]): any[] {
 }
 
 export async function getInboxDocuments(userEmail: string) {
+  const db = await ensureDbInitialized();
   if (!db || !userEmail) return [];
+  const approvalsCol = await getApprovalsCol();
   const q = query(
-    getApprovalsCol(),
+    approvalsCol,
     where('status', '==', 'pending'),
   );
   try {
@@ -82,7 +87,7 @@ export async function getInboxDocuments(userEmail: string) {
     return allPending.filter(doc => doc.approvers[doc.currentStep]?.email === userEmail);
   } catch (error) {
     const permissionError = new FirestorePermissionError({
-      path: getApprovalsCol().path,
+      path: approvalsCol.path,
       operation: 'list',
     });
     errorEmitter.emit('permission-error', permissionError);
@@ -91,14 +96,16 @@ export async function getInboxDocuments(userEmail: string) {
 }
 
 export async function getSentDocuments(userId: string) {
+  const db = await ensureDbInitialized();
   if (!db || !userId) return [];
-  const q = query(getApprovalsCol(), where('requesterId', '==', userId), orderBy('createdAt', 'desc'));
+  const approvalsCol = await getApprovalsCol();
+  const q = query(approvalsCol, where('requesterId', '==', userId), orderBy('createdAt', 'desc'));
   try {
     const snapshot = await getDocs(q);
     return serializeDocs(snapshot.docs);
   } catch (error) {
      const permissionError = new FirestorePermissionError({
-      path: getApprovalsCol().path,
+      path: approvalsCol.path,
       operation: 'list',
     });
     errorEmitter.emit('permission-error', permissionError);
@@ -107,18 +114,20 @@ export async function getSentDocuments(userId: string) {
 }
 
 export async function getRegistryDocuments(userId: string, userEmail: string) {
+    const db = await ensureDbInitialized();
     if (!db || !userId || !userEmail) return [];
     
     // Since firestore rules will handle visibility, we can query all approved docs
     // and let firestore security rules do the filtering.
-    const q = query(getApprovalsCol(), where('status', '==', 'approved'), orderBy('createdAt', 'desc'));
+    const approvalsCol = await getApprovalsCol();
+    const q = query(approvalsCol, where('status', '==', 'approved'), orderBy('createdAt', 'desc'));
     
     try {
         const snapshot = await getDocs(q);
         return serializeDocs(snapshot.docs);
     } catch (error: any) {
         const permissionError = new FirestorePermissionError({
-            path: getApprovalsCol().path,
+            path: approvalsCol.path,
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);
@@ -127,8 +136,10 @@ export async function getRegistryDocuments(userId: string, userEmail: string) {
 }
 
 export async function getDocumentById(docId: string) {
+  const db = await ensureDbInitialized();
   if (!db) return null;
-  const docRef = doc(getApprovalsCol(), docId);
+  const approvalsCol = await getApprovalsCol();
+  const docRef = doc(approvalsCol, docId);
   try {
     const snapshot = await getDoc(docRef);
     if (!snapshot.exists()) {
@@ -147,13 +158,15 @@ export async function getDocumentById(docId: string) {
 
 
 export async function createDocument(payload: ApprovalDocPayload, userId: string, userProfile: UserProfile): Promise<{ success: boolean; error?: string; docId?: string; docNo?: string; }> {
+  const db = await ensureDbInitialized();
   if (!db) return { success: false, error: "Database not initialized." };
   
-  const newDocRef = doc(getApprovalsCol());
+  const approvalsCol = await getApprovalsCol();
+  const newDocRef = doc(approvalsCol);
 
   try {
     const finalDocNoStr = await runTransaction(db, async (transaction) => {
-      const settingsRef = getSettingsRef();
+      const settingsRef = await getSettingsRef();
       const settingsSnap = await transaction.get(settingsRef);
       
       let nextNum = 1;
@@ -206,8 +219,10 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
 
 
 export async function approveDocument(docId: string, userId: string, userProfile: UserProfile) {
+    const db = await ensureDbInitialized();
     if (!db) return { success: false, error: "Database not initialized." };
-    const docRef = doc(getApprovalsCol(), docId);
+    const approvalsCol = await getApprovalsCol();
+    const docRef = doc(approvalsCol, docId);
 
     try {
         await runTransaction(db, async (transaction) => {
@@ -257,9 +272,11 @@ export async function approveDocument(docId: string, userId: string, userProfile
 
 
 export async function getUsersDirectory(): Promise<UserProfile[]> {
+  const db = await ensureDbInitialized();
   if (!db) return [];
   try {
-    const snapshot = await getDocs(getUsersDirCol());
+    const usersDirCol = await getUsersDirCol();
+    const snapshot = await getDocs(usersDirCol);
     if (snapshot.empty) return [];
     
     const users = snapshot.docs.map(d => {
@@ -280,8 +297,9 @@ export async function getUsersDirectory(): Promise<UserProfile[]> {
 }
 
 export async function getDocConfig(): Promise<DocConfig> {
+  const db = await ensureDbInitialized();
   if (!db) return {};
-  const settingsRef = getSettingsRef();
+  const settingsRef = await getSettingsRef();
   try {
     const snap = await getDoc(settingsRef);
     return snap.exists() ? snap.data() as DocConfig : {};
@@ -292,8 +310,9 @@ export async function getDocConfig(): Promise<DocConfig> {
 }
 
 export async function saveDocConfig(payload: DocConfig) {
+  const db = await ensureDbInitialized();
   if (!db) return { success: false, error: "Database not initialized." };
-  const settingsRef = getSettingsRef();
+  const settingsRef = await getSettingsRef();
   
   try {
     await setDoc(settingsRef, payload, { merge: true });
@@ -306,10 +325,11 @@ export async function saveDocConfig(payload: DocConfig) {
 }
 
 export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
+    const db = await ensureDbInitialized();
     if (!db || !email) return null;
-    const docRef = doc(db, 'users', email);
+    const userDocRef = doc(db, 'users', email);
     try {
-        const snap = await getDoc(docRef);
+        const snap = await getDoc(userDocRef);
         if (!snap.exists()) return null;
         const data = snap.data() as Omit<UserProfile, 'uid'> & { uid?: string };
         return {
@@ -324,6 +344,7 @@ export async function getUserProfileByEmail(email: string): Promise<UserProfile 
 }
 
 export async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>) {
+    const db = await ensureDbInitialized();
     if (!db) {
         return { success: false, error: "Database not initialized." };
     }
@@ -393,6 +414,7 @@ export async function generateContentAction(input: {
 }
 
 export async function bulkRegisterUsers(fileData: string): Promise<{ success: boolean; error?: string; summary?: string; }> {
+  const db = await ensureDbInitialized();
   if (!db) {
     return { success: false, error: '데이터베이스가 초기화되지 않았습니다.' };
   }
