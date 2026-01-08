@@ -4,33 +4,33 @@
  
 @layer base {
   :root {
-    --background: 240 10% 98%;
+    --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
-
+ 
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
-
+ 
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-
-    --primary: 262.1 83.3% 57.8%;
+ 
+    --primary: 222.2 47.4% 11.2%;
     --primary-foreground: 210 40% 98%;
-
+ 
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
-
+ 
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
-
+ 
     --accent: 210 40% 96.1%;
     --accent-foreground: 222.2 47.4% 11.2%;
-
+ 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-
+ 
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 262.1 83.3% 57.8%;
+    --ring: 222.2 84% 4.9%;
  
     --radius: 0.5rem;
   }
@@ -68,11 +68,11 @@
  
 @layer base {
   * {
+    /* [수정됨] @apply border-border 대신 CSS 변수를 직접 사용하여 빌드 에러 방지 */
     border-color: hsl(var(--border));
   }
   body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    @apply bg-background text-foreground;
   }
 }
 
@@ -81,12 +81,11 @@
   body {
     background: white !important;
   }
-  /* 인쇄 시 숨길 요소들 */
-  header, nav, aside, .no-print, .print-hidden {
+  /* 인쇄 시 헤더, 사이드바 등 숨김 처리 */
+  header, nav, aside, .no-print {
     display: none !important;
   }
-  /* 인쇄 컨테이너 설정 */
-  .print-container, .printable-area {
+  .print-container {
     padding: 0 !important;
     margin: 0 !important;
     width: 100% !important;
@@ -96,6 +95,6 @@
   }
   @page {
     size: A4;
-    margin: 0;
+    margin: 20mm;
   }
 }

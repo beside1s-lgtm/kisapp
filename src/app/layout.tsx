@@ -36,10 +36,12 @@ export default function RootLayout({
           process.env.NODE_ENV === 'development' ? 'debug-screens' : ''
         )}
       >
+        {/* AuthProvider가 앱 전체의 인증 상태를 관리합니다 */}
         <AuthProvider>
           <div className="relative flex min-h-screen flex-col">
             {children}
           </div>
+          {/* 토스트 알림 컴포넌트 */}
           <Toaster />
         </AuthProvider>
       </body>

@@ -112,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setProfileLoading(false);
     }
-  }, [toast]); // fetchProfile이 toast에만 의존하도록 수정
+  }, []); // fetchProfile이 toast에 의존하지 않으므로 의존성 배열에서 제거합니다.
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {

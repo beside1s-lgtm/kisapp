@@ -2,6 +2,7 @@ import type { Config } from "tailwindcss"
 
 const config = {
   darkMode: ["class"],
+  // [중요] 설정 파일이 루트에 있을 때, src 폴더 내부를 바라보도록 경로 설정
   content: [
     './pages/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
@@ -18,11 +19,7 @@ const config = {
       },
     },
     extend: {
-      fontFamily: {
-        headline: ["var(--font-space-grotesk)", "sans-serif"],
-        body: ["var(--font-noto-sans-kr)", "sans-serif"],
-        code: ["var(--font-source-code-pro)", "monospace"],
-      },
+      // ShadCN UI 및 globals.css 변수와 매핑되는 색상 설정
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -79,7 +76,7 @@ const config = {
       },
     },
   },
-  plugins: [require("tailwindcss-animate"), require("tailwindcss-debug-screens")],
+  plugins: [require("tailwindcss-animate")],
 } satisfies Config
 
 export default config
