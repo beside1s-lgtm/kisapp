@@ -1,3 +1,4 @@
+
 'use server';
 
 import {
@@ -53,7 +54,7 @@ function serializeDocs(docs: any[]): any[] {
           return timestamp;
         }
       }
-      if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      if (timestamp?.toDate && typeof timestamp.toDate === 'function') {
         return timestamp.toDate().toISOString();
       }
       try {

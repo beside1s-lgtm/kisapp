@@ -1,3 +1,4 @@
+
 'use client';
 
 import { getRegistryDocuments } from "@/app/actions";

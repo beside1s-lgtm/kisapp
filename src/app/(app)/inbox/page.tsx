@@ -1,3 +1,4 @@
+
 'use client';
 
 import { getInboxDocuments } from "@/app/actions";
