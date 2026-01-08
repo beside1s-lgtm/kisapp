@@ -24,13 +24,11 @@ export async function GET() {
         } as UserProfile
     });
     
-    // The previous implementation already handled uniqueness, this is good.
     const uniqueUsers = Array.from(new Map(users.map(user => [user.email, user])).values());
     return NextResponse.json(uniqueUsers);
 
   } catch (error) {
     console.error("[API] getUsersDirectory failed:", error);
-    // Return a more informative error response
     return NextResponse.json({ error: 'Failed to retrieve users' }, { status: 500 });
   }
 }
