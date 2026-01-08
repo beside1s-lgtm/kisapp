@@ -34,7 +34,7 @@ export default function InboxPage() {
             <div className="mb-8">
                 <h1 className="font-headline text-3xl font-bold flex items-center gap-3">
                     <Inbox className="h-8 w-8 text-primary" />
-                    결재함
+                    미결재함
                 </h1>
                 <p className="text-muted-foreground mt-1">결재를 기다리는 문서들입니다.</p>
             </div>

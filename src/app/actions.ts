@@ -80,7 +80,7 @@ export async function saveUserProfile(userId: string, email: string, profileData
   const userProfileRef = doc(getUsersCol(), email);
   try {
     const docSnap = await getDoc(userProfileRef);
-    const dataToSave: Partial<UserProfile> & { updatedAt?: any, createdAt?: any } = {
+    const dataToSave: Partial<UserProfile> = {
       ...profileData,
       uid: userId || profileData.uid || (docSnap.exists() ? docSnap.data().uid : ''),
       email: email,
@@ -92,19 +92,10 @@ export async function saveUserProfile(userId: string, email: string, profileData
         else if(docSnap.exists() && docSnap.data().uid) dataToSave.uid = docSnap.data().uid;
     }
     
-    const timestamp = serverTimestamp();
-    if (docSnap.exists()) {
-        dataToSave.updatedAt = timestamp;
-    } else {
-        dataToSave.createdAt = timestamp;
-    }
-
     await setDoc(userProfileRef, dataToSave, { merge: true });
     
-    revalidatePath('/');
-    
     // Server actions must return plain objects.
-    const { updatedAt, createdAt, ...returnProfile } = dataToSave;
+    const { ...returnProfile } = dataToSave;
     
     const finalProfile: UserProfile = {
       name: returnProfile.name || '',
@@ -287,9 +278,6 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     };
 
     await setDoc(newDocRef, newDocData);
-    revalidatePath('/pending'); // 진행함 갱신
-    revalidatePath('/sent'); // 상신함 갱신
-    revalidatePath('/inbox'); // 미결재함 갱신
     return { success: true, docId: newDocRef.id, docNo: finalDocNoStr };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -329,12 +317,6 @@ export async function approveDocument(docId: string, userId: string, userProfile
                 completedAt: isFinal ? serverTimestamp() : null,
             });
         });
-
-        revalidatePath('/inbox');  // 내 미결재함 갱신
-        revalidatePath('/pending'); // 기안자의 진행함 갱신
-        revalidatePath('/sent');    // 완료 시 기안자의 상신함 갱신
-        revalidatePath('/registry'); // 완료 시 대장 갱신
-        revalidatePath(`/documents/${docId}`); // 현재 문서 페이지 갱신
         return { success: true, docId };
     } catch (error: any) {
         return { success: false, error: error.message };
