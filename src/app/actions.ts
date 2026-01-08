@@ -19,7 +19,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
-import { ensureDbInitialized } from '@/lib/firebase-admin';
+import { db } from '@/lib/firebase-admin';
 import type {
   ApprovalDoc,
   ApprovalDocPayload,
@@ -36,18 +36,15 @@ import * as xlsx from 'xlsx';
 const appId = 'kish-standard-v6-fix'.replace(/[\/.]/g, '_');
 
 // Helper function to get collections
-async function getApprovalsCol() {
-  const db = await ensureDbInitialized();
+function getApprovalsCol() {
   if (!db) throw new Error("Firestore is not initialized.");
   return collection(db, 'approvals');
 }
-async function getUsersDirCol() {
-    const db = await ensureDbInitialized();
+function getUsersDirCol() {
     if (!db) throw new Error("Firestore is not initialized.");
     return collection(db, 'users');
 }
-async function getSettingsRef() {
-    const db = await ensureDbInitialized();
+function getSettingsRef() {
     if (!db) throw new Error("Firestore is not initialized.");
     return doc(db, 'settings', 'docConfig');
 }
@@ -72,9 +69,8 @@ function serializeDocs(docs: any[]): any[] {
 }
 
 export async function getInboxDocuments(userEmail: string) {
-  const db = await ensureDbInitialized();
   if (!db || !userEmail) return [];
-  const approvalsCol = await getApprovalsCol();
+  const approvalsCol = getApprovalsCol();
   const q = query(
     approvalsCol,
     where('status', '==', 'pending'),
@@ -96,9 +92,8 @@ export async function getInboxDocuments(userEmail: string) {
 }
 
 export async function getSentDocuments(userId: string) {
-  const db = await ensureDbInitialized();
   if (!db || !userId) return [];
-  const approvalsCol = await getApprovalsCol();
+  const approvalsCol = getApprovalsCol();
   const q = query(approvalsCol, where('requesterId', '==', userId), orderBy('createdAt', 'desc'));
   try {
     const snapshot = await getDocs(q);
@@ -114,12 +109,11 @@ export async function getSentDocuments(userId: string) {
 }
 
 export async function getRegistryDocuments(userId: string, userEmail: string) {
-    const db = await ensureDbInitialized();
     if (!db || !userId || !userEmail) return [];
     
     // Since firestore rules will handle visibility, we can query all approved docs
     // and let firestore security rules do the filtering.
-    const approvalsCol = await getApprovalsCol();
+    const approvalsCol = getApprovalsCol();
     const q = query(approvalsCol, where('status', '==', 'approved'), orderBy('createdAt', 'desc'));
     
     try {
@@ -136,9 +130,8 @@ export async function getRegistryDocuments(userId: string, userEmail: string) {
 }
 
 export async function getDocumentById(docId: string) {
-  const db = await ensureDbInitialized();
   if (!db) return null;
-  const approvalsCol = await getApprovalsCol();
+  const approvalsCol = getApprovalsCol();
   const docRef = doc(approvalsCol, docId);
   try {
     const snapshot = await getDoc(docRef);
@@ -158,15 +151,14 @@ export async function getDocumentById(docId: string) {
 
 
 export async function createDocument(payload: ApprovalDocPayload, userId: string, userProfile: UserProfile): Promise<{ success: boolean; error?: string; docId?: string; docNo?: string; }> {
-  const db = await ensureDbInitialized();
   if (!db) return { success: false, error: "Database not initialized." };
   
-  const approvalsCol = await getApprovalsCol();
+  const approvalsCol = getApprovalsCol();
   const newDocRef = doc(approvalsCol);
 
   try {
     const finalDocNoStr = await runTransaction(db, async (transaction) => {
-      const settingsRef = await getSettingsRef();
+      const settingsRef = getSettingsRef();
       const settingsSnap = await transaction.get(settingsRef);
       
       let nextNum = 1;
@@ -219,9 +211,8 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
 
 
 export async function approveDocument(docId: string, userId: string, userProfile: UserProfile) {
-    const db = await ensureDbInitialized();
     if (!db) return { success: false, error: "Database not initialized." };
-    const approvalsCol = await getApprovalsCol();
+    const approvalsCol = getApprovalsCol();
     const docRef = doc(approvalsCol, docId);
 
     try {
@@ -272,10 +263,9 @@ export async function approveDocument(docId: string, userId: string, userProfile
 
 
 export async function getUsersDirectory(): Promise<UserProfile[]> {
-  const db = await ensureDbInitialized();
   if (!db) return [];
   try {
-    const usersDirCol = await getUsersDirCol();
+    const usersDirCol = getUsersDirCol();
     const snapshot = await getDocs(usersDirCol);
     if (snapshot.empty) return [];
     
@@ -297,9 +287,8 @@ export async function getUsersDirectory(): Promise<UserProfile[]> {
 }
 
 export async function getDocConfig(): Promise<DocConfig> {
-  const db = await ensureDbInitialized();
   if (!db) return {};
-  const settingsRef = await getSettingsRef();
+  const settingsRef = getSettingsRef();
   try {
     const snap = await getDoc(settingsRef);
     return snap.exists() ? snap.data() as DocConfig : {};
@@ -310,9 +299,8 @@ export async function getDocConfig(): Promise<DocConfig> {
 }
 
 export async function saveDocConfig(payload: DocConfig) {
-  const db = await ensureDbInitialized();
   if (!db) return { success: false, error: "Database not initialized." };
-  const settingsRef = await getSettingsRef();
+  const settingsRef = getSettingsRef();
   
   try {
     await setDoc(settingsRef, payload, { merge: true });
@@ -325,7 +313,6 @@ export async function saveDocConfig(payload: DocConfig) {
 }
 
 export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
-    const db = await ensureDbInitialized();
     if (!db || !email) return null;
     const userDocRef = doc(db, 'users', email);
     try {
@@ -344,7 +331,6 @@ export async function getUserProfileByEmail(email: string): Promise<UserProfile 
 }
 
 export async function saveUserProfile(userId: string, email: string, profile: Partial<UserProfile>) {
-    const db = await ensureDbInitialized();
     if (!db) {
         return { success: false, error: "Database not initialized." };
     }
@@ -414,7 +400,6 @@ export async function generateContentAction(input: {
 }
 
 export async function bulkRegisterUsers(fileData: string): Promise<{ success: boolean; error?: string; summary?: string; }> {
-  const db = await ensureDbInitialized();
   if (!db) {
     return { success: false, error: '데이터베이스가 초기화되지 않았습니다.' };
   }
@@ -475,5 +460,3 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
 }
-
-    
