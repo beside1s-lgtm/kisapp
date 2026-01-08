@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
-import { UserSearch } from './user-search';
+import UserSearch from './user-search';
 import { cn, compressImage } from '@/lib/utils';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 
@@ -158,7 +158,7 @@ export default function DocumentForm() {
               <UserSearch
                 users={users}
                 value={circularQuery}
-                onChange={(e) => setCircularQuery(e.target.value)}
+                onChange={(value) => setCircularQuery(value)}
                 onSelectUser={(u) => {
                   if (!circularFields.some(f => f.email === u.email)) appendCircular({name: u.name, email: u.email, role: u.role});
                   setCircularQuery(''); // 선택 후 초기화

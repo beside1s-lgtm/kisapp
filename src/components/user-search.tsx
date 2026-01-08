@@ -36,6 +36,10 @@ export default function UserSearch({
 }: UserSearchProps) {
   const [open, setOpen] = useState(false);
 
+  const handleInputChange = (searchValue: string) => {
+    onChange(searchValue);
+  };
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -56,7 +60,7 @@ export default function UserSearch({
           <CommandInput
             placeholder={placeholder || 'Search user...'}
             value={value}
-            onValueChange={onChange}
+            onValueChange={handleInputChange}
           />
           <CommandList>
             <CommandEmpty>No user found.</CommandEmpty>
@@ -71,6 +75,7 @@ export default function UserSearch({
                     );
                     if (selectedUser) {
                       onSelectUser(selectedUser);
+                      onChange(selectedUser.name);
                     }
                     setOpen(false);
                   }}
