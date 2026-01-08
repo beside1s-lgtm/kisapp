@@ -28,10 +28,10 @@ export async function GET(
             return NextResponse.json({ error: 'User data is empty' }, { status: 404 });
         }
 
-        // Safely construct the profile object.
+        // Safely construct the profile object with fallbacks.
         const profile: UserProfile = {
-            name: data.name,
-            role: data.role,
+            name: data.name || '',
+            role: data.role || '',
             signature: data.signature || '',
             // Safely access uid, default to the doc id (email) if it doesn't exist.
             uid: data.uid || snap.id,
@@ -64,7 +64,7 @@ export async function POST(
   const userProfileRef = doc(db, 'users', email);
   
   try {
-      // Use a transaction or merge to prevent data loss
+      // Use merge:true to prevent overwriting existing fields unintentionally
       await setDoc(userProfileRef, { ...profileData, email, uid }, { merge: true });
       
       const newProfileSnap = await getDoc(userProfileRef);
@@ -75,9 +75,12 @@ export async function POST(
       const savedData = newProfileSnap.data() as UserProfile;
       
       const newProfile: UserProfile = {
-          ...savedData,
+          name: savedData.name || '',
+          role: savedData.role || '',
+          signature: savedData.signature || '',
           email: newProfileSnap.id,
           uid: savedData.uid || uid, // Ensure UID is consistent
+          isAdmin: savedData.isAdmin || false,
       };
 
       return NextResponse.json({ success: true, profile: newProfile });
