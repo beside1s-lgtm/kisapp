@@ -18,6 +18,11 @@ const config = {
       },
     },
     extend: {
+      fontFamily: {
+        headline: ["var(--font-space-grotesk)", "sans-serif"],
+        body: ["var(--font-noto-sans-kr)", "sans-serif"],
+        code: ["var(--font-source-code-pro)", "monospace"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -74,7 +79,7 @@ const config = {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [require("tailwindcss-animate"), require("tailwindcss-debug-screens")],
 } satisfies Config
 
 export default config
