@@ -78,7 +78,7 @@ export async function saveUserProfile(userId: string, email: string, profileData
   const userProfileRef = doc(getUsersCol(), email);
   try {
     const docSnap = await getDoc(userProfileRef);
-    const dataToSave: Partial<UserProfile> = {
+    const dataToSave: Partial<UserProfile> & { updatedAt?: any, createdAt?: any } = {
       ...profileData,
       uid: userId || profileData.uid || (docSnap.exists() ? docSnap.data().uid : ''),
       email: email,
@@ -88,28 +88,44 @@ export async function saveUserProfile(userId: string, email: string, profileData
     if (docSnap.exists() && docSnap.data().uid && !dataToSave.uid) {
         dataToSave.uid = docSnap.data().uid;
     }
+    
+    const timestamp = serverTimestamp();
+    if (docSnap.exists()) {
+        dataToSave.updatedAt = timestamp;
+    } else {
+        dataToSave.createdAt = timestamp;
+    }
 
-    await setDoc(userProfileRef, {
-        ...dataToSave,
-        [docSnap.exists() ? 'updatedAt' : 'createdAt']: serverTimestamp()
-    }, { merge: true });
+    await setDoc(userProfileRef, dataToSave, { merge: true });
     
     revalidatePath('/');
-    return { success: true, profile: { ...dataToSave, isAdmin: profileData.isAdmin || false } as UserProfile };
+    
+    // 중요: 클라이언트로 반환하기 전에 직렬화할 수 없는 필드(타임스탬프)를 제거합니다.
+    const { updatedAt, createdAt, ...returnProfile } = dataToSave;
+
+    return { success: true, profile: returnProfile as UserProfile };
   } catch (error: any) {
       return { success: false, error: `저장 실패: ${error.message}` };
   }
 }
 
+
 export async function getUsersDirectory(): Promise<UserProfile[]> {
   try {
     const snapshot = await getDocs(getUsersCol());
     if (snapshot.empty) return [];
-    return snapshot.docs.map(d => ({
-        email: d.id, 
-        uid: d.data().uid,
-        ...d.data()
-    } as UserProfile));
+    // Firestore 문서 ID를 이메일로 사용하고, 문서 내의 다른 필드와 결합
+    return snapshot.docs.map(d => {
+        const data = d.data();
+        return {
+            email: d.id, 
+            uid: data.uid,
+            name: data.name,
+            role: data.role,
+            signature: data.signature,
+            isAdmin: data.isAdmin,
+        } as UserProfile;
+    });
   } catch (error) {
     console.error("[Action] getUsersDirectory failed:", error);
     return [];
@@ -120,18 +136,11 @@ export async function getUsersDirectory(): Promise<UserProfile[]> {
 export async function getInboxDocuments(userEmail: string) {
   if (!userEmail) return [];
   const approvalsCol = getApprovalsCol();
-  // status가 pending이고, 현재 결재 순서(currentStep)의 결재자 이메일이 내 이메일과 같은지 쿼리
-  const q = query(
-    approvalsCol,
-    where('status', '==', 'pending'),
-    where(`approvers.0.email`, '==', userEmail) // Firestore는 배열의 특정 인덱스로 직접 쿼리 불가. work-around 필요.
-  );
   
   try {
-    // 임시 해결책: 일단 'pending' 문서를 가져와서 서버에서 필터링
-    const allPendingSnapshot = await getDocs(query(approvalsCol, where('status', '==', 'pending')));
+    const allPendingSnapshot = await getDocs(query(approvalsCol, where('status', '==', 'pending'), orderBy('createdAt', 'desc')));
     const allPending = serializeDocs(allPendingSnapshot.docs);
-    const myTurnDocs = allPending.filter(doc => doc.approvers[doc.currentStep]?.email === userEmail);
+    const myTurnDocs = allPending.filter(doc => doc.approvers[doc.currentStep]?.email?.toLowerCase() === userEmail?.toLowerCase());
     return myTurnDocs;
   } catch (error) {
     console.error("Get Inbox Error:", error);
