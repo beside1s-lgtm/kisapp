@@ -416,7 +416,7 @@ export default function DocumentForm() {
                        <Controller
                           control={form.control}
                           name={`approvers.${index}.name`}
-                          render={({ field }) => (
+                          render={({ field: nameField }) => (
                              <FormItem>
                                <FormLabel className="sr-only">결재자</FormLabel>
                                 <FormControl>
@@ -430,7 +430,7 @@ export default function DocumentForm() {
                                         form.setValue(`approvers.${index}.name`, '', { shouldValidate: true });
                                         form.setValue(`approvers.${index}.email`, '', { shouldValidate: true });
                                     }}
-                                    value={field.value}
+                                    initialValue={nameField.value}
                                     placeholder="결재자 검색..."
                                   />
                                 </FormControl>

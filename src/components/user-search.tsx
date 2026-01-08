@@ -12,23 +12,24 @@ import {
 interface UserSearchProps extends Omit<InputProps, 'onSelect' | 'value' | 'onChange'> {
   users: UserProfile[];
   onSelectUser: (user: UserProfile) => void;
-  onClear: () => void; // Add an onClear callback
-  value?: string;
+  onClear: () => void;
+  initialValue?: string; // Changed from 'value' to 'initialValue'
   placeholder?: string;
 }
 
-export function UserSearch({ users, onSelectUser, onClear, value, placeholder, ...props }: UserSearchProps) {
+export function UserSearch({ users, onSelectUser, onClear, initialValue, placeholder, ...props }: UserSearchProps) {
   const [open, setOpen] = useState(false);
-  const [internalValue, setInternalValue] = useState(value || '');
-
-  // Sync internalValue when the external value changes.
-  // This is useful for when the form is reset or initialized.
+  const [internalValue, setInternalValue] = useState(initialValue || '');
+  
+  // This effect ensures that if the form is reset externally, the internal value updates.
+  // It only runs when the initialValue prop changes.
   useEffect(() => {
-    setInternalValue(value || '');
-  }, [value]);
+    setInternalValue(initialValue || '');
+  }, [initialValue]);
+
 
   const filteredUsers = useMemo(() => {
-    if (!internalValue) return users;
+    if (!internalValue) return []; // Don't show list if input is empty
     // Don't filter if the input value exactly matches a user's name (which happens after selection).
     if (users.some(u => u.name === internalValue)) return [];
 
