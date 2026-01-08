@@ -370,6 +370,7 @@ export async function rejectDocument(docId: string, userId: string, userProfile:
                 approvers: updatedApprovers,
                 status: 'rejected',
                 completedAt: serverTimestamp(),
+                comment: reason, // 최상위 필드에도 반려사유 저장 (선택사항)
             });
         });
         return { success: true, docId };
