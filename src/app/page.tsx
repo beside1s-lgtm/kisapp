@@ -1,26 +1,27 @@
 'use client';
-import { useAuth } from '@/hooks/use-auth';
+
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth';
 
-export default function Home() {
-  const { user, loading } = useAuth();
+export default function AppPage() {
   const router = useRouter();
+  const { user, loading } = useAuth();
 
   useEffect(() => {
-    if (!loading) {
+    if(!loading) {
       if (user) {
         router.replace('/inbox');
       } else {
         router.replace('/login');
       }
     }
-  }, [user, loading, router]);
+  }, [router, user, loading]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <Loader2 className="h-12 w-12 text-primary animate-spin" />
+    <div className="flex h-full w-full items-center justify-center">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
     </div>
   );
 }
