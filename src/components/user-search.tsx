@@ -1,7 +1,7 @@
 'use client';
 
 import { UserProfile } from '@/lib/types';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, ChangeEvent } from 'react';
 import { Input, type InputProps } from './ui/input';
 import {
   Popover,
@@ -12,61 +12,47 @@ import {
 interface UserSearchProps extends Omit<InputProps, 'onSelect' | 'value' | 'onChange'> {
   users: UserProfile[];
   onSelectUser: (user: UserProfile) => void;
-  onClear: () => void;
-  initialValue?: string; // Changed from 'value' to 'initialValue'
+  value: string;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string;
 }
 
-export function UserSearch({ users, onSelectUser, onClear, initialValue, placeholder, ...props }: UserSearchProps) {
+export function UserSearch({ users, onSelectUser, value, onChange, placeholder, ...props }: UserSearchProps) {
   const [open, setOpen] = useState(false);
-  const [internalValue, setInternalValue] = useState(initialValue || '');
-  
-  // This effect ensures that if the form is reset externally, the internal value updates.
-  // It only runs when the initialValue prop changes.
-  useEffect(() => {
-    setInternalValue(initialValue || '');
-  }, [initialValue]);
-
 
   const filteredUsers = useMemo(() => {
-    if (!internalValue) return []; // Don't show list if input is empty
-    // Don't filter if the input value exactly matches a user's name (which happens after selection).
-    if (users.some(u => u.name === internalValue)) return [];
+    if (!value) return [];
+    if (users.some(u => u.name === value)) return [];
 
     return users.filter(
-      (u) => u.name.toLowerCase().includes(internalValue.toLowerCase()) || 
-             u.email.toLowerCase().includes(internalValue.toLowerCase())
+      (u) => u.name.toLowerCase().includes(value.toLowerCase()) || 
+             u.email.toLowerCase().includes(value.toLowerCase())
     );
-  }, [internalValue, users]);
+  }, [value, users]);
 
   const handleSelect = (user: UserProfile) => {
     onSelectUser(user);
-    setInternalValue(user.name); 
     setOpen(false);
   };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-    setInternalValue(newValue);
-    if (newValue) {
-        setOpen(true)
+  
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    onChange(e); // Forward the event to react-hook-form
+    if (e.target.value) {
+        setOpen(true);
     } else {
-        // If the input is cleared, call the onClear callback
-        onClear();
         setOpen(false);
     }
   }
-  
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Input
           {...props}
-          value={internalValue}
-          onChange={handleChange}
+          value={value}
+          onChange={handleInputChange}
           onFocus={() => {
-            // Re-filter and open if there's text
-            if(internalValue && filteredUsers.length > 0) setOpen(true);
+            if(value && filteredUsers.length > 0) setOpen(true);
           }}
           placeholder={placeholder || "Search name..."}
           autoComplete="off"

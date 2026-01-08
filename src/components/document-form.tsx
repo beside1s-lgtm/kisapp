@@ -422,15 +422,12 @@ export default function DocumentForm() {
                                 <FormControl>
                                   <UserSearch
                                     users={users}
+                                    value={nameField.value}
+                                    onChange={nameField.onChange}
                                     onSelectUser={(user) => {
                                         form.setValue(`approvers.${index}.name`, user.name, { shouldValidate: true });
                                         form.setValue(`approvers.${index}.email`, user.email, { shouldValidate: true });
                                     }}
-                                    onClear={() => {
-                                        form.setValue(`approvers.${index}.name`, '', { shouldValidate: true });
-                                        form.setValue(`approvers.${index}.email`, '', { shouldValidate: true });
-                                    }}
-                                    initialValue={nameField.value}
                                     placeholder="결재자 검색..."
                                   />
                                 </FormControl>
@@ -488,12 +485,12 @@ export default function DocumentForm() {
             <div className="mb-4">
               <UserSearch
                 users={users}
+                value=""
                 onSelectUser={(user) => {
                   if (!circularFields.some(f => f.email === user.email)) {
                     appendCircular({name: user.name, email: user.email, role: user.role})
                   }
                 }}
-                onClear={() => {}}
                 placeholder="추가할 사용자 검색..."
               />
             </div>
