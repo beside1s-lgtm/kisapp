@@ -57,7 +57,11 @@ function serializeDocs(docs: any[]): any[] {
       if (timestamp.toDate && typeof timestamp.toDate === 'function') {
         return timestamp.toDate().toISOString();
       }
-      return new Date(timestamp).toISOString();
+      try {
+        return new Date(timestamp).toISOString();
+      } catch (e) {
+        return null;
+      }
     };
 
     return {
@@ -162,6 +166,8 @@ export async function getInboxDocuments(userEmail: string) {
   const approvalsCol = getApprovalsCol();
   
   try {
+    // Firestore에서는 배열의 특정 인덱스에 대한 조건부 쿼리를 직접 지원하지 않으므로,
+    // 먼저 'pending' 상태의 모든 문서를 가져온 후 클라이언트 측(여기서는 서버 액션)에서 필터링합니다.
     const allPendingSnapshot = await getDocs(query(approvalsCol, where('status', '==', 'pending'), orderBy('createdAt', 'desc')));
     
     const allPending = serializeDocs(allPendingSnapshot.docs);
