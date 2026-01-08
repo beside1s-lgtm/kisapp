@@ -45,6 +45,10 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
         if(!confirmed) return;
     }
     startApproveTransition(async () => {
+      if (!user || !profile) {
+        toast({ variant: 'destructive', title: '인증 오류', description: '로그인이 필요합니다.' });
+        return;
+      }
       const result = await approveDocument(initialDoc.id, user.uid, profile);
       if (result.success) {
         toast({ title: '결재 완료!', description: '문서가 성공적으로 결재되었습니다.' });

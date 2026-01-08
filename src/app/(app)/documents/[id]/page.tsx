@@ -20,7 +20,7 @@ export default async function DocumentPage({ params }: DocumentPageProps) {
                     <AlertCircle className="h-4 w-4" />
                     <AlertTitle>Error</AlertTitle>
                     <AlertDescription>
-                        Document not found or you do not have permission to view it.
+                        문서를 찾을 수 없거나 문서를 볼 수 있는 권한이 없습니다.
                         <Button asChild variant="link" className="p-0 h-auto ml-2">
                            <Link href="/inbox">Return to Inbox</Link>
                         </Button>

@@ -32,12 +32,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const handlePermissionError = (error: Error) => {
-      console.error(error); // Log the detailed error to the console
+      // In a real app, you might want to log this to an error tracking service
+      console.error("A Firestore permission error was globally caught:", error);
       toast({
         variant: 'destructive',
         title: '권한 오류',
-        description: error.message || '데이터베이스 작업에 실패했습니다. 보안 규칙을 확인하세요.',
-        duration: 10000,
+        description: '요청한 작업을 수행할 권한이 없습니다. 관리자에게 문의하거나 보안 규칙을 확인하세요.',
+        duration: 8000,
       });
     };
 
@@ -62,8 +63,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await saveUserProfile(firebaseUser.uid, firebaseUser.email, { isAdmin: true });
         }
         
-        // If the auth UID in the database doesn't match the current user's UID, or is empty, update it.
-        // This handles the case where a user was bulk-imported and is logging in for the first time.
         if (userProfile.uid !== firebaseUser.uid || !userProfile.uid) {
             userProfile.uid = firebaseUser.uid;
             await saveUserProfile(firebaseUser.uid, firebaseUser.email, { uid: firebaseUser.uid });
@@ -85,7 +84,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setProfile(adminProfile);
             return adminProfile;
         }
-        // This user is not in the system and is not the hardcoded admin.
         return null;
       }
     } catch (error) {

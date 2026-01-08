@@ -152,14 +152,20 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     const finalDocNoStr = await runTransaction(db, async (transaction) => {
       const settingsRef = getSettingsRef();
       const settingsSnap = await transaction.get(settingsRef);
-      if (!settingsSnap.exists()) {
-        throw new Error("Document config settings not found.");
-      }
-      const currentConfig = settingsSnap.data() as DocConfig;
-      const nextNum = currentConfig.nextNumber || 1;
-      const docNo = `Kish-초등-${nextNum}`;
       
-      transaction.update(settingsRef, { nextNumber: nextNum + 1 });
+      let nextNum = 1;
+      if (settingsSnap.exists()) {
+        const currentConfig = settingsSnap.data() as DocConfig;
+        nextNum = currentConfig.nextNumber || 1;
+        transaction.update(settingsRef, { nextNumber: nextNum + 1 });
+      } else {
+        // If docConfig doesn't exist, this is the first document.
+        // Start with 1, and set the next number to 2.
+        // This transaction will create the docConfig document.
+        transaction.set(settingsRef, { nextNumber: 2 });
+      }
+      
+      const docNo = `Kish-초등-${nextNum}`;
       return docNo;
     });
 
@@ -186,7 +192,6 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     return { success: true, docId: newDocRef.id, docNo: finalDocNoStr };
 
   } catch (error: any) {
-    console.error("Failed to create document:", error); // Log the actual error to the server console for debugging.
     return { success: false, error: `문서 생성 실패: ${error.message}` };
   }
 }
@@ -235,14 +240,10 @@ export async function approveDocument(docId: string, userId: string, userProfile
         revalidatePath(`/documents/${docId}`);
         return { success: true, docId };
     } catch (error: any) {
-        // Catch transaction errors, including permission errors
-        const permissionError = new FirestorePermissionError({
-            path: docRef.path,
-            operation: 'update',
-            requestResourceData: updatedData,
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        return { success: false, error: permissionError.message };
+        // Since we are using admin SDK, permission errors are less likely
+        // but transaction can fail for other reasons.
+        console.error("Approve document failed:", error);
+        return { success: false, error: error.message };
     }
 }
 
@@ -267,11 +268,8 @@ export async function getUsersDirectory(): Promise<UserProfile[]> {
     return uniqueUsers;
 
   } catch (error) {
-    const permissionError = new FirestorePermissionError({
-      path: getUsersDirCol().path,
-      operation: 'list',
-    });
-    errorEmitter.emit('permission-error', permissionError);
+    // With admin sdk, this is less likely to be a permission error
+    console.error("getUsersDirectory failed:", error);
     return [];
   }
 }
@@ -283,11 +281,7 @@ export async function getDocConfig(): Promise<DocConfig> {
     const snap = await getDoc(settingsRef);
     return snap.exists() ? snap.data() as DocConfig : {};
   } catch(error) {
-    const permissionError = new FirestorePermissionError({
-      path: settingsRef.path,
-      operation: 'get',
-    });
-    errorEmitter.emit('permission-error', permissionError);
+    console.error("getDocConfig failed:", error);
     return {};
   }
 }
@@ -301,13 +295,8 @@ export async function saveDocConfig(payload: DocConfig) {
     revalidatePath('/'); // Revalidate all pages that might use this
     return { success: true };
   } catch (error: any) {
-    const permissionError = new FirestorePermissionError({
-        path: settingsRef.path,
-        operation: 'update',
-        requestResourceData: payload,
-    });
-    errorEmitter.emit('permission-error', permissionError);
-    return { success: false, error: permissionError.message };
+    console.error("saveDocConfig failed:", error);
+    return { success: false, error: error.message };
   }
 }
 
@@ -324,12 +313,8 @@ export async function getUserProfileByEmail(email: string): Promise<UserProfile 
             uid: data.uid || snap.id
         } as UserProfile;
     } catch (error) {
-        const permissionError = new FirestorePermissionError({
-            path: docRef.path,
-            operation: 'get',
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        return null;
+       console.error("getUserProfileByEmail failed:", error);
+       return null;
     }
 }
 
@@ -340,22 +325,19 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
     
     // We use email as the document ID in the 'users' collection
     const userProfileRef = doc(db, 'users', email);
-    let docExists = false;
     
     let dataToSave: Partial<UserProfile>;
 
     try {
         const docSnap = await getDoc(userProfileRef);
-        docExists = docSnap.exists();
+        const docExists = docSnap.exists();
         const existingData = docSnap.data() as UserProfile | undefined;
         
         if (docExists && existingData) {
-            // Document exists, so we merge.
             dataToSave = { ...existingData, ...profile };
         } else {
-            // Document does not exist, so we create it.
              dataToSave = {
-                uid: userId || '', // Can be empty if registered by admin
+                uid: userId || '',
                 email: email,
                 name: profile.name || 'New User',
                 role: profile.role || '담당',
@@ -364,7 +346,6 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
             };
         }
         
-        // Ensure email is always set correctly from the parameter, not from a potentially partial profile object
         dataToSave.email = email;
         if (userId) {
           dataToSave.uid = userId;
@@ -376,14 +357,8 @@ export async function saveUserProfile(userId: string, email: string, profile: Pa
         return { success: true, profile: dataToSave as UserProfile };
 
     } catch (error: any) {
-        // We need docExists from the try block to determine the operation.
-        const permissionError = new FirestorePermissionError({
-            path: userProfileRef.path,
-            operation: docExists ? 'update' : 'create',
-            requestResourceData: profile,
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        return { success: false, error: `권한 오류: ${error.message}` };
+        console.error("saveUserProfile failed:", error);
+        return { success: false, error: `프로필 저장 실패: ${error.message}` };
     }
 }
 
@@ -473,17 +448,6 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
     };
   } catch (error: any) {
     console.error('Bulk user registration failed:', error);
-    // Firestore permission errors should be caught and emitted
-    if (error.name === 'FirebaseError' && error.code === 'permission-denied') {
-        const permissionError = new FirestorePermissionError({
-            path: getUsersDirCol().path,
-            operation: 'update', // This is a batch write, so 'update' is a reasonable guess
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        return { success: false, error: permissionError.message };
-    }
     return { success: false, error: `파일 처리 중 오류가 발생했습니다: ${error.message}` };
   }
 }
-
-    
