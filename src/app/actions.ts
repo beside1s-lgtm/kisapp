@@ -17,8 +17,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
-import { db as clientDbInstance } from '@/lib/firebase';
-import { getDb as getAdminDb } from '@/lib/firebase-admin';
+import { db } from '@/lib/firebase';
 import type {
   ApprovalDoc,
   ApprovalDocPayload,
@@ -31,9 +30,11 @@ import { errorEmitter } from '@/lib/error-emitter';
 import { FirestorePermissionError } from '@/lib/errors';
 import * as xlsx from 'xlsx';
 
-function getApprovalsCol() {
-  return collection(clientDbInstance, 'approvals');
-}
+// Firestore collections
+function getUsersCol() { return collection(db, 'users'); }
+function getApprovalsCol() { return collection(db, 'approvals'); }
+function getSettingsCol() { return collection(db, 'settings'); }
+
 
 function serializeDocs(docs: any[]): any[] {
   if (!docs) return [];
@@ -55,53 +56,57 @@ function serializeDocs(docs: any[]): any[] {
 
 export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
   if (!email) return null;
-  const db = getAdminDb();
-  const userDocRef = db.collection('users').doc(email);
-  const snap = await userDocRef.get();
+  const userDocRef = doc(getUsersCol(), email);
+  try {
+    const snap = await getDoc(userDocRef);
 
-  if (!snap.exists) {
-    return null;
-  }
-  
-  const data = snap.data();
-  if (!data) {
+    if (!snap.exists()) {
       return null;
-  }
-  
-  const profile: UserProfile = {
-      name: data.name || '',
-      role: data.role || '',
-      signature: data.signature || '',
-      uid: data.uid || snap.id,
-      email: snap.id,
-      isAdmin: data.isAdmin || false,
-  };
+    }
+    
+    const data = snap.data();
+    if (!data) {
+        return null;
+    }
+    
+    const profile: UserProfile = {
+        name: data.name || '',
+        role: data.role || '',
+        signature: data.signature || '',
+        uid: data.uid || snap.id,
+        email: snap.id,
+        isAdmin: data.isAdmin || false,
+    };
 
-  return profile;
+    return profile;
+  } catch (error: any) {
+     console.error(`[Action] getUserProfileByEmail for ${email} failed:`, error);
+     // Let the caller handle the error state
+     return null;
+  }
 }
 
 export async function saveUserProfile(userId: string, email: string, profileData: Partial<UserProfile>): Promise<{ success: boolean; error?: string; profile?: UserProfile }> {
-  const db = getAdminDb();
   if (!email || !profileData) {
     return { success: false, error: 'Invalid request body' };
   }
 
-  const userProfileRef = db.collection('users').doc(email);
+  const userProfileRef = doc(getUsersCol(), email);
   try {
-    const docSnap = await userProfileRef.get();
+    const docSnap = await getDoc(userProfileRef);
     
-    if (docSnap.exists) {
-        await userProfileRef.set({
+    if (docSnap.exists()) {
+        await setDoc(userProfileRef, {
            ...profileData,
            ...(userId ? { uid: userId } : {}),
-           updatedAt: new Date().toISOString() 
+           updatedAt: serverTimestamp() 
         }, { merge: true });
     } else {
-        await userProfileRef.set({
+        await setDoc(userProfileRef, {
             email: email,
             uid: userId || '',
             ...profileData,
-            createdAt: new Date().toISOString()
+            createdAt: serverTimestamp()
         });
     }
     
@@ -124,10 +129,8 @@ export async function saveUserProfile(userId: string, email: string, profileData
 }
 
 export async function getUsersDirectory(): Promise<UserProfile[]> {
-  const db = getAdminDb();
-  
   try {
-    const snapshot = await db.collection('users').get();
+    const snapshot = await getDocs(getUsersCol());
 
     if (snapshot.empty) {
       return [];
@@ -141,7 +144,7 @@ export async function getUsersDirectory(): Promise<UserProfile[]> {
             signature: data.signature || '',
             isAdmin: data.isAdmin || false,
             email: d.id,
-            uid: data.uid || '', 
+            uid: data.uid || d.id, 
         } as UserProfile
     });
     
@@ -155,7 +158,6 @@ export async function getUsersDirectory(): Promise<UserProfile[]> {
 }
 
 export async function getInboxDocuments(userEmail: string) {
-  const db = clientDbInstance; 
   if (!userEmail) return [];
   
   const approvalsCol = getApprovalsCol();
@@ -178,7 +180,6 @@ export async function getInboxDocuments(userEmail: string) {
 }
 
 export async function getSentDocuments(userId: string) {
-  const db = clientDbInstance;
   if (!userId) return [];
   const approvalsCol = getApprovalsCol();
   const q = query(approvalsCol, where('requesterId', '==', userId), orderBy('createdAt', 'desc'));
@@ -192,7 +193,6 @@ export async function getSentDocuments(userId: string) {
 }
 
 export async function getRegistryDocuments(userId: string, userEmail: string) {
-    const db = clientDbInstance;
     if (!userId || !userEmail) return [];
     
     const approvalsCol = getApprovalsCol();
@@ -208,7 +208,6 @@ export async function getRegistryDocuments(userId: string, userEmail: string) {
 }
 
 export async function getDocumentById(docId: string) {
-  const db = clientDbInstance;
   const approvalsCol = getApprovalsCol();
   const docRef = doc(approvalsCol, docId);
   try {
@@ -225,15 +224,12 @@ export async function getDocumentById(docId: string) {
 
 
 export async function createDocument(payload: ApprovalDocPayload, userId: string, userProfile: UserProfile): Promise<{ success: boolean; error?: string; docId?: string; docNo?: string; }> {
-  const adminDb = getAdminDb();
-  const clientDb = clientDbInstance;
-  
-  const approvalsCol = collection(clientDb, 'approvals');
+  const approvalsCol = getApprovalsCol();
   const newDocRef = doc(approvalsCol);
+  const settingsRef = doc(getSettingsCol(), 'docConfig');
 
   try {
-    const finalDocNoStr = await runTransaction(adminDb, async (transaction) => {
-      const settingsRef = doc(adminDb, 'settings', 'docConfig');
+    const finalDocNoStr = await runTransaction(db, async (transaction) => {
       const settingsSnap = await transaction.get(settingsRef);
       
       let nextNum = 1;
@@ -279,7 +275,6 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
 
 
 export async function approveDocument(docId: string, userId: string, userProfile: UserProfile) {
-    const db = clientDbInstance;
     const approvalsCol = getApprovalsCol();
     const docRef = doc(approvalsCol, docId);
 
@@ -355,7 +350,6 @@ export async function generateContentAction(input: {
 }
 
 export async function bulkRegisterUsers(fileData: string): Promise<{ success: boolean; error?: string; summary?: string; }> {
-  const db = getAdminDb();
   try {
     const base64Data = fileData.split(',')[1];
     const buffer = Buffer.from(base64Data, 'base64');
@@ -413,8 +407,7 @@ export async function bulkRegisterUsers(fileData: string): Promise<{ success: bo
 }
 
 export async function getDocConfig(): Promise<DocConfig> {
-    const db = getAdminDb();
-    const settingsRef = doc(db, 'settings', 'docConfig');
+    const settingsRef = doc(getSettingsCol(), 'docConfig');
     try {
         const snap = await getDoc(settingsRef);
         return snap.exists() ? (snap.data() as DocConfig) : {};
@@ -425,8 +418,7 @@ export async function getDocConfig(): Promise<DocConfig> {
 }
 
 export async function saveDocConfig(payload: DocConfig): Promise<{ success: boolean, error?: string}> {
-    const db = getAdminDb();
-    const settingsRef = doc(db, 'settings', 'docConfig');
+    const settingsRef = doc(getSettingsCol(), 'docConfig');
     
     try {
         await setDoc(settingsRef, payload, { merge: true });
