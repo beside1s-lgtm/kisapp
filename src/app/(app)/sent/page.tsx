@@ -34,7 +34,7 @@ export default function SentPage() {
             <div className="mb-8">
                 <h1 className="font-headline text-3xl font-bold flex items-center gap-3">
                     <Send className="h-8 w-8 text-primary" />
-                    보낸 문서
+                    상신함
                 </h1>
                 <p className="text-muted-foreground mt-1">내가 제출한 문서들입니다.</p>
             </div>
