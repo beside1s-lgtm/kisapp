@@ -8,13 +8,11 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ApprovalDoc } from "@/lib/types";
+import { useParams } from "next/navigation";
 
-type DocumentPageProps = {
-    params: { id: string };
-};
-
-export default function DocumentPage({ params }: DocumentPageProps) {
-    const { id } = params;
+export default function DocumentPage() {
+    const params = useParams();
+    const id = params.id as string;
 
     const [docData, setDocData] = useState<ApprovalDoc | null>(null);
     const [configData, setConfigData] = useState<any>(null);
