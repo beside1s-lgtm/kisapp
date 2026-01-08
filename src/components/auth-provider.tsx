@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       } else {
         if (isHardcodedAdmin) {
-            const adminProfile: UserProfile = {
+            const adminProfile: Partial<UserProfile> = {
                 uid: firebaseUser.uid,
                 name: firebaseUser.displayName || '관리자',
                 email: firebaseUser.email,
@@ -80,9 +80,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 signature: '',
                 isAdmin: true, 
             };
-            await saveUserProfile(firebaseUser.uid, firebaseUser.email, adminProfile);
-            setProfile(adminProfile);
-            return adminProfile;
+            const result = await saveUserProfile(firebaseUser.uid, firebaseUser.email, adminProfile);
+            if(result.success && result.profile) {
+              setProfile(result.profile);
+              return result.profile;
+            }
         }
         return null;
       }
