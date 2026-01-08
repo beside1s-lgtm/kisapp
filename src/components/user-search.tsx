@@ -21,6 +21,7 @@ export function UserSearch({ users, onSelectUser, value, onChange, placeholder, 
   const filteredUsers = useMemo(() => {
     const stringValue = String(value || '');
     if (!stringValue) return [];
+    // If the value is an exact match of a user's name, don't show the popover.
     if (users.some(u => u.name === stringValue)) return [];
 
     return users.filter(
@@ -36,7 +37,7 @@ export function UserSearch({ users, onSelectUser, value, onChange, placeholder, 
   
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (onChange) {
-      onChange(e); 
+      onChange(e); // This correctly calls the onChange from react-hook-form's field object
     }
     if (e.target.value) {
         setOpen(true);
