@@ -112,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setProfileLoading(false);
     }
-  }, []); // fetchProfile이 toast에 의존하지 않으므로 의존성 배열에서 제거합니다.
+  }, [toast]); // toast를 의존성 배열에 유지하되, useToast 훅이 안정적이라고 가정합니다.
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -135,7 +135,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => unsubscribe();
-  }, [fetchProfile, toast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const googleSignIn = async () => {
     try {
