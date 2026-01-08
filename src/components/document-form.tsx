@@ -262,7 +262,7 @@ export default function DocumentForm() {
         toast({
           variant: 'destructive',
           title: '제출 실패',
-          description: result.error || '알 수 없는 오류가 발생했습니다.',
+          description: result.error,
         });
       }
     });
@@ -634,5 +634,3 @@ export default function DocumentForm() {
     </Form>
   );
 }
-
-    
