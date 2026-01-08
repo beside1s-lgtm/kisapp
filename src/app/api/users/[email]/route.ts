@@ -1,5 +1,8 @@
 import { getDb } from '@/lib/firebase-admin';
 import { NextRequest, NextResponse } from 'next/server';
+import { doc, getDoc } from 'firebase-admin/firestore';
+import { UserProfile } from '@/lib/types';
+import { saveUserProfile as saveProfileToDb } from '@/app/actions';
 
 export async function GET(
   request: NextRequest,
@@ -33,10 +36,6 @@ export async function GET(
     }
 }
 
-
-import { doc, getDoc } from 'firebase-admin/firestore';
-import { UserProfile } from '@/lib/types';
-import { saveUserProfile as saveProfileToDb } from '@/app/actions';
 
 export async function POST(
   request: NextRequest,
