@@ -73,6 +73,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     color: black !important;
                     -webkit-print-color-adjust: exact !important; 
                     print-color-adjust: exact !important;
+                    height: 100% !important;
                   }
 
                   .no-print {
@@ -84,15 +85,25 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     left: 0 !important;
                     top: 0 !important;
                     width: 100% !important;
-                    min-width: 100% !important;
                     margin: 0 !important;
                     padding: 0 !important;
                     border: none !important;
                     box-shadow: none !important;
                     background: white !important;
+                    min-height: 100vh !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                  }
+                  
+                  .doc-body {
+                    flex: 1 1 auto !important;
                   }
 
-                  html, body, main {
+                  .doc-footer {
+                    flex-shrink: 0 !important;
+                  }
+
+                  html, body {
                     height: auto !important;
                     overflow: visible !important;
                     display: block !important;
@@ -108,7 +119,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
                   @page {
                     size: A4 portrait;
-                    margin: 10mm 15mm;
+                    margin: 15mm 20mm;
                   }
                 }
                 .no-print { display: none !important; }
@@ -434,3 +445,5 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 }
+
+    
