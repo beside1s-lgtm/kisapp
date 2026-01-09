@@ -71,7 +71,11 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     box-sizing: border-box !important;
                 }
                 
-                html, body {
+                html {
+                  font-size: 130% !important;
+                }
+
+                body {
                     height: 100%;
                     margin: 0 !important;
                     padding: 0 !important;
@@ -95,7 +99,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     box-shadow: none !important;
                     display: flex !important;
                     flex-direction: column !important;
-                    font-size: 1.5em;
                 }
 
                 .doc-body {
@@ -107,7 +110,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     flex-shrink: 0 !important;
                     margin-top: auto !important;
                     break-inside: avoid !important;
-                    font-size: 1em;
                 }
 
                 @media print {
