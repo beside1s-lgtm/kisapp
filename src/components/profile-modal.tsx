@@ -97,13 +97,12 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
   };
 
   const handleOpenChange = (open: boolean) => {
-    if (isProfileIncomplete && !open) {
+    if (isProfileIncomplete && !open && (!name || !role)) {
       toast({
         variant: "destructive",
         title: "프로필 미완성",
         description: "시스템을 사용하려면 먼저 이름과 직책을 설정해야 합니다."
       });
-      // Don't allow closing if profile is incomplete
       return; 
     }
     setIsOpen(open);
