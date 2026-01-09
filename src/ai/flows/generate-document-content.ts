@@ -52,12 +52,12 @@ const prompt = ai.definePrompt({
   1.  **Follow 6W Principles:** The content must be based on Who, What, When, Where, Why, How.
   2.  **Related Document Reference (If any):** If there is a related document, state it on the very first line.
       - Example: \`1. 관련: 2025학년도 1학기 유・초등 등하교 차량 지도 계획 수립(2025.03.03.)\`
-  3.  **List Item Formatting:** Strictly adhere to the standard Korean official document list hierarchy:
+  3.  **List Item Formatting:** Strictly adhere to the standard Korean official document list hierarchy.
       - Level 1: \`1.\`, \`2.\`, ... (followed by a period and a space)
       - Level 2: \`가.\`, \`나.\`, ... (followed by a period and a space)
       - Level 3: \`1)\`, \`2)\`, ... (followed by a parenthesis and a space)
       - Level 4: \`가)\`, \`나)\`, ... (followed by a parenthesis and a space)
-      - Ensure proper indentation for each level.
+      - **CRITICAL**: When an item's content spans multiple lines, the subsequent lines must be indented to align vertically with the text of the first line, not with the list marker. Ensure proper indentation for each level.
   4.  **Clarity over "Below/Next":** Do not use vague terms like '다음' or '아래'. Instead, specify the details directly.
       - Example: \`2026. 1. 10.(토) 14:00, 우리 기관 회의실에서 회의를 실시합니다.\`
   5.  **Date/Time Format:**
@@ -97,7 +97,12 @@ const prompt = ai.definePrompt({
          1) 일 시: 2025.8.25.(월) ~ 8.27.(수)
          2) 학년별 세부 교육계획
   
-  (Here, a table can be inserted)
+| 대상학년 | 교육강사 | 교육장소 | 교육일시 |
+|---|---|---|---|
+| 1·2학년 | 외부강사 | 가온홀 | 8.25.(월) 3교시 |
+| 5, 6학년 | 화상교육 | 각반교실 | 8.27.(수) 7교시 |
+| 3, 4학년 | 외부강사 | 각반교실 | 8.29.(금) 7교시 |
+
   
   붙임  1. 학교폭력예방교육 교사연수 자료(사이버 폭력) 1부.
         2. 학교폭력예방교육강의 원고 1부.
