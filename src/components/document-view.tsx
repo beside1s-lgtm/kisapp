@@ -95,7 +95,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     box-shadow: none !important;
                     display: flex !important;
                     flex-direction: column !important;
-                    font-size: 1.2em; /* 글자 크기 키우기 */
+                    font-size: 1.2em;
                 }
 
                 .doc-body {
@@ -107,6 +107,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     flex-shrink: 0 !important;
                     margin-top: auto !important;
                     break-inside: avoid !important;
+                    font-size: 1rem;
                 }
 
                 @media print {
@@ -444,4 +445,5 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 }
+
 
