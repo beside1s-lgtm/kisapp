@@ -67,62 +67,61 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             ${styles}
             <style>
-                @media print {
-                  body {
-                    background: white !important;
-                    color: black !important;
-                    -webkit-print-color-adjust: exact !important; 
-                    print-color-adjust: exact !important;
-                    height: 100% !important;
-                  }
-
-                  .no-print {
-                    display: none !important;
-                  }
-
-                  .printable-area {
-                    position: absolute !important;
-                    left: 0 !important;
-                    top: 0 !important;
-                    width: 100% !important;
+                *, *::before, *::after {
+                    box-sizing: border-box !important;
+                }
+                
+                html, body {
+                    height: 100%;
                     margin: 0 !important;
                     padding: 0 !important;
-                    border: none !important;
-                    box-shadow: none !important;
+                    background-color: white !important;
+                    -webkit-print-color-adjust: exact !important;
+                    print-color-adjust: exact !important;
+                }
+
+                @page { 
+                    size: A4 portrait; 
+                    margin: 0; 
+                }
+
+                .printable-area { 
+                    width: 100% !important;
+                    min-height: 100vh !important; 
+                    margin: 0 auto !important; 
+                    padding: 15mm 20mm !important; 
                     background: white !important;
-                    min-height: 100vh !important;
+                    border: none !important; 
+                    box-shadow: none !important;
                     display: flex !important;
                     flex-direction: column !important;
-                  }
-                  
-                  .doc-body {
-                    flex: 1 1 auto !important;
-                  }
-
-                  .doc-footer {
-                    flex-shrink: 0 !important;
-                  }
-
-                  html, body {
-                    height: auto !important;
-                    overflow: visible !important;
-                    display: block !important;
-                  }
-
-                  p, h1, h2, h3, h4, h5, li, tr, .items-start {
-                    page-break-inside: avoid;
-                  }
-                  
-                  table, .min-h-\\[400px\\] {
-                    page-break-inside: auto;
-                  }
-
-                  @page {
-                    size: A4 portrait;
-                    margin: 15mm 20mm;
-                  }
+                    font-size: 1.2em; /* 글자 크기 키우기 */
                 }
-                .no-print { display: none !important; }
+
+                .doc-body {
+                    flex: 1 1 auto !important;
+                    display: block !important;
+                }
+
+                .doc-footer {
+                    flex-shrink: 0 !important;
+                    margin-top: auto !important;
+                    break-inside: avoid !important;
+                }
+
+                @media print {
+                    body, .printable-area {
+                        height: 100% !important;
+                        min-height: 100vh !important;
+                    }
+                    
+                    .printable-area {
+                        display: flex !important;
+                        flex-direction: column !important;
+                    }
+                }
+
+                .no-print, button, nav, aside, .fixed { display: none !important; }
             </style>
         </head>
         <body>
@@ -446,4 +445,3 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   );
 }
 
-    
