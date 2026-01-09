@@ -95,7 +95,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     box-shadow: none !important;
                     display: flex !important;
                     flex-direction: column !important;
-                    font-size: 1.2em;
+                    font-size: 1.5em;
                 }
 
                 .doc-body {
@@ -445,5 +445,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 }
+
 
 
