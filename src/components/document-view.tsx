@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { approveDocument, rejectDocument, recallDocument } from '@/app/actions';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Printer, Loader2, XCircle, Undo2 } from 'lucide-react';
+import { CheckCircle2, Printer, Loader2, XCircle, Undo2, CopyPlus } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition } from 'react';
 import {
@@ -24,6 +24,7 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import Link from 'next/link';
 
 type DocumentViewProps = {
   initialDoc: ApprovalDoc;
@@ -100,13 +101,14 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     display: flex !important;
                     flex-direction: column !important;
                 }
-
+                
                 .doc-body {
                     flex: 1 1 auto !important;
                     display: block !important;
                 }
 
                 .doc-footer {
+                    font-size: 11pt !important;
                     flex-shrink: 0 !important;
                     margin-top: auto !important;
                     break-inside: avoid !important;
@@ -153,6 +155,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const isMyTurn = initialDoc.approvers[initialDoc.currentStep]?.email === user.email && initialDoc.status === 'pending';
   const isRequester = initialDoc.requesterId === user.uid;
   const canRecall = isRequester && initialDoc.status === 'pending';
+  const isCompleted = initialDoc.status === 'approved' || initialDoc.status === 'rejected';
 
   const approvalDate = initialDoc.completedAt 
     ? new Date(initialDoc.completedAt as string) 
@@ -266,6 +269,14 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     </AlertDialogContent>
                 </AlertDialog>
             )}
+            {isCompleted && (
+                <Button variant="outline" asChild className="shadow-sm bg-white hover:bg-gray-100">
+                    <Link href={`/new?templateId=${initialDoc.id}`}>
+                        <CopyPlus className="mr-2 h-4 w-4" />
+                        재기안
+                    </Link>
+                </Button>
+            )}
             <Button variant="outline" type="button" onClick={handlePrint} className="cursor-pointer shadow-sm bg-white hover:bg-gray-100">
                 <Printer className="mr-2 h-4 w-4" /> 인쇄 / PDF로 저장
             </Button>
@@ -300,7 +311,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                         <span className="text-lg md:text-xl font-bold text-gray-900 leading-tight">{initialDoc.title}</span>
                     </div>
 
-                    <div className="min-h-[200px] text-sm md:text-base leading-loose whitespace-pre-wrap font-serif text-gray-800 tracking-normal"
+                    <div className="min-h-[200px] text-base md:text-lg leading-loose whitespace-pre-wrap font-serif text-gray-800 tracking-normal"
                         dangerouslySetInnerHTML={{ __html: initialDoc.content.replace(/\n/g, '<br />') }} />
 
                     {initialDoc.attachments?.length > 0 && (
@@ -364,7 +375,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                         <p className="text-sm text-destructive-foreground mt-1">{initialDoc.approvers.find(ap => ap.status === 'rejected')?.comment}</p>
                     </div>
                 )}
-                <div className="mt-2 text-base font-medium text-gray-700 space-y-1.5 border-t border-gray-200 pt-4">
+                <div className="mt-2 text-base space-y-1.5 border-t border-gray-200 pt-4">
                     <div className="flex gap-4">
                         <span><strong>시행</strong> {initialDoc.docNo} ({format(approvalDate, 'yyyy. MM. dd.')})</span>
                         <span><strong>접수</strong> ( )</span>
@@ -447,3 +458,5 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 }
+
+    

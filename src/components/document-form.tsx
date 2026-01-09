@@ -1,3 +1,4 @@
+
 'use client';
 
 import { createDocument, getUsersDirectory, getDocConfig, updateDocument } from '@/app/actions';
@@ -7,7 +8,7 @@ import { ApprovalDoc, ApprovalDocPayload, Approver, DocConfig, UserProfile } fro
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { File as FileIcon, Loader2, Plus, Sparkles, User as UserIcon, X, Paperclip, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -58,6 +59,7 @@ type DocumentFormProps = {
 
 export default function DocumentForm({ docToEdit }: DocumentFormProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const { user, profile } = useAuth();
   const [isPending, startTransition] = useTransition();
@@ -68,7 +70,9 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
   const [circularQuery, setCircularQuery] = useState('');
   const attachmentInputRef = useRef<HTMLInputElement>(null);
 
-  const isEditMode = !!docToEdit;
+  const isTemplateMode = !!searchParams.get('templateId');
+  // 'recalled' 문서함에서 온 경우만 isEditMode=true
+  const isEditMode = !!docToEdit && !isTemplateMode;
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -85,7 +89,8 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
   }, []);
 
   useEffect(() => {
-    if (isEditMode && docToEdit) {
+    // 수정 모드 또는 템플릿 모드일 때 폼 데이터 설정
+    if (docToEdit) {
         form.reset({
             title: docToEdit.title,
             content: docToEdit.content,
@@ -94,7 +99,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
             receiverName: docToEdit.receiverInfo?.name || '',
             receiverEmail: docToEdit.receiverInfo?.email || '',
             circulars: docToEdit.circulars || [],
-            attachments: docToEdit.attachments?.map(a => ({...a, size: 0})) || [], // size is not stored, reset to 0
+            attachments: docToEdit.attachments?.map(a => ({...a, size: 0})) || [],
             approvers: defaultApproversTemplate.map(template => {
                 const existing = docToEdit.approvers.find(a => a.role === template.role);
                 return {
@@ -107,7 +112,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
             })
         });
     }
-  }, [isEditMode, docToEdit, form]);
+  }, [docToEdit, form]);
 
   const { fields: approverFields } = useFieldArray({ control: form.control, name: 'approvers' });
   const { fields: circularFields, append: appendCircular, remove: removeCircular } = useFieldArray({ control: form.control, name: 'circulars' });
@@ -161,7 +166,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
      if (!user || !profile) return;
      startTransition(async () => {
          const activeApprovers = data.approvers.filter(a => a.active && a.name);
-         if (activeApprovers.length === 0 && !isEditMode) { // 수정모드에서는 결재선 없이도 가능
+         if (activeApprovers.length === 0) { 
              toast({ variant: 'destructive', title: '결재선 오류', description: '활성화된 결재자가 한 명 이상 있어야 합니다.'});
              return;
          }
@@ -181,9 +186,9 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
          };
          
          let result;
-         if (isEditMode && docToEdit) {
+         if (isEditMode && docToEdit) { // 오직 수정 모드일 때만 updateDocument 호출
             result = await updateDocument(docToEdit.id, payload, user.uid);
-         } else {
+         } else { // 신규 생성 또는 템플릿 기반 생성
             result = await createDocument(payload, user.uid, profile);
          }
          
@@ -428,3 +433,5 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
     </Form>
   );
 }
+
+    
