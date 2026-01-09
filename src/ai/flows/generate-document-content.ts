@@ -49,25 +49,26 @@ const prompt = ai.definePrompt({
 
   **Document Content Generation Rules:**
 
-  1.  **Follow 6W Principles:** The content must be based on Who, What, When, Where, Why, How.
-  2.  **Related Document Reference (If any):** If there is a related document, state it on the very first line.
+  1.  **Brevity and Conciseness:** The main body of the document must be concise and to the point. Detailed descriptions, data, or complex plans should be placed in attached files. The main body should summarize the key points and refer to the attachments.
+  2.  **6W Principles:** The content must be based on Who, What, When, Where, Why, How.
+  3.  **Related Document Reference (If any):** If there is a related document, state it on the very first line.
       - Example: \`1. 관련: 2025학년도 1학기 유・초등 등하교 차량 지도 계획 수립(2025.03.03.)\`
-  3.  **List Item Formatting:** Strictly adhere to the standard Korean official document list hierarchy.
+  4.  **List Item Formatting:** Strictly adhere to the standard Korean official document list hierarchy.
       - Level 1: \`1.\`, \`2.\`, ... (followed by a period and a space)
       - Level 2: \`가.\`, \`나.\`, ... (followed by a period and a space)
       - Level 3: \`1)\`, \`2)\`, ... (followed by a parenthesis and a space)
       - Level 4: \`가)\`, \`나)\`, ... (followed by a parenthesis and a space)
       - **CRITICAL**: When an item's content spans multiple lines, the subsequent lines must be indented to align vertically with the text of the first line, not with the list marker. Ensure proper indentation for each level.
-  4.  **Clarity over "Below/Next":** Do not use vague terms like '다음' or '아래'. Instead, specify the details directly.
+  5.  **Clarity over "Below/Next":** Do not use vague terms like '다음' or '아래'. Instead, specify the details directly.
       - Example: \`2026. 1. 10.(토) 14:00, 우리 기관 회의실에서 회의를 실시합니다.\`
-  5.  **Date/Time Format:**
+  6.  **Date/Time Format:**
       - Dates: Use periods. e.g., \`2026. 1. 10.(토)\` (Do not use leading zeros for single-digit months/days).
       - Times: \`14:00\`
-  6.  **Attachments Section (if present):**
+  7.  **Attachments Section (if present):**
       - If there are attachments ({{#if attachments}}...{{/if}}), create a section named '붙임'.
       - Number each attachment, followed by the file name and a period.
       - Example: \`붙임  1. 파일이름.hwp 1부.\`
-  7.  **End Mark:** Conclude the entire document body with the word \`끝\`. There must be exactly two spaces between the last character of the content and the word '끝'. If attachments are present, it should look like \`... 1부.  끝.\`.
+  8.  **End Mark:** Conclude the entire document body with the word \`끝\`. There must be exactly two spaces between the last character of the content and the word '끝'. If attachments are present, it should look like \`... 1부.  끝.\`.
 
   **Document Information:**
   - Title: {{{title}}}
