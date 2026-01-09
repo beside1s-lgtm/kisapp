@@ -39,9 +39,9 @@ export default function RecalledPage() {
                     <Undo2 className="h-8 w-8 text-primary" />
                     회수 문서함
                 </h1>
-                <p className="text-muted-foreground mt-1">내가 상신 후 회수한 문서 목록입니다.</p>
+                <p className="text-muted-foreground mt-1">내가 상신 후 회수한 문서 목록입니다. 문서를 수정하고 재상신할 수 있습니다.</p>
             </div>
-            <DocumentList documents={docs} />
+            <DocumentList documents={docs} pageType="recalled" />
         </div>
     );
 }

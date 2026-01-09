@@ -17,6 +17,7 @@ import {
   deleteDoc,
   or,
   and,
+  updateDoc as firestoreUpdateDoc,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type {
@@ -105,29 +106,19 @@ export async function saveUserProfile(userId: string, email: string, profileData
 
     const dataToSave: Partial<UserProfile> = {
       ...profileData,
-      uid: userId || profileData.uid || (docSnap.exists() ? docSnap.data().uid : ''),
-      email: email,
     };
-
-    // Ensure UID is set, prioritizing the active userId, then incoming data, then existing data.
-    if (!dataToSave.uid) {
-        if(userId) dataToSave.uid = userId;
-        else if(docSnap.exists() && docSnap.data().uid) dataToSave.uid = docSnap.data().uid;
+    
+    // On initial save, ensure UID is set.
+    if (!docSnap.exists() && userId) {
+      dataToSave.uid = userId;
     }
     
     await setDoc(userProfileRef, dataToSave, { merge: true });
     
-    // Construct the final profile based on the data that was just saved.
-    const finalProfile: UserProfile = {
-      name: dataToSave.name || '',
-      email: dataToSave.email || email,
-      role: dataToSave.role || '',
-      signature: dataToSave.signature || '',
-      isAdmin: dataToSave.isAdmin || false,
-      uid: dataToSave.uid || userId,
-    };
+    const finalProfileSnap = await getDoc(userProfileRef);
+    const finalData = finalProfileSnap.data() as UserProfile;
 
-    return { success: true, profile: finalProfile };
+    return { success: true, profile: { ...finalData, email: finalProfileSnap.id, uid: finalData.uid || userId }};
   } catch (error: any) {
       return { success: false, error: `저장 실패: ${error.message}` };
   }
@@ -495,6 +486,40 @@ export async function deleteUser(email: string) {
 }
 
 
+export async function updateDocument(docId: string, payload: ApprovalDocPayload, userId: string) {
+    const docRef = doc(getApprovalsCol(), docId);
+    try {
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+            throw new Error("문서를 찾을 수 없습니다.");
+        }
+        const docData = docSnap.data();
+        if (docData.requesterId !== userId) {
+            throw new Error("문서를 수정할 권한이 없습니다.");
+        }
+        if (docData.status !== 'recalled') {
+            throw new Error("회수된 문서만 수정할 수 있습니다.");
+        }
+
+        const hasApprovers = payload.approvers && payload.approvers.length > 0;
+        const updatedData = {
+            ...payload,
+            // 재상신 시 상태와 결재 단계를 초기화합니다.
+            status: hasApprovers ? 'pending' : 'approved',
+            currentStep: 0,
+            completedAt: hasApprovers ? null : serverTimestamp(),
+            // createdAt은 그대로 유지하고, updatedAt을 추가할 수 있습니다.
+            updatedAt: serverTimestamp(),
+        };
+
+        await firestoreUpdateDoc(docRef, updatedData);
+        return { success: true, docId };
+    } catch (error: any) {
+        console.error("Update Document Error:", error);
+        return { success: false, error: error.message };
+    }
+}
     
 
     
+

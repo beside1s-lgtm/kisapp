@@ -1,9 +1,9 @@
 'use client';
 
-import { createDocument, getUsersDirectory, getDocConfig } from '@/app/actions';
+import { createDocument, getUsersDirectory, getDocConfig, updateDocument } from '@/app/actions';
 import { generateContentAction } from '@/app/ai-actions';
 import { useAuth } from '@/hooks/use-auth';
-import { ApprovalDocPayload, Approver, DocConfig, UserProfile } from '@/lib/types';
+import { ApprovalDoc, ApprovalDocPayload, Approver, DocConfig, UserProfile } from '@/lib/types';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -29,6 +29,7 @@ const approverSchema = z.object({
   role: z.string(),
   type: z.enum(['normal', 'final', 'proxy']),
   active: z.boolean(),
+  status: z.enum(['pending', 'approved', 'rejected']).optional(),
 });
 
 const formSchema = z.object({
@@ -43,14 +44,19 @@ const formSchema = z.object({
   receiverEmail: z.string().email().optional(),
 });
 type FormData = z.infer<typeof formSchema>;
-const defaultApprovers = [
-    { name: '', email: '', role: '부장', type: 'normal' as const },
-    { name: '', email: '', role: '교감', type: 'normal' as const },
-    { name: '', email: '', role: '협조', type: 'normal' as const },
-    { name: '', email: '', role: '교장', type: 'final' as const },
+
+const defaultApproversTemplate = [
+    { name: '', email: '', role: '부장', type: 'normal' as const, status: 'pending' as const },
+    { name: '', email: '', role: '교감', type: 'normal' as const, status: 'pending' as const },
+    { name: '', email: '', role: '협조', type: 'normal' as const, status: 'pending' as const },
+    { name: '', email: '', role: '교장', type: 'final' as const, status: 'pending' as const },
 ];
 
-export default function DocumentForm() {
+type DocumentFormProps = {
+    docToEdit?: ApprovalDoc | null;
+}
+
+export default function DocumentForm({ docToEdit }: DocumentFormProps) {
   const router = useRouter();
   const { toast } = useToast();
   const { user, profile } = useAuth();
@@ -62,11 +68,13 @@ export default function DocumentForm() {
   const [circularQuery, setCircularQuery] = useState('');
   const attachmentInputRef = useRef<HTMLInputElement>(null);
 
+  const isEditMode = !!docToEdit;
+
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       title: '', content: '',
-      approvers: defaultApprovers.map(ap => ({...ap, active: ap.role !== '협조'})),
+      approvers: defaultApproversTemplate.map(ap => ({...ap, active: ap.role !== '협조'})),
       circulars: [], attachments: [], publishStatus: '공개', docType: 'internal',
     },
   });
@@ -75,6 +83,31 @@ export default function DocumentForm() {
     getUsersDirectory().then(setUsers);
     getDocConfig().then(setDocConfig);
   }, []);
+
+  useEffect(() => {
+    if (isEditMode && docToEdit) {
+        form.reset({
+            title: docToEdit.title,
+            content: docToEdit.content,
+            publishStatus: docToEdit.publishStatus,
+            docType: docToEdit.docType,
+            receiverName: docToEdit.receiverInfo?.name || '',
+            receiverEmail: docToEdit.receiverInfo?.email || '',
+            circulars: docToEdit.circulars || [],
+            attachments: docToEdit.attachments?.map(a => ({...a, size: 0})) || [], // size is not stored, reset to 0
+            approvers: defaultApproversTemplate.map(template => {
+                const existing = docToEdit.approvers.find(a => a.role === template.role);
+                return {
+                    ...template,
+                    name: existing?.name || '',
+                    email: existing?.email || '',
+                    type: existing?.type || template.type,
+                    active: !!existing,
+                }
+            })
+        });
+    }
+  }, [isEditMode, docToEdit, form]);
 
   const { fields: approverFields } = useFieldArray({ control: form.control, name: 'approvers' });
   const { fields: circularFields, append: appendCircular, remove: removeCircular } = useFieldArray({ control: form.control, name: 'circulars' });
@@ -128,7 +161,7 @@ export default function DocumentForm() {
      if (!user || !profile) return;
      startTransition(async () => {
          const activeApprovers = data.approvers.filter(a => a.active && a.name);
-         if (activeApprovers.length === 0) {
+         if (activeApprovers.length === 0 && !isEditMode) { // 수정모드에서는 결재선 없이도 가능
              toast({ variant: 'destructive', title: '결재선 오류', description: '활성화된 결재자가 한 명 이상 있어야 합니다.'});
              return;
          }
@@ -147,10 +180,17 @@ export default function DocumentForm() {
              }
          };
          
-         const result = await createDocument(payload, user?.uid!, profile!);
+         let result;
+         if (isEditMode && docToEdit) {
+            result = await updateDocument(docToEdit.id, payload, user.uid);
+         } else {
+            result = await createDocument(payload, user.uid, profile);
+         }
+         
          if(result.success) {
-             toast({ title: "상신 완료", description: `문서번호 ${result.docNo}로 상신되었습니다.` });
+             toast({ title: isEditMode ? "수정 완료" : "상신 완료", description: `문서가 성공적으로 ${isEditMode ? '수정 및 재상신' : '상신'}되었습니다.` });
              router.push(`/sent`);
+             router.refresh();
          } else {
              toast({ variant: "destructive", title: "실패", description: result.error });
          }
@@ -368,7 +408,7 @@ export default function DocumentForm() {
                                     <div className="flex items-center gap-2">
                                         <FileIcon className="h-4 w-4 text-muted-foreground" />
                                         <span className="text-sm font-medium">{field.name}</span>
-                                        <span className="text-xs text-muted-foreground">({(field.size / 1024).toFixed(1)} KB)</span>
+                                        { field.size > 0 && <span className="text-xs text-muted-foreground">({(field.size / 1024).toFixed(1)} KB)</span> }
                                     </div>
                                     <Button type="button" variant="ghost" size="icon" onClick={() => removeAttachment(index)}>
                                         <Trash2 className="h-4 w-4 text-destructive" />
@@ -382,7 +422,7 @@ export default function DocumentForm() {
         </Card>
 
         <Button type="submit" disabled={isPending} className="w-full h-12 text-lg font-bold">
-            {isPending ? <Loader2 className="animate-spin" /> : '결재 상신'}
+            {isPending ? <Loader2 className="animate-spin" /> : (isEditMode ? '수정 후 재상신' : '결재 상신')}
         </Button>
       </form>
     </Form>

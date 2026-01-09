@@ -3,15 +3,17 @@
 import { ApprovalDoc } from '@/lib/types';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { ChevronRight, EyeOff, User, XCircle } from 'lucide-react';
+import { ChevronRight, EyeOff, Pencil, User, XCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
+import { Button } from './ui/button';
 
 type DocumentListProps = {
   documents: ApprovalDoc[];
+  pageType?: 'inbox' | 'sent' | 'pending' | 'recalled' | 'registry';
 };
 
-export function DocumentList({ documents }: DocumentListProps) {
+export function DocumentList({ documents, pageType }: DocumentListProps) {
   const router = useRouter();
 
   if (documents.length === 0) {
@@ -31,16 +33,25 @@ export function DocumentList({ documents }: DocumentListProps) {
     }
   }
 
+  const handleCardClick = (docId: string) => {
+    router.push(`/documents/${docId}`);
+  };
+
+  const handleEditClick = (e: React.MouseEvent, docId: string) => {
+    e.stopPropagation(); // 이벤트 버블링 방지
+    router.push(`/edit/${docId}`);
+  };
+
   return (
     <div className="space-y-4">
       {documents.map((doc) => (
         <Card
           key={doc.id}
-          onClick={() => router.push(`/documents/${doc.id}`)}
+          onClick={() => handleCardClick(doc.id)}
           className="hover:border-primary hover:shadow-lg cursor-pointer transition-all group"
         >
             <div className="p-6 flex justify-between items-center">
-                <div>
+                <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                         {getStatusBadge(doc.status)}
                         <span className="text-xs font-mono text-muted-foreground uppercase">{doc.docNo}</span>
@@ -57,7 +68,14 @@ export function DocumentList({ documents }: DocumentListProps) {
                         <span>{doc.createdAt ? format(new Date(doc.createdAt as string), 'yyyy년 MM월 dd일') : 'N/A'}</span>
                     </div>
                 </div>
-                 <ChevronRight size={20} className="text-muted-foreground/50 group-hover:text-primary transition-colors" />
+                 {pageType === 'recalled' ? (
+                  <Button variant="outline" size="sm" onClick={(e) => handleEditClick(e, doc.id)}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    수정하기
+                  </Button>
+                 ) : (
+                  <ChevronRight size={20} className="text-muted-foreground/50 group-hover:text-primary transition-colors" />
+                 )}
             </div>
         </Card>
       ))}
