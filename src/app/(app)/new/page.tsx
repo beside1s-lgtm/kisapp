@@ -3,7 +3,7 @@
 
 import { PenTool } from "lucide-react";
 import DocumentForm from "@/components/document-form";
-import { getDocConfig, getDocumentById } from "@/app/actions";
+import { getDocumentById } from "@/app/actions";
 import { Suspense } from "react";
 import { Loader2 } from "lucide-react";
 
@@ -35,7 +35,7 @@ async function NewDocumentPageContent({ searchParams }: NewDocumentPageProps) {
   );
 }
 
-export default function NewDocumentPage(props: NewDocumentPageProps) {
+export default async function NewDocumentPage(props: NewDocumentPageProps) {
     return (
         <Suspense fallback={
             <div className="flex h-full w-full items-center justify-center">
