@@ -1,5 +1,4 @@
 
-
 'use server';
 
 import {
@@ -79,7 +78,7 @@ function serializeDocs(docs: any[], sortBy: 'createdAt' | 'completedAt' = 'creat
 
 export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
   if (!email) return null;
-  const userDocRef = doc(getUsersCol(), email);
+  const userDocRef = doc(getUsersCol(), email.toLowerCase());
   try {
     const snap = await getDoc(userDocRef);
     if (!snap.exists()) return null;
@@ -100,7 +99,7 @@ export async function getUserProfileByEmail(email: string): Promise<UserProfile 
 
 export async function saveUserProfile(userId: string, email: string, profileData: Partial<UserProfile>) {
   if (!email || !profileData) return { success: false, error: 'Invalid data' };
-  const userProfileRef = doc(getUsersCol(), email);
+  const userProfileRef = doc(getUsersCol(), email.toLowerCase());
   try {
     const docSnap = await getDoc(userProfileRef);
 
@@ -183,7 +182,7 @@ export async function getSentDocuments(userId: string, userEmail: string) {
     approvalsCol, 
     or(
         where('requesterId', '==', userId),
-        where('requesterEmail', '==', userEmail)
+        where('requesterEmail', '==', userEmail.toLowerCase())
     )
   );
 
@@ -206,7 +205,7 @@ export async function getPendingDocuments(userId: string, userEmail: string) {
     and(
         or(
             where('requesterId', '==', userId),
-            where('requesterEmail', '==', userEmail)
+            where('requesterEmail', '==', userEmail.toLowerCase())
         ),
         where('status', '==', 'pending')
     )
@@ -244,7 +243,7 @@ export async function getRecalledDocuments(userId: string, userEmail: string) {
     and(
       or(
         where('requesterId', '==', userId),
-        where('requesterEmail', '==', userEmail)
+        where('requesterEmail', '==', userEmail.toLowerCase())
       ),
       where('status', '==', 'recalled')
     )
@@ -378,7 +377,7 @@ export async function rejectDocument(docId: string, userId: string, userProfile:
                 approvedAt: new Date().toISOString(),
                 approverName: userProfile.name,
                 comment: reason,
-            } as any;
+            };
             
             transaction.update(docRef, {
                 approvers: updatedApprovers,
@@ -475,7 +474,7 @@ export async function deleteUser(email: string) {
       return { success: false, error: '이메일이 제공되지 않았습니다.' };
     }
     try {
-      const userRef = doc(getUsersCol(), email);
+      const userRef = doc(getUsersCol(), email.toLowerCase());
       await firestoreDeleteDoc(userRef);
       return { success: true };
     } catch (error: any) {
@@ -485,29 +484,39 @@ export async function deleteUser(email: string) {
 }
 
 
-export async function updateDocument(docId: string, payload: ApprovalDocPayload, userId: string) {
+export async function updateDocument(docId: string, payload: ApprovalDocPayload, userId: string, modifiedByApprover: boolean = false) {
     const docRef = doc(getApprovalsCol(), docId);
     try {
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) {
             throw new Error("문서를 찾을 수 없습니다.");
         }
-        const docData = docSnap.data();
-        if (docData.requesterId !== userId) {
+        const docData = docSnap.data() as ApprovalDoc;
+
+        // 권한 검사: 기안자가 회수한 문서를 수정하거나, 현재 결재자가 진행중 문서를 수정하는 경우
+        const isOwnerAndRecalled = docData.requesterId === userId && docData.status === 'recalled';
+        const isCurrentApproverAndPending = docData.status === 'pending' && docData.approvers[docData.currentStep]?.email === (await getUserProfileByEmail(userId))?.email;
+
+        if (!isOwnerAndRecalled && !modifiedByApprover) {
             throw new Error("문서를 수정할 권한이 없습니다.");
-        }
-        if (docData.status !== 'recalled') {
-            throw new Error("회수된 문서만 수정할 수 있습니다.");
         }
 
         const hasApprovers = payload.approvers && payload.approvers.length > 0;
-        const updatedData = {
+        
+        let status = 'pending';
+        if (!hasApprovers) {
+            status = 'approved';
+        } else if (modifiedByApprover) {
+            // 결재자가 수정한 경우, 상태는 그대로 pending 유지
+            status = 'pending';
+        }
+
+        const updatedData: any = {
             ...payload,
-            // 재상신 시 상태와 결재 단계를 초기화합니다.
-            status: hasApprovers ? 'pending' : 'approved',
-            currentStep: 0,
+            status: status,
+            // 재상신 시 상태와 결재 단계를 초기화합니다. (결재자 수정이 아닌 경우)
+            currentStep: modifiedByApprover ? docData.currentStep : 0,
             completedAt: hasApprovers ? null : serverTimestamp(),
-            // createdAt은 그대로 유지하고, updatedAt을 추가할 수 있습니다.
             updatedAt: serverTimestamp(),
         };
 
@@ -543,9 +552,3 @@ export async function deleteDocument(docId: string, userId: string) {
         return { success: false, error: `문서 삭제 중 오류 발생: ${error.message}` };
     }
 }
-    
-
-    
-
-
-

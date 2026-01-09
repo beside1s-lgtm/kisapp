@@ -1,3 +1,4 @@
+
 'use client';
 
 import { ApprovalDoc } from '@/lib/types';
@@ -38,7 +39,7 @@ export function DocumentList({ documents, pageType }: DocumentListProps) {
 
   const getStatusBadge = (status: 'pending' | 'approved' | 'rejected' | 'recalled') => {
     switch(status) {
-        case 'approved': return <Badge variant="default" className="bg-blue-600">결재 완료</Badge>;
+        case 'approved': return <Badge variant="default" className="bg-blue-600 hover:bg-blue-700">결재 완료</Badge>;
         case 'rejected': return <Badge variant="destructive">반려</Badge>;
         case 'pending': return <Badge variant="secondary">진행중</Badge>;
         case 'recalled': return <Badge variant="default" className="bg-yellow-500 hover:bg-yellow-600">회수됨</Badge>;

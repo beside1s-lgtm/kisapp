@@ -7,6 +7,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, PenTool } from "lucide-react";
 import Link from "next/link";
+import { headers } from 'next/headers';
+import { useAuth } from "@/hooks/use-auth-server";
+
 
 type EditDocumentPageProps = {
     params: { id: string };
@@ -14,9 +17,22 @@ type EditDocumentPageProps = {
 
 export default async function EditDocumentPage({ params }: EditDocumentPageProps) {
     const { id } = params;
+    const { user, profile } = await useAuth();
     const doc = await getDocumentById(id);
 
-    if (!doc) {
+    let hasPermission = false;
+    if (doc && user && profile) {
+        // 1. 기안자가 회수한 문서
+        const isRequesterAndRecalled = doc.requesterId === user.uid && doc.status === 'recalled';
+        // 2. 현재 결재자가 수정하려는 문서
+        const isCurrentApproverAndPending = doc.status === 'pending' && doc.approvers[doc.currentStep]?.email === profile.email;
+
+        if(isRequesterAndRecalled || isCurrentApproverAndPending) {
+            hasPermission = true;
+        }
+    }
+
+    if (!doc || !hasPermission) {
         return (
            <div className="flex h-full w-full items-center justify-center">
                 <Alert variant="destructive" className="max-w-lg">
@@ -25,7 +41,7 @@ export default async function EditDocumentPage({ params }: EditDocumentPageProps
                    <AlertDescription>
                        문서를 찾을 수 없거나 수정할 권한이 없습니다.
                        <Button asChild variant="link" className="p-0 h-auto ml-2">
-                          <Link href="/recalled">Return to Recalled Box</Link>
+                          <Link href="/inbox">Return to Inbox</Link>
                        </Button>
                    </AlertDescription>
                </Alert>

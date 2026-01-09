@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -9,7 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { approveDocument, rejectDocument, recallDocument } from '@/app/actions';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Printer, Loader2, XCircle, Undo2 } from 'lucide-react';
+import { CheckCircle2, Printer, Loader2, XCircle, Undo2, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition } from 'react';
 import {
@@ -163,7 +164,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 
-  const isMyTurn = initialDoc.approvers[initialDoc.currentStep]?.email === user.email && initialDoc.status === 'pending';
+  const isMyTurn = initialDoc.status === 'pending' && initialDoc.approvers[initialDoc.currentStep]?.email?.toLowerCase() === profile.email?.toLowerCase();
   const isRequester = initialDoc.requesterId === user.uid;
   const canRecall = isRequester && initialDoc.status === 'pending';
 
@@ -232,6 +233,10 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             toast({ variant: 'destructive', title: '회수 실패', description: result.error });
         }
     });
+  };
+
+  const handleEdit = () => {
+    router.push(`/edit/${initialDoc.id}`);
   };
 
   const downloadFile = (file: { data: string; name: string }) => {
@@ -390,7 +395,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </footer>
         </div>
 
-        {/* ... 나머지 버튼 및 모달 코드 ... */}
         {isMyTurn && (
             <div className="no-print fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-50 flex gap-4">
                 <Button
@@ -402,6 +406,17 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 >
                     <XCircle className="mr-2 h-5 w-5" />
                     반려
+                </Button>
+                
+                <Button
+                    variant="secondary"
+                    size="lg"
+                    className="h-14 text-base md:text-lg rounded-full shadow-2xl animate-in slide-in-from-bottom-10 fade-in"
+                    disabled={isApproving || isRejecting}
+                    onClick={handleEdit}
+                >
+                    <Pencil className="mr-2 h-5 w-5" />
+                    수정
                 </Button>
 
                 <Button 

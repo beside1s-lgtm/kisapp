@@ -1,7 +1,9 @@
+
 'use client';
 import { useContext } from 'react';
 import { AuthContext } from '@/components/auth-provider';
 
+// This is a client-side hook. For server components, use `use-auth-server.ts`
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
