@@ -31,9 +31,9 @@ function getApprovalsCol() { return collection(db, 'approvals'); }
 function getSettingsCol() { return collection(db, 'settings'); }
 
 // Helper: Serialize Firestore timestamps to ISO strings
-function serializeDocs(docs: any[]): any[] {
+function serializeDocs(docs: any[], sortBy: 'createdAt' | 'completedAt' = 'createdAt'): any[] {
   if (!docs) return [];
-  return docs.map(d => {
+  const serialized = docs.map(d => {
     const data = d.data();
     if (!data) return { id: d.id };
     
@@ -65,7 +65,13 @@ function serializeDocs(docs: any[]): any[] {
         approvedAt: safeToISOString(approver.approvedAt),
       })) || [],
     }
-  })
+  });
+
+  return serialized.sort((a, b) => {
+    const dateA = a[sortBy] ? new Date(a[sortBy]).getTime() : 0;
+    const dateB = b[sortBy] ? new Date(b[sortBy]).getTime() : 0;
+    return dateB - dateA; // 내림차순 (최신순)
+  });
 }
 
 export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
@@ -150,13 +156,12 @@ export async function getInboxDocuments(userEmail: string) {
   
   const q = query(
     approvalsCol, 
-    where('status', '==', 'pending'),
-    orderBy('createdAt', 'desc')
+    where('status', '==', 'pending')
   );
   
   try {
     const snapshot = await getDocs(q);
-    const allPending = serializeDocs(snapshot.docs);
+    const allPending = serializeDocs(snapshot.docs, 'createdAt');
     
     const myTurnDocs = allPending.filter(doc => {
         if (doc.currentStep >= 0 && doc.currentStep < doc.approvers.length) {
@@ -183,13 +188,12 @@ export async function getSentDocuments(userId: string, userEmail: string) {
     or(
         where('requesterId', '==', userId),
         where('requesterEmail', '==', userEmail)
-    ),
-    orderBy('createdAt', 'desc')
+    )
   );
 
   try {
     const snapshot = await getDocs(q);
-    return serializeDocs(snapshot.docs);
+    return serializeDocs(snapshot.docs, 'createdAt');
   } catch (error) {
     console.error("Get Sent Docs Error:", error);
     return [];
@@ -209,13 +213,12 @@ export async function getPendingDocuments(userId: string, userEmail: string) {
             where('requesterEmail', '==', userEmail)
         ),
         where('status', '==', 'pending')
-    ),
-    orderBy('createdAt', 'desc')
+    )
   );
 
   try {
     const snapshot = await getDocs(q);
-    return serializeDocs(snapshot.docs);
+    return serializeDocs(snapshot.docs, 'createdAt');
   } catch (error) {
     console.error("Get Pending Docs Error:", error);
     return [];
@@ -225,10 +228,10 @@ export async function getPendingDocuments(userId: string, userEmail: string) {
 // [4] 문서등록대장 (Registry)
 export async function getRegistryDocuments(userId: string, userEmail: string) {
     const approvalsCol = getApprovalsCol();
-    const q = query(approvalsCol, where('status', '==', 'approved'), orderBy('completedAt', 'desc'));
+    const q = query(approvalsCol, where('status', '==', 'approved'));
     try {
         const snapshot = await getDocs(q);
-        return serializeDocs(snapshot.docs);
+        return serializeDocs(snapshot.docs, 'completedAt');
     } catch (error) {
         console.error("Get Registry Docs Error:", error);
         return [];
@@ -248,13 +251,12 @@ export async function getRecalledDocuments(userId: string, userEmail: string) {
         where('requesterEmail', '==', userEmail)
       ),
       where('status', '==', 'recalled')
-    ),
-    orderBy('createdAt', 'desc')
+    )
   );
 
   try {
     const snapshot = await getDocs(q);
-    return serializeDocs(snapshot.docs);
+    return serializeDocs(snapshot.docs, 'createdAt');
   } catch (error) {
     console.error("Get Recalled Docs Error:", error);
     return [];
@@ -408,12 +410,11 @@ export async function recallDocument(docId: string, userId: string) {
             return { success: false, error: "문서를 회수할 권한이 없습니다." };
         }
 
-        // 'approved' 상태가 아닐 때만 회수(삭제) 가능
-        if (docData.status === 'approved') {
-            return { success: false, error: "이미 결재 완료된 문서는 회수할 수 없습니다." };
+        if (docData.status !== 'pending') {
+            return { success: false, error: "진행 중인 문서만 회수할 수 있습니다." };
         }
         
-        await deleteDoc(docRef);
+        await setDoc(docRef, { status: 'recalled' }, { merge: true });
         return { success: true };
     } catch (error: any) {
         return { success: false, error: `문서 회수 중 오류 발생: ${error.message}` };
