@@ -150,6 +150,7 @@ export async function getInboxDocuments(userEmail: string) {
   const q = query(
     approvalsCol, 
     where('status', '==', 'pending'),
+    orderBy('createdAt', 'desc')
   );
   
   try {
@@ -164,7 +165,7 @@ export async function getInboxDocuments(userEmail: string) {
         return false;
     });
 
-    return myTurnDocs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return myTurnDocs;
   } catch (error) {
     console.error("Get Inbox Error:", error);
     return [];
@@ -182,12 +183,12 @@ export async function getSentDocuments(userId: string, userEmail: string) {
         where('requesterId', '==', userId),
         where('requesterEmail', '==', userEmail)
     ),
+    orderBy('createdAt', 'desc')
   );
 
   try {
     const snapshot = await getDocs(q);
-    const docs = serializeDocs(snapshot.docs);
-    return docs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return serializeDocs(snapshot.docs);
   } catch (error) {
     console.error("Get Sent Docs Error:", error);
     return [];
@@ -208,12 +209,12 @@ export async function getPendingDocuments(userId: string, userEmail: string) {
         ),
         where('status', '==', 'pending')
     ),
+    orderBy('createdAt', 'desc')
   );
 
   try {
     const snapshot = await getDocs(q);
-    const docs = serializeDocs(snapshot.docs);
-    return docs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return serializeDocs(snapshot.docs);
   } catch (error) {
     console.error("Get Pending Docs Error:", error);
     return [];
@@ -223,15 +224,40 @@ export async function getPendingDocuments(userId: string, userEmail: string) {
 // [4] 문서등록대장 (Registry)
 export async function getRegistryDocuments(userId: string, userEmail: string) {
     const approvalsCol = getApprovalsCol();
-    const q = query(approvalsCol, where('status', '==', 'approved'));
+    const q = query(approvalsCol, where('status', '==', 'approved'), orderBy('completedAt', 'desc'));
     try {
         const snapshot = await getDocs(q);
-        const docs = serializeDocs(snapshot.docs);
-        return docs.sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
+        return serializeDocs(snapshot.docs);
     } catch (error) {
         console.error("Get Registry Docs Error:", error);
         return [];
     }
+}
+
+// [5] 회수함 (Recalled Box)
+export async function getRecalledDocuments(userId: string, userEmail: string) {
+  if (!userId && !userEmail) return [];
+  const approvalsCol = getApprovalsCol();
+
+  const q = query(
+    approvalsCol,
+    and(
+      or(
+        where('requesterId', '==', userId),
+        where('requesterEmail', '==', userEmail)
+      ),
+      where('status', '==', 'recalled')
+    ),
+    orderBy('createdAt', 'desc')
+  );
+
+  try {
+    const snapshot = await getDocs(q);
+    return serializeDocs(snapshot.docs);
+  } catch (error) {
+    console.error("Get Recalled Docs Error:", error);
+    return [];
+  }
 }
 
 

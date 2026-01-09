@@ -3,7 +3,7 @@
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { Loader2, Plus, Inbox, Send, FileClock, ListFilter } from 'lucide-react';
+import { Loader2, Plus, Inbox, Send, FileClock, ListFilter, Undo2 } from 'lucide-react';
 import { AppHeader } from '@/components/layout/header';
 import AppSidebar from '@/components/layout/sidebar';
 import Link from 'next/link';
@@ -13,7 +13,8 @@ import { cn } from '@/lib/utils';
 
 const MobileNavItem = ({ href, label, icon }: { href: string, label: string, icon: React.ReactNode}) => {
   const pathname = usePathname();
-  const isActive = pathname === href;
+  const isActive = pathname === href || (href === '/sent' && (pathname.startsWith('/pending') || pathname.startsWith('/recalled')));
+
   return (
     <Link href={href} className={cn(
       "flex flex-col items-center justify-center gap-1 w-full h-full rounded-lg text-xs",
@@ -68,7 +69,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </Link>
             </Button>
           </div>
-          <MobileNavItem href="/pending" label="진행함" icon={<FileClock size={20} />} />
+          <MobileNavItem href="/recalled" label="회수함" icon={<Undo2 size={20} />} />
           <MobileNavItem href="/registry" label="문서대장" icon={<ListFilter size={20} />} />
       </div>
     </div>

@@ -69,7 +69,7 @@ export type ApprovalDoc = ApprovalDocPayload & {
   requesterRole: string;
   requesterSignature: string;
   currentStep: number;
-  status: 'pending' | 'approved' | 'rejected'; 
+  status: 'pending' | 'approved' | 'rejected' | 'recalled'; 
   createdAt: any;
   completedAt?: any;
   comment?: string;

@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { FileClock, Inbox, ListFilter, Plus, Send } from 'lucide-react';
+import { FileClock, Inbox, ListFilter, Plus, Send, Undo2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
@@ -19,7 +19,9 @@ type NavItemProps = {
 
 const NavItem = ({ href, label, icon, count }: NavItemProps) => {
   const pathname = usePathname();
-  const isActive = pathname === href;
+  // '상신함'을 클릭했을 때, 하위 메뉴(진행, 회수)들도 활성화된 것처럼 보이게 하기 위함.
+  const isActive = pathname === href || (href === '/sent' && (pathname.startsWith('/pending') || pathname.startsWith('/recalled')));
+
 
   return (
     <Link
@@ -72,6 +74,7 @@ export default function AppSidebar() {
         <NavItem href="/inbox" label="미결재함" icon={<Inbox size={18} />} count={inboxCount} />
         <NavItem href="/sent" label="상신함" icon={<Send size={18} />} />
         <NavItem href="/pending" label="진행 문서함" icon={<FileClock size={18} />} />
+        <NavItem href="/recalled" label="회수 문서함" icon={<Undo2 size={18} />} />
         <div className="h-px bg-border my-1 mx-2"></div>
         <NavItem href="/registry" label="문서등록대장" icon={<ListFilter size={18} />} />
       </Card>
