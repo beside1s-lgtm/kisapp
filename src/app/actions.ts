@@ -1,11 +1,12 @@
 
+'use server';
+
 import {
   collection,
   doc,
   getDoc,
   getDocs,
   query,
-  orderBy,
   runTransaction,
   serverTimestamp,
   setDoc,
@@ -489,3 +490,5 @@ export async function deleteUser(email: string) {
     }
 }
 
+
+    

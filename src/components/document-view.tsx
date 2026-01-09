@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -52,7 +53,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
   const isMyTurn = initialDoc.approvers[initialDoc.currentStep]?.email === user.email && initialDoc.status === 'pending';
   const isRequester = initialDoc.requesterId === user.uid;
-  const canRecall = isRequester && initialDoc.status !== 'approved';
+  const canRecall = isRequester && initialDoc.status === 'pending';
 
   const approvalDate = initialDoc.completedAt 
     ? new Date(initialDoc.completedAt as string) 
@@ -112,7 +113,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
         if (!user) return;
         const result = await recallDocument(initialDoc.id, user.uid);
         if (result.success) {
-            toast({ title: '회수 완료', description: '문서가 회수(삭제)되었습니다.'});
+            toast({ title: '회수 완료', description: '문서가 회수되어 회수 문서함으로 이동했습니다.'});
             router.push('/sent');
             router.refresh();
         } else {
@@ -154,9 +155,9 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                         <AlertDialogHeader>
-                            <AlertDialogTitle>문서를 회수(삭제)하시겠습니까?</AlertDialogTitle>
+                            <AlertDialogTitle>문서를 회수하시겠습니까?</AlertDialogTitle>
                             <AlertDialogDescription>
-                                이 작업은 되돌릴 수 없습니다. 회수된 문서는 영구적으로 삭제됩니다.
+                                이 작업은 결재 과정을 중단하고 문서를 '회수 문서함'으로 이동시킵니다.
                             </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -347,3 +348,5 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 }
+
+    
