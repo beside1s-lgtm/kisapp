@@ -42,7 +42,93 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const [rejectionReason, setRejectionReason] = useState('');
 
   const handlePrint = () => {
-    window.print();
+    const printContent = document.querySelector('.printable-area');
+    if (!printContent) {
+        toast({ variant: "destructive", title: "오류", description: "인쇄할 내용을 찾을 수 없습니다." });
+        return;
+    }
+
+    const printWindow = window.open('', '_blank', 'width=1100,height=900,resizable=yes,scrollbars=yes');
+    
+    if (!printWindow) {
+        toast({ variant: "destructive", title: "팝업 차단됨", description: "브라우저의 팝업 차단을 해제해야 인쇄할 수 있습니다." });
+        return;
+    }
+
+    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+        .map(node => node.outerHTML)
+        .join('');
+
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>${initialDoc.title}</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            ${styles}
+            <style>
+                @media print {
+                  body {
+                    background: white !important;
+                    color: black !important;
+                    -webkit-print-color-adjust: exact !important; 
+                    print-color-adjust: exact !important;
+                  }
+
+                  .no-print {
+                    display: none !important;
+                  }
+
+                  .printable-area {
+                    position: absolute !important;
+                    left: 0 !important;
+                    top: 0 !important;
+                    width: 100% !important;
+                    min-width: 100% !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    border: none !important;
+                    box-shadow: none !important;
+                    background: white !important;
+                  }
+
+                  html, body, main {
+                    height: auto !important;
+                    overflow: visible !important;
+                    display: block !important;
+                  }
+
+                  p, h1, h2, h3, h4, h5, li, tr, .items-start {
+                    page-break-inside: avoid;
+                  }
+                  
+                  table, .min-h-\\[400px\\] {
+                    page-break-inside: auto;
+                  }
+
+                  @page {
+                    size: A4 portrait;
+                    margin: 10mm 15mm;
+                  }
+                }
+                .no-print { display: none !important; }
+            </style>
+        </head>
+        <body>
+            ${printContent.outerHTML}
+            <script>
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.focus();
+                        window.print();
+                    }, 500);
+                };
+            </script>
+        </body>
+        </html>
+    `);
+    
+    printWindow.document.close();
   };
 
   if (!user || !profile || !initialDoc) return (
@@ -348,5 +434,3 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 }
-
-    
