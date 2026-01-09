@@ -107,7 +107,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     flex-shrink: 0 !important;
                     margin-top: auto !important;
                     break-inside: avoid !important;
-                    font-size: 1rem;
+                    font-size: 1em;
                 }
 
                 @media print {
@@ -445,6 +445,3 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 }
-
-
-
