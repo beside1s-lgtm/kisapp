@@ -325,7 +325,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     {initialDoc.docType === 'external' && <h2 className="text-2xl md:text-3xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
                 </div>
                 <div className="border-t-2 border-black pt-4 pb-2">
-                        <div className="flex items-center justify-between text-xs md:text-sm w-full">
+                        <div className="flex items-center justify-between text-base md:text-lg w-full">
                         <div className="flex items-center gap-1 md:gap-2">
                             <span className="font-bold">{initialDoc.requesterRole}</span>
                             <div className="flex items-center gap-1">
@@ -348,7 +348,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                         ))}
                         </div>
                         {assistant && (
-                        <div className="flex items-center gap-2 text-xs md:text-sm pt-2 mt-2 border-t border-dashed">
+                        <div className="flex items-center gap-2 text-base md:text-lg pt-2 mt-2 border-t border-dashed">
                             <span className="font-bold">{assistant.role}</span>
                             <div className="flex items-center gap-1">
                                 <span className="font-semibold">{assistant.approverName || assistant.name}</span>
@@ -364,7 +364,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                         <p className="text-sm text-destructive-foreground mt-1">{initialDoc.approvers.find(ap => ap.status === 'rejected')?.comment}</p>
                     </div>
                 )}
-                <div className="mt-2 text-[10px] md:text-xs font-medium text-gray-700 space-y-1.5 border-t border-gray-200 pt-4">
+                <div className="mt-2 text-base md:text-lg font-medium text-gray-700 space-y-1.5 border-t border-gray-200 pt-4">
                     <div className="flex gap-4">
                         <span><strong>시행</strong> {initialDoc.docNo} ({format(approvalDate, 'yyyy. MM. dd.')})</span>
                         <span><strong>접수</strong> ( )</span>
