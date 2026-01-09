@@ -14,7 +14,7 @@ import {
   where,
   Timestamp,
   writeBatch,
-  deleteDoc,
+  deleteDoc as firestoreDeleteDoc,
   or,
   and,
   updateDoc as firestoreUpdateDoc,
@@ -476,8 +476,8 @@ export async function deleteUser(email: string) {
       return { success: false, error: '이메일이 제공되지 않았습니다.' };
     }
     try {
-      const userRef = doc(db, 'users', email);
-      await deleteDoc(userRef);
+      const userRef = doc(getUsersCol(), email);
+      await firestoreDeleteDoc(userRef);
       return { success: true };
     } catch (error: any) {
       console.error('사용자 삭제 실패:', error);
@@ -519,7 +519,33 @@ export async function updateDocument(docId: string, payload: ApprovalDocPayload,
         return { success: false, error: error.message };
     }
 }
+
+export async function deleteDocument(docId: string, userId: string) {
+    const docRef = doc(getApprovalsCol(), docId);
+    try {
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+            return { success: false, error: "문서를 찾을 수 없습니다." };
+        }
+
+        const docData = docSnap.data() as ApprovalDoc;
+        if (docData.requesterId !== userId) {
+            return { success: false, error: "문서를 삭제할 권한이 없습니다." };
+        }
+
+        if (docData.status !== 'recalled') {
+            return { success: false, error: "회수된 문서만 삭제할 수 있습니다." };
+        }
+
+        await firestoreDeleteDoc(docRef);
+        return { success: true };
+    } catch (error: any) {
+        console.error("Delete Document Error:", error);
+        return { success: false, error: `문서 삭제 중 오류 발생: ${error.message}` };
+    }
+}
     
 
     
+
 
