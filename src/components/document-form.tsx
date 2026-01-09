@@ -1,6 +1,7 @@
 'use client';
 
-import { createDocument, getUsersDirectory, generateContentAction, getDocConfig } from '@/app/actions';
+import { createDocument, getUsersDirectory, getDocConfig } from '@/app/actions';
+import { generateContentAction } from '@/app/ai-actions';
 import { useAuth } from '@/hooks/use-auth';
 import { ApprovalDocPayload, Approver, DocConfig, UserProfile } from '@/lib/types';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';

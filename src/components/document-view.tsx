@@ -29,7 +29,14 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const [rejectionReason, setRejectionReason] = useState('');
 
   const handlePrint = () => {
-    window.print();
+    // 1. 클릭 확인용 메시지 (버튼이 눌리는지 확인 가능)
+    toast({ title: "인쇄 미리보기를 엽니다...", duration: 2000 });
+
+    // 2. 브라우저가 UI를 그릴 시간을 주기 위해 약간의 지연 후 실행
+    setTimeout(() => {
+        window.focus(); // 포커스 확보
+        window.print(); // 인쇄 실행
+    }, 500);
   };
 
   if (!user || !profile || !initialDoc) return (
@@ -102,9 +109,10 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   };
 
   return (
-    <div className="relative">
-        <div className="no-print p-4 md:p-0 flex justify-end gap-2 mb-4 max-w-4xl mx-auto">
-            <Button variant="outline" type="button" onClick={handlePrint}>
+    <div className="relative w-full">
+        {/* [중요 수정] relative와 z-index를 추가하여 버튼이 최상단에 오도록 함 */}
+        <div className="no-print relative z-50 p-4 md:p-0 flex justify-end gap-2 mb-4 max-w-4xl mx-auto">
+            <Button variant="outline" type="button" onClick={handlePrint} className="cursor-pointer shadow-sm bg-white hover:bg-gray-100">
                 <Printer className="mr-2 h-4 w-4" /> 인쇄 / PDF로 저장
             </Button>
         </div>
