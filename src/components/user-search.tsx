@@ -17,49 +17,34 @@ import {
 import { cn } from '@/lib/utils';
 import { UserProfile } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
-import { ControllerRenderProps } from 'react-hook-form';
+import { useState, useCallback } from 'react';
 
 type UserSearchProps = {
   users: UserProfile[];
+  value: string; // 현재 선택된 사용자의 이름
   onSelectUser: (user: UserProfile) => void;
   placeholder?: string;
-  field?: ControllerRenderProps<any, any>; // To handle RHF state
-  roleFilter?: string; // To filter users by role
+  roleFilter?: string;
 };
 
 export default function UserSearch({
   users,
+  value,
   onSelectUser,
   placeholder,
-  field,
   roleFilter,
 }: UserSearchProps) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
 
-  const handleSelect = (user: UserProfile) => {
+  const filteredUsers = roleFilter
+    ? users.filter(u => u.role === roleFilter || roleFilter === '협조')
+    : users;
+
+  // 선택 핸들러를 분리하여 안정성 확보
+  const handleSelect = useCallback((user: UserProfile) => {
     onSelectUser(user);
-    // If a field is passed from react-hook-form, update it
-    if (field) {
-        field.onChange(user.name);
-    }
     setOpen(false);
-    setQuery('');
-  };
-
-  const filteredUsers = users.filter(user => {
-    const matchesQuery = user.name.toLowerCase().includes(query.toLowerCase()) || user.email.toLowerCase().includes(query.toLowerCase());
-    const matchesRole = roleFilter ? user.role === roleFilter : true;
-    return matchesQuery && matchesRole;
-  });
-
-  const displayValue = field?.value || query;
-  
-  // For 공람, where field might be undefined
-  if (!field && !query) {
-      const selectedUser = users.find(user => user.name === displayValue);
-  }
+  }, [onSelectUser]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -68,46 +53,38 @@ export default function UserSearch({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-full justify-between"
+          type="button" // 폼 제출 방지
+          className="w-full justify-between font-normal"
         >
-          <span className="truncate">
-            {field?.value
-              ? users.find((user) => user.name === field.value)?.name
-              : placeholder || '사용자 선택...'}
-          </span>
+          {value ? value : (placeholder || '사용자 선택...')}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+      
+      <PopoverContent className="w-[300px] p-0" align="start">
         <Command>
-          <CommandInput
-            placeholder={placeholder || '이름 또는 이메일로 검색...'}
-            value={query}
-            onValueChange={setQuery}
-          />
+          {/* [수정] autoFocus 제거: Radix UI의 자동 포커스 관리와 충돌 방지 */}
+          <CommandInput placeholder="이름, 이메일, 직책 검색..." />
           <CommandList>
-            <CommandEmpty>
-                {roleFilter ? `'${roleFilter}' 직책의 사용자를 찾을 수 없습니다.` : '사용자를 찾을 수 없습니다.'}
-            </CommandEmpty>
-            <CommandGroup>
+            <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
+            <CommandGroup heading="사용자 목록">
               {filteredUsers.map((user) => (
                 <CommandItem
                   key={user.email}
-                  value={user.name}
+                  // [중요] value는 검색 필터링에 사용됨. 이름+직책+이메일 조합으로 검색 편의성 제공
+                  value={`${user.name} ${user.role} ${user.email}`} 
                   onSelect={() => handleSelect(user)}
                   className="cursor-pointer"
                 >
                   <Check
                     className={cn(
                       'mr-2 h-4 w-4',
-                      field?.value === user.name ? 'opacity-100' : 'opacity-0'
+                      value === user.name ? 'opacity-100' : 'opacity-0'
                     )}
                   />
-                  <div>
-                    <p>{user.name} <span className="text-xs text-muted-foreground">{user.role}</span></p>
-                    <p className="text-xs text-muted-foreground">
-                      {user.email}
-                    </p>
+                  <div className="flex flex-col text-left">
+                      <span className="font-medium">{user.name} <span className="text-xs font-normal text-muted-foreground">({user.role})</span></span>
+                      <span className="text-xs text-muted-foreground">{user.email}</span>
                   </div>
                 </CommandItem>
               ))}

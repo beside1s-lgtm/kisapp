@@ -131,7 +131,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                 attachments
             });
             if (result.success && result.content) {
-                form.setValue('content', result.content);
+                form.setValue('content', result.content.replace(/\n/g, '<br>')); 
                 toast({ title: "AI 콘텐츠 생성됨" });
             } else {
                 throw new Error(result.error || "알 수 없는 오류");
@@ -221,58 +221,59 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
           <CardHeader><CardTitle>결재선</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {approverFields.map((field, index) => (
-              <Card key={field.id} className={cn(!form.watch(`approvers.${index}.active`) && 'bg-muted/50')}>
-                <CardHeader className="p-4 flex-row items-center justify-between">
-                  <CardTitle className="text-base">{field.role}</CardTitle>
-                  <FormField control={form.control} name={`approvers.${index}.active`} render={({field: f}) => (
-                    <FormItem className="flex gap-2 items-center space-y-0">
-                      <FormControl><Switch checked={f.value} onCheckedChange={f.onChange}/></FormControl>
-                    </FormItem>
-                  )} />
-                </CardHeader>
-                {form.watch(`approvers.${index}.active`) && (
-                  <CardContent className="p-4 pt-0 space-y-2">
-                       <FormField
-                        control={form.control}
-                        name={`approvers.${index}.name`}
-                        render={({ field }) => (
-                           <FormItem>
-                              <FormControl>
-                                <UserSearch
-                                  users={users}
-                                  field={field}
-                                  onSelectUser={(u) => {
-                                      form.setValue(`approvers.${index}.name`, u.name, { shouldValidate: true });
-                                      form.setValue(`approvers.${index}.email`, u.email, { shouldValidate: true });
-                                  }}
-                                  placeholder="결재자 검색..."
-                                  roleFilter={field.role === '협조' ? undefined : field.role}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                           </FormItem>
-                        )}
-                      />
-                      <Controller
-                        control={form.control}
-                        name={`approvers.${index}.type`}
-                        render={({ field }) => (
-                           <Select onValueChange={field.onChange} defaultValue={field.value}>
-                               <SelectTrigger>
-                                   <SelectValue placeholder="결재 유형" />
-                               </SelectTrigger>
-                               <SelectContent>
-                                   <SelectItem value="normal">일반</SelectItem>
-                                   <SelectItem value="final">전결</SelectItem>
-                                   <SelectItem value="proxy">대결</SelectItem>
-                               </SelectContent>
-                           </Select>
-                        )}
-                      />
-                  </CardContent>
-                )}
-              </Card>
-            ))}
+                <Card key={field.id} className={cn(!form.watch(`approvers.${index}.active`) && 'bg-muted/50')}>
+                  <CardHeader className="p-4 flex-row items-center justify-between">
+                    <CardTitle className="text-base">{field.role}</CardTitle>
+                    <FormField control={form.control} name={`approvers.${index}.active`} render={({field: f}) => (
+                      <FormItem className="flex gap-2 items-center space-y-0">
+                        <FormControl><Switch checked={f.value} onCheckedChange={f.onChange}/></FormControl>
+                      </FormItem>
+                    )} />
+                  </CardHeader>
+                  {form.watch(`approvers.${index}.active`) && (
+                    <CardContent className="p-4 pt-0 space-y-2">
+                        <FormField
+                            control={form.control}
+                            name={`approvers.${index}.name`}
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormControl>
+                                        <UserSearch
+                                            users={users}
+                                            value={field.value}
+                                            onSelectUser={(u) => {
+                                                form.setValue(`approvers.${index}.name`, u.name, { shouldValidate: true, shouldDirty: true });
+                                                form.setValue(`approvers.${index}.email`, u.email, { shouldValidate: true, shouldDirty: true });
+                                                form.clearErrors(`approvers.${index}.name`);
+                                            }}
+                                            placeholder={`${field.role} 검색...`}
+                                            roleFilter={field.role}
+                                        />
+                                    </FormControl>
+                                </FormItem>
+                            )}
+                        />
+                        <Controller
+                          control={form.control}
+                          name={`approvers.${index}.type`}
+                          render={({ field }) => (
+                             <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                 <SelectTrigger>
+                                     <SelectValue placeholder="결재 유형" />
+                                 </SelectTrigger>
+                                 <SelectContent>
+                                     <SelectItem value="normal">일반</SelectItem>
+                                     <SelectItem value="final">전결</SelectItem>
+                                     <SelectItem value="proxy">대결</SelectItem>
+                                 </SelectContent>
+                             </Select>
+                          )}
+                        />
+                    </CardContent>
+                  )}
+                </Card>
+              )
+            )}
           </CardContent>
         </Card>
 
@@ -281,21 +282,16 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
             <CardHeader><CardTitle>공람</CardTitle></CardHeader>
             <CardContent>
                 <div className="mb-4">
-                  <FormField
-                      control={form.control}
-                      name="circulars" // This is just for context, not directly used by UserSearch
-                      render={({ field }) => (
-                        <UserSearch
-                            users={users}
-                            placeholder="공람자 검색..."
-                            onSelectUser={(u) => {
-                                if (!circularFields.some(f => f.email === u.email)) {
-                                    appendCircular({ name: u.name, email: u.email, role: u.role });
-                                }
-                            }}
-                        />
-                      )}
-                    />
+                <UserSearch
+                    users={users}
+                    value={circularQuery}
+                    onSelectUser={(u) => {
+                        if (!circularFields.some(f => f.email === u.email)) {
+                            appendCircular({ name: u.name, email: u.email, role: u.role });
+                        }
+                    }}
+                    placeholder="공람자 검색..."
+                />
                 </div>
                 <div className="flex flex-wrap gap-2 min-h-[40px]">
                     {circularFields.map((field, i) => (
