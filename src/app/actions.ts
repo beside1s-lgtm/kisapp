@@ -102,12 +102,14 @@ export async function saveUserProfile(userId: string, email: string, profileData
   const userProfileRef = doc(getUsersCol(), email);
   try {
     const docSnap = await getDoc(userProfileRef);
+
     const dataToSave: Partial<UserProfile> = {
       ...profileData,
       uid: userId || profileData.uid || (docSnap.exists() ? docSnap.data().uid : ''),
       email: email,
     };
-    
+
+    // Ensure UID is set, prioritizing the active userId, then incoming data, then existing data.
     if (!dataToSave.uid) {
         if(userId) dataToSave.uid = userId;
         else if(docSnap.exists() && docSnap.data().uid) dataToSave.uid = docSnap.data().uid;
@@ -115,6 +117,7 @@ export async function saveUserProfile(userId: string, email: string, profileData
     
     await setDoc(userProfileRef, dataToSave, { merge: true });
     
+    // Construct the final profile based on the data that was just saved.
     const finalProfile: UserProfile = {
       name: dataToSave.name || '',
       email: dataToSave.email || email,
