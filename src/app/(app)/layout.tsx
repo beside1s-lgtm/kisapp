@@ -3,7 +3,7 @@
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { Loader2, Plus, Inbox, Send, FileClock, ListFilter, Undo2 } from 'lucide-react';
+import { Loader2, Plus, Inbox, Send, FileClock, ListFilter } from 'lucide-react';
 import { AppHeader } from '@/components/layout/header';
 import AppSidebar from '@/components/layout/sidebar';
 import Link from 'next/link';
@@ -69,7 +69,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </Button>
           </div>
           <MobileNavItem href="/pending" label="진행함" icon={<FileClock size={20} />} />
-          <MobileNavItem href="/recalled" label="회수함" icon={<Undo2 size={20} />} />
+          <MobileNavItem href="/registry" label="문서대장" icon={<ListFilter size={20} />} />
       </div>
     </div>
   );

@@ -40,7 +40,9 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
-  const handlePrint = () => window.print();
+  const handlePrint = () => {
+    window.print();
+  };
 
   if (!user || !profile || !initialDoc) return (
     <div className="flex h-full w-full items-center justify-center">
@@ -50,7 +52,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
   const isMyTurn = initialDoc.approvers[initialDoc.currentStep]?.email === user.email && initialDoc.status === 'pending';
   const isRequester = initialDoc.requesterId === user.uid;
-  const canRecall = isRequester && initialDoc.status === 'pending';
+  const canRecall = isRequester && initialDoc.status !== 'approved';
 
   const approvalDate = initialDoc.completedAt 
     ? new Date(initialDoc.completedAt as string) 
@@ -110,7 +112,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
         if (!user) return;
         const result = await recallDocument(initialDoc.id, user.uid);
         if (result.success) {
-            toast({ title: '회수 완료', description: '문서가 회수되었습니다.'});
+            toast({ title: '회수 완료', description: '문서가 회수(삭제)되었습니다.'});
             router.push('/sent');
             router.refresh();
         } else {
@@ -129,13 +131,12 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   };
 
   // Badge 컴포넌트 대체
-  const getStatusBadge = (status: 'pending' | 'approved' | 'rejected' | 'recalled') => {
+  const getStatusBadge = (status: 'pending' | 'approved' | 'rejected') => {
     const baseClass = "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2";
     switch(status) {
         case 'approved': return <span className={`${baseClass} border-transparent bg-blue-600 text-white hover:bg-blue-700`}>결재 완료</span>;
         case 'rejected': return <span className={`${baseClass} border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80`}>반려</span>;
         case 'pending': return <span className={`${baseClass} border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80`}>진행중</span>;
-        case 'recalled': return <span className={`${baseClass} border-transparent bg-yellow-500 text-white hover:bg-yellow-600`}>회수됨</span>;
         default: return null;
     }
   }
@@ -153,9 +154,9 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                         <AlertDialogHeader>
-                            <AlertDialogTitle>문서를 회수하시겠습니까?</AlertDialogTitle>
+                            <AlertDialogTitle>문서를 회수(삭제)하시겠습니까?</AlertDialogTitle>
                             <AlertDialogDescription>
-                                이 작업은 되돌릴 수 없습니다. 회수된 문서는 결재가 중단되며 '회수함'으로 이동합니다.
+                                이 작업은 되돌릴 수 없습니다. 회수된 문서는 영구적으로 삭제됩니다.
                             </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
