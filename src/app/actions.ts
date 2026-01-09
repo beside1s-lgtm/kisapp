@@ -1,3 +1,4 @@
+
 import {
   collection,
   doc,
@@ -486,3 +487,4 @@ export async function deleteUser(email: string) {
       return { success: false, error: `사용자 삭제 중 오류가 발생했습니다: ${error.message}` };
     }
 }
+
