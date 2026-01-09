@@ -17,13 +17,12 @@ import {
 import { cn } from '@/lib/utils';
 import { UserProfile } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type UserSearchProps = {
   users: UserProfile[];
-  value: string;
+  value: string; // The selected user's name
   onSelectUser: (user: UserProfile) => void;
-  onChange: (value: string) => void;
   placeholder?: string;
 };
 
@@ -31,13 +30,28 @@ export default function UserSearch({
   users,
   value,
   onSelectUser,
-  onChange,
   placeholder,
 }: UserSearchProps) {
   const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const handleInputChange = (searchValue: string) => {
-    onChange(searchValue);
+  // When popover closes, reset search query
+  useEffect(() => {
+    if (!open) {
+      setSearchQuery('');
+    }
+  }, [open]);
+
+  const filteredUsers = searchQuery
+    ? users.filter(user =>
+        user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        user.email.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : users;
+
+  const handleSelect = (user: UserProfile) => {
+    onSelectUser(user);
+    setOpen(false);
   };
 
   return (
@@ -59,26 +73,17 @@ export default function UserSearch({
         <Command>
           <CommandInput
             placeholder={placeholder || 'Search user...'}
-            value={value}
-            onValueChange={handleInputChange}
+            value={searchQuery}
+            onValueChange={setSearchQuery}
           />
           <CommandList>
             <CommandEmpty>No user found.</CommandEmpty>
             <CommandGroup>
-              {users.map((user) => (
+              {filteredUsers.map((user) => (
                 <CommandItem
                   key={user.email}
                   value={user.name}
-                  onSelect={(currentValue) => {
-                    const selectedUser = users.find(
-                      (u) => u.name.toLowerCase() === currentValue.toLowerCase()
-                    );
-                    if (selectedUser) {
-                      onSelectUser(selectedUser);
-                      onChange(selectedUser.name);
-                    }
-                    setOpen(false);
-                  }}
+                  onSelect={() => handleSelect(user)}
                 >
                   <Check
                     className={cn(

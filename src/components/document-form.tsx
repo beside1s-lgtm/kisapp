@@ -21,7 +21,6 @@ import UserSearch from './user-search';
 import { cn } from '@/lib/utils';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
-// Rich Editor 추가
 import RichEditor from "./rich-editor";
 
 const approverSchema = z.object({
@@ -69,9 +68,9 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
   
   const [circularQuery, setCircularQuery] = useState('');
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const [approverSearch, setApproverSearch] = useState('');
 
   const isTemplateMode = !!searchParams.get('templateId');
-  // 'recalled' 문서함에서 온 경우만 isEditMode=true
   const isEditMode = !!docToEdit && !isTemplateMode;
 
   const form = useForm<FormData>({
@@ -89,7 +88,6 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
   }, []);
 
   useEffect(() => {
-    // 수정 모드 또는 템플릿 모드일 때 폼 데이터 설정
     if (docToEdit) {
         form.reset({
             title: docToEdit.title,
@@ -134,8 +132,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                 attachments
             });
             if (result.success && result.content) {
-                // [수정] AI가 생성한 텍스트를 줄바꿈 태그로 변환하여 에디터에 넣음 (Tiptap 호환)
-                form.setValue('content', result.content.replace(/\n/g, '<br>')); 
+                form.setValue('content', result.content);
                 toast({ title: "AI 콘텐츠 생성됨" });
             } else {
                 throw new Error(result.error || "알 수 없는 오류");
@@ -187,9 +184,9 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
          };
          
          let result;
-         if (isEditMode && docToEdit) { // 오직 수정 모드일 때만 updateDocument 호출
+         if (isEditMode && docToEdit) {
             result = await updateDocument(docToEdit.id, payload, user.uid);
-         } else { // 신규 생성 또는 템플릿 기반 생성
+         } else {
             result = await createDocument(payload, user.uid, profile);
          }
          
@@ -236,7 +233,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                 </CardHeader>
                 {form.watch(`approvers.${index}.active`) && (
                   <CardContent className="p-4 pt-0 space-y-2">
-                      <Controller
+                       <Controller
                         control={form.control}
                         name={`approvers.${index}.name`}
                         render={({ field: nameField }) => (
@@ -245,11 +242,9 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                                 <UserSearch
                                   users={users}
                                   value={nameField.value}
-                                  onChange={nameField.onChange}
                                   onSelectUser={(u) => {
-                                      form.setValue(`approvers.${index}.name`, u.name);
-                                      form.setValue(`approvers.${index}.email`, u.email);
-                                      form.clearErrors(`approvers.${index}.name`);
+                                      form.setValue(`approvers.${index}.name`, u.name, { shouldValidate: true });
+                                      form.setValue(`approvers.${index}.email`, u.email, { shouldValidate: true });
                                   }}
                                   placeholder="결재자 검색..."
                                 />
@@ -288,10 +283,11 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                 <UserSearch
                     users={users}
                     value={circularQuery}
-                    onChange={(value) => setCircularQuery(value)}
                     onSelectUser={(u) => {
-                    if (!circularFields.some(f => f.email === u.email)) appendCircular({name: u.name, email: u.email, role: u.role});
-                    setCircularQuery(''); // 선택 후 초기화
+                        if (!circularFields.some(f => f.email === u.email)) {
+                            appendCircular({name: u.name, email: u.email, role: u.role});
+                        }
+                        setCircularQuery('');
                     }}
                     placeholder="공람자 검색..."
                 />
@@ -381,7 +377,6 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                 </Button>
               </div>
               <FormControl>
-                {/* [수정] Textarea 대신 RichEditor 사용 */}
                 <RichEditor value={field.value} onChange={field.onChange} />
               </FormControl>
               <FormMessage />
