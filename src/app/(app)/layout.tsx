@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useAuth } from '@/hooks/use-auth';
@@ -52,7 +53,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <AppHeader />
       <div className="flex">
         <AppSidebar />
-        <main className="flex-1 overflow-auto h-[calc(100vh-65px)] pb-24 md:pb-8">
+        <main className="flex-1 pb-24 md:pb-8">
             {children}
         </main>
       </div>
