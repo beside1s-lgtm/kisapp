@@ -232,22 +232,24 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                 </CardHeader>
                 {form.watch(`approvers.${index}.active`) && (
                   <CardContent className="p-4 pt-0 space-y-2">
-                       <Controller
+                       <FormField
                         control={form.control}
                         name={`approvers.${index}.name`}
-                        render={({ field: nameField }) => (
+                        render={({ field }) => (
                            <FormItem>
                               <FormControl>
                                 <UserSearch
                                   users={users}
-                                  value={nameField.value}
+                                  field={field}
                                   onSelectUser={(u) => {
                                       form.setValue(`approvers.${index}.name`, u.name, { shouldValidate: true });
                                       form.setValue(`approvers.${index}.email`, u.email, { shouldValidate: true });
                                   }}
                                   placeholder="결재자 검색..."
+                                  roleFilter={field.role === '협조' ? undefined : field.role}
                                 />
                               </FormControl>
+                              <FormMessage />
                            </FormItem>
                         )}
                       />
@@ -279,17 +281,21 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
             <CardHeader><CardTitle>공람</CardTitle></CardHeader>
             <CardContent>
                 <div className="mb-4">
-                <UserSearch
-                    users={users}
-                    value={circularQuery}
-                    onSelectUser={(u) => {
-                        if (!circularFields.some(f => f.email === u.email)) {
-                            appendCircular({name: u.name, email: u.email, role: u.role});
-                        }
-                        setCircularQuery(''); // Clear the input after selection
-                    }}
-                    placeholder="공람자 검색..."
-                />
+                  <FormField
+                      control={form.control}
+                      name="circulars" // This is just for context, not directly used by UserSearch
+                      render={({ field }) => (
+                        <UserSearch
+                            users={users}
+                            placeholder="공람자 검색..."
+                            onSelectUser={(u) => {
+                                if (!circularFields.some(f => f.email === u.email)) {
+                                    appendCircular({ name: u.name, email: u.email, role: u.role });
+                                }
+                            }}
+                        />
+                      )}
+                    />
                 </div>
                 <div className="flex flex-wrap gap-2 min-h-[40px]">
                     {circularFields.map((field, i) => (
