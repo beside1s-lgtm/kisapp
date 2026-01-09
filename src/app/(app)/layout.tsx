@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 
 const MobileNavItem = ({ href, label, icon }: { href: string, label: string, icon: React.ReactNode}) => {
   const pathname = usePathname();
-  const isActive = pathname === href || (href === '/sent' && (pathname.startsWith('/pending') || pathname.startsWith('/recalled')));
+  const isActive = pathname === href;
 
   return (
     <Link href={href} className={cn(

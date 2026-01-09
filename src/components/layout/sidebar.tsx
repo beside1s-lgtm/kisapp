@@ -19,8 +19,7 @@ type NavItemProps = {
 
 const NavItem = ({ href, label, icon, count }: NavItemProps) => {
   const pathname = usePathname();
-  // '상신함'을 클릭했을 때, 하위 메뉴(진행, 회수)들도 활성화된 것처럼 보이게 하기 위함.
-  const isActive = pathname === href || (href === '/sent' && (pathname.startsWith('/pending') || pathname.startsWith('/recalled')));
+  const isActive = pathname === href;
 
 
   return (
