@@ -17,7 +17,7 @@ import {
 import { cn } from '@/lib/utils';
 import { UserProfile } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 type UserSearchProps = {
   users: UserProfile[];
@@ -33,21 +33,6 @@ export default function UserSearch({
   placeholder,
 }: UserSearchProps) {
   const [open, setOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-
-  // When popover closes, reset search query
-  useEffect(() => {
-    if (!open) {
-      setSearchQuery('');
-    }
-  }, [open]);
-
-  const filteredUsers = searchQuery
-    ? users.filter(user =>
-        user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : users;
 
   const handleSelect = (user: UserProfile) => {
     onSelectUser(user);
@@ -73,13 +58,11 @@ export default function UserSearch({
         <Command>
           <CommandInput
             placeholder={placeholder || 'Search user...'}
-            value={searchQuery}
-            onValueChange={setSearchQuery}
           />
           <CommandList>
             <CommandEmpty>No user found.</CommandEmpty>
             <CommandGroup>
-              {filteredUsers.map((user) => (
+              {users.map((user) => (
                 <CommandItem
                   key={user.email}
                   value={user.name}

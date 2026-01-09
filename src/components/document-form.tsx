@@ -68,7 +68,6 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
   
   const [circularQuery, setCircularQuery] = useState('');
   const attachmentInputRef = useRef<HTMLInputElement>(null);
-  const [approverSearch, setApproverSearch] = useState('');
 
   const isTemplateMode = !!searchParams.get('templateId');
   const isEditMode = !!docToEdit && !isTemplateMode;
@@ -287,7 +286,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                         if (!circularFields.some(f => f.email === u.email)) {
                             appendCircular({name: u.name, email: u.email, role: u.role});
                         }
-                        setCircularQuery('');
+                        setCircularQuery(''); // Clear the input after selection
                     }}
                     placeholder="공람자 검색..."
                 />
