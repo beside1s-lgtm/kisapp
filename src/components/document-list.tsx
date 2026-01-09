@@ -3,7 +3,7 @@
 import { ApprovalDoc } from '@/lib/types';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { ChevronRight, EyeOff, Pencil, Trash2, XCircle, Loader2 } from 'lucide-react';
+import { ChevronRight, EyeOff, Pencil, Trash2, XCircle, Loader2, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import { Button } from './ui/button';
