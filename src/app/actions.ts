@@ -3,7 +3,8 @@ import {
   doc,
   getDoc,
   getDocs,
-  query, // orderBy 제거
+  query,
+  orderBy,
   runTransaction,
   serverTimestamp,
   setDoc,
@@ -13,6 +14,7 @@ import {
   deleteDoc,
   or,
   and,
+  updateDoc,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type {
@@ -64,15 +66,6 @@ function serializeDocs(docs: any[]): any[] {
       })) || [],
     }
   })
-}
-
-// Helper: 메모리 내 정렬 함수 (최신순)
-function sortDocsByCreatedAtDesc(docs: any[]) {
-    return docs.sort((a, b) => {
-        const dateA = new Date(a.createdAt || 0).getTime();
-        const dateB = new Date(b.createdAt || 0).getTime();
-        return dateB - dateA;
-    });
 }
 
 export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
@@ -155,10 +148,15 @@ export async function getInboxDocuments(userEmail: string) {
   if (!userEmail) return [];
   const approvalsCol = getApprovalsCol();
   
+  const q = query(
+    approvalsCol, 
+    where('status', '==', 'pending'),
+    orderBy('createdAt', 'desc')
+  );
+  
   try {
-    // orderBy 제거 -> 메모리 정렬 사용
-    const allPendingSnapshot = await getDocs(query(approvalsCol, where('status', '==', 'pending')));
-    const allPending = serializeDocs(allPendingSnapshot.docs);
+    const snapshot = await getDocs(q);
+    const allPending = serializeDocs(snapshot.docs);
     
     const myTurnDocs = allPending.filter(doc => {
         if (doc.currentStep >= 0 && doc.currentStep < doc.approvers.length) {
@@ -168,7 +166,7 @@ export async function getInboxDocuments(userEmail: string) {
         return false;
     });
 
-    return sortDocsByCreatedAtDesc(myTurnDocs);
+    return myTurnDocs;
   } catch (error) {
     console.error("Get Inbox Error:", error);
     return [];
@@ -180,19 +178,18 @@ export async function getSentDocuments(userId: string, userEmail: string) {
   if (!userId && !userEmail) return [];
   const approvalsCol = getApprovalsCol();
 
-  // orderBy 제거
   const q = query(
     approvalsCol, 
     or(
         where('requesterId', '==', userId),
         where('requesterEmail', '==', userEmail)
-    )
+    ),
+    orderBy('createdAt', 'desc')
   );
 
   try {
     const snapshot = await getDocs(q);
-    const docs = serializeDocs(snapshot.docs);
-    return sortDocsByCreatedAtDesc(docs);
+    return serializeDocs(snapshot.docs);
   } catch (error) {
     console.error("Get Sent Docs Error:", error);
     return [];
@@ -204,7 +201,6 @@ export async function getPendingDocuments(userId: string, userEmail: string) {
   if (!userId && !userEmail) return [];
   const approvalsCol = getApprovalsCol();
   
-  // orderBy 제거
   const q = query(
     approvalsCol,
     and(
@@ -213,13 +209,13 @@ export async function getPendingDocuments(userId: string, userEmail: string) {
             where('requesterEmail', '==', userEmail)
         ),
         where('status', '==', 'pending')
-    )
+    ),
+    orderBy('createdAt', 'desc')
   );
 
   try {
     const snapshot = await getDocs(q);
-    const docs = serializeDocs(snapshot.docs);
-    return sortDocsByCreatedAtDesc(docs);
+    return serializeDocs(snapshot.docs);
   } catch (error) {
     console.error("Get Pending Docs Error:", error);
     return [];
@@ -229,22 +225,42 @@ export async function getPendingDocuments(userId: string, userEmail: string) {
 // [4] 문서등록대장 (Registry)
 export async function getRegistryDocuments(userId: string, userEmail: string) {
     const approvalsCol = getApprovalsCol();
-    // orderBy 제거 -> 메모리 정렬 (completedAt 기준)
-    const q = query(approvalsCol, where('status', '==', 'approved'));
+    const q = query(approvalsCol, where('status', '==', 'approved'), orderBy('completedAt', 'desc'));
     try {
         const snapshot = await getDocs(q);
-        const docs = serializeDocs(snapshot.docs);
-        // 완료된 문서는 completedAt 기준으로 정렬
-        return docs.sort((a, b) => {
-            const dateA = new Date(a.completedAt || 0).getTime();
-            const dateB = new Date(b.completedAt || 0).getTime();
-            return dateB - dateA;
-        });
+        return serializeDocs(snapshot.docs);
     } catch (error) {
         console.error("Get Registry Docs Error:", error);
         return [];
     }
 }
+
+// [NEW] 회수함
+export async function getRecalledDocuments(userId: string, userEmail: string) {
+    if (!userId && !userEmail) return [];
+    const approvalsCol = getApprovalsCol();
+    
+    const q = query(
+      approvalsCol,
+      and(
+          or(
+              where('requesterId', '==', userId),
+              where('requesterEmail', '==', userEmail)
+          ),
+          where('status', '==', 'recalled')
+      ),
+      orderBy('createdAt', 'desc')
+    );
+  
+    try {
+      const snapshot = await getDocs(q);
+      return serializeDocs(snapshot.docs);
+    } catch (error) {
+      console.error("Get Recalled Docs Error:", error);
+      return [];
+    }
+}
+
 
 export async function getDocumentById(docId: string) {
   try {
@@ -376,6 +392,30 @@ export async function rejectDocument(docId: string, userId: string, userProfile:
         return { success: true, docId };
     } catch (error: any) {
         return { success: false, error: error.message };
+    }
+}
+
+export async function recallDocument(docId: string, userId: string) {
+    const docRef = doc(getApprovalsCol(), docId);
+    try {
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+            return { success: false, error: "문서를 찾을 수 없습니다." };
+        }
+
+        const docData = docSnap.data() as ApprovalDoc;
+        if (docData.requesterId !== userId) {
+            return { success: false, error: "문서를 회수할 권한이 없습니다." };
+        }
+
+        if (docData.status !== 'pending') {
+            return { success: false, error: "진행 중인 문서만 회수할 수 있습니다." };
+        }
+
+        await updateDoc(docRef, { status: 'recalled' });
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: `문서 회수 중 오류 발생: ${error.message}` };
     }
 }
 

@@ -3,7 +3,7 @@
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { Loader2, Plus, Inbox, Send, FileClock, ListFilter } from 'lucide-react';
+import { Loader2, Plus, Inbox, Send, FileClock, ListFilter, Undo2 } from 'lucide-react';
 import { AppHeader } from '@/components/layout/header';
 import AppSidebar from '@/components/layout/sidebar';
 import Link from 'next/link';
@@ -57,10 +57,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-card border-t z-40 flex items-center justify-around px-2">
-          <div className="w-1/5"><MobileNavItem href="/inbox" label="미결재함" icon={<Inbox size={20} />} /></div>
-          <div className="w-1/5"><MobileNavItem href="/sent" label="상신함" icon={<Send size={20} />} /></div>
-          <div className="w-1/5 flex justify-center">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-card border-t z-40 grid grid-cols-5 items-center justify-around px-2">
+          <MobileNavItem href="/inbox" label="미결재함" icon={<Inbox size={20} />} />
+          <MobileNavItem href="/sent" label="상신함" icon={<Send size={20} />} />
+          <div className="flex justify-center">
             <Button asChild className="h-16 w-16 rounded-full shadow-lg -mt-8 bg-primary hover:bg-primary/90" size="icon">
               <Link href="/new">
                 <Plus className="h-8 w-8" />
@@ -68,8 +68,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </Link>
             </Button>
           </div>
-          <div className="w-1/5"><MobileNavItem href="/pending" label="진행함" icon={<FileClock size={20} />} /></div>
-          <div className="w-1/5"><MobileNavItem href="/registry" label="문서대장" icon={<ListFilter size={20} />} /></div>
+          <MobileNavItem href="/pending" label="진행함" icon={<FileClock size={20} />} />
+          <MobileNavItem href="/recalled" label="회수함" icon={<Undo2 size={20} />} />
       </div>
     </div>
   );

@@ -37,18 +37,26 @@ export type DocConfig = {
     email?: string;
     homepage?: string;
     nextNumber?: number;
+    headerImage?: string;
 };
 
 export type ApprovalDocPayload = {
   title: string;
   content: string;
   docType: 'internal' | 'external';
-  publishStatus: 'public' | 'private';
+  publishStatus: '공개' | '비공개';
   approvers: Approver[];
-  attachments: Attachment[];
+  attachments: { name: string; size: number; data: string; }[];
   circulars?: Circular[];
-  receiverInfo?: { name: string };
+  receiverInfo?: { name: string | undefined, email: string | undefined } | null;
   headerImage?: string;
+  footerInfo: {
+    address: string;
+    phone: string;
+    fax: string;
+    email: string;
+    homepage: string;
+  };
 };
 
 // [수정] ApprovalDoc 타입에도 rejected 상태를 추가했습니다.
@@ -61,7 +69,8 @@ export type ApprovalDoc = ApprovalDocPayload & {
   requesterRole: string;
   requesterSignature: string;
   currentStep: number;
-  status: 'pending' | 'approved' | 'rejected'; 
+  status: 'pending' | 'approved' | 'rejected' | 'recalled'; 
   createdAt: any;
   completedAt?: any;
+  comment?: string;
 };
