@@ -114,7 +114,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
         const result = await recallDocument(initialDoc.id, user.uid);
         if (result.success) {
             toast({ title: '회수 완료', description: '문서가 회수되어 회수 문서함으로 이동했습니다.'});
-            router.push('/sent');
+            router.push('/recalled');
             router.refresh();
         } else {
             toast({ variant: 'destructive', title: '회수 실패', description: result.error });
