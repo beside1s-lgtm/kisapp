@@ -1,4 +1,3 @@
-
 'use client';
 
 import { createDocument, getUsersDirectory, getDocConfig, updateDocument } from '@/app/actions';
@@ -13,16 +12,17 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import { File as FileIcon, Loader2, Plus, Sparkles, User as UserIcon, X, Paperclip, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from './ui/input';
-import { Textarea } from './ui/textarea';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
 import UserSearch from './user-search';
-import { cn, compressImage } from '@/lib/utils';
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
+import { cn } from '@/lib/utils';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
+// Rich Editor 추가
+import RichEditor from "./rich-editor";
 
 const approverSchema = z.object({
   name: z.string(),
@@ -134,7 +134,8 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                 attachments
             });
             if (result.success && result.content) {
-                form.setValue('content', result.content);
+                // [수정] AI가 생성한 텍스트를 줄바꿈 태그로 변환하여 에디터에 넣음 (Tiptap 호환)
+                form.setValue('content', result.content.replace(/\n/g, '<br>')); 
                 toast({ title: "AI 콘텐츠 생성됨" });
             } else {
                 throw new Error(result.error || "알 수 없는 오류");
@@ -380,7 +381,8 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                 </Button>
               </div>
               <FormControl>
-                <Textarea placeholder="결재 내용을 입력하세요..." className="min-h-[400px] font-serif text-base" {...field} />
+                {/* [수정] Textarea 대신 RichEditor 사용 */}
+                <RichEditor value={field.value} onChange={field.onChange} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -433,5 +435,3 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
     </Form>
   );
 }
-
-    

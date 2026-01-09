@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -10,7 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { approveDocument, rejectDocument, recallDocument } from '@/app/actions';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Printer, Loader2, XCircle, Undo2, CopyPlus } from 'lucide-react';
+import { CheckCircle2, Printer, Loader2, XCircle, Undo2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition } from 'react';
 import {
@@ -24,7 +23,6 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import Link from 'next/link';
 
 type DocumentViewProps = {
   initialDoc: ApprovalDoc;
@@ -42,6 +40,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
+  // 인쇄 핸들러 (표 스타일 추가됨)
   const handlePrint = () => {
     const printContent = document.querySelector('.printable-area');
     if (!printContent) {
@@ -72,11 +71,9 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     box-sizing: border-box !important;
                 }
                 
-                html {
-                  font-size: 130% !important;
-                }
+                html { font-size: 18px !important; }
 
-                body {
+                html, body {
                     height: 100%;
                     margin: 0 !important;
                     padding: 0 !important;
@@ -85,45 +82,59 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     print-color-adjust: exact !important;
                 }
 
-                @page { 
-                    size: A4 portrait; 
-                    margin: 0; 
-                }
+                @page { size: A4 portrait; margin: 0; }
 
                 .printable-area { 
-                    width: 100% !important;
-                    min-height: 100vh !important; 
+                    width: 210mm !important;
+                    min-height: 297mm !important;
                     margin: 0 auto !important; 
-                    padding: 15mm 20mm !important; 
+                    padding: 20mm !important; 
                     background: white !important;
                     border: none !important; 
                     box-shadow: none !important;
                     display: flex !important;
                     flex-direction: column !important;
+                    justify-content: space-between !important; 
                 }
-                
+
+                .doc-content-wrapper {
+                    display: flex;
+                    flex-direction: column;
+                    flex: 1 1 auto; 
+                }
+
+                header { flex: 0 0 auto !important; }
+
                 .doc-body {
                     flex: 1 1 auto !important;
                     display: block !important;
+                    font-size: 1.1rem !important;
+                    line-height: 1.6 !important;
                 }
 
                 .doc-footer {
-                    font-size: 11pt !important;
-                    flex-shrink: 0 !important;
-                    margin-top: auto !important;
+                    flex: 0 0 auto !important;
+                    margin-top: auto !important; 
+                    width: 100% !important;
                     break-inside: avoid !important;
                 }
 
-                @media print {
-                    body, .printable-area {
-                        height: 100% !important;
-                        min-height: 100vh !important;
-                    }
-                    
-                    .printable-area {
-                        display: flex !important;
-                        flex-direction: column !important;
-                    }
+                /* [추가] 인쇄 시 표(Table) 테두리가 선명하게 나오도록 설정 */
+                table {
+                    width: 100% !important;
+                    border-collapse: collapse !important;
+                    margin-top: 10px !important;
+                    margin-bottom: 10px !important;
+                }
+                th, td {
+                    border: 1px solid black !important; /* 검은 테두리 강제 */
+                    padding: 6px 8px !important;
+                    font-size: 1rem !important;
+                }
+                th {
+                    background-color: #f3f4f6 !important; /* 헤더 배경색 */
+                    font-weight: bold !important;
+                    text-align: center !important;
                 }
 
                 .no-print, button, nav, aside, .fixed { display: none !important; }
@@ -155,7 +166,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const isMyTurn = initialDoc.approvers[initialDoc.currentStep]?.email === user.email && initialDoc.status === 'pending';
   const isRequester = initialDoc.requesterId === user.uid;
   const canRecall = isRequester && initialDoc.status === 'pending';
-  const isCompleted = initialDoc.status === 'approved' || initialDoc.status === 'rejected';
 
   const approvalDate = initialDoc.completedAt 
     ? new Date(initialDoc.completedAt as string) 
@@ -233,17 +243,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     document.body.removeChild(link);
   };
 
-  // Badge 컴포넌트 대체
-  const getStatusBadge = (status: 'pending' | 'approved' | 'rejected') => {
-    const baseClass = "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2";
-    switch(status) {
-        case 'approved': return <span className={`${baseClass} border-transparent bg-blue-600 text-white hover:bg-blue-700`}>결재 완료</span>;
-        case 'rejected': return <span className={`${baseClass} border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80`}>반려</span>;
-        case 'pending': return <span className={`${baseClass} border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80`}>진행중</span>;
-        default: return null;
-    }
-  }
-
   return (
     <div className="relative w-full">
         <div className="no-print relative z-50 p-4 md:p-0 flex justify-end gap-2 mb-4 max-w-4xl mx-auto pointer-events-auto">
@@ -269,55 +268,50 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     </AlertDialogContent>
                 </AlertDialog>
             )}
-            {isCompleted && (
-                <Button variant="outline" asChild className="shadow-sm bg-white hover:bg-gray-100">
-                    <Link href={`/new?templateId=${initialDoc.id}`}>
-                        <CopyPlus className="mr-2 h-4 w-4" />
-                        재기안
-                    </Link>
-                </Button>
-            )}
             <Button variant="outline" type="button" onClick={handlePrint} className="cursor-pointer shadow-sm bg-white hover:bg-gray-100">
                 <Printer className="mr-2 h-4 w-4" /> 인쇄 / PDF로 저장
             </Button>
         </div>
 
-        <div className="printable-area bg-white p-8 md:p-12 shadow-lg rounded-lg max-w-[210mm] mx-auto flex flex-col min-h-[29.7cm] justify-between">
+        {/* [화면 보기용] */}
+        <div className="printable-area bg-white p-8 md:p-12 shadow-lg rounded-lg max-w-[210mm] mx-auto flex flex-col min-h-[29.7cm] justify-between text-lg leading-relaxed">
             
-            <div className="flex flex-col flex-1">
+            {/* 상단 그룹 (헤더 + 본문) */}
+            <div className="flex flex-col flex-1 doc-content-wrapper">
                 <header className="text-center mb-8 shrink-0">
-                    <p className="text-xs md:text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
+                    <p className="text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
                     {initialDoc.headerImage ? (
-                        <img src={initialDoc.headerImage} alt="School Header" className="h-12 md:h-16 mx-auto mb-2 object-contain" />
+                        <img src={initialDoc.headerImage} alt="School Header" className="h-16 md:h-20 mx-auto mb-2 object-contain" />
                     ) : (
                         <>
-                            <h1 className="text-2xl md:text-4xl font-extrabold tracking-[0.2em] text-gray-900 mb-0">호치민시한국국제학교</h1>
-                            <p className="text-xs md:text-sm font-bold text-gray-500 tracking-wider">KOREAN INTERNATIONAL SCHOOL HCMC</p>
+                            <h1 className="text-3xl md:text-5xl font-extrabold tracking-[0.2em] text-gray-900 mb-2">호치민시한국국제학교</h1>
+                            <p className="text-sm md:text-base font-bold text-gray-500 tracking-wider">KOREAN INTERNATIONAL SCHOOL HCMC</p>
                         </>
                     )}
                 </header>
 
                 <div className="doc-body flex-1 flex flex-col">
-                    <div className="mt-12 mb-8">
+                    <div className="mt-8 mb-8">
                         <div className="space-y-1 mb-2">
-                            <p className="text-sm md:text-base"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
-                            <p className="text-xs md:text-sm">(경유)</p>
+                            <p className="text-base md:text-lg"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
+                            <p className="text-sm md:text-base">(경유)</p>
                         </div>
                         <div className="h-0.5 bg-black w-full" />
                     </div>
                     
                     <div className="flex mb-10 items-start">
-                        <span className="w-16 md:w-20 font-bold text-base md:text-lg shrink-0">제 목:</span>
-                        <span className="text-lg md:text-xl font-bold text-gray-900 leading-tight">{initialDoc.title}</span>
+                        <span className="w-20 md:w-24 font-bold text-lg md:text-xl shrink-0">제 목:</span>
+                        <span className="text-xl md:text-2xl font-bold text-gray-900 leading-tight">{initialDoc.title}</span>
                     </div>
 
-                    <div className="min-h-[200px] text-base md:text-lg leading-loose whitespace-pre-wrap font-serif text-gray-800 tracking-normal"
-                        dangerouslySetInnerHTML={{ __html: initialDoc.content.replace(/\n/g, '<br />') }} />
+                    {/* Rich Editor 내용은 HTML로 렌더링되므로 table 태그 등이 포함됨 */}
+                    <div className="min-h-[300px] text-lg md:text-xl leading-loose font-serif text-gray-800 tracking-normal"
+                        dangerouslySetInnerHTML={{ __html: initialDoc.content }} />
 
                     {initialDoc.attachments?.length > 0 && (
                     <div className="mt-12">
-                        <h3 className="font-bold mb-2 text-base md:text-lg">붙임</h3>
-                        <ul className="list-decimal list-inside space-y-1 text-sm md:text-base">
+                        <h3 className="font-bold mb-2 text-lg md:text-xl">붙임</h3>
+                        <ul className="list-decimal list-inside space-y-2 text-base md:text-lg">
                         {initialDoc.attachments.map((file, idx) => (
                             <li key={idx}>
                             <button onClick={() => downloadFile(file)} className="text-blue-600 hover:underline">
@@ -331,52 +325,53 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </div>
             </div>
             
+            {/* Footer */}
             <footer className="doc-footer mt-16 shrink-0 mt-auto">
-                    <div className="text-center mb-16 h-[60px] flex items-center justify-center">
-                    {initialDoc.docType === 'external' && <h2 className="text-2xl md:text-3xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
+                    <div className="text-center mb-16 h-[80px] flex items-center justify-center">
+                    {initialDoc.docType === 'external' && <h2 className="text-3xl md:text-4xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
                 </div>
                 <div className="border-t-2 border-black pt-4 pb-2">
-                        <div className="flex items-center justify-between text-base w-full">
-                        <div className="flex items-center gap-1 md:gap-2">
+                        <div className="flex items-center justify-between text-sm md:text-base w-full">
+                        <div className="flex items-center gap-2 md:gap-4">
                             <span className="font-bold">{initialDoc.requesterRole}</span>
                             <div className="flex items-center gap-1">
                                 <span className="font-semibold">{initialDoc.requesterName}</span>
-                                {initialDoc.requesterSignature && <div className="w-8 h-8 md:w-12 md:h-12 flex items-center justify-center"><img src={initialDoc.requesterSignature} className="max-h-full max-w-full object-contain" alt="requester-sig" /></div>}
+                                {initialDoc.requesterSignature && <div className="w-10 h-10 md:w-14 md:h-14 flex items-center justify-center"><img src={initialDoc.requesterSignature} className="max-h-full max-w-full object-contain" alt="requester-sig" /></div>}
                             </div>
                         </div>
                         {mainApprovers.map((ap, idx) => (
-                            <div key={idx} className="flex items-center gap-1 md:gap-2">
+                            <div key={idx} className="flex items-center gap-2 md:gap-4">
                                 <div className="flex flex-col items-start leading-tight">
                                     <span className="font-bold">{ap.role}</span>
                                     {ap.type !== 'normal' && <span className="text-xs text-primary font-bold">{getTypeText(ap.type)}</span>}
                                 </div>
                                 <div className="flex items-center gap-1">
                                     <span className="font-semibold">{ap.approverName || ap.name}</span>
-                                    {ap.status === 'approved' && ap.signature && <div className="w-8 h-8 md:w-12 md:h-12 flex items-center justify-center"><img src={ap.signature} className="max-h-full max-w-full object-contain" alt="signature" /></div>}
-                                    {ap.status === 'rejected' && <span className="text-destructive font-bold text-xs">반려</span>}
+                                    {ap.status === 'approved' && ap.signature && <div className="w-10 h-10 md:w-14 md:h-14 flex items-center justify-center"><img src={ap.signature} className="max-h-full max-w-full object-contain" alt="signature" /></div>}
+                                    {ap.status === 'rejected' && <span className="text-destructive font-bold text-sm">반려</span>}
                                 </div>
                             </div>
                         ))}
                         </div>
                         {assistant && (
-                        <div className="flex items-center gap-2 text-base pt-2 mt-2 border-t border-dashed">
+                        <div className="flex items-center gap-2 text-sm md:text-base pt-2 mt-2 border-t border-dashed">
                             <span className="font-bold">{assistant.role}</span>
                             <div className="flex items-center gap-1">
                                 <span className="font-semibold">{assistant.approverName || assistant.name}</span>
-                                {assistant.status === 'approved' && assistant.signature && <div className="w-8 h-8 md:w-12 md:h-12 flex items-center justify-center"><img src={assistant.signature} className="max-h-full max-w-full object-contain" alt="assistant-sig" /></div>}
-                                {assistant.status === 'rejected' && <span className="text-destructive font-bold text-xs">반려</span>}
+                                {assistant.status === 'approved' && assistant.signature && <div className="w-10 h-10 md:w-14 md:h-14 flex items-center justify-center"><img src={assistant.signature} className="max-h-full max-w-full object-contain" alt="assistant-sig" /></div>}
+                                {assistant.status === 'rejected' && <span className="text-destructive font-bold text-sm">반려</span>}
                             </div>
                         </div>
                         )}
                 </div>
                 {initialDoc.status === 'rejected' && (
                     <div className="mt-4 p-3 bg-destructive/10 border border-destructive/50 rounded-lg">
-                        <p className="text-sm font-bold text-destructive">반려 사유:</p>
-                        <p className="text-sm text-destructive-foreground mt-1">{initialDoc.approvers.find(ap => ap.status === 'rejected')?.comment}</p>
+                        <p className="text-base font-bold text-destructive">반려 사유:</p>
+                        <p className="text-base text-destructive-foreground mt-1">{initialDoc.approvers.find(ap => ap.status === 'rejected')?.comment}</p>
                     </div>
                 )}
-                <div className="mt-2 text-base space-y-1.5 border-t border-gray-200 pt-4">
-                    <div className="flex gap-4">
+                <div className="mt-4 text-base md:text-lg font-medium text-gray-700 space-y-2 border-t border-gray-200 pt-4">
+                    <div className="flex gap-6">
                         <span><strong>시행</strong> {initialDoc.docNo} ({format(approvalDate, 'yyyy. MM. dd.')})</span>
                         <span><strong>접수</strong> ( )</span>
                     </div>
@@ -395,6 +390,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </footer>
         </div>
 
+        {/* ... 나머지 버튼 및 모달 코드 ... */}
         {isMyTurn && (
             <div className="no-print fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-50 flex gap-4">
                 <Button
@@ -458,5 +454,3 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 }
-
-    
