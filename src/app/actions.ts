@@ -446,7 +446,6 @@ export async function bulkRegisterUsers(fileData: string) {
             }
         }
         await batch.commit();
-        // revalidatePath 제거됨
         return { success: true, summary: `${count}명의 사용자가 등록/업데이트되었습니다.` };
 
     } catch (error: any) {
@@ -547,5 +546,6 @@ export async function deleteDocument(docId: string, userId: string) {
     
 
     
+
 
 
