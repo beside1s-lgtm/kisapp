@@ -208,9 +208,9 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
         </div>
 
         {/* [문서 영역 - 기존 코드 유지] */}
-        <div className="printable-area bg-white p-8 md:p-12 shadow-lg rounded-lg max-w-[210mm] mx-auto flex flex-col min-h-[29.7cm] justify-between text-lg leading-relaxed">
+        <div className="printable-area bg-white p-8 md:p-12 shadow-lg rounded-lg max-w-[210mm] mx-auto text-lg leading-relaxed">
             {/* ... 헤더, 본문, 푸터 내용 (기존과 동일하므로 생략하지 않고 전체 구조 유지 필요) ... */}
-            <div className="flex flex-col flex-1 doc-content-wrapper">
+            <div className="doc-content-wrapper flex flex-col flex-1">
                 <header className="text-center mb-8 shrink-0">
                     <p className="text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
                     {initialDoc.headerImage ? (
@@ -257,7 +257,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </div>
             </div>
             
-            <footer className="doc-footer mt-16 shrink-0 mt-auto">
+            <footer className="doc-footer mt-auto shrink-0">
                     <div className="text-center mb-16 h-[80px] flex items-center justify-center">
                     {initialDoc.docType === 'external' && <h2 className="text-3xl md:text-4xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
                 </div>
@@ -373,5 +373,3 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 }
-
-    
