@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -9,9 +10,10 @@ import { useToast } from '@/hooks/use-toast';
 import { approveDocument, rejectDocument, recallDocument } from '@/app/actions';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Printer, Loader2, XCircle, Undo2, Edit } from 'lucide-react';
+import { CheckCircle2, Printer, Loader2, XCircle, Undo2, Edit, FilePenLine } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -95,6 +97,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                    
   const isRequester = initialDoc.requesterId === user.uid;
   const canRecall = isRequester && initialDoc.status === 'pending';
+  const canRedraft = initialDoc.status === 'approved'; // 결재 완료된 문서일 때만 재기안 가능
 
   const approvalDate = initialDoc.completedAt 
     ? new Date(initialDoc.completedAt as string) 
@@ -158,6 +161,17 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   return (
     <div className="relative w-full">
         <div className="no-print relative z-50 p-4 md:p-0 flex justify-end gap-2 mb-4 max-w-4xl mx-auto pointer-events-auto">
+            
+            {/* [추가] 재기안 버튼 (결재 완료 문서 전용) */}
+            {canRedraft && (
+                <Button asChild variant="outline" className="shadow-sm bg-white hover:bg-gray-100">
+                    <Link href={`/new?templateId=${initialDoc.id}`}>
+                        <FilePenLine className="mr-2 h-4 w-4" />
+                        재기안
+                    </Link>
+                </Button>
+            )}
+
             {/* 회수 버튼 (기안자 전용) */}
             {canRecall && (
                 <AlertDialog>
@@ -180,7 +194,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </AlertDialog>
             )}
 
-            {/* [추가] 문서 수정 버튼 (현재 결재 차례인 사람 전용) */}
+            {/* 내용 수정 버튼 (현재 결재 차례인 사람 전용) */}
             {isMyTurn && (
                 <Button variant="outline" className="shadow-sm bg-white hover:bg-gray-100" onClick={handleEdit}>
                     <Edit className="mr-2 h-4 w-4" />
@@ -359,3 +373,5 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 }
+
+    
