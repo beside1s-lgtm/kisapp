@@ -65,38 +65,27 @@ export async function updateDocument(docId: string, payload: ApprovalDocPayload,
         if (!hasApprovers) {
             status = 'approved';
         }
-
-        // [중요] 결재자가 수정 시, 기존 결재자들의 서명 정보 보존
-        let mergedApprovers = payload.approvers;
-        if (modifiedByApprover && docData.approvers) {
-            mergedApprovers = payload.approvers.map((newAp, idx) => {
-                const oldAp = docData.approvers[idx];
-                // 같은 사람이면 기존 승인 상태 유지 (단, 본인이 수정한 경우 본인 승인 상태는 초기화될 수도 있으나, 여기선 유지 정책 따름)
-                // 만약 본인이 수정한 후 다시 승인 버튼을 눌러야 한다면 본인 상태를 pending으로 둘 수도 있습니다. 
-                // 여기서는 "내용 수정" 행위 자체를 결재 과정의 일부로 보고, 서명은 그대로 둡니다.
-                // (하지만 내용이 바뀌었으므로 다시 승인을 누르게 하는게 맞다면 status: 'pending'으로 둬야 함. 일단 보존 로직 유지)
-                if (oldAp && oldAp.email === newAp.email && oldAp.status === 'approved') {
-                    return {
-                        ...newAp,
-                        status: oldAp.status,
-                        signature: oldAp.signature,
-                        approvedAt: oldAp.approvedAt
-                    };
-                }
-                return { ...newAp, status: 'pending' };
-            });
-        } else if (!modifiedByApprover) {
-            // 재상신의 경우 모두 초기화
-            mergedApprovers = payload.approvers.map(a => ({...a, status: 'pending', signature: '', approvedAt: ''}));
-        }
+        
+        // 기안자가 회수 후 재상신하는 경우, 모든 결재자 상태를 초기화.
+        const mergedApprovers = payload.approvers.map(approver => ({
+            ...approver,
+            status: 'pending',
+            signature: '',
+            approvedAt: undefined,
+            comment: '',
+        }));
 
         const updatedData: any = {
             ...payload,
             status: status,
-            currentStep: modifiedByApprover ? docData.currentStep : 0,
+            // 재상신이면 처음부터, 결재자 수정이면 현재 단계 유지
+            currentStep: isOwnerAndRecalled ? 0 : docData.currentStep, 
             approvers: mergedApprovers,
+            // 재상신이면 완료일 초기화
             completedAt: hasApprovers ? null : serverTimestamp(),
             updatedAt: serverTimestamp(),
+            // 반려 정보 초기화
+            comment: '',
         };
 
         await firestoreUpdateDoc(docRef, updatedData);

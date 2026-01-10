@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -10,10 +9,9 @@ import { useToast } from '@/hooks/use-toast';
 import { approveDocument, rejectDocument, recallDocument } from '@/app/actions';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Printer, Loader2, XCircle, Undo2, Edit, FilePenLine } from 'lucide-react';
+import { CheckCircle2, Printer, Loader2, XCircle, Undo2, Edit } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition } from 'react';
-import Link from 'next/link';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -42,21 +40,25 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
+  // [수정] 인쇄 핸들러: 높이 오차 방지 (270mm) 및 스크롤 문제 해결
   const handlePrint = () => {
-    // ... (이전 인쇄 로직 유지) ...
     const printContent = document.querySelector('.printable-area');
     if (!printContent) {
         toast({ variant: "destructive", title: "오류", description: "인쇄할 내용을 찾을 수 없습니다." });
         return;
     }
+
     const printWindow = window.open('', '_blank', 'width=1100,height=900,resizable=yes,scrollbars=yes');
+    
     if (!printWindow) {
         toast({ variant: "destructive", title: "팝업 차단됨", description: "브라우저의 팝업 차단을 해제해야 인쇄할 수 있습니다." });
         return;
     }
+
     const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
         .map(node => node.outerHTML)
         .join('');
+
     printWindow.document.write(`
         <!DOCTYPE html>
         <html>
@@ -65,23 +67,113 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             ${styles}
             <style>
-                *, *::before, *::after { box-sizing: border-box !important; }
-                html, body { height: 100%; margin: 0 !important; padding: 0 !important; background-color: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-                @page { size: A4 portrait; margin: 0; }
-                .printable-area { width: 210mm !important; min-height: 297mm !important; margin: 0 auto !important; padding: 20mm !important; background: white !important; border: none !important; box-shadow: none !important; display: flex !important; flex-direction: column !important; justify-content: space-between !important; }
-                .doc-content-wrapper { display: flex; flex-direction: column; flex: 1 1 auto; }
-                header { flex: 0 0 auto !important; }
-                .doc-body { flex: 1 1 auto !important; display: block !important; }
-                .doc-footer { flex: 0 0 auto !important; margin-top: auto !important; width: 100% !important; break-inside: avoid !important; }
-                table { width: 100% !important; border-collapse: collapse !important; margin-top: 10px !important; margin-bottom: 10px !important; }
-                th, td { border: 1px solid black !important; padding: 6px 8px !important; font-size: 1rem !important; }
-                th { background-color: #f3f4f6 !important; font-weight: bold !important; text-align: center !important; }
+                *, *::before, *::after {
+                    box-sizing: border-box !important;
+                }
+                
+                html {
+                    font-size: 18px !important;
+                }
+
+                /* 인쇄 시 html/body 높이를 auto로 설정하여 잘림 방지 */
+                html, body {
+                    height: auto !important;
+                    min-height: 100%;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    background-color: white !important;
+                    -webkit-print-color-adjust: exact !important;
+                    print-color-adjust: exact !important;
+                }
+
+                @page { 
+                    size: A4 portrait; 
+                    margin: 0; 
+                }
+
+                .printable-area { 
+                    width: 100% !important;
+                    
+                    /* [핵심 수정] 297mm -> 270mm로 줄여서 1페이지 오버플로우 방지 */
+                    /* 내용이 짧으면 이 높이만큼만 잡혀서 1페이지 하단에 Footer가 옴 */
+                    /* 내용이 길면 자동으로 늘어남 */
+                    min-height: 270mm !important; 
+                    
+                    margin: 0 auto !important; 
+                    padding: 15mm 20mm !important; 
+                    
+                    background: white !important;
+                    border: none !important; 
+                    box-shadow: none !important;
+
+                    display: flex !important;
+                    flex-direction: column !important;
+                    
+                    /* Flex로 상하단 벌리기 */
+                    justify-content: space-between !important; 
+                }
+
+                .doc-content-wrapper {
+                    display: flex;
+                    flex-direction: column;
+                    flex: 1 1 auto; 
+                }
+
+                header {
+                    flex: 0 0 auto !important;
+                }
+
+                .doc-body {
+                    flex: 1 1 auto !important;
+                    display: block !important;
+                    font-size: 1.1rem !important;
+                    line-height: 1.6 !important;
+                }
+
+                .doc-footer {
+                    flex: 0 0 auto !important;
+                    /* margin-top: auto가 Flex 컨테이너 끝으로 밀어냄 */
+                    margin-top: auto !important; 
+                    width: 100% !important;
+                    break-inside: avoid !important;
+                    padding-top: 30px !important; /* 본문과 최소 간격 확보 */
+                }
+
+                /* 표 스타일 */
+                table {
+                    width: 100% !important;
+                    border-collapse: collapse !important;
+                    margin-top: 10px !important;
+                    margin-bottom: 10px !important;
+                }
+                th, td {
+                    border: 1px solid black !important;
+                    padding: 6px 8px !important;
+                    font-size: 1rem !important;
+                }
+                th {
+                    background-color: #f3f4f6 !important;
+                    font-weight: bold !important;
+                    text-align: center !important;
+                }
+
                 .no-print, button, nav, aside, .fixed { display: none !important; }
             </style>
         </head>
-        <body>${printContent.outerHTML}<script>window.onload = function() { setTimeout(function() { window.focus(); window.print(); }, 500); };</script></body>
+        <body>
+            ${printContent.outerHTML}
+            <script>
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.focus();
+                        window.print();
+                    }, 500);
+                };
+            </script>
+        </body>
         </html>
     `);
+    
     printWindow.document.close();
   };
 
@@ -91,13 +183,11 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 
-  // 현재 사용자가 결재할 차례인지 확인 (Pending 상태이고, 현재 단계의 결재자 이메일과 일치)
   const isMyTurn = initialDoc.status === 'pending' && 
-                   initialDoc.approvers[initialDoc.currentStep]?.email?.toLowerCase() === user.email?.toLowerCase();
+                   initialDoc.approvers[initialDoc.currentStep]?.email?.trim().toLowerCase() === user.email?.trim().toLowerCase();
                    
   const isRequester = initialDoc.requesterId === user.uid;
   const canRecall = isRequester && initialDoc.status === 'pending';
-  const canRedraft = initialDoc.status === 'approved'; // 결재 완료된 문서일 때만 재기안 가능
 
   const approvalDate = initialDoc.completedAt 
     ? new Date(initialDoc.completedAt as string) 
@@ -112,39 +202,65 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     return '';
   };
   
-  const handleApprove = () => { /* ... 기존 코드 동일 ... */ 
+  const handleApprove = () => {
     if (!profile?.signature) {
         const confirmed = window.confirm("저장된 서명이 없습니다. 서명 없이 결재하시겠습니까?");
         if(!confirmed) return;
     }
     startApproveTransition(async () => {
-      if (!user || !profile) { toast({ variant: 'destructive', title: '인증 오류', description: '로그인이 필요합니다.' }); return; }
+      if (!user || !profile) {
+        toast({ variant: 'destructive', title: '인증 오류', description: '로그인이 필요합니다.' });
+        return;
+      }
       const result = await approveDocument(initialDoc.id, user.uid, profile);
-      if (result.success) { toast({ title: '결재 완료!', description: '문서가 성공적으로 결재되었습니다.' }); router.push('/inbox'); router.refresh(); } 
-      else { toast({ variant: 'destructive', title: '결재 실패', description: result.error }); }
+      if (result.success) {
+        toast({ title: '결재 완료!', description: '문서가 성공적으로 결재되었습니다.' });
+        router.push('/inbox');
+        router.refresh();
+      } else {
+        toast({ variant: 'destructive', title: '결재 실패', description: result.error });
+      }
     });
   };
   
-  const handleReject = async () => { /* ... 기존 코드 동일 ... */ 
-    if (!rejectionReason) { toast({ variant: 'destructive', title: '반려 사유 필요', description: '반려 사유를 입력해야 합니다.' }); return; }
+  const handleReject = async () => {
+    if (!rejectionReason) {
+        toast({ variant: 'destructive', title: '반려 사유 필요', description: '반려 사유를 입력해야 합니다.' });
+        return;
+    }
     startRejectTransition(async () => {
         if (!user || !profile) return;
         const result = await rejectDocument(initialDoc.id, user.uid, profile, rejectionReason);
-        if (result.success) { toast({ title: '반려 처리됨', description: '문서가 반려되었습니다.'}); setShowRejectModal(false); router.push('/inbox'); router.refresh(); } 
-        else { toast({ variant: 'destructive', title: '반려 실패', description: result.error }); }
+        if (result.success) {
+            toast({ title: '반려 처리됨', description: '문서가 반려되었습니다.'});
+            setShowRejectModal(false);
+            router.push('/inbox');
+            router.refresh();
+        } else {
+            toast({ variant: 'destructive', title: '반려 실패', description: result.error });
+        }
     });
   };
 
-  const handleRecall = () => { /* ... 기존 코드 동일 ... */ 
+  const handleRecall = () => {
     startRecallTransition(async () => {
         if (!user) return;
         const result = await recallDocument(initialDoc.id, user.uid);
-        if (result.success) { toast({ title: '회수 완료', description: '문서가 회수되어 회수 문서함으로 이동했습니다.'}); router.push('/recalled'); router.refresh(); } 
-        else { toast({ variant: 'destructive', title: '회수 실패', description: result.error }); }
+        if (result.success) {
+            toast({ title: '회수 완료', description: '문서가 회수되어 회수 문서함으로 이동했습니다.'});
+            router.push('/recalled');
+            router.refresh();
+        } else {
+            toast({ variant: 'destructive', title: '회수 실패', description: result.error });
+        }
     });
   };
 
-  const downloadFile = (file: { data: string; name: string }) => { /* ... 기존 코드 동일 ... */
+  const handleEdit = () => {
+    router.push(`/edit/${initialDoc.id}`);
+  };
+
+  const downloadFile = (file: { data: string; name: string }) => {
     const link = document.createElement('a');
     link.href = file.data;
     link.download = file.name;
@@ -153,26 +269,9 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     document.body.removeChild(link);
   };
 
-  // 문서 수정 페이지로 이동
-  const handleEdit = () => {
-    router.push(`/edit/${initialDoc.id}`);
-  };
-
   return (
     <div className="relative w-full">
         <div className="no-print relative z-50 p-4 md:p-0 flex justify-end gap-2 mb-4 max-w-4xl mx-auto pointer-events-auto">
-            
-            {/* [추가] 재기안 버튼 (결재 완료 문서 전용) */}
-            {canRedraft && (
-                <Button asChild variant="outline" className="shadow-sm bg-white hover:bg-gray-100">
-                    <Link href={`/new?templateId=${initialDoc.id}`}>
-                        <FilePenLine className="mr-2 h-4 w-4" />
-                        재기안
-                    </Link>
-                </Button>
-            )}
-
-            {/* 회수 버튼 (기안자 전용) */}
             {canRecall && (
                 <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -184,7 +283,9 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     <AlertDialogContent>
                         <AlertDialogHeader>
                             <AlertDialogTitle>문서를 회수하시겠습니까?</AlertDialogTitle>
-                            <AlertDialogDescription>이 작업은 결재 과정을 중단하고 문서를 '회수 문서함'으로 이동시킵니다.</AlertDialogDescription>
+                            <AlertDialogDescription>
+                                이 작업은 결재 과정을 중단하고 문서를 '회수 문서함'으로 이동시킵니다.
+                            </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                             <AlertDialogCancel>취소</AlertDialogCancel>
@@ -194,7 +295,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </AlertDialog>
             )}
 
-            {/* 내용 수정 버튼 (현재 결재 차례인 사람 전용) */}
             {isMyTurn && (
                 <Button variant="outline" className="shadow-sm bg-white hover:bg-gray-100" onClick={handleEdit}>
                     <Edit className="mr-2 h-4 w-4" />
@@ -207,10 +307,11 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </Button>
         </div>
 
-        {/* [문서 영역 - 기존 코드 유지] */}
-        <div className="printable-area bg-white p-8 md:p-12 shadow-lg rounded-lg max-w-[210mm] mx-auto text-lg leading-relaxed">
-            {/* ... 헤더, 본문, 푸터 내용 (기존과 동일하므로 생략하지 않고 전체 구조 유지 필요) ... */}
-            <div className="doc-content-wrapper flex flex-col flex-1">
+        {/* [화면 보기용] 폰트 크기 확대 및 Flex Layout 적용 */}
+        <div className="printable-area bg-white p-8 md:p-12 shadow-lg rounded-lg max-w-[210mm] mx-auto flex flex-col min-h-[29.7cm] justify-between text-lg leading-relaxed">
+            
+            {/* 상단 그룹 (헤더 + 본문) */}
+            <div className="flex flex-col flex-1 doc-content-wrapper">
                 <header className="text-center mb-8 shrink-0">
                     <p className="text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
                     {initialDoc.headerImage ? (
@@ -257,7 +358,8 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </div>
             </div>
             
-            <footer className="doc-footer mt-auto shrink-0">
+            {/* Footer */}
+            <footer className="doc-footer mt-16 shrink-0 mt-auto">
                     <div className="text-center mb-16 h-[80px] flex items-center justify-center">
                     {initialDoc.docType === 'external' && <h2 className="text-3xl md:text-4xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
                 </div>
@@ -321,7 +423,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </footer>
         </div>
 
-        {/* 결재/반려 버튼 바 (기존과 동일) */}
         {isMyTurn && (
             <div className="no-print fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-50 flex gap-4">
                 <Button
@@ -347,11 +448,9 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </div>
         )}
 
-        {/* 반려 모달 (기존과 동일) */}
         {showRejectModal && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                 <div className="bg-background w-full max-w-lg rounded-lg shadow-lg border p-6 space-y-4">
-                    {/* ... (모달 내용 생략 - 기존 유지) ... */}
                     <div className="space-y-2 text-center sm:text-left">
                         <h2 className="text-lg font-semibold tracking-tight">문서를 반려하시겠습니까?</h2>
                         <p className="text-sm text-muted-foreground">반려 사유를 입력해주세요. 반려된 문서는 기안자에게 돌아가며, 결재가 중단됩니다.</p>
