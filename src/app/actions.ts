@@ -484,7 +484,7 @@ export async function deleteUser(email: string) {
 }
 
 
-export async function updateDocument(docId: string, payload: ApprovalDocPayload, userId: string, userEmail: string, modifiedByApprover: boolean = false) {
+export async function updateDocument(docId: string, payload: ApprovalDocPayload, userId: string, userEmail: string) {
     const docRef = doc(getApprovalsCol(), docId);
     try {
         const docSnap = await getDoc(docRef);
@@ -495,7 +495,7 @@ export async function updateDocument(docId: string, payload: ApprovalDocPayload,
 
         // 권한 검사: 기안자가 회수한 문서를 수정하거나, 현재 결재자가 진행중 문서를 수정하는 경우
         const isOwnerAndRecalled = docData.requesterId === userId && docData.status === 'recalled';
-        const isCurrentApproverAndPending = docData.status === 'pending' && docData.approvers[docData.currentStep]?.email?.toLowerCase() === userEmail?.toLowerCase();
+        const isCurrentApproverAndPending = docData.status === 'pending' && docData.currentStep < docData.approvers.length && docData.approvers[docData.currentStep]?.email?.toLowerCase() === userEmail?.toLowerCase();
 
         if (!isOwnerAndRecalled && !isCurrentApproverAndPending) {
             throw new Error("문서를 수정할 권한이 없습니다.");
@@ -504,11 +504,11 @@ export async function updateDocument(docId: string, payload: ApprovalDocPayload,
         const hasApprovers = payload.approvers && payload.approvers.length > 0;
         
         let status = 'pending';
+        // 결재자가 수정하는 경우는 재상신이 아니므로, 상태는 그대로 pending 유지
+        const modifiedByApprover = isCurrentApproverAndPending;
+
         if (!hasApprovers) {
             status = 'approved';
-        } else if (modifiedByApprover) {
-            // 결재자가 수정한 경우, 상태는 그대로 pending 유지
-            status = 'pending';
         }
 
         const updatedData: any = {
@@ -516,6 +516,8 @@ export async function updateDocument(docId: string, payload: ApprovalDocPayload,
             status: status,
             // 재상신 시 상태와 결재 단계를 초기화합니다. (결재자 수정이 아닌 경우)
             currentStep: modifiedByApprover ? docData.currentStep : 0,
+            // 모든 approver의 status를 다시 pending으로 리셋합니다. (결재자 수정이 아닌 경우)
+            approvers: modifiedByApprover ? payload.approvers : payload.approvers.map(a => ({...a, status: 'pending', signature: '', approvedAt: ''})),
             completedAt: hasApprovers ? null : serverTimestamp(),
             updatedAt: serverTimestamp(),
         };

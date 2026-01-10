@@ -1,3 +1,4 @@
+
 'use client';
 
 import { createDocument, getUsersDirectory, getDocConfig, updateDocument } from '@/app/actions';
@@ -163,7 +164,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
      if (!user || !profile) return;
      startTransition(async () => {
          const activeApprovers = data.approvers.filter(a => a.active && a.name);
-         if (activeApprovers.length === 0) { 
+         if (activeApprovers.length === 0 && !isEditMode) { // 수정모드에서는 결재선 없이도 수정 가능
              toast({ variant: 'destructive', title: '결재선 오류', description: '활성화된 결재자가 한 명 이상 있어야 합니다.'});
              return;
          }
@@ -184,8 +185,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
          
          let result;
          if (isEditMode && docToEdit) {
-            const isCurrentApprover = docToEdit.status === 'pending' && docToEdit.approvers[docToEdit.currentStep]?.email?.toLowerCase() === profile.email?.toLowerCase();
-            result = await updateDocument(docToEdit.id, payload, user.uid, profile.email, isCurrentApprover);
+            result = await updateDocument(docToEdit.id, payload, user.uid, profile.email);
          } else {
             result = await createDocument(payload, user.uid, profile);
          }
@@ -290,6 +290,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                         if (!circularFields.some(f => f.email === u.email)) {
                             appendCircular({ name: u.name, email: u.email, role: u.role });
                         }
+                        setCircularQuery(''); // Clear search after selection
                     }}
                     placeholder="공람자 검색..."
                 />
