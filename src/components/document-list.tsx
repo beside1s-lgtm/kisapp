@@ -129,7 +129,7 @@ export function DocumentList({ documents, pageType }: DocumentListProps) {
                       </>
                     )}
 
-                    {pageType === 'registry' && (
+                    {pageType === 'registry' && doc.status === 'approved' && (
                       <Button asChild variant="outline" size="sm" onClick={(e) => e.stopPropagation()}>
                         <Link href={`/new?templateId=${doc.id}`}>
                            <FilePenLine className="mr-2 h-4 w-4" />

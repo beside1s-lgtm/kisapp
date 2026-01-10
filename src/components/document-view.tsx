@@ -40,7 +40,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
-  // [수정] 인쇄 핸들러: 높이 오차 방지 (270mm) 및 스크롤 문제 해결
+  // [수정] 인쇄 핸들러: 높이 계산 오류 수정 (box-sizing 활용하여 1페이지 오버플로우 방지)
   const handlePrint = () => {
     const printContent = document.querySelector('.printable-area');
     if (!printContent) {
@@ -67,6 +67,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             ${styles}
             <style>
+                /* 1. 박스 모델 초기화 (패딩이 높이에 포함되도록 강제) */
                 *, *::before, *::after {
                     box-sizing: border-box !important;
                 }
@@ -75,10 +76,8 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     font-size: 18px !important;
                 }
 
-                /* 인쇄 시 html/body 높이를 auto로 설정하여 잘림 방지 */
                 html, body {
-                    height: auto !important;
-                    min-height: 100%;
+                    height: 100%;
                     margin: 0 !important;
                     padding: 0 !important;
                     background-color: white !important;
@@ -86,21 +85,23 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     print-color-adjust: exact !important;
                 }
 
+                /* 2. A4 용지 설정 */
                 @page { 
                     size: A4 portrait; 
-                    margin: 0; 
+                    margin: 0; /* 브라우저 기본 여백 제거 */
                 }
 
+                /* 3. 인쇄 영역 레이아웃 */
                 .printable-area { 
                     width: 100% !important;
                     
-                    /* [핵심 수정] 297mm -> 270mm로 줄여서 1페이지 오버플로우 방지 */
-                    /* 내용이 짧으면 이 높이만큼만 잡혀서 1페이지 하단에 Footer가 옴 */
-                    /* 내용이 길면 자동으로 늘어남 */
-                    min-height: 270mm !important; 
+                    /* [핵심 수정] min-height: 100vh로 설정하되, box-sizing: border-box 덕분에
+                       패딩(20mm*2)을 포함한 전체 높이가 정확히 종이 한 장 높이가 됨.
+                       이전처럼 (270mm + 40mm) > 297mm가 되어 페이지가 넘어가는 문제를 해결함. */
+                    min-height: 100vh !important; 
                     
                     margin: 0 auto !important; 
-                    padding: 15mm 20mm !important; 
+                    padding: 20mm !important; /* 상하좌우 여백 */
                     
                     background: white !important;
                     border: none !important; 
@@ -109,14 +110,15 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     display: flex !important;
                     flex-direction: column !important;
                     
-                    /* Flex로 상하단 벌리기 */
+                    /* 내용이 짧을 때 상단(헤더+본문)과 하단(푸터)을 양 끝으로 벌림 */
                     justify-content: space-between !important; 
                 }
 
+                /* 본문 영역 */
                 .doc-content-wrapper {
                     display: flex;
                     flex-direction: column;
-                    flex: 1 1 auto; 
+                    flex: 1 1 auto; /* 남은 공간 차지 */
                 }
 
                 header {
@@ -130,13 +132,13 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     line-height: 1.6 !important;
                 }
 
+                /* 꼬리말 */
                 .doc-footer {
                     flex: 0 0 auto !important;
-                    /* margin-top: auto가 Flex 컨테이너 끝으로 밀어냄 */
-                    margin-top: auto !important; 
+                    margin-top: auto !important; /* 이중 안전장치 */
                     width: 100% !important;
                     break-inside: avoid !important;
-                    padding-top: 30px !important; /* 본문과 최소 간격 확보 */
+                    padding-top: 5mm !important; /* 본문과 최소 간격 */
                 }
 
                 /* 표 스타일 */
@@ -183,6 +185,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 
+  // 권한 체크 로직
   const isMyTurn = initialDoc.status === 'pending' && 
                    initialDoc.approvers[initialDoc.currentStep]?.email?.trim().toLowerCase() === user.email?.trim().toLowerCase();
                    
@@ -423,6 +426,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </footer>
         </div>
 
+        {/* ... Buttons & Modals ... */}
         {isMyTurn && (
             <div className="no-print fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-50 flex gap-4">
                 <Button
