@@ -24,8 +24,8 @@ export default async function EditDocumentPage({ params }: EditDocumentPageProps
     if (doc && user && profile) {
         // 1. 기안자가 회수한 문서
         const isRequesterAndRecalled = doc.requesterId === user.uid && doc.status === 'recalled';
-        // 2. 현재 결재자가 수정하려는 문서
-        const isCurrentApproverAndPending = doc.status === 'pending' && doc.approvers[doc.currentStep]?.email === profile.email;
+        // 2. 현재 결재자가 수정하려는 문서 (이메일 비교 시 toLowerCase() 추가)
+        const isCurrentApproverAndPending = doc.status === 'pending' && doc.approvers[doc.currentStep]?.email?.toLowerCase() === profile.email?.toLowerCase();
 
         if(isRequesterAndRecalled || isCurrentApproverAndPending) {
             hasPermission = true;

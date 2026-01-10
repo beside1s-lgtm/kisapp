@@ -184,7 +184,8 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
          
          let result;
          if (isEditMode && docToEdit) {
-            result = await updateDocument(docToEdit.id, payload, user.uid);
+            const isCurrentApprover = docToEdit.status === 'pending' && docToEdit.approvers[docToEdit.currentStep]?.email?.toLowerCase() === profile.email?.toLowerCase();
+            result = await updateDocument(docToEdit.id, payload, user.uid, profile.email, isCurrentApprover);
          } else {
             result = await createDocument(payload, user.uid, profile);
          }

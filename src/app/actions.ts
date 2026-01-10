@@ -484,7 +484,7 @@ export async function deleteUser(email: string) {
 }
 
 
-export async function updateDocument(docId: string, payload: ApprovalDocPayload, userId: string, modifiedByApprover: boolean = false) {
+export async function updateDocument(docId: string, payload: ApprovalDocPayload, userId: string, userEmail: string, modifiedByApprover: boolean = false) {
     const docRef = doc(getApprovalsCol(), docId);
     try {
         const docSnap = await getDoc(docRef);
@@ -495,9 +495,9 @@ export async function updateDocument(docId: string, payload: ApprovalDocPayload,
 
         // 권한 검사: 기안자가 회수한 문서를 수정하거나, 현재 결재자가 진행중 문서를 수정하는 경우
         const isOwnerAndRecalled = docData.requesterId === userId && docData.status === 'recalled';
-        const isCurrentApproverAndPending = docData.status === 'pending' && docData.approvers[docData.currentStep]?.email === (await getUserProfileByEmail(userId))?.email;
+        const isCurrentApproverAndPending = docData.status === 'pending' && docData.approvers[docData.currentStep]?.email?.toLowerCase() === userEmail?.toLowerCase();
 
-        if (!isOwnerAndRecalled && !modifiedByApprover) {
+        if (!isOwnerAndRecalled && !isCurrentApproverAndPending) {
             throw new Error("문서를 수정할 권한이 없습니다.");
         }
 
