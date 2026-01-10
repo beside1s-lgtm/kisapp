@@ -29,7 +29,7 @@ const ADMIN_EMAIL = 'beside1s@kshcm.net';
 export function ProfileModal({ children }: { children: React.ReactNode }) {
   const { user, profile, profileLoading, fetchProfile } = useAuth();
   const { toast } = useToast();
-  const [isSaving, startSaving] = useTransition();
+  const [isSaving, setIsSaving] = useState(false);
 
   const [isOpen, setIsOpen] = useState(false);
   
@@ -56,10 +56,11 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
     }
   }, [profileLoading, user, isProfileIncomplete, isOpen]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!user || !profile) return;
 
-    startSaving(async () => {
+    setIsSaving(true);
+    try {
       let finalSignature = profile.signature || '';
       if (sigPreview !== profile.signature) {
         finalSignature = sigPreview ? await compressImage(sigPreview) : '';
@@ -79,13 +80,17 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
         toast({ title: '프로필 업데이트됨' });
         setIsOpen(false);
       } else {
-        toast({
+        throw new Error(result.error || '프로필 업데이트에 실패했습니다.');
+      }
+    } catch (error: any) {
+       toast({
           variant: 'destructive',
           title: '업데이트 실패',
-          description: result.error,
+          description: error.message,
         });
-      }
-    });
+    } finally {
+        setIsSaving(false);
+    }
   };
   
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
