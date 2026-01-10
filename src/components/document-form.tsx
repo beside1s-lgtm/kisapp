@@ -163,7 +163,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
   const onSubmit = (data: FormData) => {
      if (!user || !profile) return;
      startTransition(async () => {
-         const activeApprovers = data.approvers.filter(a => a.active && a.name);
+         const activeApprovers = data.approvers.filter(a => a.active && a.name && a.email);
          if (activeApprovers.length === 0 && !isEditMode) { // 수정모드에서는 결재선 없이도 수정 가능
              toast({ variant: 'destructive', title: '결재선 오류', description: '활성화된 결재자가 한 명 이상 있어야 합니다.'});
              return;
@@ -433,3 +433,5 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
     </Form>
   );
 }
+
+    
