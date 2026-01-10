@@ -56,6 +56,16 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
     }
   }, [profileLoading, user, isProfileIncomplete, isOpen]);
 
+  // [수정] 모달이 닫힐 때 body 스타일 강제 초기화 (먹통 현상 방지 핵심 코드)
+  useEffect(() => {
+    if (!isOpen) {
+      setTimeout(() => {
+        document.body.style.pointerEvents = '';
+        document.body.style.overflow = '';
+      }, 300);
+    }
+  }, [isOpen]);
+
   const handleSave = async () => {
     if (!user || !profile) return;
 
@@ -89,7 +99,7 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
           description: error.message,
         });
     } finally {
-        setIsSaving(false);
+      setIsSaving(false);
     }
   };
   

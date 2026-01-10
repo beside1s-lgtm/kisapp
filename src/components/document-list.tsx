@@ -4,7 +4,7 @@
 import { ApprovalDoc } from '@/lib/types';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { ChevronRight, EyeOff, Pencil, Trash2, XCircle, Loader2, User } from 'lucide-react';
+import { ChevronRight, EyeOff, Pencil, Trash2, XCircle, Loader2, User, FilePenLine } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import { Button } from './ui/button';
@@ -12,6 +12,7 @@ import { deleteDocument } from '@/app/actions';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -46,7 +47,11 @@ export function DocumentList({ documents, pageType }: DocumentListProps) {
     }
   }
 
-  const handleCardClick = (docId: string) => {
+  const handleCardClick = (e: React.MouseEvent, docId: string) => {
+    // 버튼 클릭 시에는 카드 클릭(페이지 이동) 방지
+    if ((e.target as HTMLElement).closest('button')) {
+      return;
+    }
     router.push(`/documents/${docId}`);
   };
 
@@ -59,7 +64,7 @@ export function DocumentList({ documents, pageType }: DocumentListProps) {
     e.stopPropagation();
     setDocToDelete(doc);
   };
-
+  
   const executeDelete = () => {
     if (!docToDelete || !user) return;
     
@@ -88,7 +93,7 @@ export function DocumentList({ documents, pageType }: DocumentListProps) {
       {localDocs.map((doc) => (
         <Card
           key={doc.id}
-          onClick={() => handleCardClick(doc.id)}
+          onClick={(e) => handleCardClick(e, doc.id)}
           className="hover:border-primary hover:shadow-lg cursor-pointer transition-all group"
         >
             <div className="p-6 flex justify-between items-center">
@@ -109,20 +114,34 @@ export function DocumentList({ documents, pageType }: DocumentListProps) {
                         <span>{doc.createdAt ? format(new Date(doc.createdAt as string), 'yyyy년 MM월 dd일') : 'N/A'}</span>
                     </div>
                 </div>
-                 {pageType === 'recalled' ? (
-                  <div className='flex items-center gap-2'>
-                    <Button variant="outline" size="sm" onClick={(e) => handleEditClick(e, doc.id)}>
-                      <Pencil className="mr-2 h-4 w-4" />
-                      수정
-                    </Button>
-                    <Button variant="destructive" size="sm" onClick={(e) => handleDeleteClick(e, doc)}>
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      삭제
-                    </Button>
-                  </div>
-                 ) : (
-                  <ChevronRight size={20} className="text-muted-foreground/50 group-hover:text-primary transition-colors" />
-                 )}
+                 
+                 <div className='flex items-center gap-2'>
+                    {pageType === 'recalled' && (
+                      <>
+                        <Button variant="outline" size="sm" onClick={(e) => handleEditClick(e, doc.id)}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          수정
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={(e) => handleDeleteClick(e, doc)}>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          삭제
+                        </Button>
+                      </>
+                    )}
+
+                    {pageType === 'registry' && (
+                      <Button asChild variant="outline" size="sm" onClick={(e) => e.stopPropagation()}>
+                        <Link href={`/new?templateId=${doc.id}`}>
+                           <FilePenLine className="mr-2 h-4 w-4" />
+                           재기안
+                        </Link>
+                      </Button>
+                    )}
+                 
+                    {pageType !== 'recalled' && pageType !== 'registry' && (
+                      <ChevronRight size={20} className="text-muted-foreground/50 group-hover:text-primary transition-colors" />
+                    )}
+                 </div>
             </div>
         </Card>
       ))}

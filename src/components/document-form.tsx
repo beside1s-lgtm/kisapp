@@ -98,19 +98,22 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
             receiverEmail: docToEdit.receiverInfo?.email || '',
             circulars: docToEdit.circulars || [],
             attachments: docToEdit.attachments?.map(a => ({...a, size: 0})) || [],
-            approvers: defaultApproversTemplate.map(template => {
-                const existing = docToEdit.approvers.find(a => a.role === template.role);
-                return {
-                    ...template,
-                    name: existing?.name || '',
-                    email: existing?.email || '',
-                    type: existing?.type || template.type,
-                    active: !!existing,
-                }
-            })
+            // 재기안(template) 모드일때는 결재선 초기화, 수정 모드일때는 기존 결재선 로드
+            approvers: isTemplateMode
+              ? defaultApproversTemplate.map(ap => ({...ap, active: ap.role !== '협조'}))
+              : defaultApproversTemplate.map(template => {
+                  const existing = docToEdit.approvers.find(a => a.role === template.role);
+                  return {
+                      ...template,
+                      name: existing?.name || '',
+                      email: existing?.email || '',
+                      type: existing?.type || template.type,
+                      active: !!existing,
+                  }
+              })
         });
     }
-  }, [docToEdit, form]);
+  }, [docToEdit, form, isTemplateMode]);
 
   const { fields: approverFields } = useFieldArray({ control: form.control, name: 'approvers' });
   const { fields: circularFields, append: appendCircular, remove: removeCircular } = useFieldArray({ control: form.control, name: 'circulars' });
@@ -163,8 +166,8 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
   const onSubmit = (data: FormData) => {
      if (!user || !profile) return;
      startTransition(async () => {
-         const activeApprovers = data.approvers.filter(a => a.active && a.name && a.email);
-         if (activeApprovers.length === 0 && !isEditMode) { // 수정모드에서는 결재선 없이도 수정 가능
+         const activeApprovers = data.approvers.filter(a => a.active && a.name);
+         if (activeApprovers.length === 0 && !isEditMode) { 
              toast({ variant: 'destructive', title: '결재선 오류', description: '활성화된 결재자가 한 명 이상 있어야 합니다.'});
              return;
          }
@@ -221,7 +224,15 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
         <Card>
           <CardHeader><CardTitle>결재선</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {approverFields.map((field, index) => (
+            {approverFields.map((field, index) => {
+              const targetRole = field.role;
+              // [수정] 직책에 따른 사용자 필터링 (협조는 모두, 나머지는 직책 일치)
+              const filteredUsers = users.filter(u => {
+                  if (targetRole === '협조') return true;
+                  return u.role === targetRole;
+              });
+
+              return (
                 <Card key={field.id} className={cn(!form.watch(`approvers.${index}.active`) && 'bg-muted/50')}>
                   <CardHeader className="p-4 flex-row items-center justify-between">
                     <CardTitle className="text-base">{field.role}</CardTitle>
@@ -233,26 +244,25 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                   </CardHeader>
                   {form.watch(`approvers.${index}.active`) && (
                     <CardContent className="p-4 pt-0 space-y-2">
-                        <FormField
-                            control={form.control}
-                            name={`approvers.${index}.name`}
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormControl>
-                                        <UserSearch
-                                            users={users}
-                                            value={field.value}
-                                            onSelectUser={(u) => {
-                                                form.setValue(`approvers.${index}.name`, u.name, { shouldValidate: true, shouldDirty: true });
-                                                form.setValue(`approvers.${index}.email`, u.email, { shouldValidate: true, shouldDirty: true });
-                                                form.clearErrors(`approvers.${index}.name`);
-                                            }}
-                                            placeholder={`${field.role} 검색...`}
-                                            roleFilter={field.role}
-                                        />
-                                    </FormControl>
-                                </FormItem>
-                            )}
+                        <Controller
+                          control={form.control}
+                          name={`approvers.${index}.name`}
+                          render={({ field: nameField }) => (
+                             <FormItem>
+                                <FormControl>
+                                  <UserSearch
+                                    users={filteredUsers}
+                                    value={nameField.value}
+                                    onSelectUser={(u) => {
+                                        form.setValue(`approvers.${index}.name`, u.name, { shouldValidate: true, shouldDirty: true });
+                                        form.setValue(`approvers.${index}.email`, u.email, { shouldValidate: true, shouldDirty: true });
+                                        form.clearErrors(`approvers.${index}.name`);
+                                    }}
+                                    placeholder={`${targetRole} 검색...`}
+                                  />
+                                </FormControl>
+                             </FormItem>
+                          )}
                         />
                         <Controller
                           control={form.control}
@@ -273,8 +283,8 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                     </CardContent>
                   )}
                 </Card>
-              )
-            )}
+              );
+            })}
           </CardContent>
         </Card>
 
@@ -287,10 +297,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                     users={users}
                     value={circularQuery}
                     onSelectUser={(u) => {
-                        if (!circularFields.some(f => f.email === u.email)) {
-                            appendCircular({ name: u.name, email: u.email, role: u.role });
-                        }
-                        setCircularQuery(''); // Clear search after selection
+                    if (!circularFields.some(f => f.email === u.email)) appendCircular({name: u.name, email: u.email, role: u.role});
                     }}
                     placeholder="공람자 검색..."
                 />
@@ -433,5 +440,3 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
     </Form>
   );
 }
-
-    
