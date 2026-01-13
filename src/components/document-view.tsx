@@ -9,7 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { approveDocument, rejectDocument, recallDocument } from '@/app/actions';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Printer, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, Printer, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, FilePenLine } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition } from 'react';
 import {
@@ -185,7 +185,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   };
 
   const handleRedraftNew = () => {
-      router.push(`/new?templateId=${initialDoc.id}`);
+      router.push(`/new?cloneId=${initialDoc.id}`);
   };
 
   const downloadFile = (file: { data: string; name: string }) => {
@@ -230,8 +230,8 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
             {isApproved && (
                 <Button variant="default" className="shadow-sm" onClick={handleRedraftNew}>
-                    <CopyPlus className="mr-2 h-4 w-4" />
-                    재기안 (복사 작성)
+                    <FilePenLine className="mr-2 h-4 w-4" />
+                    재기안
                 </Button>
             )}
 
@@ -262,17 +262,15 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </header>
 
                 <div className="doc-body">
-                    <div className="mb-4">
-                        <div className="space-y-1 mb-2">
-                            <p className="text-base md:text-lg"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
-                            <p className="text-sm md:text-base">(경유)</p>
-                            <div className="flex items-start text-base md:text-lg">
-                                <span className="font-bold">제 목</span>
-                                <span className="ml-2 font-medium">{initialDoc.title}</span>
-                            </div>
+                    <div className="space-y-1 mb-2">
+                        <p className="text-base md:text-lg"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
+                        <p className="text-sm md:text-base">(경유)</p>
+                        <div className="flex items-start text-base md:text-lg">
+                            <span className="font-bold">제 목</span>
+                            <span className="ml-2 font-medium">{initialDoc.title}</span>
                         </div>
-                        <div className="h-0.5 bg-black w-full" />
                     </div>
+                    <div className="h-0.5 bg-black w-full mb-8" />
 
                     <div className="min-h-[300px] text-lg md:text-xl leading-loose font-serif text-gray-800 tracking-normal"
                         dangerouslySetInnerHTML={{ __html: initialDoc.content }} />
@@ -338,7 +336,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                         <p className="text-base text-destructive-foreground mt-1">{initialDoc.approvers.find(ap => ap.status === 'rejected')?.comment}</p>
                     </div>
                 )}
-                <div className="mt-4 text-base md:text-lg font-medium text-gray-700 space-y-2 border-t border-gray-200 pt-4">
+                <div className="mt-4 text-sm md:text-base font-medium text-gray-700 space-y-2 border-t border-gray-200 pt-4">
                     <div className="flex gap-6">
                         <span><strong>시행</strong> {initialDoc.docNo} ({format(approvalDate, 'yyyy. MM. dd.')})</span>
                         <span><strong>접수</strong> ( )</span>
