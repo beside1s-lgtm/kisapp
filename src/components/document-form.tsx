@@ -1,7 +1,6 @@
-
 'use client';
 
-import { createDocument, getUsersDirectory, getDocConfig, updateDocument } from '@/app/actions';
+import { createDocument, getUsersDirectory, getDocConfig, updateDocument, getDocumentById } from '@/app/actions';
 import { generateContentAction } from '@/app/ai-actions';
 import { useAuth } from '@/hooks/use-auth';
 import { ApprovalDoc, ApprovalDocPayload, Approver, DocConfig, UserProfile } from '@/lib/types';
@@ -71,7 +70,9 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
   const attachmentInputRef = useRef<HTMLInputElement>(null);
 
   const isTemplateMode = !!searchParams.get('templateId');
-  const isEditMode = !!docToEdit && !isTemplateMode;
+  const cloneId = searchParams.get('cloneId');
+  
+  const isEditMode = !!docToEdit && !isTemplateMode && !cloneId;
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -88,7 +89,43 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
   }, []);
 
   useEffect(() => {
-    if (docToEdit) {
+      const fetchCloneData = async () => {
+          if (cloneId) {
+              try {
+                  const docData = await getDocumentById(cloneId);
+                  if (docData) {
+                      form.reset({
+                        title: docData.title,
+                        content: docData.content,
+                        publishStatus: docData.publishStatus,
+                        docType: docData.docType,
+                        receiverName: docData.receiverInfo?.name || '',
+                        receiverEmail: docData.receiverInfo?.email || '',
+                        circulars: docData.circulars || [],
+                        attachments: docData.attachments?.map(a => ({...a, size: 0})) || [],
+                        approvers: defaultApproversTemplate.map(template => {
+                            const existing = docData.approvers.find(a => a.role === template.role);
+                            return {
+                                ...template,
+                                name: existing?.name || '',
+                                email: existing?.email || '',
+                                type: existing?.type || template.type,
+                                active: !!existing,
+                            }
+                        })
+                    });
+                    toast({ title: "문서 내용 불러옴", description: "기존 문서 내용을 바탕으로 새 결재를 작성합니다." });
+                  }
+              } catch (e) {
+                  console.error("Failed to fetch clone doc", e);
+              }
+          }
+      };
+      fetchCloneData();
+  }, [cloneId, form]);
+
+  useEffect(() => {
+    if (docToEdit && !cloneId) {
         form.reset({
             title: docToEdit.title,
             content: docToEdit.content,
@@ -98,22 +135,19 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
             receiverEmail: docToEdit.receiverInfo?.email || '',
             circulars: docToEdit.circulars || [],
             attachments: docToEdit.attachments?.map(a => ({...a, size: 0})) || [],
-            // 재기안(template) 모드일때는 결재선 초기화, 수정 모드일때는 기존 결재선 로드
-            approvers: isTemplateMode
-              ? defaultApproversTemplate.map(ap => ({...ap, active: ap.role !== '협조'}))
-              : defaultApproversTemplate.map(template => {
-                  const existing = docToEdit.approvers.find(a => a.role === template.role);
-                  return {
-                      ...template,
-                      name: existing?.name || '',
-                      email: existing?.email || '',
-                      type: existing?.type || template.type,
-                      active: !!existing,
-                  }
-              })
+            approvers: defaultApproversTemplate.map(template => {
+                const existing = docToEdit.approvers.find(a => a.role === template.role);
+                return {
+                    ...template,
+                    name: existing?.name || '',
+                    email: existing?.email || '',
+                    type: existing?.type || template.type,
+                    active: !!existing,
+                }
+            })
         });
     }
-  }, [docToEdit, form, isTemplateMode]);
+  }, [docToEdit, form, cloneId]);
 
   const { fields: approverFields } = useFieldArray({ control: form.control, name: 'approvers' });
   const { fields: circularFields, append: appendCircular, remove: removeCircular } = useFieldArray({ control: form.control, name: 'circulars' });
@@ -162,11 +196,33 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
     }
   };
 
+  // [추가] 폼 검증 실패 시 실행될 핸들러
+  // 이 함수가 실행된다면 입력값 중 무언가가 누락되었거나 형식이 잘못된 것입니다.
+  const onInvalid = (errors: any) => {
+    console.log("Form validation errors:", errors);
+    
+    // 에러 내용에 따라 구체적인 메시지 표시
+    if (errors.title) {
+        toast({ variant: "destructive", title: "제목 누락", description: "문서 제목을 입력해주세요." });
+    } else if (errors.content) {
+        toast({ variant: "destructive", title: "내용 누락", description: "문서 내용을 입력해주세요." });
+    } else if (errors.approvers) {
+        toast({ variant: "destructive", title: "결재선 오류", description: "결재자 정보를 확인해주세요." });
+    } else {
+        toast({ variant: "destructive", title: "입력 오류", description: "필수 입력 항목을 확인해주세요." });
+    }
+  };
 
   const onSubmit = (data: FormData) => {
-     if (!user || !profile) return;
+     if (!user || !profile) {
+         toast({ variant: "destructive", title: "권한 오류", description: "로그인 정보가 없습니다. 다시 로그인해주세요." });
+         return;
+     }
+
      startTransition(async () => {
          const activeApprovers = data.approvers.filter(a => a.active && a.name);
+         
+         // 수정 모드(내용만 수정)가 아닐 때는 결재선 필수
          if (activeApprovers.length === 0 && !isEditMode) { 
              toast({ variant: 'destructive', title: '결재선 오류', description: '활성화된 결재자가 한 명 이상 있어야 합니다.'});
              return;
@@ -205,7 +261,8 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+      {/* [수정] handleSubmit의 두 번째 인자로 onInvalid 추가하여 실패 원인 알림 */}
+      <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-8">
         
         <FormField
           control={form.control}
@@ -226,7 +283,6 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {approverFields.map((field, index) => {
               const targetRole = field.role;
-              // [수정] 직책에 따른 사용자 필터링 (협조는 모두, 나머지는 직책 일치)
               const filteredUsers = users.filter(u => {
                   if (targetRole === '협조') return true;
                   return u.role === targetRole;
@@ -296,8 +352,10 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                 <UserSearch
                     users={users}
                     value={circularQuery}
+                    onChange={(value) => setCircularQuery(value)}
                     onSelectUser={(u) => {
                     if (!circularFields.some(f => f.email === u.email)) appendCircular({name: u.name, email: u.email, role: u.role});
+                    setCircularQuery(''); 
                     }}
                     placeholder="공람자 검색..."
                 />

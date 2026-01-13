@@ -220,7 +220,7 @@ export function SettingsModal() {
             <TabsTrigger value="users"><Users className="mr-2 h-4 w-4"/>사용자 관리</TabsTrigger>
           </TabsList>
           
-          <TabsContent value="general" className="flex-1 overflow-hidden">
+          <TabsContent value="general" className="flex-1 overflow-hidden flex flex-col">
             <ScrollArea className="h-[60vh] pr-4">
               <div className="space-y-6 p-1">
                 <div className="space-y-2">
@@ -273,7 +273,7 @@ export function SettingsModal() {
                 </div>
               </div>
             </ScrollArea>
-             <DialogFooter className="mt-4">
+             <DialogFooter className="mt-4 pt-4 border-t">
               <Button onClick={handleSave} disabled={isSaving}>
                 {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 일반 설정 저장
