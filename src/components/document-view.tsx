@@ -266,13 +266,12 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                         <div className="space-y-1 mb-2">
                             <p className="text-base md:text-lg"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
                             <p className="text-sm md:text-base">(경유)</p>
+                            <div className="flex items-start text-base md:text-lg">
+                                <span className="font-bold">제 목</span>
+                                <span className="ml-2 font-medium">{initialDoc.title}</span>
+                            </div>
                         </div>
                         <div className="h-0.5 bg-black w-full" />
-                    </div>
-                    
-                    <div className="flex mb-8 items-start">
-                        <span className="w-20 md:w-24 font-bold text-lg md:text-xl shrink-0">제 목:</span>
-                        <span className="text-xl md:text-2xl font-bold text-gray-900 leading-tight">{initialDoc.title}</span>
                     </div>
 
                     <div className="min-h-[300px] text-lg md:text-xl leading-loose font-serif text-gray-800 tracking-normal"
@@ -295,7 +294,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </div>
             </div>
             
-            <footer className="doc-footer mt-16 shrink-0">
+            <footer className="doc-footer mt-auto shrink-0">
                     <div className="text-center mb-16 h-[80px] flex items-center justify-center">
                     {initialDoc.docType === 'external' && <h2 className="text-3xl md:text-4xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
                 </div>
