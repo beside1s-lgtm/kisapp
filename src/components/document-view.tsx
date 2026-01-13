@@ -24,6 +24,7 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Textarea } from './ui/textarea';
 
 type DocumentViewProps = {
   initialDoc: ApprovalDoc;
@@ -67,9 +68,9 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             <style>
                 *, *::before, *::after { box-sizing: border-box !important; }
                 html { font-size: 18px !important; }
-                html, body { height: 100%; margin: 0 !important; padding: 0 !important; background-color: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                html, body { height: auto !important; overflow: visible !important; display: block !important; margin: 0 !important; padding: 0 !important; background-color: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                 @page { size: A4 portrait; margin: 0; }
-                .printable-area { width: 100% !important; min-height: 297mm !important; margin: 0 auto !important; padding: 20mm !important; background: white !important; border: none !important; box-shadow: none !important; display: flex !important; flex-direction: column !important; justify-content: space-between !important; }
+                .printable-area { width: 100% !important; min-height: 297mm !important; margin: 0 auto !important; padding: 20mm !important; background: white !important; border: none !important; box-shadow: none !important; display: flex !important; flex-direction: column !important; }
                 .doc-content-wrapper { display: flex; flex-direction: column; flex: 1 1 auto; }
                 header { flex: 0 0 auto !important; }
                 .doc-body { flex: 1 1 auto !important; display: block !important; font-size: 1.1rem !important; line-height: 1.6 !important; }
@@ -97,24 +98,22 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
   // --- [권한 및 상태 체크] ---
   
-  // 1. 열람 권한 체크
   const isRequester = initialDoc.requesterId === user.uid;
-  const isApprover = initialDoc.approvers.some(ap => ap.email?.toLowerCase() === user.email?.toLowerCase());
-  
+  const isApprover = initialDoc.approvers.some(ap => ap.email?.toLowerCase() === profile.email?.toLowerCase());
+  const isCircular = initialDoc.circulars?.some(c => c.email?.toLowerCase() === profile.email?.toLowerCase());
+
   let hasViewPermission = false;
-  if (initialDoc.status === 'recalled') {
-      // 회수함: 기안자만 볼 수 있음
+  if (profile.isAdmin) {
+      hasViewPermission = true;
+  } else if (initialDoc.status === 'recalled') {
       hasViewPermission = isRequester;
   } else if (initialDoc.status === 'approved') {
-      // 문서대장: 공개는 모두, 비공개는 관련자만
       if (initialDoc.publishStatus === '공개') hasViewPermission = true;
-      else hasViewPermission = isRequester || isApprover;
+      else hasViewPermission = isRequester || isApprover || isCircular;
   } else {
-      // 진행중 등 기타: 관련자만
-      hasViewPermission = isRequester || isApprover;
+      hasViewPermission = isRequester || isApprover || isCircular;
   }
-
-  // 권한 없음 처리
+  
   if (!hasViewPermission) {
       return (
           <div className="flex h-full w-full items-center justify-center p-8">
@@ -149,7 +148,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     return '';
   };
   
-  const handleApprove = () => { /* ... (기존 동일) ... */
+  const handleApprove = () => {
     if (!profile?.signature) {
         const confirmed = window.confirm("저장된 서명이 없습니다. 서명 없이 결재하시겠습니까?");
         if(!confirmed) return;
@@ -162,7 +161,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     });
   };
   
-  const handleReject = async () => { /* ... (기존 동일) ... */
+  const handleReject = async () => {
     if (!rejectionReason) { toast({ variant: 'destructive', title: '반려 사유 필요', description: '반려 사유를 입력해야 합니다.' }); return; }
     startRejectTransition(async () => {
         if (!user || !profile) return;
@@ -172,7 +171,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     });
   };
 
-  const handleRecall = () => { /* ... (기존 동일) ... */
+  const handleRecall = () => {
     startRecallTransition(async () => {
         if (!user) return;
         const result = await recallDocument(initialDoc.id, user.uid);
@@ -181,14 +180,12 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     });
   };
 
-  // [기존] 수정 페이지 이동 (회수된 문서, 내 차례 문서)
   const handleEdit = () => {
     router.push(`/edit/${initialDoc.id}`);
   };
 
-  // [신규] 재기안 (새 문서로 복사) - 완료된 문서용
   const handleRedraftNew = () => {
-      router.push(`/new?cloneId=${initialDoc.id}`);
+      router.push(`/new?templateId=${initialDoc.id}`);
   };
 
   const downloadFile = (file: { data: string; name: string }) => {
@@ -202,9 +199,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
   return (
     <div className="relative w-full">
-        {/* 상단 버튼 바 */}
         <div className="no-print relative z-50 p-4 md:p-0 flex justify-end gap-2 mb-4 max-w-4xl mx-auto pointer-events-auto">
-            {/* 회수 버튼 (기안자 & 진행중) */}
             {canRecall && (
                 <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -226,7 +221,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </AlertDialog>
             )}
 
-            {/* 재기안 버튼 1: 회수된 문서 (수정 페이지로 이동) */}
             {isRecalled && isRequester && (
                 <Button variant="default" className="shadow-sm" onClick={handleEdit}>
                     <Edit className="mr-2 h-4 w-4" />
@@ -234,7 +228,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </Button>
             )}
 
-            {/* 재기안 버튼 2: 완료된 문서 (새 문서로 복사) */}
             {isApproved && (
                 <Button variant="default" className="shadow-sm" onClick={handleRedraftNew}>
                     <CopyPlus className="mr-2 h-4 w-4" />
@@ -242,7 +235,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </Button>
             )}
 
-            {/* 내용 수정 버튼 (현재 결재 차례) */}
             {isMyTurn && (
                 <Button variant="outline" className="shadow-sm bg-white hover:bg-gray-100" onClick={handleEdit}>
                     <Edit className="mr-2 h-4 w-4" />
@@ -255,11 +247,9 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </Button>
         </div>
 
-        {/* 문서 뷰어 영역 (기존 코드 유지) */}
-        <div className="printable-area bg-white p-8 md:p-12 shadow-lg rounded-lg max-w-[210mm] mx-auto flex flex-col min-h-[297mm] justify-between text-lg leading-relaxed">
-            
-            <div className="flex flex-col flex-1 doc-content-wrapper">
-                <header className="text-center mb-8 shrink-0">
+        <div className="printable-area bg-white p-8 md:p-12 shadow-lg rounded-lg max-w-[210mm] mx-auto text-lg leading-relaxed">
+            <div className="doc-content-wrapper">
+                <header className="text-center shrink-0">
                     <p className="text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
                     {initialDoc.headerImage ? (
                         <img src={initialDoc.headerImage} alt="School Header" className="h-16 md:h-20 mx-auto mb-2 object-contain" />
@@ -271,8 +261,8 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     )}
                 </header>
 
-                <div className="doc-body flex-1 flex flex-col">
-                    <div className="mt-8 mb-8">
+                <div className="doc-body">
+                    <div className="mb-4">
                         <div className="space-y-1 mb-2">
                             <p className="text-base md:text-lg"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
                             <p className="text-sm md:text-base">(경유)</p>
@@ -280,7 +270,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                         <div className="h-0.5 bg-black w-full" />
                     </div>
                     
-                    <div className="flex mb-10 items-start">
+                    <div className="flex mb-8 items-start">
                         <span className="w-20 md:w-24 font-bold text-lg md:text-xl shrink-0">제 목:</span>
                         <span className="text-xl md:text-2xl font-bold text-gray-900 leading-tight">{initialDoc.title}</span>
                     </div>
@@ -305,7 +295,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </div>
             </div>
             
-            <footer className="doc-footer mt-16 shrink-0 mt-auto">
+            <footer className="doc-footer mt-16 shrink-0">
                     <div className="text-center mb-16 h-[80px] flex items-center justify-center">
                     {initialDoc.docType === 'external' && <h2 className="text-3xl md:text-4xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
                 </div>
@@ -369,11 +359,25 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </footer>
         </div>
 
-        {/* ... (하단 버튼 및 모달 유지) ... */}
-        {/* ... */}
+        {isMyTurn && (
+            <div className="no-print fixed bottom-0 left-0 right-0 bg-card border-t shadow-lg z-50 p-4">
+                <div className="max-w-4xl mx-auto flex justify-between items-center gap-4">
+                     <p className="text-lg font-bold text-primary">나의 결재 순서</p>
+                     <div className="flex gap-2">
+                        <Button variant="outline" size="lg" onClick={() => setShowRejectModal(true)} disabled={isRejecting}>
+                           <XCircle className="mr-2" /> 반려
+                        </Button>
+                        <Button size="lg" onClick={handleApprove} disabled={isApproving}>
+                           {isApproving ? <Loader2 className="animate-spin" /> : <CheckCircle2 className="mr-2" />}
+                           결재 및 서명
+                        </Button>
+                     </div>
+                </div>
+            </div>
+        )}
+
         {showRejectModal && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                {/* ... 모달 내용 ... */}
                 <div className="bg-background w-full max-w-lg rounded-lg shadow-lg border p-6 space-y-4">
                     <div className="space-y-2 text-center sm:text-left">
                         <h2 className="text-lg font-semibold tracking-tight">문서를 반려하시겠습니까?</h2>
@@ -381,7 +385,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     </div>
                     <div className="space-y-2">
                          <label htmlFor="rejection-reason" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">반려 사유</label>
-                         <textarea id="rejection-reason" className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" placeholder="예: 첨부파일 누락, 내용 수정 필요 등" value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} />
+                         <Textarea id="rejection-reason" placeholder="예: 첨부파일 누락, 내용 수정 필요 등" value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} />
                     </div>
                     <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 gap-2">
                         <Button variant="outline" onClick={() => setShowRejectModal(false)}>취소</Button>
