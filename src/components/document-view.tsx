@@ -38,7 +38,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
-  // [수정] 선생님께서 직접 만드신 인쇄 로직을 유지하면서, 레이아웃 스타일만 보강했습니다.
   const handlePrint = () => {
     const printContent = document.querySelector('.printable-area');
     if (!printContent) {
@@ -61,47 +60,47 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             ${styles}
             <style>
                 *, *::before, *::after { box-sizing: border-box !important; }
-                html { font-size: 16px !important; }
                 html, body {
                     margin: 0 !important; padding: 0 !important;
                     background-color: white !important;
+                    height: 100% !important;
                     -webkit-print-color-adjust: exact !important;
                     print-color-adjust: exact !important;
-                    height: 100% !important;
                 }
                 @page { size: A4 portrait; margin: 0; }
+                
+                /* [핵심] 인쇄 시 바닥글 하단 고정을 위한 테이블 레이아웃 */
                 .printable-area { 
+                    display: table !important;
                     width: 210mm !important; 
-                    min-height: 100% !important; 
-                    height: auto !important;
+                    height: 100% !important; 
                     margin: 0 auto !important; 
                     padding: 20mm !important; 
-                    background: white !important; border: none !important; box-shadow: none !important;
-                    display: flex !important; flex-direction: column !important;
+                    background: white !important;
                     box-sizing: border-box !important;
                 }
                 .doc-content-wrapper { 
-                    display: flex !important; 
-                    flex-direction: column !important; 
-                    flex: 1 0 auto !important; 
+                    display: table-row-group !important;
                 }
-                header { flex: 0 0 auto !important; }
+                header { 
+                    display: block !important;
+                    margin-bottom: 20px !important;
+                }
                 .doc-body { 
-                    display: block !important; 
+                    display: table-cell !important; 
+                    height: 100% !important; /* 남은 공간 모두 차지 */
+                    vertical-align: top !important;
                     font-size: 1.1rem !important; 
                     line-height: 1.6 !important; 
-                    flex: 1 0 auto !important; 
                 }
                 .doc-footer { 
-                    flex: 0 0 auto !important; 
-                    margin-top: auto !important; 
-                    width: 100% !important; 
-                    break-inside: avoid !important; 
-                    padding-top: 10mm !important; 
+                    display: table-footer-group !important; /* 페이지 하단 고정 */
+                    width: 100% !important;
+                    break-inside: avoid !important;
                 }
-                table { width: 100% !important; border-collapse: collapse !important; margin: 10px 0 !important; }
-                th, td { border: 1px solid black !important; padding: 6px !important; font-size: 1rem !important; }
-                th { background-color: #f3f4f6 !important; font-weight: bold !important; text-align: center !important; }
+                
+                table { width: 100% !important; border-collapse: collapse !important; }
+                th, td { border: 1px solid black !important; padding: 6px !important; }
                 .no-print, button, nav, aside, .fixed { display: none !important; }
             </style>
         </head>
@@ -251,7 +250,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
                 <div className="doc-body flex-1 flex flex-col">
                     {!isFamily && (
-                        <div className="mb-8">
+                        <div className="mb-4">
                             <div className="space-y-1 mb-2">
                                 <p className="text-base md:text-lg"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
                                 <p className="text-base md:text-lg">(경유)</p>

@@ -58,7 +58,7 @@
   }
 }
 
-/* [PDF/인쇄 최적화 스타일 - 전역 설정] */
+/* [PDF/인쇄 최적화 스타일] */
 @media print {
   @page {
     margin: 0;
@@ -76,37 +76,33 @@
   }
   
   .no-print { display: none !important; }
-  
-  main, #root, #__next {
-    display: block !important;
-    height: 100% !important;
-  }
 
-  /* 바닥글 고정 핵심 레이아웃 */
+  /* 브라우저 인쇄 엔진이 페이지 높이를 인식하도록 Table 레이아웃 사용 */
   .printable-area {
-    display: flex !important;
-    flex-direction: column !important;
-    min-height: 100% !important;
+    display: table !important;
     width: 210mm !important;
+    height: 100% !important; /* 전체 페이지 높이 차지 */
     margin: 0 auto !important;
     padding: 20mm !important;
     box-sizing: border-box !important;
+    table-layout: fixed !important;
   }
 
   .doc-content-wrapper {
-    flex: 1 0 auto !important;
-    display: flex !important;
-    flex-direction: column !important;
+    display: table-row-group !important;
   }
 
+  /* 본문 영역이 남은 공간을 모두 차지하여 바닥글을 아래로 밀어냄 */
   .doc-body {
-    flex: 1 0 auto !important;
+    display: table-cell !important;
+    height: 100% !important;
+    vertical-align: top !important;
+    padding-bottom: 20px !important;
   }
 
   .doc-footer {
-    flex: 0 0 auto !important;
-    margin-top: auto !important;
-    padding-top: 10mm !important;
+    display: table-footer-group !important; /* 모든 페이지 하단에 표시하거나 마지막 페이지 하단 고정 */
+    width: 100% !important;
     break-inside: avoid !important;
   }
 
@@ -115,7 +111,7 @@
   }
 }
 
-/* [Rich Editor(Tiptap) 스타일 - 화면 전용] */
+/* [Rich Editor(Tiptap) 스타일] */
 @media screen {
   .ProseMirror {
     outline: none;
