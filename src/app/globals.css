@@ -58,42 +58,63 @@
   }
 }
 
-/* [A4 시뮬레이션 레이아웃] */
-.printable-area {
-    width: 210mm;
-    min-height: 297mm;
-    margin: 20px auto;
-    padding: 20mm;
-    background: white;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
-    display: flex;
-    flex-direction: column;
-    box-sizing: border-box;
-    position: relative;
-    overflow: hidden;
+/* =========================================
+   [화면 및 편집기: HWP / Word 스타일 (A4 종이 개념 도입)] 
+   ========================================= */
+@media screen {
+  .printable-area, .ProseMirror {
+    width: 210mm !important;
+    max-width: 100%;
+    min-height: 297mm !important;
+    margin: 20px auto !important;
+    padding: 20mm !important;
+    background-color: white !important;
+    box-sizing: border-box !important;
+    outline: none;
+    font-size: 12pt !important; /* [추가] 기본 글씨 크기 12pt 설정 */
+    
+    /* [핵심] A4(297mm) 단위로 회색 구분선을 그어 페이지 경계를 시각적으로 표시 */
+    background-image: repeating-linear-gradient(
+        to bottom,
+        transparent,
+        transparent 296mm,
+        #d1d5db 296mm, /* 회색 구분선 */
+        #d1d5db 297mm
+    ) !important;
+    
+    /* 입체감 부여 */
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+    
+    /* [추가] 페이지 하단 고정을 위한 Flexbox 설정 */
+    display: flex !important;
+    flex-direction: column !important;
+  }
 }
 
-/* 본문 영역이 남은 공간을 채워 바닥글을 아래로 밀어냄 */
-.doc-body {
-    flex: 1 0 auto;
-    display: flex;
-    flex-direction: column;
+/* 뷰어 영역 본문과 바닥글 유연 배치 */
+.doc-content-wrapper {
+    flex: 1 0 auto; /* 본문이 공간을 차지하여 바닥글을 아래로 밀어냄 */
 }
-
 .doc-footer {
-    flex-shrink: 0;
-    margin-top: auto;
+    flex: 0 0 auto;
+    margin-top: auto; /* 항상 최하단 위치 보장 */
 }
 
-@media screen and (max-width: 210mm) {
-    .printable-area {
-        width: 100%;
-        margin: 0;
-        padding: 10mm;
-        min-height: auto;
+/* 좁은 화면(모바일/작은 모니터) 대응 */
+@media screen and (max-width: 220mm) {
+    .printable-area, .ProseMirror {
+        width: 100% !important;
+        min-height: 100vh !important;
+        margin: 0 auto !important;
+        padding: 10mm !important;
+        box-shadow: none !important;
+        background-image: none !important; /* 모바일에선 구분선 제거 */
     }
 }
 
+/* =========================================
+   [인쇄 전용 스타일: 여백 제거 및 정확한 렌더링] 
+   ========================================= */
 @media print {
   @page {
     margin: 0;
@@ -109,50 +130,76 @@
   
   .no-print { display: none !important; }
 
+  /* 인쇄 시 그림자 및 시각적 페이지 선 등 스크린용 효과 제거 */
   .printable-area {
     width: 210mm !important;
-    min-height: 297mm !important;
     margin: 0 !important;
     padding: 20mm !important;
     box-shadow: none !important;
+    background-image: none !important; 
+    box-sizing: border-box !important;
     display: flex !important;
     flex-direction: column !important;
-    box-sizing: border-box !important;
+    min-height: 297mm !important;
+    font-size: 12pt !important;
   }
-
-  .doc-body {
-    flex: 1 0 auto !important;
-  }
-
-  .doc-footer {
-    margin-top: auto !important;
+  
+  /* 표나 이미지가 페이지 중간에 잘리는 현상 방지 */
+  tr, td, th, img, h1, h2, h3, h4, p {
+      page-break-inside: avoid;
+      break-inside: avoid;
   }
 }
 
-/* [Rich Editor & Content Styles] */
-.ProseMirror {
-    outline: none;
-    min-height: 300px;
-    padding: 1rem;
-}
-.ProseMirror p, .printable-area p {
+/* [Tiptap 에디터 내부 컨텐츠 포맷팅] */
+.ProseMirror p {
     margin-bottom: 0.5em;
     line-height: 1.6;
 }
-.ProseMirror table, .printable-area table {
+.ProseMirror ul, .ProseMirror ol {
+    padding-left: 1.5em;
+    margin-bottom: 0.5em;
+}
+.ProseMirror ul { list-style-type: disc; }
+.ProseMirror ol { list-style-type: decimal; }
+
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+.ProseMirror td,
+.ProseMirror th {
+  min-width: 1em;
+  border: 1px solid #ced4da;
+  padding: 6px 8px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+  font-size: 12pt !important;
+}
+.ProseMirror th {
+  font-weight: bold;
+  text-align: center;
+  background-color: #f8f9fa;
+}
+
+/* [뷰어/인쇄 화면용 표 스타일] */
+.printable-area table {
     border-collapse: collapse;
     width: 100%;
     margin-top: 8px;
     margin-bottom: 8px;
-    table-layout: fixed;
 }
-.ProseMirror td, .ProseMirror th, .printable-area td, .printable-area th {
+.printable-area td, .printable-area th {
     border: 1px solid #000;
     padding: 6px 8px;
     vertical-align: middle;
-    box-sizing: border-box;
+    font-size: 12pt !important;
 }
-.ProseMirror th, .printable-area th {
+.printable-area th {
     background-color: #f3f4f6;
     font-weight: bold;
     text-align: center;

@@ -3,7 +3,7 @@
 import { generateContentAction } from '@/app/ai-actions';
 import { useAuth } from '@/hooks/use-auth';
 import { ApprovalDoc, ApprovalDocPayload, Approver, DocConfig, UserProfile } from '@/lib/types';
-import { useForm, Controller, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -21,9 +21,10 @@ import { cn } from '@/lib/utils';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import RichEditor from "./rich-editor";
-// Firebase Client SDK 직접 사용
 import { db } from '@/lib/firebase';
 import { doc, getDoc, getDocs, collection, runTransaction, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getDocumentById } from '@/app/actions';
 
 const approverSchema = z.object({
   name: z.string(),
@@ -59,6 +60,8 @@ type DocumentFormProps = {
     category?: 'draft' | 'family';
 }
 
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB 제한
+
 export default function DocumentForm({ docToEdit, category = 'draft' }: DocumentFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -66,6 +69,8 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
   const { user, profile } = useAuth();
   const [isPending, startTransition] = useTransition();
   const [isGenerating, startGenerateTransition] = useTransition();
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [docConfig, setDocConfig] = useState<DocConfig>({});
   
@@ -87,14 +92,11 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
     },
   });
 
-  // 초기 데이터 로드
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchBasics = async () => {
         try {
             const usersSnap = await getDocs(collection(db, 'users'));
-            const userList = usersSnap.docs.map(d => ({
-                email: d.id, ...d.data()
-            } as UserProfile));
+            const userList = usersSnap.docs.map(d => ({ email: d.id, ...d.data() } as UserProfile));
             setUsers(userList);
 
             const configSnap = await getDoc(doc(db, 'settings', 'docConfig'));
@@ -102,94 +104,67 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                 setDocConfig(configSnap.data() as DocConfig);
             }
         } catch (e) {
-            console.error("Failed to load initial data", e);
+            console.error("Load Error:", e);
         }
     };
-    fetchData();
+    fetchBasics();
   }, []);
 
-  // docToEdit가 변경될 때 폼 리셋 로직
   useEffect(() => {
-    if (docToEdit && !cloneId) {
-        console.log("Resetting form with docToEdit data:", docToEdit);
+    const initializeForm = async () => {
+        let targetData: ApprovalDoc | null = null;
+        let isClone = false;
 
-        let initialApprovers = [];
-        
-        if (docToEdit.approvers && docToEdit.approvers.length > 0) {
-             initialApprovers = defaultApproversTemplate.map(template => {
-                const existing = docToEdit.approvers.find(a => a.role === template.role);
-                if (existing) {
-                    return {
-                        ...template,
-                        name: existing.name,
-                        email: existing.email,
-                        type: existing.type,
-                        active: true,
-                    };
+        if (cloneId) {
+            try {
+                const fetched = await getDocumentById(cloneId);
+                if (fetched) {
+                    targetData = fetched;
+                    isClone = true;
+                    toast({ title: "문서 복사됨", description: "이전 문서 내용을 불러왔습니다." });
                 }
-                return { ...template, active: template.role !== '협조' };
-             });
-        } else {
-             initialApprovers = defaultApproversTemplate.map(ap => ({...ap, active: ap.role !== '협조'}));
+            } catch(e) { console.error(e); }
+        } 
+        else if (docToEdit) {
+            targetData = docToEdit;
         }
 
-        form.reset({
-            title: docToEdit.title || '',
-            content: docToEdit.content || '',
-            publishStatus: docToEdit.publishStatus || '공개',
-            docType: docToEdit.docType || 'internal',
-            receiverName: docToEdit.receiverInfo?.name || '',
-            receiverEmail: docToEdit.receiverInfo?.email || '',
-            circulars: docToEdit.circulars || [],
-            attachments: docToEdit.attachments?.map(a => ({...a, size: 0})) || [],
-            approvers: initialApprovers,
-        });
-    }
-  }, [docToEdit, form, cloneId]);
+        if (targetData) {
+            let mappedApprovers = [];
+            if (targetData.approvers && targetData.approvers.length > 0) {
+                 mappedApprovers = defaultApproversTemplate.map(template => {
+                    const existing = targetData!.approvers.find(a => a.role === template.role);
+                    if (existing) {
+                        return {
+                            ...template,
+                            name: existing.name,
+                            email: existing.email,
+                            type: existing.type,
+                            active: true,
+                        };
+                    }
+                    return { ...template, active: template.role !== '협조' };
+                 });
+            } else {
+                 mappedApprovers = defaultApproversTemplate.map(ap => ({...ap, active: ap.role !== '협조'}));
+            }
 
-  // 복사(재기안) 데이터 로드
-  useEffect(() => {
-      const fetchCloneData = async () => {
-          if (cloneId) {
-              try {
-                  const docRef = doc(db, 'approvals', cloneId);
-                  const docSnap = await getDoc(docRef);
-                  if (docSnap.exists()) {
-                      const docData = docSnap.data() as ApprovalDoc;
-                      let initialApprovers = defaultApproversTemplate.map(template => {
-                            const existing = docData.approvers.find(a => a.role === template.role);
-                            if (existing) {
-                                return {
-                                    ...template,
-                                    name: existing.name,
-                                    email: existing.email,
-                                    type: existing.type,
-                                    active: true,
-                                };
-                            }
-                            return { ...template, active: template.role !== '협조' };
-                      });
+            form.reset({
+                title: targetData.title || '',
+                content: targetData.content || '',
+                publishStatus: targetData.publishStatus || '공개',
+                docType: targetData.docType || 'internal',
+                receiverName: targetData.receiverInfo?.name || '',
+                receiverEmail: targetData.receiverInfo?.email || '',
+                circulars: targetData.circulars || [],
+                attachments: targetData.attachments?.map(a => ({...a, size: a.size || 0})) || [],
+                approvers: mappedApprovers,
+            });
+        }
+    };
 
-                      form.reset({
-                        title: docData.title,
-                        content: docData.content,
-                        publishStatus: docData.publishStatus,
-                        docType: docData.docType,
-                        receiverName: docData.receiverInfo?.name || '',
-                        receiverEmail: docData.receiverInfo?.email || '',
-                        circulars: docData.circulars || [],
-                        attachments: docData.attachments?.map(a => ({...a, size: 0})) || [],
-                        approvers: initialApprovers
-                    });
-                    toast({ title: "문서 내용 불러옴", description: "기존 문서 내용을 바탕으로 새 결재를 작성합니다." });
-                  }
-              } catch (e) {
-                  console.error("Failed to fetch clone doc", e);
-              }
-          }
-      };
-      fetchCloneData();
-  }, [cloneId, form]);
+    initializeForm();
+  }, [docToEdit, cloneId, form]);
 
   const { fields: approverFields } = useFieldArray({ control: form.control, name: 'approvers' });
   const { fields: circularFields, append: appendCircular, remove: removeCircular } = useFieldArray({ control: form.control, name: 'circulars' });
@@ -199,7 +174,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
   const handleGenerateContent = async () => {
     const { title, approvers, attachments } = form.getValues();
     if (!title) {
-        toast({ variant: "destructive", title: "제목 필요", description: "AI 콘텐츠를 생성하려면 제목을 먼저 입력해야 합니다." });
+        toast({ variant: "destructive", title: "제목 필요", description: "제목을 먼저 입력해주세요." });
         return;
     }
     
@@ -214,56 +189,120 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                 form.setValue('content', result.content.replace(/\n/g, '<br>')); 
                 toast({ title: "AI 콘텐츠 생성됨" });
             } else {
-                throw new Error(result.error || "알 수 없는 오류");
+                throw new Error(result.error || "오류 발생");
             }
         } catch(e: any) {
-            toast({ variant: "destructive", title: "AI 생성 실패", description: e.message });
+            toast({ variant: "destructive", title: "생성 실패", description: e.message });
         }
     });
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-        Array.from(e.target.files).forEach(file => {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                appendAttachment({
-                    name: file.name,
-                    size: file.size,
-                    data: event.target?.result as string,
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+
+    setIsUploadingFiles(true);
+    
+    // [에러 원인 해결] 환경변수(config)에 스토리지 주소가 누락되었을 경우를 대비해
+    // 알려주신 스토리지 주소를 명시적으로 강제 주입하여 길잃음(타임아웃)을 방지합니다.
+    const storage = getStorage(db.app, 'gs://studio-9153973571-7837c.firebasestorage.app');
+
+    try {
+        const uploadPromises = Array.from(e.target.files).map(async (file) => {
+            if (file.size > MAX_FILE_SIZE) {
+                toast({
+                    variant: "destructive",
+                    title: "용량 초과",
+                    description: `${file.name} 파일이 너무 큽니다 (최대 50MB).`,
                 });
+                return null;
+            }
+
+            const fileRef = ref(storage, `attachments/${Date.now()}_${file.name}`);
+            
+            await uploadBytes(fileRef, file);
+            const downloadURL = await getDownloadURL(fileRef);
+
+            return {
+                name: file.name,
+                size: file.size,
+                data: downloadURL, 
             };
-            reader.readAsDataURL(file);
         });
+
+        const results = await Promise.all(uploadPromises);
+        let count = 0;
+        
+        results.forEach(res => {
+            if (res) {
+                appendAttachment(res);
+                count++;
+            }
+        });
+
+        if (count > 0) {
+            toast({ title: "업로드 완료", description: `${count}개의 파일이 첨부되었습니다.` });
+        }
+    } catch (error: any) {
+        console.error("File upload error:", error);
+        toast({ 
+            variant: "destructive", 
+            title: "업로드 실패", 
+            description: "파일 전송 중 오류가 발생했습니다. 네트워크 상태나 스토리지 설정을 확인해주세요." 
+        });
+    } finally {
+        setIsUploadingFiles(false);
+        if (attachmentInputRef.current) {
+            attachmentInputRef.current.value = '';
+        }
     }
   };
 
   const onInvalid = (errors: any) => {
-    console.error("Form Validation Failed:", errors);
-    let errorMsg = "입력 내용을 확인해주세요.";
-    if (errors.title) errorMsg = "제목을 입력해주세요.";
-    else if (errors.content) errorMsg = "내용을 입력해주세요.";
-    else if (errors.receiverEmail) errorMsg = "수신처 이메일 형식이 올바르지 않습니다.";
-    else if (errors.approvers) errorMsg = "결재선 정보가 올바르지 않습니다.";
-
-    toast({ variant: "destructive", title: "상신 실패", description: errorMsg });
+    console.error("Form Invalid:", errors);
+    let msg = "입력 내용을 확인해주세요.";
+    if (errors.title) msg = "제목을 입력해주세요.";
+    else if (errors.content) msg = "내용을 입력해주세요.";
+    else if (errors.approvers) msg = "결재선 정보를 확인해주세요.";
+    toast({ variant: "destructive", title: "입력 오류", description: msg });
   };
 
-  // [수정] 클라이언트 사이드 DB 저장 로직 (회수 문서 재상신 로직 강화)
   const handleClientSubmit = async (data: FormData) => {
+     if (!user || !profile) {
+         return { success: false, error: "로그인 정보가 없습니다." };
+     }
+
      try {
          const activeApprovers = data.approvers.filter(a => a.active && a.name && a.name.trim() !== '');
          
          if (activeApprovers.length === 0 && !isEditMode) { 
-             throw new Error('활성화된 결재칸에 결재자를 지정해주세요.');
+             throw new Error('최소 한 명 이상의 결재자를 지정해주세요.');
          }
 
-         const payload: ApprovalDocPayload = {
-             ...data,
-             category: category,
-             approvers: activeApprovers.map(a => ({...a, status: 'pending'} as Approver)),
-             receiverInfo: data.docType === 'external' ? { name: data.receiverName!, email: data.receiverEmail! } : null,
-             headerImage: docConfig.headerImage || '',
+         const payload: any = {
+             title: data.title,
+             content: data.content,
+             docType: data.docType,
+             publishStatus: data.publishStatus,
+             attachments: data.attachments.map(a => ({
+                 name: a.name || '',
+                 size: a.size || 0,
+                 data: a.data || ''
+             })),
+             circulars: data.circulars.map(c => ({
+                 name: c.name || '',
+                 email: c.email || '',
+                 role: c.role || ''
+             })),
+             category: category || 'draft',
+             approvers: activeApprovers.map(a => ({
+                 name: a.name,
+                 email: a.email,
+                 role: a.role,
+                 type: a.type,
+                 status: 'pending'
+             })),
+             receiverInfo: data.docType === 'external' ? { name: data.receiverName || '', email: data.receiverEmail || '' } : null,
+             headerImage: (docConfig as any).headerImage || '',
              footerInfo: { 
                 address: docConfig.address || '',
                 phone: docConfig.phone || '',
@@ -273,62 +312,50 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
              }
          };
 
-         // 1. 수정 모드 (기존 문서 업데이트: 회수 후 재상신 포함)
+         // 1. 수정 모드
          if (isEditMode && docToEdit) {
              const docRef = doc(db, 'approvals', docToEdit.id);
              const docSnap = await getDoc(docRef);
              if (!docSnap.exists()) throw new Error("문서를 찾을 수 없습니다.");
              const docData = docSnap.data() as ApprovalDoc;
 
-             // 권한 체크
-             const normalizedUserEmail = profile.email?.trim().toLowerCase();
-             const isOwnerAndRecalled = docData.requesterId === user.uid && docData.status === 'recalled';
-             const currentApprover = docData.approvers[docData.currentStep];
-             const isCurrentApproverAndPending = docData.status === 'pending' && currentApprover && currentApprover.email?.trim().toLowerCase() === normalizedUserEmail;
+             const normalizedUserEmail = profile.email.trim().toLowerCase();
+             const isRequester = docData.requesterId === user.uid;
+             const isCurrentApprover = docData.status === 'pending' && 
+                                     docData.approvers[docData.currentStep]?.email?.trim().toLowerCase() === normalizedUserEmail;
 
-             if (!isOwnerAndRecalled && !isCurrentApproverAndPending) throw new Error("문서를 수정할 권한이 없습니다.");
-
-             // [핵심] 재상신(회수된 문서)인지 여부 확인
-             const isResubmission = isOwnerAndRecalled;
-             const modifiedByApprover = isCurrentApproverAndPending;
+             if (!isRequester && !isCurrentApprover) throw new Error("수정 권한이 없습니다.");
 
              let mergedApprovers = payload.approvers;
+             let newStep = 0;
+             let newStatus: any = 'pending';
 
-             if (modifiedByApprover && docData.approvers) {
-                 // 결재자가 수정 시: 기존 승인자 유지
-                 mergedApprovers = payload.approvers.map((newAp, idx) => {
+             if (isCurrentApprover) {
+                 newStep = docData.currentStep;
+                 mergedApprovers = payload.approvers.map((newAp: any, idx: number) => {
                      const oldAp = docData.approvers[idx];
                      if (oldAp && oldAp.email === newAp.email && oldAp.status === 'approved') {
-                         return { ...newAp, status: oldAp.status, signature: oldAp.signature, approvedAt: oldAp.approvedAt };
+                         return { ...newAp, status: 'approved', signature: oldAp.signature || '', approvedAt: oldAp.approvedAt || '' };
                      }
                      return { ...newAp, status: 'pending' };
                  });
-             } else if (isResubmission) {
-                 // 재상신: 모든 결재자 초기화 (완전 새 결재처럼)
-                 mergedApprovers = payload.approvers.map(a => ({
-                     ...a, 
-                     status: 'pending', 
-                     signature: '', 
-                     approvedAt: ''
-                 }));
+             } 
+             else {
+                 mergedApprovers = payload.approvers.map((a: any) => ({...a, status: 'pending', signature: '', approvedAt: ''}));
              }
 
              await updateDoc(docRef, {
                  ...payload,
-                 // 재상신이면 무조건 'pending'으로 변경
-                 status: 'pending', 
-                 // 재상신이면 0단계(첫 결재자)부터 시작
-                 currentStep: isResubmission ? 0 : docData.currentStep,
+                 status: newStatus,
+                 currentStep: newStep,
                  approvers: mergedApprovers,
-                 // 완료일 초기화
-                 completedAt: null, 
+                 completedAt: null,
                  updatedAt: serverTimestamp(),
-                 // 반려 사유 초기화
-                 comment: '', 
+                 comment: '',
              });
              return { success: true };
          } 
-         // 2. 신규 생성 모드
+         // 2. 신규 생성
          else {
              const newDocRef = doc(collection(db, 'approvals'));
              const settingsRef = doc(db, 'settings', 'docConfig');
@@ -348,18 +375,14 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                         transaction.update(settingsRef, { nextNumber: nextNum + 1 });
                     }
                 } else {
-                    if (isFamilyCat) {
-                        transaction.set(settingsRef, { nextNumber: 1, nextFamilyNumber: 2 });
-                    } else {
-                        transaction.set(settingsRef, { nextNumber: 2, nextFamilyNumber: 1 });
-                    }
+                    const initialData = isFamilyCat ? { nextNumber: 1, nextFamilyNumber: 2 } : { nextNumber: 2, nextFamilyNumber: 1 };
+                    transaction.set(settingsRef, initialData);
                 }
                 return isFamilyCat ? `Kish-가통-${nextNum}` : `Kish-초등-${nextNum}`;
              });
 
              await setDoc(newDocRef, {
                  ...payload,
-                 category: category,
                  docNo: finalDocNoStr,
                  requesterId: user.uid,
                  requesterName: profile.name,
@@ -381,16 +404,15 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
 
   const onSubmit = (data: FormData) => {
      if (!user || !profile) {
-         toast({ variant: "destructive", title: "권한 오류", description: "로그인 정보가 없습니다. 다시 로그인해주세요." });
+         toast({ variant: "destructive", title: "권한 오류", description: "로그인이 필요합니다." });
          return;
      }
 
      startTransition(async () => {
          const result = await handleClientSubmit(data);
-         
          if(result.success) {
-             toast({ title: isEditMode ? "수정 완료" : "상신 완료", description: `문서가 성공적으로 ${isEditMode ? '수정 및 재상신' : '상신'}되었습니다.` });
-             router.push(`/sent`);
+             toast({ title: isEditMode ? "수정 완료" : "상신 완료", description: "문서가 처리되었습니다." });
+             router.push('/inbox');
              router.refresh();
          } else {
              toast({ variant: "destructive", title: "실패", description: result.error });
@@ -402,9 +424,6 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-8">
         
-        {/* ... (폼 렌더링 코드는 기존과 완벽히 동일하므로 생략하지 않고 유지) ... */}
-        {/* ... */}
-        
         <FormField
           control={form.control}
           name="title"
@@ -412,7 +431,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
             <FormItem>
               <FormLabel className="text-lg font-bold">제목</FormLabel>
               <FormControl>
-                <Input placeholder={isFamily ? "가정통신문 제목을 입력하세요." : "문서의 제목을 입력하세요."} {...field} className="h-12 text-base" />
+                <Input placeholder={isFamily ? "가정통신문 제목" : "문서 제목"} {...field} className="h-12 text-base" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -597,7 +616,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
         
         <Card>
             <CardHeader>
-                <CardTitle>첨부파일</CardTitle>
+                <CardTitle>첨부파일 <span className="text-xs text-muted-foreground font-normal ml-2">(파일당 최대 50MB)</span></CardTitle>
             </CardHeader>
             <CardContent>
                 <div className="space-y-4">
@@ -611,7 +630,14 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                             onChange={handleFileChange}
                             className="hidden"
                         />
-                        <Button type="button" variant="outline" onClick={() => attachmentInputRef.current?.click()}>파일 선택</Button>
+                        <Button 
+                            type="button" 
+                            variant="outline" 
+                            onClick={() => attachmentInputRef.current?.click()}
+                            disabled={isUploadingFiles}
+                        >
+                            {isUploadingFiles ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> 업로드 중...</> : '파일 선택'}
+                        </Button>
                     </div>
 
                     {attachmentFields.length > 0 && (
@@ -621,7 +647,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                                     <div className="flex items-center gap-2">
                                         <FileIcon className="h-4 w-4 text-muted-foreground" />
                                         <span className="text-sm font-medium">{field.name}</span>
-                                        { field.size > 0 && <span className="text-xs text-muted-foreground">({(field.size / 1024).toFixed(1)} KB)</span> }
+                                        { field.size > 0 && <span className="text-xs text-muted-foreground">({(field.size / 1024 / 1024).toFixed(2)} MB)</span> }
                                     </div>
                                     <Button type="button" variant="ghost" size="icon" onClick={() => removeAttachment(index)}>
                                         <Trash2 className="h-4 w-4 text-destructive" />
@@ -634,8 +660,8 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
             </CardContent>
         </Card>
 
-        <Button type="submit" disabled={isPending} className="w-full h-12 text-lg font-bold">
-            {isPending ? <Loader2 className="animate-spin" /> : (isEditMode ? '수정 후 재상신' : '결재 상신')}
+        <Button type="submit" disabled={isPending || isUploadingFiles} className="w-full h-12 text-lg font-bold">
+            {isPending || isUploadingFiles ? <Loader2 className="animate-spin" /> : (isEditMode ? '수정 후 재상신' : '결재 상신')}
         </Button>
       </form>
     </Form>

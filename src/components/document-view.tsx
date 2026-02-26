@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { approveDocument, rejectDocument, recallDocument } from '@/app/actions';
 import { Button } from '@/components/ui/button';
-import { Printer, Loader2, Edit, CopyPlus, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, Printer, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition } from 'react';
 import Link from 'next/link'; 
@@ -38,7 +38,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
-  // 선생님께서 완성해두신 인쇄 로직 (수정하지 않음)
   const handlePrint = () => {
     const printContent = document.querySelector('.printable-area');
     if (!printContent) {
@@ -47,7 +46,10 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     }
 
     const printWindow = window.open('', '_blank', 'width=1100,height=900,resizable=yes,scrollbars=yes');
-    if (!printWindow) return;
+    if (!printWindow) {
+        toast({ variant: "destructive", title: "팝업 차단됨", description: "브라우저의 팝업 차단을 해제해야 인쇄할 수 있습니다." });
+        return;
+    }
 
     const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
         .map(node => node.outerHTML).join('');
@@ -61,34 +63,64 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             ${styles}
             <style>
+                html, body { 
+                    font-family: 'Pretendard', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif !important; 
+                }
+                .doc-body table { border-collapse: collapse !important; width: 100% !important; margin: 10px 0 !important; }
+                .doc-body th, .doc-body td { border: 1px solid #000 !important; padding: 6px 8px !important; font-size: 12pt !important; }
+                .doc-body th { background-color: #f3f4f6 !important; font-weight: bold !important; text-align: center !important; }
+
                 @media print {
                     @page { size: A4 portrait; margin: 0; }
                     html, body { height: 100%; margin: 0; padding: 0; background: white; }
+                    
+                    .print-table { 
+                        width: 210mm; 
+                        margin: 0 auto; 
+                        border-collapse: collapse; 
+                        border: none;
+                        min-height: 297mm;
+                    }
+                    .print-thead > tr > th, .print-tfoot > tr > td { border: none !important; padding: 0 !important; margin: 0 !important; }
+                    .print-tbody > tr > td { border: none !important; padding: 0 !important; margin: 0 !important; vertical-align: top !important; }
+
                     .printable-area {
                         width: 210mm !important;
-                        min-height: 297mm !important;
                         margin: 0 !important;
-                        padding: 20mm !important;
+                        padding: 20mm !important; 
+                        box-sizing: border-box !important;
                         display: flex !important;
                         flex-direction: column !important;
-                        box-shadow: none !important;
-                        box-sizing: border-box !important;
+                        min-height: 257mm !important; /* 상하 여백 제외한 높이 */
                     }
-                    .doc-body {
-                        flex: 1 0 auto !important;
-                    }
-                    .doc-footer {
-                        flex-shrink: 0 !important;
-                        margin-top: auto !important;
-                    }
+                    
+                    .doc-content-wrapper { flex: 1 0 auto !important; }
+                    .doc-footer { margin-top: auto !important; }
+
+                    tr, td, th, img, h1, h2, h3, h4, p { page-break-inside: avoid; break-inside: avoid; }
                     .no-print { display: none !important; }
                 }
             </style>
         </head>
         <body>
-            <div class="printable-area">
-                ${printContent.innerHTML}
-            </div>
+            <table class="print-table">
+                <thead class="print-thead">
+                    <tr><th><div style="height: 20mm;"></div></th></tr>
+                </thead>
+                <tbody class="print-tbody">
+                    <tr>
+                        <td>
+                            <div class="printable-area">
+                                ${printContent.innerHTML}
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+                <tfoot class="print-tfoot">
+                    <tr><td><div style="height: 20mm;"></div></td></tr>
+                </tfoot>
+            </table>
+            
             <script>
                 window.onload = function() {
                     setTimeout(function() {
@@ -176,8 +208,13 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   };
 
   const downloadFile = (file: { data: string; name: string }) => {
-    const link = document.createElement('a'); link.href = file.data; link.download = file.name;
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    const link = document.createElement('a'); 
+    link.href = file.data; 
+    link.download = file.name;
+    link.target = '_blank'; 
+    document.body.appendChild(link); 
+    link.click(); 
+    document.body.removeChild(link);
   };
 
   return (
@@ -225,79 +262,86 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </Button>
         </div>
 
-        <div className="printable-area">
-            <header className="text-center mb-4 shrink-0">
-                <p className="text-xs md:text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
-                {isFamily ? (
-                        <h1 className="text-3xl md:text-5xl font-extrabold tracking-[0.3em] text-gray-900 mb-6 border-2 border-black inline-block px-8 py-2">가 정 통 신 문</h1>
-                ) : (
-                    initialDoc.headerImage ? <img src={initialDoc.headerImage} alt="Header" className="h-16 md:h-20 mx-auto mb-2 object-contain" /> : <h1 className="text-3xl font-extrabold mb-2">호치민시한국국제학교</h1>
-                )}
-            </header>
+        <div className="printable-area flex flex-col">
+            <div className="doc-content-wrapper">
+                <header className="text-center mb-4 shrink-0">
+                    <p className="text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
+                    {isFamily ? (
+                            <h1 className="text-3xl md:text-5xl font-extrabold tracking-[0.3em] text-gray-900 mb-6 border-2 border-black inline-block px-8 py-2">가 정 통 신 문</h1>
+                    ) : (
+                        initialDoc.headerImage ? <img src={initialDoc.headerImage} alt="Header" className="h-16 md:h-20 mx-auto mb-2 object-contain" /> : <h1 className="text-3xl font-extrabold mb-2">호치민시한국국제학교</h1>
+                    )}
+                </header>
 
-            <div className="doc-body">
-                {!isFamily && (
-                    <div className="mb-4">
-                        <div className="space-y-1 mb-2">
-                            <p className="text-sm md:text-base"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
-                            <p className="text-sm md:text-base">(경유)</p>
-                            <div className="flex items-start text-sm md:text-base"><span className="font-bold shrink-0">제목</span><span className="ml-2 font-medium">{initialDoc.title}</span></div>
+                <div className="doc-body">
+                    {!isFamily && (
+                        <div className="mb-4">
+                            <div className="space-y-1 mb-2">
+                                <p className="text-[12pt]"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
+                                <p className="text-[12pt]">(경유)</p>
+                                <div className="flex items-start text-[12pt]"><span className="font-bold shrink-0">제목</span><span className="ml-2 font-medium">{initialDoc.title}</span></div>
+                            </div>
+                            <div className="h-0.5 bg-black w-full" />
                         </div>
-                        <div className="h-0.5 bg-black w-full" />
-                    </div>
-                )}
-                
-                <div className="text-base md:text-lg leading-loose font-serif text-gray-800 tracking-normal" dangerouslySetInnerHTML={{ __html: initialDoc.content }} />
+                    )}
+                    
+                    <div className="text-[12pt] leading-loose font-serif text-gray-800 tracking-normal" dangerouslySetInnerHTML={{ __html: initialDoc.content }} />
 
-                {initialDoc.attachments?.length > 0 && (
-                    <div className="mt-8">
-                        <h3 className="font-bold mb-2 text-base md:text-lg">붙임</h3>
-                        <ul className="list-decimal list-inside space-y-1 text-sm md:text-base">
-                        {initialDoc.attachments.map((file, idx) => (
-                            <li key={idx}><button onClick={() => downloadFile(file)} className="text-blue-600 hover:underline">{file.name}</button></li>
-                        ))}
-                        </ul>
-                    </div>
-                )}
+                    {initialDoc.attachments?.length > 0 && (
+                        <div className="mt-12">
+                            <h3 className="font-bold mb-2 text-[12pt]">붙임</h3>
+                            <ul className="list-decimal list-inside space-y-2 text-[12pt]">
+                            {initialDoc.attachments.map((file, idx) => (
+                                <li key={idx}><button onClick={() => downloadFile(file)} className="text-blue-600 hover:underline">{file.name}</button></li>
+                            ))}
+                            </ul>
+                        </div>
+                    )}
+                </div>
             </div>
             
-            <footer className="doc-footer pt-6 mt-auto">
-                <div className="text-center mb-10 h-[60px] flex items-center justify-center">
-                    {initialDoc.docType === 'external' && <h2 className="text-2xl md:text-3xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
+            <footer className="doc-footer pt-10 mt-auto">
+                <div className="text-center mb-16 h-[80px] flex items-center justify-center">
+                    {initialDoc.docType === 'external' && <h2 className="text-3xl md:text-4xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
                 </div>
-                <div className="border-t-2 border-black pt-2 pb-1">
-                    <div className="flex items-center justify-between text-xs w-full">
+                <div className="border-t-2 border-black pt-4 pb-2">
+                    <div className="flex items-center justify-between text-sm w-full">
                         <div className="flex items-center gap-1 md:gap-2">
                             <span className="font-bold">{initialDoc.requesterRole}</span>
                             <div className="flex items-center gap-1">
                                 <span className="font-semibold">{initialDoc.requesterName}</span>
-                                {initialDoc.requesterSignature && <div className="w-8 h-8 flex items-center justify-center"><img src={initialDoc.requesterSignature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
+                                {initialDoc.requesterSignature && <div className="w-10 h-10 flex items-center justify-center"><img src={initialDoc.requesterSignature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
                             </div>
                         </div>
                         {mainApprovers.map((ap, idx) => (
                             <div key={idx} className="flex items-center gap-1 md:gap-2">
                                 <div className="flex flex-col items-start leading-tight">
                                     <span className="font-bold">{ap.role}</span>
-                                    {ap.type !== 'normal' && <span className="text-[10px] text-primary font-bold">{getTypeText(ap.type)}</span>}
+                                    {ap.type !== 'normal' && <span className="text-xs text-primary font-bold">{getTypeText(ap.type)}</span>}
                                 </div>
                                 <div className="flex items-center gap-1">
                                     <span className="font-semibold">{ap.approverName}</span>
-                                    {ap.status === 'approved' && ap.signature && <div className="w-8 h-8 flex items-center justify-center"><img src={ap.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
-                                    {ap.status === 'rejected' && <span className="text-destructive font-bold text-[10px]">반려</span>}
+                                    {ap.status === 'approved' && ap.signature && <div className="w-10 h-10 flex items-center justify-center"><img src={ap.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
+                                    {ap.status === 'rejected' && <span className="text-destructive font-bold text-xs">반려</span>}
                                 </div>
                             </div>
                         ))}
                     </div>
                     {assistant && (
-                        <div className="flex items-center gap-2 text-xs pt-1 mt-1 border-t border-dashed">
+                        <div className="flex items-center gap-2 text-sm pt-2 mt-2 border-t border-dashed">
                              <span className="font-bold">{assistant.role}</span>
                              <span className="font-semibold">{assistant.approverName || assistant.name}</span>
-                             {assistant.status === 'approved' && assistant.signature && <div className="w-8 h-8 flex items-center justify-center"><img src={assistant.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
+                             {assistant.status === 'approved' && assistant.signature && <div className="w-10 h-10 flex items-center justify-center"><img src={assistant.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
                         </div>
                     )}
                 </div>
-                <div className="mt-2 text-[10px] md:text-xs font-medium text-gray-700 space-y-0.5 border-t border-gray-200 pt-2">
-                     <div className="flex gap-4">
+                {initialDoc.status === 'rejected' && (
+                    <div className="mt-4 p-3 bg-destructive/10 border border-destructive/50 rounded-lg no-print">
+                        <p className="text-base font-bold text-destructive">반려 사유: <span className="font-normal text-destructive-foreground">{initialDoc.approvers.find(ap => ap.status === 'rejected')?.comment}</span></p>
+                    </div>
+                )}
+                <div className="mt-4 text-[10pt] font-medium text-gray-700 space-y-1 border-t border-gray-200 pt-4">
+                     <div className="flex gap-6">
                         <span><strong>시행</strong> {initialDoc.docNo} ({format(approvalDate, 'yyyy. MM. dd.')})</span>
                         {!isFamily && <span><strong>접수</strong> ( )</span>}
                     </div>
