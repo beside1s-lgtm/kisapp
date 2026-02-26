@@ -58,7 +58,7 @@
   }
 }
 
-/* [A4 시뮬레이션 스타일] */
+/* [A4 시뮬레이션 레이아웃] */
 .printable-area {
     width: 210mm;
     min-height: 297mm;
@@ -69,6 +69,20 @@
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
+    position: relative;
+    overflow: hidden;
+}
+
+/* 본문 영역이 남은 공간을 채워 바닥글을 아래로 밀어냄 */
+.doc-body {
+    flex: 1 0 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.doc-footer {
+    flex-shrink: 0;
+    margin-top: auto;
 }
 
 @media screen and (max-width: 210mm) {
@@ -76,6 +90,7 @@
         width: 100%;
         margin: 0;
         padding: 10mm;
+        min-height: auto;
     }
 }
 
@@ -102,72 +117,42 @@
     box-shadow: none !important;
     display: flex !important;
     flex-direction: column !important;
+    box-sizing: border-box !important;
+  }
+
+  .doc-body {
+    flex: 1 0 auto !important;
+  }
+
+  .doc-footer {
+    margin-top: auto !important;
   }
 }
 
-.doc-body {
-    flex: 1 0 auto;
-}
-
-.doc-footer {
-    flex-shrink: 0;
-}
-
-/* [Rich Editor(Tiptap) 스타일] */
-@media screen {
-  .ProseMirror {
+/* [Rich Editor & Content Styles] */
+.ProseMirror {
     outline: none;
     min-height: 300px;
     padding: 1rem;
-  }
 }
-
-.ProseMirror p {
+.ProseMirror p, .printable-area p {
     margin-bottom: 0.5em;
     line-height: 1.6;
 }
-.ProseMirror ul, .ProseMirror ol {
-    padding-left: 1.5em;
-    margin-bottom: 0.5em;
-}
-.ProseMirror ul { list-style-type: disc; }
-.ProseMirror ol { list-style-type: decimal; }
-
-.ProseMirror table {
-  border-collapse: collapse;
-  table-layout: fixed;
-  width: 100%;
-  margin: 0;
-  overflow: hidden;
-}
-.ProseMirror td,
-.ProseMirror th {
-  min-width: 1em;
-  border: 1px solid #ced4da;
-  padding: 6px 8px;
-  vertical-align: top;
-  box-sizing: border-box;
-  position: relative;
-}
-.ProseMirror th {
-  font-weight: bold;
-  text-align: center;
-  background-color: #f8f9fa;
-}
-
-/* [뷰어/인쇄 화면용 표 스타일] */
-.printable-area table {
+.ProseMirror table, .printable-area table {
     border-collapse: collapse;
     width: 100%;
     margin-top: 8px;
     margin-bottom: 8px;
+    table-layout: fixed;
 }
-.printable-area td, .printable-area th {
+.ProseMirror td, .ProseMirror th, .printable-area td, .printable-area th {
     border: 1px solid #000;
     padding: 6px 8px;
     vertical-align: middle;
+    box-sizing: border-box;
 }
-.printable-area th {
+.ProseMirror th, .printable-area th {
     background-color: #f3f4f6;
     font-weight: bold;
     text-align: center;

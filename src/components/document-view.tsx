@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { approveDocument, rejectDocument, recallDocument } from '@/app/actions';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Printer, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle } from 'lucide-react';
+import { Printer, Loader2, Edit, CopyPlus, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition } from 'react';
 import Link from 'next/link'; 
@@ -38,6 +38,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
+  // 선생님께서 완성해두신 인쇄 로직 (수정하지 않음)
   const handlePrint = () => {
     const printContent = document.querySelector('.printable-area');
     if (!printContent) {
@@ -93,7 +94,6 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     setTimeout(function() {
                         window.focus();
                         window.print();
-                        // window.close(); // 필요시 활성화
                     }, 500);
                 };
             </script>
@@ -227,7 +227,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
         <div className="printable-area">
             <header className="text-center mb-4 shrink-0">
-                <p className="text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
+                <p className="text-xs md:text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
                 {isFamily ? (
                         <h1 className="text-3xl md:text-5xl font-extrabold tracking-[0.3em] text-gray-900 mb-6 border-2 border-black inline-block px-8 py-2">가 정 통 신 문</h1>
                 ) : (
@@ -239,20 +239,20 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 {!isFamily && (
                     <div className="mb-4">
                         <div className="space-y-1 mb-2">
-                            <p className="text-base md:text-lg"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
-                            <p className="text-base md:text-lg">(경유)</p>
-                            <div className="flex items-start text-base md:text-lg"><span className="font-bold shrink-0">제목</span><span className="ml-2 font-medium">{initialDoc.title}</span></div>
+                            <p className="text-sm md:text-base"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
+                            <p className="text-sm md:text-base">(경유)</p>
+                            <div className="flex items-start text-sm md:text-base"><span className="font-bold shrink-0">제목</span><span className="ml-2 font-medium">{initialDoc.title}</span></div>
                         </div>
                         <div className="h-0.5 bg-black w-full" />
                     </div>
                 )}
                 
-                <div className="text-lg md:text-xl leading-loose font-serif text-gray-800 tracking-normal" dangerouslySetInnerHTML={{ __html: initialDoc.content }} />
+                <div className="text-base md:text-lg leading-loose font-serif text-gray-800 tracking-normal" dangerouslySetInnerHTML={{ __html: initialDoc.content }} />
 
                 {initialDoc.attachments?.length > 0 && (
-                    <div className="mt-12">
-                        <h3 className="font-bold mb-2 text-lg md:text-xl">붙임</h3>
-                        <ul className="list-decimal list-inside space-y-2 text-base md:text-lg">
+                    <div className="mt-8">
+                        <h3 className="font-bold mb-2 text-base md:text-lg">붙임</h3>
+                        <ul className="list-decimal list-inside space-y-1 text-sm md:text-base">
                         {initialDoc.attachments.map((file, idx) => (
                             <li key={idx}><button onClick={() => downloadFile(file)} className="text-blue-600 hover:underline">{file.name}</button></li>
                         ))}
@@ -261,48 +261,43 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 )}
             </div>
             
-            <footer className="doc-footer pt-10 mt-auto">
-                <div className="text-center mb-16 h-[80px] flex items-center justify-center">
-                    {initialDoc.docType === 'external' && <h2 className="text-3xl md:text-4xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
+            <footer className="doc-footer pt-6 mt-auto">
+                <div className="text-center mb-10 h-[60px] flex items-center justify-center">
+                    {initialDoc.docType === 'external' && <h2 className="text-2xl md:text-3xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
                 </div>
-                <div className="border-t-2 border-black pt-4 pb-2">
-                    <div className="flex items-center justify-between text-sm w-full">
+                <div className="border-t-2 border-black pt-2 pb-1">
+                    <div className="flex items-center justify-between text-xs w-full">
                         <div className="flex items-center gap-1 md:gap-2">
                             <span className="font-bold">{initialDoc.requesterRole}</span>
                             <div className="flex items-center gap-1">
                                 <span className="font-semibold">{initialDoc.requesterName}</span>
-                                {initialDoc.requesterSignature && <div className="w-10 h-10 flex items-center justify-center"><img src={initialDoc.requesterSignature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
+                                {initialDoc.requesterSignature && <div className="w-8 h-8 flex items-center justify-center"><img src={initialDoc.requesterSignature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
                             </div>
                         </div>
                         {mainApprovers.map((ap, idx) => (
                             <div key={idx} className="flex items-center gap-1 md:gap-2">
                                 <div className="flex flex-col items-start leading-tight">
                                     <span className="font-bold">{ap.role}</span>
-                                    {ap.type !== 'normal' && <span className="text-xs text-primary font-bold">{getTypeText(ap.type)}</span>}
+                                    {ap.type !== 'normal' && <span className="text-[10px] text-primary font-bold">{getTypeText(ap.type)}</span>}
                                 </div>
                                 <div className="flex items-center gap-1">
                                     <span className="font-semibold">{ap.approverName}</span>
-                                    {ap.status === 'approved' && ap.signature && <div className="w-10 h-10 flex items-center justify-center"><img src={ap.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
-                                    {ap.status === 'rejected' && <span className="text-destructive font-bold text-xs">반려</span>}
+                                    {ap.status === 'approved' && ap.signature && <div className="w-8 h-8 flex items-center justify-center"><img src={ap.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
+                                    {ap.status === 'rejected' && <span className="text-destructive font-bold text-[10px]">반려</span>}
                                 </div>
                             </div>
                         ))}
                     </div>
                     {assistant && (
-                        <div className="flex items-center gap-2 text-sm pt-2 mt-2 border-t border-dashed">
+                        <div className="flex items-center gap-2 text-xs pt-1 mt-1 border-t border-dashed">
                              <span className="font-bold">{assistant.role}</span>
                              <span className="font-semibold">{assistant.approverName || assistant.name}</span>
-                             {assistant.status === 'approved' && assistant.signature && <div className="w-10 h-10 flex items-center justify-center"><img src={assistant.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
+                             {assistant.status === 'approved' && assistant.signature && <div className="w-8 h-8 flex items-center justify-center"><img src={assistant.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
                         </div>
                     )}
                 </div>
-                {initialDoc.status === 'rejected' && (
-                    <div className="mt-4 p-3 bg-destructive/10 border border-destructive/50 rounded-lg no-print">
-                        <p className="text-base font-bold text-destructive">반려 사유: <span className="font-normal text-destructive-foreground">{initialDoc.approvers.find(ap => ap.status === 'rejected')?.comment}</span></p>
-                    </div>
-                )}
-                <div className="mt-4 text-sm font-medium text-gray-700 space-y-1 border-t border-gray-200 pt-4">
-                     <div className="flex gap-6">
+                <div className="mt-2 text-[10px] md:text-xs font-medium text-gray-700 space-y-0.5 border-t border-gray-200 pt-2">
+                     <div className="flex gap-4">
                         <span><strong>시행</strong> {initialDoc.docNo} ({format(approvalDate, 'yyyy. MM. dd.')})</span>
                         {!isFamily && <span><strong>접수</strong> ( )</span>}
                     </div>
