@@ -56,59 +56,47 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
         <html>
         <head>
             <title>${initialDoc.title}</title>
+            <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             ${styles}
             <style>
-                *, *::before, *::after { box-sizing: border-box !important; }
-                html, body {
-                    margin: 0 !important; padding: 0 !important;
-                    background-color: white !important;
-                    height: 100% !important;
-                    -webkit-print-color-adjust: exact !important;
-                    print-color-adjust: exact !important;
+                @media print {
+                    @page { size: A4 portrait; margin: 0; }
+                    html, body { height: 100%; margin: 0; padding: 0; background: white; }
+                    .printable-area {
+                        width: 210mm !important;
+                        min-height: 297mm !important;
+                        margin: 0 !important;
+                        padding: 20mm !important;
+                        display: flex !important;
+                        flex-direction: column !important;
+                        box-shadow: none !important;
+                        box-sizing: border-box !important;
+                    }
+                    .doc-body {
+                        flex: 1 0 auto !important;
+                    }
+                    .doc-footer {
+                        flex-shrink: 0 !important;
+                        margin-top: auto !important;
+                    }
+                    .no-print { display: none !important; }
                 }
-                @page { size: A4 portrait; margin: 0; }
-                
-                /* [핵심] 인쇄 시 바닥글 하단 고정을 위한 테이블 레이아웃 */
-                .printable-area { 
-                    display: table !important;
-                    width: 210mm !important; 
-                    height: 100% !important; 
-                    margin: 0 auto !important; 
-                    padding: 20mm !important; 
-                    background: white !important;
-                    box-sizing: border-box !important;
-                }
-                .doc-content-wrapper { 
-                    display: table-row-group !important;
-                }
-                header { 
-                    display: block !important;
-                    margin-bottom: 20px !important;
-                }
-                .doc-body { 
-                    display: table-cell !important; 
-                    height: 100% !important; /* 남은 공간 모두 차지 */
-                    vertical-align: top !important;
-                    font-size: 1.1rem !important; 
-                    line-height: 1.6 !important; 
-                }
-                .doc-footer { 
-                    display: table-footer-group !important; /* 페이지 하단 고정 */
-                    width: 100% !important;
-                    break-inside: avoid !important;
-                }
-                
-                table { width: 100% !important; border-collapse: collapse !important; }
-                th, td { border: 1px solid black !important; padding: 6px !important; }
-                .no-print, button, nav, aside, .fixed { display: none !important; }
             </style>
         </head>
         <body>
             <div class="printable-area">
                 ${printContent.innerHTML}
             </div>
-            <script>window.onload = function() { setTimeout(function() { window.focus(); window.print(); }, 500); };</script>
+            <script>
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.focus();
+                        window.print();
+                        // window.close(); // 필요시 활성화
+                    }, 500);
+                };
+            </script>
         </body>
         </html>
     `);
@@ -193,8 +181,8 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   };
 
   return (
-    <div className="relative w-full">
-        <div className="no-print relative z-50 p-4 md:p-0 flex justify-end gap-2 mb-4 max-w-4xl mx-auto pointer-events-auto">
+    <div className="relative w-full bg-muted/30 py-8 min-h-screen">
+        <div className="no-print flex justify-end gap-2 mb-6 max-w-[210mm] mx-auto px-4">
             {canRecall && (
                 <AlertDialog>
                     <AlertDialogTrigger asChild><Button variant="outline" disabled={isRecalling}>회수하기</Button></AlertDialogTrigger>
@@ -237,50 +225,48 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </Button>
         </div>
 
-        <div className="printable-area bg-white p-8 md:p-12 shadow-lg rounded-lg max-w-[210mm] mx-auto flex flex-col min-h-[29.7cm] text-lg leading-relaxed">
-            <div className="flex flex-col flex-1 doc-content-wrapper">
-                <header className="text-center mb-4 shrink-0">
-                    <p className="text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
-                    {isFamily ? (
-                         <h1 className="text-3xl md:text-5xl font-extrabold tracking-[0.3em] text-gray-900 mb-6 border-2 border-black inline-block px-8 py-2">가 정 통 신 문</h1>
-                    ) : (
-                        initialDoc.headerImage ? <img src={initialDoc.headerImage} alt="Header" className="h-16 md:h-20 mx-auto mb-2 object-contain" /> : <h1 className="text-3xl font-extrabold mb-2">호치민시한국국제학교</h1>
-                    )}
-                </header>
+        <div className="printable-area">
+            <header className="text-center mb-4 shrink-0">
+                <p className="text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
+                {isFamily ? (
+                        <h1 className="text-3xl md:text-5xl font-extrabold tracking-[0.3em] text-gray-900 mb-6 border-2 border-black inline-block px-8 py-2">가 정 통 신 문</h1>
+                ) : (
+                    initialDoc.headerImage ? <img src={initialDoc.headerImage} alt="Header" className="h-16 md:h-20 mx-auto mb-2 object-contain" /> : <h1 className="text-3xl font-extrabold mb-2">호치민시한국국제학교</h1>
+                )}
+            </header>
 
-                <div className="doc-body flex-1 flex flex-col">
-                    {!isFamily && (
-                        <div className="mb-4">
-                            <div className="space-y-1 mb-2">
-                                <p className="text-base md:text-lg"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
-                                <p className="text-base md:text-lg">(경유)</p>
-                                <div className="flex items-start text-base md:text-lg"><span className="font-bold shrink-0">제목</span><span className="ml-2 font-medium">{initialDoc.title}</span></div>
-                            </div>
-                            <div className="h-0.5 bg-black w-full" />
+            <div className="doc-body">
+                {!isFamily && (
+                    <div className="mb-4">
+                        <div className="space-y-1 mb-2">
+                            <p className="text-base md:text-lg"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
+                            <p className="text-base md:text-lg">(경유)</p>
+                            <div className="flex items-start text-base md:text-lg"><span className="font-bold shrink-0">제목</span><span className="ml-2 font-medium">{initialDoc.title}</span></div>
                         </div>
-                    )}
-                    
-                    <div className="min-h-[300px] text-lg md:text-xl leading-loose font-serif text-gray-800 tracking-normal flex-1" dangerouslySetInnerHTML={{ __html: initialDoc.content }} />
+                        <div className="h-0.5 bg-black w-full" />
+                    </div>
+                )}
+                
+                <div className="text-lg md:text-xl leading-loose font-serif text-gray-800 tracking-normal" dangerouslySetInnerHTML={{ __html: initialDoc.content }} />
 
-                    {initialDoc.attachments?.length > 0 && (
-                        <div className="mt-12">
-                            <h3 className="font-bold mb-2 text-lg md:text-xl">붙임</h3>
-                            <ul className="list-decimal list-inside space-y-2 text-base md:text-lg">
-                            {initialDoc.attachments.map((file, idx) => (
-                                <li key={idx}><button onClick={() => downloadFile(file)} className="text-blue-600 hover:underline">{file.name}</button></li>
-                            ))}
-                            </ul>
-                        </div>
-                    )}
-                </div>
+                {initialDoc.attachments?.length > 0 && (
+                    <div className="mt-12">
+                        <h3 className="font-bold mb-2 text-lg md:text-xl">붙임</h3>
+                        <ul className="list-decimal list-inside space-y-2 text-base md:text-lg">
+                        {initialDoc.attachments.map((file, idx) => (
+                            <li key={idx}><button onClick={() => downloadFile(file)} className="text-blue-600 hover:underline">{file.name}</button></li>
+                        ))}
+                        </ul>
+                    </div>
+                )}
             </div>
             
-            <footer className="doc-footer mt-auto shrink-0 pt-10">
+            <footer className="doc-footer pt-10 mt-auto">
                 <div className="text-center mb-16 h-[80px] flex items-center justify-center">
                     {initialDoc.docType === 'external' && <h2 className="text-3xl md:text-4xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
                 </div>
                 <div className="border-t-2 border-black pt-4 pb-2">
-                    <div className="flex items-center justify-between text-xs md:text-sm w-full">
+                    <div className="flex items-center justify-between text-sm w-full">
                         <div className="flex items-center gap-1 md:gap-2">
                             <span className="font-bold">{initialDoc.requesterRole}</span>
                             <div className="flex items-center gap-1">
@@ -303,7 +289,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                         ))}
                     </div>
                     {assistant && (
-                        <div className="flex items-center gap-2 text-xs md:text-sm pt-2 mt-2 border-t border-dashed">
+                        <div className="flex items-center gap-2 text-sm pt-2 mt-2 border-t border-dashed">
                              <span className="font-bold">{assistant.role}</span>
                              <span className="font-semibold">{assistant.approverName || assistant.name}</span>
                              {assistant.status === 'approved' && assistant.signature && <div className="w-10 h-10 flex items-center justify-center"><img src={assistant.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
@@ -311,11 +297,11 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     )}
                 </div>
                 {initialDoc.status === 'rejected' && (
-                    <div className="mt-4 p-3 bg-destructive/10 border border-destructive/50 rounded-lg">
+                    <div className="mt-4 p-3 bg-destructive/10 border border-destructive/50 rounded-lg no-print">
                         <p className="text-base font-bold text-destructive">반려 사유: <span className="font-normal text-destructive-foreground">{initialDoc.approvers.find(ap => ap.status === 'rejected')?.comment}</span></p>
                     </div>
                 )}
-                <div className="mt-4 text-xs md:text-sm font-medium text-gray-700 space-y-1 border-t border-gray-200 pt-4">
+                <div className="mt-4 text-sm font-medium text-gray-700 space-y-1 border-t border-gray-200 pt-4">
                      <div className="flex gap-6">
                         <span><strong>시행</strong> {initialDoc.docNo} ({format(approvalDate, 'yyyy. MM. dd.')})</span>
                         {!isFamily && <span><strong>접수</strong> ( )</span>}
