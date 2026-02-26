@@ -26,7 +26,7 @@ export function AppHeader() {
             <FileText size={20} />
           </div>
           <h1 className="font-headline text-lg font-bold tracking-tight text-foreground uppercase">
-            KSHCM ADMIN V4.2
+            KSHCM ADMIN
           </h1>
         </div>
         <div className="flex items-center gap-4">

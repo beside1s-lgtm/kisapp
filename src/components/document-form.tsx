@@ -1,6 +1,5 @@
 'use client';
 
-import { createDocument, getUsersDirectory, getDocConfig, updateDocument, getDocumentById } from '@/app/actions';
 import { generateContentAction } from '@/app/ai-actions';
 import { useAuth } from '@/hooks/use-auth';
 import { ApprovalDoc, ApprovalDocPayload, Approver, DocConfig, UserProfile } from '@/lib/types';
@@ -22,6 +21,9 @@ import { cn } from '@/lib/utils';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import RichEditor from "./rich-editor";
+// Firebase Client SDK 직접 사용
+import { db } from '@/lib/firebase';
+import { doc, getDoc, getDocs, collection, runTransaction, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 
 const approverSchema = z.object({
   name: z.string(),
@@ -41,7 +43,7 @@ const formSchema = z.object({
   publishStatus: z.enum(['공개', '비공개']),
   docType: z.enum(['internal', 'external']),
   receiverName: z.string().optional(),
-  receiverEmail: z.string().email().optional(),
+  receiverEmail: z.string().email().or(z.literal('')).optional(),
 });
 type FormData = z.infer<typeof formSchema>;
 
@@ -54,9 +56,10 @@ const defaultApproversTemplate = [
 
 type DocumentFormProps = {
     docToEdit?: ApprovalDoc | null;
+    category?: 'draft' | 'family';
 }
 
-export default function DocumentForm({ docToEdit }: DocumentFormProps) {
+export default function DocumentForm({ docToEdit, category = 'draft' }: DocumentFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -73,6 +76,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
   const cloneId = searchParams.get('cloneId');
   
   const isEditMode = !!docToEdit && !isTemplateMode && !cloneId;
+  const isFamily = category === 'family';
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -83,17 +87,89 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
     },
   });
 
+  // 초기 데이터 로드
   useEffect(() => {
-    getUsersDirectory().then(setUsers);
-    getDocConfig().then(setDocConfig);
+    const fetchData = async () => {
+        try {
+            const usersSnap = await getDocs(collection(db, 'users'));
+            const userList = usersSnap.docs.map(d => ({
+                email: d.id, ...d.data()
+            } as UserProfile));
+            setUsers(userList);
+
+            const configSnap = await getDoc(doc(db, 'settings', 'docConfig'));
+            if (configSnap.exists()) {
+                setDocConfig(configSnap.data() as DocConfig);
+            }
+        } catch (e) {
+            console.error("Failed to load initial data", e);
+        }
+    };
+    fetchData();
   }, []);
 
+  // docToEdit가 변경될 때 폼 리셋 로직
+  useEffect(() => {
+    if (docToEdit && !cloneId) {
+        console.log("Resetting form with docToEdit data:", docToEdit);
+
+        let initialApprovers = [];
+        
+        if (docToEdit.approvers && docToEdit.approvers.length > 0) {
+             initialApprovers = defaultApproversTemplate.map(template => {
+                const existing = docToEdit.approvers.find(a => a.role === template.role);
+                if (existing) {
+                    return {
+                        ...template,
+                        name: existing.name,
+                        email: existing.email,
+                        type: existing.type,
+                        active: true,
+                    };
+                }
+                return { ...template, active: template.role !== '협조' };
+             });
+        } else {
+             initialApprovers = defaultApproversTemplate.map(ap => ({...ap, active: ap.role !== '협조'}));
+        }
+
+        form.reset({
+            title: docToEdit.title || '',
+            content: docToEdit.content || '',
+            publishStatus: docToEdit.publishStatus || '공개',
+            docType: docToEdit.docType || 'internal',
+            receiverName: docToEdit.receiverInfo?.name || '',
+            receiverEmail: docToEdit.receiverInfo?.email || '',
+            circulars: docToEdit.circulars || [],
+            attachments: docToEdit.attachments?.map(a => ({...a, size: 0})) || [],
+            approvers: initialApprovers,
+        });
+    }
+  }, [docToEdit, form, cloneId]);
+
+  // 복사(재기안) 데이터 로드
   useEffect(() => {
       const fetchCloneData = async () => {
           if (cloneId) {
               try {
-                  const docData = await getDocumentById(cloneId);
-                  if (docData) {
+                  const docRef = doc(db, 'approvals', cloneId);
+                  const docSnap = await getDoc(docRef);
+                  if (docSnap.exists()) {
+                      const docData = docSnap.data() as ApprovalDoc;
+                      let initialApprovers = defaultApproversTemplate.map(template => {
+                            const existing = docData.approvers.find(a => a.role === template.role);
+                            if (existing) {
+                                return {
+                                    ...template,
+                                    name: existing.name,
+                                    email: existing.email,
+                                    type: existing.type,
+                                    active: true,
+                                };
+                            }
+                            return { ...template, active: template.role !== '협조' };
+                      });
+
                       form.reset({
                         title: docData.title,
                         content: docData.content,
@@ -103,16 +179,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                         receiverEmail: docData.receiverInfo?.email || '',
                         circulars: docData.circulars || [],
                         attachments: docData.attachments?.map(a => ({...a, size: 0})) || [],
-                        approvers: defaultApproversTemplate.map(template => {
-                            const existing = docData.approvers.find(a => a.role === template.role);
-                            return {
-                                ...template,
-                                name: existing?.name || '',
-                                email: existing?.email || '',
-                                type: existing?.type || template.type,
-                                active: !!existing,
-                            }
-                        })
+                        approvers: initialApprovers
                     });
                     toast({ title: "문서 내용 불러옴", description: "기존 문서 내용을 바탕으로 새 결재를 작성합니다." });
                   }
@@ -124,35 +191,10 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
       fetchCloneData();
   }, [cloneId, form]);
 
-  useEffect(() => {
-    if (docToEdit && !cloneId) {
-        form.reset({
-            title: docToEdit.title,
-            content: docToEdit.content,
-            publishStatus: docToEdit.publishStatus,
-            docType: docToEdit.docType,
-            receiverName: docToEdit.receiverInfo?.name || '',
-            receiverEmail: docToEdit.receiverInfo?.email || '',
-            circulars: docToEdit.circulars || [],
-            attachments: docToEdit.attachments?.map(a => ({...a, size: 0})) || [],
-            approvers: defaultApproversTemplate.map(template => {
-                const existing = docToEdit.approvers.find(a => a.role === template.role);
-                return {
-                    ...template,
-                    name: existing?.name || '',
-                    email: existing?.email || '',
-                    type: existing?.type || template.type,
-                    active: !!existing,
-                }
-            })
-        });
-    }
-  }, [docToEdit, form, cloneId]);
-
   const { fields: approverFields } = useFieldArray({ control: form.control, name: 'approvers' });
   const { fields: circularFields, append: appendCircular, remove: removeCircular } = useFieldArray({ control: form.control, name: 'circulars' });
   const { fields: attachmentFields, append: appendAttachment, remove: removeAttachment } = useFieldArray({ control: form.control, name: 'attachments' });
-  const docType = form.watch('docType');
+  const formDocType = form.watch('docType'); 
 
   const handleGenerateContent = async () => {
     const { title, approvers, attachments } = form.getValues();
@@ -196,40 +238,29 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
     }
   };
 
-  // [추가] 폼 검증 실패 시 실행될 핸들러
-  // 이 함수가 실행된다면 입력값 중 무언가가 누락되었거나 형식이 잘못된 것입니다.
   const onInvalid = (errors: any) => {
-    console.log("Form validation errors:", errors);
-    
-    // 에러 내용에 따라 구체적인 메시지 표시
-    if (errors.title) {
-        toast({ variant: "destructive", title: "제목 누락", description: "문서 제목을 입력해주세요." });
-    } else if (errors.content) {
-        toast({ variant: "destructive", title: "내용 누락", description: "문서 내용을 입력해주세요." });
-    } else if (errors.approvers) {
-        toast({ variant: "destructive", title: "결재선 오류", description: "결재자 정보를 확인해주세요." });
-    } else {
-        toast({ variant: "destructive", title: "입력 오류", description: "필수 입력 항목을 확인해주세요." });
-    }
+    console.error("Form Validation Failed:", errors);
+    let errorMsg = "입력 내용을 확인해주세요.";
+    if (errors.title) errorMsg = "제목을 입력해주세요.";
+    else if (errors.content) errorMsg = "내용을 입력해주세요.";
+    else if (errors.receiverEmail) errorMsg = "수신처 이메일 형식이 올바르지 않습니다.";
+    else if (errors.approvers) errorMsg = "결재선 정보가 올바르지 않습니다.";
+
+    toast({ variant: "destructive", title: "상신 실패", description: errorMsg });
   };
 
-  const onSubmit = (data: FormData) => {
-     if (!user || !profile) {
-         toast({ variant: "destructive", title: "권한 오류", description: "로그인 정보가 없습니다. 다시 로그인해주세요." });
-         return;
-     }
-
-     startTransition(async () => {
-         const activeApprovers = data.approvers.filter(a => a.active && a.name);
+  // [수정] 클라이언트 사이드 DB 저장 로직 (회수 문서 재상신 로직 강화)
+  const handleClientSubmit = async (data: FormData) => {
+     try {
+         const activeApprovers = data.approvers.filter(a => a.active && a.name && a.name.trim() !== '');
          
-         // 수정 모드(내용만 수정)가 아닐 때는 결재선 필수
          if (activeApprovers.length === 0 && !isEditMode) { 
-             toast({ variant: 'destructive', title: '결재선 오류', description: '활성화된 결재자가 한 명 이상 있어야 합니다.'});
-             return;
+             throw new Error('활성화된 결재칸에 결재자를 지정해주세요.');
          }
 
          const payload: ApprovalDocPayload = {
              ...data,
+             category: category,
              approvers: activeApprovers.map(a => ({...a, status: 'pending'} as Approver)),
              receiverInfo: data.docType === 'external' ? { name: data.receiverName!, email: data.receiverEmail! } : null,
              headerImage: docConfig.headerImage || '',
@@ -241,13 +272,121 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                 homepage: docConfig.homepage || '',
              }
          };
-         
-         let result;
+
+         // 1. 수정 모드 (기존 문서 업데이트: 회수 후 재상신 포함)
          if (isEditMode && docToEdit) {
-            result = await updateDocument(docToEdit.id, payload, user.uid, profile.email);
-         } else {
-            result = await createDocument(payload, user.uid, profile);
+             const docRef = doc(db, 'approvals', docToEdit.id);
+             const docSnap = await getDoc(docRef);
+             if (!docSnap.exists()) throw new Error("문서를 찾을 수 없습니다.");
+             const docData = docSnap.data() as ApprovalDoc;
+
+             // 권한 체크
+             const normalizedUserEmail = profile.email?.trim().toLowerCase();
+             const isOwnerAndRecalled = docData.requesterId === user.uid && docData.status === 'recalled';
+             const currentApprover = docData.approvers[docData.currentStep];
+             const isCurrentApproverAndPending = docData.status === 'pending' && currentApprover && currentApprover.email?.trim().toLowerCase() === normalizedUserEmail;
+
+             if (!isOwnerAndRecalled && !isCurrentApproverAndPending) throw new Error("문서를 수정할 권한이 없습니다.");
+
+             // [핵심] 재상신(회수된 문서)인지 여부 확인
+             const isResubmission = isOwnerAndRecalled;
+             const modifiedByApprover = isCurrentApproverAndPending;
+
+             let mergedApprovers = payload.approvers;
+
+             if (modifiedByApprover && docData.approvers) {
+                 // 결재자가 수정 시: 기존 승인자 유지
+                 mergedApprovers = payload.approvers.map((newAp, idx) => {
+                     const oldAp = docData.approvers[idx];
+                     if (oldAp && oldAp.email === newAp.email && oldAp.status === 'approved') {
+                         return { ...newAp, status: oldAp.status, signature: oldAp.signature, approvedAt: oldAp.approvedAt };
+                     }
+                     return { ...newAp, status: 'pending' };
+                 });
+             } else if (isResubmission) {
+                 // 재상신: 모든 결재자 초기화 (완전 새 결재처럼)
+                 mergedApprovers = payload.approvers.map(a => ({
+                     ...a, 
+                     status: 'pending', 
+                     signature: '', 
+                     approvedAt: ''
+                 }));
+             }
+
+             await updateDoc(docRef, {
+                 ...payload,
+                 // 재상신이면 무조건 'pending'으로 변경
+                 status: 'pending', 
+                 // 재상신이면 0단계(첫 결재자)부터 시작
+                 currentStep: isResubmission ? 0 : docData.currentStep,
+                 approvers: mergedApprovers,
+                 // 완료일 초기화
+                 completedAt: null, 
+                 updatedAt: serverTimestamp(),
+                 // 반려 사유 초기화
+                 comment: '', 
+             });
+             return { success: true };
+         } 
+         // 2. 신규 생성 모드
+         else {
+             const newDocRef = doc(collection(db, 'approvals'));
+             const settingsRef = doc(db, 'settings', 'docConfig');
+             
+             const finalDocNoStr = await runTransaction(db, async (transaction) => {
+                const settingsSnap = await transaction.get(settingsRef);
+                let nextNum = 1;
+                const isFamilyCat = category === 'family'; 
+
+                if (settingsSnap.exists()) {
+                    const data = settingsSnap.data() as DocConfig;
+                    if (isFamilyCat) {
+                        nextNum = data.nextFamilyNumber || 1;
+                        transaction.update(settingsRef, { nextFamilyNumber: nextNum + 1 });
+                    } else {
+                        nextNum = data.nextNumber || 1;
+                        transaction.update(settingsRef, { nextNumber: nextNum + 1 });
+                    }
+                } else {
+                    if (isFamilyCat) {
+                        transaction.set(settingsRef, { nextNumber: 1, nextFamilyNumber: 2 });
+                    } else {
+                        transaction.set(settingsRef, { nextNumber: 2, nextFamilyNumber: 1 });
+                    }
+                }
+                return isFamilyCat ? `Kish-가통-${nextNum}` : `Kish-초등-${nextNum}`;
+             });
+
+             await setDoc(newDocRef, {
+                 ...payload,
+                 category: category,
+                 docNo: finalDocNoStr,
+                 requesterId: user.uid,
+                 requesterName: profile.name,
+                 requesterEmail: profile.email,
+                 requesterRole: profile.role,
+                 requesterSignature: profile.signature || '',
+                 currentStep: 0,
+                 status: 'pending',
+                 createdAt: serverTimestamp(),
+                 completedAt: null,
+             });
+             return { success: true };
          }
+     } catch (error: any) {
+         console.error("Submit Error:", error);
+         return { success: false, error: error.message };
+     }
+  };
+
+  const onSubmit = (data: FormData) => {
+     if (!user || !profile) {
+         toast({ variant: "destructive", title: "권한 오류", description: "로그인 정보가 없습니다. 다시 로그인해주세요." });
+         return;
+     }
+
+     startTransition(async () => {
+         const result = await handleClientSubmit(data);
          
          if(result.success) {
              toast({ title: isEditMode ? "수정 완료" : "상신 완료", description: `문서가 성공적으로 ${isEditMode ? '수정 및 재상신' : '상신'}되었습니다.` });
@@ -261,8 +400,10 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
 
   return (
     <Form {...form}>
-      {/* [수정] handleSubmit의 두 번째 인자로 onInvalid 추가하여 실패 원인 알림 */}
       <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-8">
+        
+        {/* ... (폼 렌더링 코드는 기존과 완벽히 동일하므로 생략하지 않고 유지) ... */}
+        {/* ... */}
         
         <FormField
           control={form.control}
@@ -271,7 +412,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
             <FormItem>
               <FormLabel className="text-lg font-bold">제목</FormLabel>
               <FormControl>
-                <Input placeholder="문서의 제목을 입력하세요." {...field} className="h-12 text-base" />
+                <Input placeholder={isFamily ? "가정통신문 제목을 입력하세요." : "문서의 제목을 입력하세요."} {...field} className="h-12 text-base" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -344,6 +485,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
           </CardContent>
         </Card>
 
+        {!isFamily && (
         <div className="grid md:grid-cols-2 gap-8">
             <Card>
             <CardHeader><CardTitle>공람</CardTitle></CardHeader>
@@ -419,7 +561,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                     </FormItem>
                   )}
                 />
-                 {docType === 'external' && (
+                 {formDocType === 'external' && (
                     <div className="grid grid-cols-2 gap-4">
                         <FormField control={form.control} name="receiverName" render={({field}) => (
                            <FormItem><FormLabel>수신처명</FormLabel><FormControl><Input placeholder="예: KISH" {...field} /></FormControl></FormItem>
@@ -431,6 +573,7 @@ export default function DocumentForm({ docToEdit }: DocumentFormProps) {
                 )}
             </div>
         </div>
+        )}
 
         <FormField
           control={form.control}

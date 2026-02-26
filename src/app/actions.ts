@@ -1,4 +1,6 @@
-// ... (기존 import 및 함수들 유지) ...
+// [중요] 'use server' 지시어가 있다면 삭제해주세요!
+// 이 파일은 클라이언트(브라우저)에서 실행되어야 로그인 정보를 가지고 DB에 접근할 수 있습니다.
+
 import {
   collection,
   doc,
@@ -25,104 +27,7 @@ import type {
 } from '@/lib/types';
 import * as xlsx from 'xlsx';
 
-// ... (getUsersCol, serializeDocs 등 기존 함수 유지) ...
-
-// ... (다른 조회/생성 함수들 유지) ...
-
-// [수정] updateDocument: 권한 로직 일치 (결재자 수정 허용)
-export async function updateDocument(docId: string, payload: ApprovalDocPayload, userId: string, userEmail: string) {
-    const docRef = doc(getApprovalsCol(), docId);
-    try {
-        const docSnap = await getDoc(docRef);
-        if (!docSnap.exists()) {
-            throw new Error("문서를 찾을 수 없습니다.");
-        }
-        const docData = docSnap.data() as ApprovalDoc;
-
-        // 권한 검사 (trim, lowercase 적용)
-        const normalizedUserEmail = userEmail?.trim().toLowerCase();
-        
-        // 1. 기안자가 회수한 문서
-        const isOwnerAndRecalled = docData.requesterId === userId && docData.status === 'recalled';
-        
-        // 2. 현재 결재 차례인 문서
-        const currentApprover = docData.approvers[docData.currentStep];
-        const isCurrentApproverAndPending = 
-            docData.status === 'pending' && 
-            currentApprover &&
-            currentApprover.email?.trim().toLowerCase() === normalizedUserEmail;
-
-        if (!isOwnerAndRecalled && !isCurrentApproverAndPending) {
-            throw new Error("문서를 수정할 권한이 없습니다.");
-        }
-
-        const hasApprovers = payload.approvers && payload.approvers.length > 0;
-        
-        let status = 'pending';
-        // 결재자가 수정하는 경우는 상태 유지 (재상신 아님)
-        const modifiedByApprover = isCurrentApproverAndPending;
-
-        if (!hasApprovers) {
-            status = 'approved';
-        }
-        
-        // 기안자가 회수 후 재상신하는 경우, 모든 결재자 상태를 초기화.
-        const mergedApprovers = payload.approvers.map(approver => ({
-            ...approver,
-            status: 'pending',
-            signature: '',
-            approvedAt: undefined,
-            comment: '',
-        }));
-
-        const updatedData: any = {
-            ...payload,
-            status: status,
-            // 재상신이면 처음부터, 결재자 수정이면 현재 단계 유지
-            currentStep: isOwnerAndRecalled ? 0 : docData.currentStep, 
-            approvers: mergedApprovers,
-            // 재상신이면 완료일 초기화
-            completedAt: hasApprovers ? null : serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            // 반려 정보 초기화
-            comment: '',
-        };
-
-        await firestoreUpdateDoc(docRef, updatedData);
-        return { success: true, docId };
-    } catch (error: any) {
-        console.error("Update Document Error:", error);
-        return { success: false, error: error.message };
-    }
-}
-
-// ... (나머지 deleteDocument 등 유지) ...
-export async function deleteDocument(docId: string, userId: string) {
-    const docRef = doc(getApprovalsCol(), docId);
-    try {
-        const docSnap = await getDoc(docRef);
-        if (!docSnap.exists()) {
-            return { success: false, error: "문서를 찾을 수 없습니다." };
-        }
-
-        const docData = docSnap.data() as ApprovalDoc;
-        if (docData.requesterId !== userId) {
-            return { success: false, error: "문서를 삭제할 권한이 없습니다." };
-        }
-
-        if (docData.status !== 'recalled') {
-            return { success: false, error: "회수된 문서만 삭제할 수 있습니다." };
-        }
-
-        await firestoreDeleteDoc(docRef);
-        return { success: true };
-    } catch (error: any) {
-        console.error("Delete Document Error:", error);
-        return { success: false, error: `문서 삭제 중 오류 발생: ${error.message}` };
-    }
-}
-
-// ... (bulkRegisterUsers, getDocConfig, saveDocConfig, deleteUser 등 기존 함수들 모두 유지) ...
+// Firestore collections
 function getUsersCol() { return collection(db, 'users'); }
 function getApprovalsCol() { return collection(db, 'approvals'); }
 function getSettingsCol() { return collection(db, 'settings'); }
@@ -365,19 +270,33 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
     const finalDocNoStr = await runTransaction(db, async (transaction) => {
       const settingsSnap = await transaction.get(settingsRef);
       let nextNum = 1;
+      const isFamily = payload.category === 'family'; 
+
       if (settingsSnap.exists()) {
-        nextNum = (settingsSnap.data() as DocConfig).nextNumber || 1;
-        transaction.update(settingsRef, { nextNumber: nextNum + 1 });
+        const data = settingsSnap.data() as DocConfig;
+        if (isFamily) {
+             nextNum = data.nextFamilyNumber || 1;
+             transaction.update(settingsRef, { nextFamilyNumber: nextNum + 1 });
+        } else {
+             nextNum = data.nextNumber || 1;
+             transaction.update(settingsRef, { nextNumber: nextNum + 1 });
+        }
       } else {
-        transaction.set(settingsRef, { nextNumber: 2 });
+        if (isFamily) {
+            transaction.set(settingsRef, { nextNumber: 1, nextFamilyNumber: 2 });
+        } else {
+            transaction.set(settingsRef, { nextNumber: 2, nextFamilyNumber: 1 });
+        }
       }
-      return `Kish-초등-${nextNum}`;
+      
+      return isFamily ? `Kish-가통-${nextNum}` : `Kish-초등-${nextNum}`;
     });
 
     const hasApprovers = payload.approvers && payload.approvers.length > 0;
     
     const newDocData: any = {
       ...payload,
+      category: payload.category || 'draft',
       docNo: finalDocNoStr,
       requesterId: userProfile.uid,
       requesterName: userProfile.name,
@@ -395,6 +314,93 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
   } catch (error: any) {
     return { success: false, error: error.message };
   }
+}
+
+// [수정] updateDocument: 보안 규칙(권한 검사) 및 데이터 무결성 로직 보완
+export async function updateDocument(docId: string, payload: ApprovalDocPayload, userId: string, userEmail: string) {
+    const docRef = doc(getApprovalsCol(), docId);
+    try {
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+            throw new Error("문서를 찾을 수 없습니다.");
+        }
+        const docData = docSnap.data() as ApprovalDoc;
+
+        // 권한 검사 (trim, lowercase 적용)
+        const normalizedUserEmail = userEmail?.trim().toLowerCase();
+        
+        // 1. 기안자가 회수한 문서 (재상신)
+        const isOwnerAndRecalled = docData.requesterId === userId && docData.status === 'recalled';
+        
+        // 2. 현재 결재 차례인 문서 (내용 수정)
+        const currentApprover = docData.approvers[docData.currentStep];
+        const isCurrentApproverAndPending = 
+            docData.status === 'pending' && 
+            currentApprover &&
+            currentApprover.email?.trim().toLowerCase() === normalizedUserEmail;
+
+        if (!isOwnerAndRecalled && !isCurrentApproverAndPending) {
+            throw new Error("문서를 수정할 권한이 없습니다.");
+        }
+
+        const hasApprovers = payload.approvers && payload.approvers.length > 0;
+        
+        let status = 'pending';
+        // 결재자가 수정하는 경우는 '상태 유지' (재상신이 아님)
+        const modifiedByApprover = isCurrentApproverAndPending;
+
+        if (!hasApprovers) {
+            status = 'approved';
+        }
+
+        // [중요 수정] 결재자가 수정 시, 이미 승인한 사람들의 서명 정보 보존
+        let mergedApprovers = payload.approvers;
+        
+        if (modifiedByApprover && docData.approvers) {
+            mergedApprovers = payload.approvers.map((newAp, idx) => {
+                const oldAp = docData.approvers[idx];
+                // 같은 사람이면 기존 승인 상태 유지 (단, 이메일이 같아야 함)
+                if (oldAp && oldAp.email === newAp.email && oldAp.status === 'approved') {
+                    return {
+                        ...newAp,
+                        status: oldAp.status,
+                        signature: oldAp.signature,
+                        approvedAt: oldAp.approvedAt,
+                        // comment는 유지하거나, 수정 시 초기화 정책에 따라 결정
+                    };
+                }
+                // 아직 승인 안 한 사람은 pending (본인 포함)
+                return { ...newAp, status: 'pending' };
+            });
+        } else if (!modifiedByApprover) {
+            // 기안자가 재상신하는 경우: 모든 상태를 초기화
+            mergedApprovers = payload.approvers.map(approver => ({
+                ...approver,
+                status: 'pending',
+                signature: '',
+                approvedAt: undefined,
+                comment: '',
+            }));
+        }
+
+        const updatedData: any = {
+            ...payload,
+            status: status,
+            // 결재자가 수정하면 단계 유지, 재상신이면 0단계부터
+            currentStep: modifiedByApprover ? docData.currentStep : 0, 
+            approvers: mergedApprovers,
+            completedAt: hasApprovers ? null : serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            // 반려 코멘트는 초기화
+            comment: '',
+        };
+
+        await firestoreUpdateDoc(docRef, updatedData);
+        return { success: true, docId };
+    } catch (error: any) {
+        console.error("Update Document Error:", error);
+        return { success: false, error: error.message };
+    }
 }
 
 export async function approveDocument(docId: string, userId: string, userProfile: UserProfile) {
@@ -501,6 +507,7 @@ export async function recallDocument(docId: string, userId: string) {
     }
 }
 
+
 export async function bulkRegisterUsers(fileData: string) {
     try {
         const base64Data = fileData.split(',')[1];
@@ -564,5 +571,30 @@ export async function deleteUser(email: string) {
     } catch (error: any) {
       console.error('사용자 삭제 실패:', error);
       return { success: false, error: `사용자 삭제 중 오류가 발생했습니다: ${error.message}` };
+    }
+}
+
+export async function deleteDocument(docId: string, userId: string) {
+    const docRef = doc(getApprovalsCol(), docId);
+    try {
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+            return { success: false, error: "문서를 찾을 수 없습니다." };
+        }
+
+        const docData = docSnap.data() as ApprovalDoc;
+        if (docData.requesterId !== userId) {
+            return { success: false, error: "문서를 삭제할 권한이 없습니다." };
+        }
+
+        if (docData.status !== 'recalled') {
+            return { success: false, error: "회수된 문서만 삭제할 수 있습니다." };
+        }
+
+        await firestoreDeleteDoc(docRef);
+        return { success: true };
+    } catch (error: any) {
+        console.error("Delete Document Error:", error);
+        return { success: false, error: `문서 삭제 중 오류 발생: ${error.message}` };
     }
 }

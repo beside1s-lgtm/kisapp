@@ -8,32 +8,43 @@
  * - GenerateDocumentContentOutput - The return type for the generateDocumentContent function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
 
 const GenerateDocumentContentInputSchema = z.object({
   title: z.string().describe('The title of the document.'),
-  approvers: z.array(
-    z.object({
-      name: z.string().describe('The name of the approver.'),
-      role: z.string().describe('The role of the approver.'),
-    })
-  ).describe('The list of approvers for the document.'),
-  attachments: z.array(
-    z.object({
-      name: z.string().describe('The name of the attachment.'),
-      data: z.string().describe(
-        "The attachment's data as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
-      ),
-    })
-  ).optional().describe('The list of attached files.'),
+  approvers: z
+    .array(
+      z.object({
+        name: z.string().describe('The name of the approver.'),
+        role: z.string().describe('The role of the approver.'),
+      })
+    )
+    .describe('The list of approvers for the document.'),
+  attachments: z
+    .array(
+      z.object({
+        name: z.string().describe('The name of the attachment.'),
+        data: z
+          .string()
+          .describe(
+            "The attachment's data as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
+          ),
+      })
+    )
+    .optional()
+    .describe('The list of attached files.'),
 });
-export type GenerateDocumentContentInput = z.infer<typeof GenerateDocumentContentInputSchema>;
+export type GenerateDocumentContentInput = z.infer<
+  typeof GenerateDocumentContentInputSchema
+>;
 
 const GenerateDocumentContentOutputSchema = z.object({
   content: z.string().describe('The generated content of the document.'),
 });
-export type GenerateDocumentContentOutput = z.infer<typeof GenerateDocumentContentOutputSchema>;
+export type GenerateDocumentContentOutput = z.infer<
+  typeof GenerateDocumentContentOutputSchema
+>;
 
 export async function generateDocumentContent(
   input: GenerateDocumentContentInput
@@ -43,8 +54,8 @@ export async function generateDocumentContent(
 
 const prompt = ai.definePrompt({
   name: 'generateDocumentContentPrompt',
-  input: {schema: GenerateDocumentContentInputSchema},
-  output: {schema: GenerateDocumentContentOutputSchema},
+  input: { schema: GenerateDocumentContentInputSchema },
+  output: { schema: GenerateDocumentContentOutputSchema },
   prompt: `You are an expert AI assistant specializing in drafting official documents for the Korean school system. You must generate the document content strictly following the rules below, based on the provided title, approvers, and attachments.
 
   **Document Content Generation Rules:**
@@ -54,21 +65,20 @@ const prompt = ai.definePrompt({
   3.  **Related Document Reference (If any):** If there is a related document, state it on the very first line.
       - Example: \`1. 관련: 2025학년도 1학기 유・초등 등하교 차량 지도 계획 수립(2025.03.03.)\`
   4.  **List Item Formatting:** Strictly adhere to the standard Korean official document list hierarchy.
-      - Level 1: \`1.\`, \`2.\`, ... (followed by a period and a space)
-      - Level 2: \`가.\`, \`나.\`, ... (followed by a period and a space)
-      - Level 3: \`1)\`, \`2)\`, ... (followed by a parenthesis and a space)
-      - Level 4: \`가)\`, \`나)\`, ... (followed by a parenthesis and a space)
-      - **CRITICAL**: When an item's content spans multiple lines, the subsequent lines must be indented to align vertically with the text of the first line, not with the list marker. Ensure proper indentation for each level.
+      - Level 1: \`1.\`, \`2.\`, ...
+      - Level 2: \`가.\`, \`나.\`, ...
+      - Level 3: \`1)\`, \`2)\`, ...
+      - Level 4: \`가)\`, \`나)\`, ...
+      - **CRITICAL**: When an item's content spans multiple lines, the subsequent lines must be indented to align vertically with the text of the first line.
   5.  **Clarity over "Below/Next":** Do not use vague terms like '다음' or '아래'. Instead, specify the details directly.
-      - Example: \`2026. 1. 10.(토) 14:00, 우리 기관 회의실에서 회의를 실시합니다.\`
   6.  **Date/Time Format:**
-      - Dates: Use periods. e.g., \`2026. 1. 10.(토)\` (Do not use leading zeros for single-digit months/days).
+      - Dates: Use periods. e.g., \`2026. 1. 10.(토)\`
       - Times: \`14:00\`
   7.  **Attachments Section (if present):**
-      - If there are attachments ({{#if attachments}}...{{/if}}), create a section named '붙임'.
+      - Section named '붙임'.
       - Number each attachment, followed by the file name and a period.
       - Example: \`붙임  1. 파일이름.hwp 1부.\`
-  8.  **End Mark:** Conclude the entire document body with the word \`끝\`. There must be exactly two spaces between the last character of the content and the word '끝'. If attachments are present, it should look like \`... 1부.  끝.\`.
+  8.  **End Mark:** Conclude with the word \`끝\`. There must be exactly two spaces before '끝'.
 
   **Document Information:**
   - Title: {{{title}}}
@@ -97,14 +107,13 @@ const prompt = ai.definePrompt({
      나. 학생 교육
          1) 일 시: 2025.8.25.(월) ~ 8.27.(수)
          2) 학년별 세부 교육계획
-  
-| 대상학년 | 교육강사 | 교육장소 | 교육일시 |
-|---|---|---|---|
-| 1·2학년 | 외부강사 | 가온홀 | 8.25.(월) 3교시 |
-| 5, 6학년 | 화상교육 | 각반교실 | 8.27.(수) 7교시 |
-| 3, 4학년 | 외부강사 | 각반교실 | 8.29.(금) 7교시 |
 
-  
+  | 대상학년 | 교육강사 | 교육장소 | 교육일시 |
+  |---|---|---|---|
+  | 1·2학년 | 외부강사 | 가온홀 | 8.25.(월) 3교시 |
+  | 5, 6학년 | 화상교육 | 각반교실 | 8.27.(수) 7교시 |
+  | 3, 4학년 | 외부강사 | 각반교실 | 8.29.(금) 7교시 |
+
   붙임  1. 학교폭력예방교육 교사연수 자료(사이버 폭력) 1부.
         2. 학교폭력예방교육강의 원고 1부.
         3. 강사 신분증 사본 1부.  끝.
@@ -114,7 +123,6 @@ const prompt = ai.definePrompt({
   `,
 });
 
-
 const generateDocumentContentFlow = ai.defineFlow(
   {
     name: 'generateDocumentContentFlow',
@@ -122,15 +130,28 @@ const generateDocumentContentFlow = ai.defineFlow(
     outputSchema: GenerateDocumentContentOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
-    
-    // AI가 생성한 콘텐츠 끝에 " 끝." 또는 " 끝"이 있다면, 올바른 형식인 "  끝."으로 교정합니다.
+    const { output } = await prompt(input);
+
     let content = output!.content;
-    content = content.replace(/(\s*끝\s*\.?\s*)$/, ''); // 기존 끝 문자 제거
-    content = content + '  끝.';
+
+    // 1. 끝 마크 교정
+    content = content.replace(/(\s*끝\s*\.?\s*)$/, '');
+    content = content.trim() + '  끝.';
+
+    // 2. 줄바꿈 보정
+    content = content.replace(/(^|\n)(\d+\.\s)/g, '\n$2');       // Level 1
+    content = content.replace(/(^|\n)([가-힣]\.\s)/g, '\n   $2'); // Level 2
+    content = content.replace(/(^|\n)(\d+\)\s)/g, '\n       $2'); // Level 3
+    content = content.replace(/(^|\n)([가-힣]\)\s)/g, '\n          $2'); // Level 4
+
+    // 붙임 섹션
+    content = content.replace(/(^|\n)(붙임)/g, '\n$2');
+
+    // 표 앞뒤 줄바꿈
+    content = content.replace(/(\|---\|)/g, '\n$1\n');
 
     return {
-      content: content,
+      content,
     };
   }
 );

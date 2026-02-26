@@ -1,18 +1,14 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // --- [Helper Functions] ---
+    
+    // 로그인 여부 확인 함수
     function isSignedIn() {
       return request.auth != null;
     }
-    // For simplicity during testing, anyone can do anything if they are signed in.
-    // In a production app, you would have more granular rules.
-    // e.g. function isOwner(userId) { return request.auth.uid == userId; }
 
-    // --- [Rules] ---
-
+    // 모든 경로에 대해 로그인한 사용자만 허용
+    // (DocumentPage가 이제 인증 토큰을 보내므로 정상 작동합니다)
     match /{path=**} {
       allow read, write: if isSignedIn();
     }
