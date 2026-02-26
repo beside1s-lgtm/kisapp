@@ -6,7 +6,6 @@
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
-    /* ... (기존 색상 변수들 유지) ... */
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
@@ -28,7 +27,6 @@
   }
  
   .dark {
-    /* ... (다크 모드 변수들 유지) ... */
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
     --card: 222.2 84% 4.9%;
@@ -63,15 +61,12 @@
 /* [PDF/인쇄 최적화 스타일 - 전역 설정] */
 @media print {
   @page {
-    /* 여백을 0으로 설정하여 CSS에서 제어 가능하게 함 */
     margin: 0;
     size: A4 portrait;
   }
   
   html, body {
-    /* 중요: 높이 100% 강제를 해제하여 불필요한 페이지 생성 방지 */
-    height: auto !important;
-    min-height: 0 !important;
+    height: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     background: white !important;
@@ -80,34 +75,47 @@
     print-color-adjust: exact !important;
   }
   
-  /* 불필요한 요소 숨김 */
   .no-print { display: none !important; }
   
-  /* 메인 콘텐츠 영역 초기화 */
   main, #root, #__next {
     display: block !important;
-    height: auto !important;
-    overflow: visible !important;
+    height: 100% !important;
   }
 
-  /* 페이지 넘김 방지 */
-  p, h1, h2, h3, h4, h5, li, tr, td, th, .items-start { 
+  /* 바닥글 고정 핵심 레이아웃 */
+  .printable-area {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 100% !important;
+    width: 210mm !important;
+    margin: 0 auto !important;
+    padding: 20mm !important;
+    box-sizing: border-box !important;
+  }
+
+  .doc-content-wrapper {
+    flex: 1 0 auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .doc-body {
+    flex: 1 0 auto !important;
+  }
+
+  .doc-footer {
+    flex: 0 0 auto !important;
+    margin-top: auto !important;
+    padding-top: 10mm !important;
+    break-inside: avoid !important;
+  }
+
+  p, h1, h2, h3, h4, h5, li, tr, td, th { 
     page-break-inside: avoid; 
-  }
-  table, .min-h-\[400px\] { 
-    page-break-inside: auto; 
-  }
-  
-  /* Rich Editor 스타일이 인쇄 시 레이아웃을 깨지 않도록 초기화 */
-  .ProseMirror {
-    min-height: auto !important;
-    padding: 0 !important;
-    border: none !important;
   }
 }
 
 /* [Rich Editor(Tiptap) 스타일 - 화면 전용] */
-/* @media screen을 사용하여 인쇄 시에는 적용되지 않도록 함 */
 @media screen {
   .ProseMirror {
     outline: none;
@@ -116,7 +124,6 @@
   }
 }
 
-/* 공통 에디터 스타일 (인쇄/화면 공용) */
 .ProseMirror p {
     margin-bottom: 0.5em;
     line-height: 1.6;
@@ -149,14 +156,6 @@
   text-align: center;
   background-color: #f8f9fa;
 }
-.ProseMirror .selectedCell:after {
-  z-index: 2;
-  position: absolute;
-  content: "";
-  left: 0; right: 0; top: 0; bottom: 0;
-  background: rgba(200, 200, 255, 0.4);
-  pointer-events: none;
-}
 
 /* [뷰어/인쇄 화면용 표 스타일] */
 .printable-area table {
@@ -166,7 +165,7 @@
     margin-bottom: 8px;
 }
 .printable-area td, .printable-area th {
-    border: 1px solid #000; /* 인쇄 시 선명한 테두리 */
+    border: 1px solid #000;
     padding: 6px 8px;
     vertical-align: middle;
 }

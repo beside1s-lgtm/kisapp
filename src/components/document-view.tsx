@@ -38,6 +38,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
+  // [수정] 선생님께서 직접 만드신 인쇄 로직을 유지하면서, 레이아웃 스타일만 보강했습니다.
   const handlePrint = () => {
     const printContent = document.querySelector('.printable-area');
     if (!printContent) {
@@ -66,22 +67,38 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                     background-color: white !important;
                     -webkit-print-color-adjust: exact !important;
                     print-color-adjust: exact !important;
-                    height: 100%;
+                    height: 100% !important;
                 }
                 @page { size: A4 portrait; margin: 0; }
                 .printable-area { 
                     width: 210mm !important; 
-                    min-height: 280mm !important; 
+                    min-height: 100% !important; 
                     height: auto !important;
                     margin: 0 auto !important; 
                     padding: 20mm !important; 
                     background: white !important; border: none !important; box-shadow: none !important;
-                    display: flex !important; flex-direction: column !important; justify-content: space-between !important; 
+                    display: flex !important; flex-direction: column !important;
+                    box-sizing: border-box !important;
                 }
-                .doc-content-wrapper { display: flex; flex-direction: column; flex: 1 1 auto; }
+                .doc-content-wrapper { 
+                    display: flex !important; 
+                    flex-direction: column !important; 
+                    flex: 1 0 auto !important; 
+                }
                 header { flex: 0 0 auto !important; }
-                .doc-body { display: block !important; font-size: 1.1rem !important; line-height: 1.6 !important; flex-grow: 1 !important; }
-                .doc-footer { flex: 0 0 auto !important; margin-top: auto !important; width: 100% !important; break-inside: avoid !important; padding-top: 10mm !important; }
+                .doc-body { 
+                    display: block !important; 
+                    font-size: 1.1rem !important; 
+                    line-height: 1.6 !important; 
+                    flex: 1 0 auto !important; 
+                }
+                .doc-footer { 
+                    flex: 0 0 auto !important; 
+                    margin-top: auto !important; 
+                    width: 100% !important; 
+                    break-inside: avoid !important; 
+                    padding-top: 10mm !important; 
+                }
                 table { width: 100% !important; border-collapse: collapse !important; margin: 10px 0 !important; }
                 th, td { border: 1px solid black !important; padding: 6px !important; font-size: 1rem !important; }
                 th { background-color: #f3f4f6 !important; font-weight: bold !important; text-align: center !important; }
@@ -89,7 +106,9 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </style>
         </head>
         <body>
-            ${printContent.outerHTML}
+            <div class="printable-area">
+                ${printContent.innerHTML}
+            </div>
             <script>window.onload = function() { setTimeout(function() { window.focus(); window.print(); }, 500); };</script>
         </body>
         </html>
@@ -219,7 +238,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </Button>
         </div>
 
-        <div className="printable-area bg-white p-8 md:p-12 shadow-lg rounded-lg max-w-[210mm] mx-auto flex flex-col min-h-[29.7cm] justify-between text-lg leading-relaxed">
+        <div className="printable-area bg-white p-8 md:p-12 shadow-lg rounded-lg max-w-[210mm] mx-auto flex flex-col min-h-[29.7cm] text-lg leading-relaxed">
             <div className="flex flex-col flex-1 doc-content-wrapper">
                 <header className="text-center mb-4 shrink-0">
                     <p className="text-sm font-medium text-gray-500 mb-6 tracking-tight">글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교</p>
@@ -242,7 +261,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                         </div>
                     )}
                     
-                    <div className="min-h-[300px] text-lg md:text-xl leading-loose font-serif text-gray-800 tracking-normal" dangerouslySetInnerHTML={{ __html: initialDoc.content }} />
+                    <div className="min-h-[300px] text-lg md:text-xl leading-loose font-serif text-gray-800 tracking-normal flex-1" dangerouslySetInnerHTML={{ __html: initialDoc.content }} />
 
                     {initialDoc.attachments?.length > 0 && (
                         <div className="mt-12">
@@ -257,7 +276,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </div>
             </div>
             
-            <footer className="doc-footer mt-16 shrink-0 mt-auto">
+            <footer className="doc-footer mt-auto shrink-0 pt-10">
                 <div className="text-center mb-16 h-[80px] flex items-center justify-center">
                     {initialDoc.docType === 'external' && <h2 className="text-3xl md:text-4xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
                 </div>
@@ -297,7 +316,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                         <p className="text-base font-bold text-destructive">반려 사유: <span className="font-normal text-destructive-foreground">{initialDoc.approvers.find(ap => ap.status === 'rejected')?.comment}</span></p>
                     </div>
                 )}
-                <div className="mt-4 text-xs md:text-sm font-medium text-gray-700 space-y-2 border-t border-gray-200 pt-4">
+                <div className="mt-4 text-xs md:text-sm font-medium text-gray-700 space-y-1 border-t border-gray-200 pt-4">
                      <div className="flex gap-6">
                         <span><strong>시행</strong> {initialDoc.docNo} ({format(approvalDate, 'yyyy. MM. dd.')})</span>
                         {!isFamily && <span><strong>접수</strong> ( )</span>}
