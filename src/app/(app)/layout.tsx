@@ -28,14 +28,16 @@ const MobileNavItem = ({ href, label, icon }: { href: string, label: string, ico
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading, profile, profileLoading } = useAuth();
+  const { user, loading, profile, profileLoading, isParent } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login');
+    } else if (!loading && user && isParent) {
+      router.push('/parents/apply');
     }
-  }, [user, loading, router]);
+  }, [user, loading, isParent, router]);
   
   if (loading || !user || profileLoading) {
     return (
@@ -50,10 +52,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-body">
-      <AppHeader />
-      <div className="flex">
-        <AppSidebar />
-        <main className="flex-1 pb-24 md:pb-8">
+      <div className="print:hidden">
+        <AppHeader />
+      </div>
+      <div className="flex print:block">
+        <div className="print:hidden">
+          <AppSidebar />
+        </div>
+        <main className="flex-1 pb-24 md:pb-8 print:p-0 print:m-0 print:block">
             {children}
         </main>
       </div>

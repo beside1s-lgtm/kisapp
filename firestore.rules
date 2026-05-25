@@ -7,10 +7,72 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // 모든 경로에 대해 로그인한 사용자만 허용
-    // (DocumentPage가 이제 인증 토큰을 보내므로 정상 작동합니다)
-    match /{path=**} {
-      allow read, write: if isSignedIn();
+    // 이메일 주소 가져오기 및 소문자화
+    function getEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    // 관리자 여부 확인 함수
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(getEmail())) &&
+        get(/databases/$(database)/documents/users/$(getEmail())).data.isAdmin == true;
+    }
+
+    // approvals 컬렉션 보안 규칙
+    match /approvals/{docId} {
+      // 읽기 권한
+      allow read: if isSignedIn() && (
+        // 1. 관리자이거나
+        isAdmin() ||
+        // 2. 기안자 본인이거나
+        resource.data.requesterId == request.auth.uid ||
+        // 3. 결재선에 등록된 결재자이거나
+        (resource.data.approvers != null && resource.data.approvers.any(ap, ap.email.lower() == getEmail())) ||
+        // 4. 참조인(circulars)에 등록된 참조인이거나
+        (resource.data.circulars != null && resource.data.circulars.any(c, c.email.lower() == getEmail())) ||
+        // 5. 완료된 공개 문서이거나 (단, 학부모/학생 출결 및 체험학습 문서는 개인정보이므로 공개 열람 대상에서 원천 배제)
+        (resource.data.docType != 'parent' && resource.data.status == 'approved' && (resource.data.publishStatus == '공개' || resource.data.publishStatus == '부분공개'))
+      );
+
+      // 생성 권한 (본인 기안만 허용)
+      allow create: if isSignedIn() && request.resource.data.requesterId == request.auth.uid;
+
+      // 수정 및 삭제 권한
+      allow update, delete: if isSignedIn() && (
+        // 1. 관리자이거나
+        isAdmin() ||
+        // 2. 기안자 본인이 문서가 대기중이거나 회수된 상태에서 수정할 때
+        (resource.data.requesterId == request.auth.uid && (resource.data.status == 'pending' || resource.data.status == 'recalled')) ||
+        // 3. 결재 참여자(결재선에 있는 사람)가 결재 진행중인 단계에서 업데이트할 때
+        (resource.data.approvers != null && resource.data.approvers.any(ap, ap.email.lower() == getEmail()))
+      );
+    }
+
+    // users 컬렉션 보안 규칙
+    match /users/{email} {
+      allow read: if isSignedIn();
+      // 관리자이거나 본인 프로필만 쓰기 가능
+      allow write: if isSignedIn() && (isAdmin() || email.lower() == getEmail());
+    }
+
+    // settings 컬렉션 보안 규칙
+    match /settings/{settingId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // mail 컬렉션 보안 규칙 (Trigger Email 연동)
+    match /mail/{mailId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if false;
+    }
+
+    // audit_logs 감사 로그 컬렉션 보안 규칙
+    match /audit_logs/{logId} {
+      allow create: if isSignedIn();
+      allow read: if isAdmin();
+      allow update, delete: if false;
     }
   }
 }

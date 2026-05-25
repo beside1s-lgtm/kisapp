@@ -7,12 +7,9 @@ import { UserProfile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { errorEmitter } from '@/lib/error-emitter';
-import { getUserProfileByEmail, saveUserProfile } from '@/app/actions';
+import { getUserProfileByEmail, saveUserProfile } from '@/lib/services/userService';
 
-// 관리자 이메일 하드코딩
 const ADMIN_EMAIL = 'beside1s@kshcm.net';
-const ALLOWED_DOMAIN = 'kshcm.net';
-
 
 // --- [Context & Provider] ---
 
@@ -24,6 +21,7 @@ interface AuthContextType {
   googleSignIn: () => Promise<void>;
   logout: () => Promise<void>;
   fetchProfile: (user: FirebaseUser) => Promise<UserProfile | null>;
+  isParent: boolean;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -48,11 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { errorEmitter.removeListener('permission-error', handlePermissionError); };
   }, [toast]);
 
-  const isDomainAllowed = (email: string | null) => {
+  const isStudentPattern = (email: string | null) => {
     if (!email) return false;
-    if (process.env.NODE_ENV === 'development') return true;
-    const domain = email.split('@')[1]?.toLowerCase();
-    return domain === ALLOWED_DOMAIN;
+    if (process.env.NODE_ENV === 'development' && email.includes('student')) return true; // dev 환경 폴백
+    // 이메일 앞부분이 숫자 4자리로 시작하고, 도메인이 @kshcm.net인지 검사
+    return /^\d{4}[a-zA-Z0-9._-]+@kshcm\.net$/.test(email);
   };
 
   const fetchProfile = useCallback(async (firebaseUser: FirebaseUser): Promise<UserProfile | null> => {
@@ -66,18 +64,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let needsSave = false;
       const profileUpdates: Partial<UserProfile> = {};
 
-      // 1. 프로필이 없으면 -> 신규 프로필 객체 생성
+      // 1. 프로필이 없으면 (즉, users 컬렉션에 없는 경우) -> 학생 패턴인지 확인
       if (!userProfile) {
-        console.log("No profile found. Creating new profile.");
-        needsSave = true;
-        userProfile = {
-            uid: firebaseUser.uid,
-            name: firebaseUser.displayName || '사용자',
-            email: firebaseUser.email,
-            role: '교사',
-            signature: '',
-            isAdmin: isHardcodedAdmin,
-        };
+        if (isStudentPattern(firebaseUser.email)) {
+          console.log("No profile found, but matches student pattern. Creating parent profile.");
+          needsSave = true;
+          userProfile = {
+              uid: firebaseUser.uid,
+              name: firebaseUser.displayName || '사용자',
+              email: firebaseUser.email,
+              role: '학부모',
+              signature: '',
+              isAdmin: isHardcodedAdmin,
+          };
+        } else {
+          // DB에도 없고 학생 패턴도 아니면 차단 (등록되지 않은 교직원이거나 외부 계정)
+          throw new Error("unregistered_account");
+        }
       }
 
       // 2. UID가 다르면 -> 최신 UID로 업데이트 준비
@@ -112,24 +115,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(userProfile);
       return userProfile;
 
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "unregistered_account") {
+        throw error; // onAuthStateChanged 로 에러 전파하여 로그아웃 처리
+      }
       console.error("Critical Profile Error:", error);
       toast({
           variant: 'destructive',
           title: '프로필 로딩 실패',
           description: '프로필을 불러오는 중 심각한 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
       });
-      // 비상시를 위한 최소한의 폴백 프로필
-      const fallbackProfile: UserProfile = {
-          uid: firebaseUser.uid,
-          name: firebaseUser.displayName || 'Unknown',
-          email: firebaseUser.email!,
-          role: 'Guest',
-          isAdmin: false,
-          signature: ''
-      };
-      setProfile(fallbackProfile);
-      return fallbackProfile;
+      return null;
     } finally {
       setProfileLoading(false);
     }
@@ -140,15 +136,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       setProfileLoading(true);
       if (firebaseUser && firebaseUser.email) {
-        if (!isDomainAllowed(firebaseUser.email)) {
-          toast({ variant: 'destructive', title: '로그인 실패', description: '허용되지 않은 도메인입니다.' });
+        const isKshcmDomain = firebaseUser.email.endsWith('@kshcm.net') || (process.env.NODE_ENV === 'development');
+        
+        if (!isKshcmDomain) {
+          toast({ variant: 'destructive', title: '로그인 실패', description: '올바른 학교 계정(@kshcm.net)이 아닙니다.' });
           await signOut(auth);
           setUser(null);
           setProfile(null);
           setProfileLoading(false);
         } else {
-          setUser(firebaseUser);
-          await fetchProfile(firebaseUser);
+          try {
+            const fetchedProfile = await fetchProfile(firebaseUser);
+            if (fetchedProfile) {
+              setUser(firebaseUser);
+            } else {
+              toast({ variant: 'destructive', title: '로그인 실패', description: '등록되지 않은 계정이거나 올바른 학교 계정이 아닙니다.' });
+              await signOut(auth);
+              setUser(null);
+              setProfile(null);
+            }
+          } catch (e: any) {
+            if (e.message === "unregistered_account") {
+              toast({ variant: 'destructive', title: '로그인 실패', description: '등록되지 않은 계정이거나 올바른 학교 계정이 아닙니다.' });
+              await signOut(auth);
+              setUser(null);
+              setProfile(null);
+            }
+          }
         }
       } else {
         setUser(null);
@@ -181,7 +195,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   };
 
-  const value = { user, profile, loading, profileLoading, googleSignIn, logout, fetchProfile };
+  const isParent = profile?.role === '학부모';
+
+  const value = { user, profile, loading, profileLoading, googleSignIn, logout, fetchProfile, isParent };
 
   if (loading) {
     return (
@@ -193,5 +209,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-
-    

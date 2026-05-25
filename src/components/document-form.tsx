@@ -24,7 +24,7 @@ import RichEditor from "./rich-editor";
 import { db } from '@/lib/firebase';
 import { doc, getDoc, getDocs, collection, runTransaction, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getDocumentById } from '@/app/actions';
+import { getDocumentById } from '@/lib/services/documentService';
 
 const approverSchema = z.object({
   name: z.string(),
@@ -41,8 +41,8 @@ const formSchema = z.object({
   approvers: z.array(approverSchema),
   circulars: z.array(z.object({ name: z.string(), email: z.string(), role: z.string() })),
   attachments: z.array(z.object({ name: z.string(), size: z.number(), data: z.string() })),
-  publishStatus: z.enum(['공개', '비공개']),
-  docType: z.enum(['internal', 'external']),
+  publishStatus: z.enum(['공개', '비공개', '부분공개']),
+  docType: z.enum(['internal', 'external', 'parent', 'teacher-duty', 'teacher-overtime']),
   receiverName: z.string().optional(),
   receiverEmail: z.string().email().or(z.literal('')).optional(),
 });
@@ -539,24 +539,21 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                     control={form.control}
                     name="publishStatus"
                     render={({ field }) => (
-                    <FormItem className="space-y-3">
+                    <FormItem>
                         <FormLabel className="text-lg font-bold">게시 상태</FormLabel>
-                         <FormControl>
-                            <RadioGroup
-                                onValueChange={field.onChange}
-                                defaultValue={field.value}
-                                className="flex space-x-4"
-                            >
-                                <FormItem className="flex items-center space-x-2 space-y-0">
-                                <FormControl><RadioGroupItem value="공개" /></FormControl>
-                                <FormLabel className="font-normal">공개</FormLabel>
-                                </FormItem>
-                                <FormItem className="flex items-center space-x-2 space-y-0">
-                                <FormControl><RadioGroupItem value="비공개" /></FormControl>
-                                <FormLabel className="font-normal">비공개</FormLabel>
-                                </FormItem>
-                            </RadioGroup>
-                         </FormControl>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="게시 상태 선택" />
+                                </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                                <SelectItem value="공개">공개</SelectItem>
+                                <SelectItem value="비공개">비공개</SelectItem>
+                                <SelectItem value="부분공개">부분공개</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <FormMessage />
                     </FormItem>
                 )}/>
                 <FormField

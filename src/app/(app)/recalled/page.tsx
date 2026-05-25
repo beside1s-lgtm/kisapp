@@ -1,7 +1,7 @@
 
 'use client';
 
-import { getRecalledDocuments } from "@/app/actions";
+import { getRecalledDocuments } from "@/lib/services/documentService";
 import { DocumentList } from "@/components/document-list";
 import { useAuth } from "@/hooks/use-auth";
 import { ApprovalDoc } from "@/lib/types";
@@ -41,7 +41,7 @@ export default function RecalledPage() {
                 </h1>
                 <p className="text-muted-foreground mt-1">내가 상신 후 회수한 문서 목록입니다. 문서를 수정하고 재상신할 수 있습니다.</p>
             </div>
-            <DocumentList documents={docs} pageType="recalled" />
+            <DocumentList documents={docs} />
         </div>
     );
 }

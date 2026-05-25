@@ -1,7 +1,7 @@
 
 'use client';
 
-import { getSentDocuments } from "@/app/actions";
+import { getSentDocuments } from "@/lib/services/documentService";
 import { DocumentList } from "@/components/document-list";
 import { useAuth } from "@/hooks/use-auth";
 import { ApprovalDoc } from "@/lib/types";

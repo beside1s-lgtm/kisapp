@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import DocumentForm from "@/components/document-form";
 import { PenTool, Loader2 } from "lucide-react";
-import { getDocumentById } from '@/app/actions';
+import { getDocumentById } from '@/lib/services/documentService';
 import { ApprovalDoc } from '@/lib/types';
 
 // [핵심] useSearchParams를 사용하는 로직을 별도 컴포넌트로 분리

@@ -1,5 +1,6 @@
 'use client';
 import { useAuth } from '@/hooks/use-auth';
+import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { Button } from '../ui/button';
 import {
@@ -21,14 +22,14 @@ export function AppHeader() {
   return (
     <>
       <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b bg-card px-4 md:px-8">
-        <div className="flex items-center gap-4">
+        <Link href="/inbox" className="flex items-center gap-4 cursor-pointer hover:opacity-80 transition-opacity">
           <div className="bg-primary p-2 rounded-lg text-primary-foreground">
             <FileText size={20} />
           </div>
           <h1 className="font-headline text-lg font-bold tracking-tight text-foreground uppercase">
             KSHCM ADMIN
           </h1>
-        </div>
+        </Link>
         <div className="flex items-center gap-4">
           {profile?.isAdmin && <SettingsModal />}
 

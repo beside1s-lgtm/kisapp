@@ -21,7 +21,7 @@ import Image from 'next/image';
 import { Alert, AlertDescription } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import type { UserProfile } from '@/lib/types';
-import { saveUserProfile } from '@/app/actions';
+import { saveUserProfile } from '@/lib/services/userService';
 
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 const ADMIN_EMAIL = 'beside1s@kshcm.net';

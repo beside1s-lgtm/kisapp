@@ -1,0 +1,25 @@
+name: Deploy Firebase Rules and Indexes
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - '.github/workflows/firebase-deploy.yml'
+
+jobs:
+  deploy:
+    name: Deploy Firestore Config
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Deploy to Firebase
+        uses: w9jds/firebase-action@v2.6.0
+        with:
+          args: deploy --only firestore
+        env:
+          GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}

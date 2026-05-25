@@ -41,7 +41,6 @@ export default function RootLayout({
           <div className="relative flex min-h-screen flex-col">
             {children}
           </div>
-          {/* 토스트 알림 컴포넌트 */}
           <Toaster />
         </AuthProvider>
       </body>

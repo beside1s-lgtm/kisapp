@@ -17,7 +17,7 @@ type DocumentPageProps = {
 
 export default function DocumentPage({ params }: DocumentPageProps) {
     const { id } = use(params);
-    const { user, loading: authLoading } = useAuth();
+    const { user, profile, loading: authLoading } = useAuth();
 
     const [docData, setDocData] = useState<ApprovalDoc | null>(null);
     const [configData, setConfigData] = useState<DocConfig>({});
@@ -68,6 +68,18 @@ export default function DocumentPage({ params }: DocumentPageProps) {
                             approvedAt: safeToISOString(approver.approvedAt),
                         })) || [],
                     } as ApprovalDoc;
+
+                    if (serializedDoc.docType === 'parent') {
+                        const userEmail = profile?.email?.toLowerCase();
+                        const isAdmin = profile?.isAdmin === true;
+                        const isRequester = serializedDoc.requesterEmail?.toLowerCase() === userEmail;
+                        const isApprover = serializedDoc.approvers?.some((a: any) => a.email?.toLowerCase() === userEmail);
+
+                        if (!isAdmin && !isRequester && !isApprover) {
+                            setError("이 문서의 열람 권한이 없습니다. (결재권자 및 관리자만 조회 가능)");
+                            return;
+                        }
+                    }
 
                     setDocData(serializedDoc);
                     setConfigData(config);

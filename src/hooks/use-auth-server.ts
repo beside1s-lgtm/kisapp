@@ -2,12 +2,12 @@
 import 'server-only';
 import { headers } from 'next/headers';
 import { UserProfile } from '@/lib/types';
-import { getUserProfileByEmail } from '@/app/actions';
+import { getUserProfileByEmail } from '@/lib/services/userService';
 
 // Mock server-side authentication based on headers
 // In a real app, this would involve validating a session cookie or token
 export const useAuth = async (): Promise<{ user: { uid: string, email: string } | null, profile: UserProfile | null }> => {
-    const headersList = headers();
+    const headersList = await headers();
     const userHeader = headersList.get('X-User-Info');
 
     if (!userHeader) {
