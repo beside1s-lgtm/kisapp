@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Clock, Send, ArrowLeft, UserCheck, Loader2, AlertCircle } from 'lucide-react';
-import { createDocument, getTeacherOvertimeHoursByMonth } from '@/lib/services/documentService';
+import { createDocument, getTeacherOvertimeHoursByMonth, getDocumentById } from '@/lib/services/documentService';
 import { TeacherOvertimeData } from '@/lib/types';
 import { getOrgStructure } from '@/lib/services/settingsService';
 import { getUserProfileByEmail, getUsersDirectory } from '@/lib/services/userService';
@@ -28,9 +28,11 @@ const overtimeSchema = z.object({
 
 type OvertimeFormValues = z.infer<typeof overtimeSchema>;
 
-export default function OvertimePage() {
+function OvertimeForm() {
   const { user, profile } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const cloneId = searchParams.get('cloneId');
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [org, setOrg] = useState<any>(null);
@@ -52,7 +54,7 @@ export default function OvertimePage() {
 
   const getUserByEmail = (email: string) => users.find(u => u.email === email);
 
-  const { register, handleSubmit, watch, formState: { errors } } = useForm<OvertimeFormValues>({
+  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<OvertimeFormValues>({
     resolver: zodResolver(overtimeSchema),
     defaultValues: {
       date: new Date().toISOString().split('T')[0],
@@ -65,6 +67,26 @@ export default function OvertimePage() {
   const watchDate = watch('date');
   const watchStartTime = watch('startTime');
   const watchEndTime = watch('endTime');
+
+  useEffect(() => {
+    async function loadCloneData() {
+      if (!cloneId) return;
+      try {
+        const fetched = await getDocumentById(cloneId);
+        if (fetched && fetched.teacherOvertimeData) {
+          const data = fetched.teacherOvertimeData;
+          setValue('date', data.date || new Date().toISOString().split('T')[0]);
+          setValue('startTime', data.startTime || '16:30');
+          setValue('endTime', data.endTime || '18:30');
+          setValue('reason', data.reason || '');
+          toast({ title: "문서 복사됨", description: "이전 초과근무 신청 내용을 불러왔습니다." });
+        }
+      } catch (e) {
+        console.error("Clone load error:", e);
+      }
+    }
+    loadCloneData();
+  }, [cloneId, setValue, toast]);
 
   useEffect(() => {
     if (!user || !user.email || !watchDate) return;
@@ -369,5 +391,17 @@ export default function OvertimePage() {
         </form>
       </Card>
     </div>
+  );
+}
+
+export default function OvertimePage() {
+  return (
+    <Suspense fallback={
+      <div className="flex justify-center items-center h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    }>
+      <OvertimeForm />
+    </Suspense>
   );
 }

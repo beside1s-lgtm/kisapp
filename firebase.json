@@ -16,5 +16,23 @@
         "destination": "/index.html"
       }
     ]
-  }
+  },
+  "apphosting": [
+    {
+      "backendId": "studio",
+      "rootDir": "./",
+      "ignore": [
+        "node_modules",
+        ".git",
+        ".agents",
+        ".idx",
+        ".next",
+        ".vscode",
+        "*.log",
+        "*.txt",
+        ".env"
+      ],
+      "alwaysDeployFromSource": true
+    }
+  ]
 }

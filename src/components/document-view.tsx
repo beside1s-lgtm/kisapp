@@ -7,7 +7,7 @@ import { approveDocument, rejectDocument, recallDocument, deleteDocument } from 
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, Printer, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, Paperclip, Trash2, Lock } from 'lucide-react';
 import { format } from 'date-fns';
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useEffect } from 'react';
 import Link from 'next/link'; 
 import {
     AlertDialog,
@@ -52,6 +52,247 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     confirmMethod: initialDoc.parentFormData?.teacherConfirmMethod || '',
     confirmDate: initialDoc.parentFormData?.teacherConfirmDate || format(new Date(), 'yyyy-MM-dd')
   });
+
+  useEffect(() => {
+    // 스타일 백업을 보관할 상위 스코프 변수
+    let savedHtmlFontSize = '';
+    let savedAreaStyle = { position: '', width: '', padding: '', margin: '', boxSizing: '', display: '' };
+    let savedFooterStyle = { position: '', display: '' };
+    let savedContentStyle = { paddingBottom: '', display: '' };
+    let isPrinting = false;
+
+    const updateSpacer = () => {
+      if (isPrinting) return;
+
+      const area = document.querySelector('.printable-area') as HTMLElement;
+      const footer = document.querySelector('.doc-footer') as HTMLElement;
+      const content = document.querySelector('.doc-content-wrapper') as HTMLElement;
+      if (!area || !footer || !content) return;
+
+      const oldSpacer = document.getElementById('print-spacer');
+      if (oldSpacer) oldSpacer.remove();
+
+      // 측정 전: 원래 스타일 임시 백업
+      const tempHtmlFontSize = document.documentElement.style.fontSize;
+      const tempAreaStyle = {
+        position: area.style.position,
+        width: area.style.width,
+        padding: area.style.padding,
+        margin: area.style.margin,
+        boxSizing: area.style.boxSizing,
+      };
+      const tempFooterStyle = { position: footer.style.position };
+      const tempContentStyle = { paddingBottom: content.style.paddingBottom };
+
+      // 임시로 인쇄 전용 스타일 주입하여 높이 측정
+      const MM_TO_PX = 3.7795275591;
+      const A4_HEIGHT_MM = 297;
+      const MARGIN_TOP_MM = 10;
+      const MARGIN_BOTTOM_MM = 10;
+      const PAGE_HEIGHT_PX = (A4_HEIGHT_MM - MARGIN_TOP_MM - MARGIN_BOTTOM_MM) * MM_TO_PX; // 277mm ≈ 1047px
+      const CONTENT_WIDTH = '190mm';
+      const PRINT_FONT_SIZE = '12pt';
+
+      document.documentElement.style.setProperty('font-size', PRINT_FONT_SIZE, 'important');
+      area.style.setProperty('position', 'static', 'important');
+      area.style.setProperty('width', CONTENT_WIDTH, 'important');
+      area.style.setProperty('padding', '0px', 'important');
+      area.style.setProperty('margin', '0px', 'important');
+      area.style.setProperty('box-sizing', 'border-box', 'important');
+      footer.style.setProperty('position', 'static', 'important');
+      content.style.setProperty('padding-bottom', '0px', 'important');
+
+      // 레이아웃 강제 재계산 (reflow trigger)
+      void area.offsetHeight;
+
+      const contentHeight = content.offsetHeight;
+      const footerHeight = footer.offsetHeight;
+      const totalHeight = contentHeight + footerHeight;
+
+      // 필요 spacer 높이 계산
+      const BUFFER_PX = 25; // 브라우저 단수 오차 및 푸터 밀림 방지용 안전 버퍼
+      const adjustedTotalHeight = totalHeight + BUFFER_PX;
+      const pageCount = Math.ceil(adjustedTotalHeight / PAGE_HEIGHT_PX);
+      const targetTotalHeight = pageCount * PAGE_HEIGHT_PX;
+      let neededSpacerHeight = targetTotalHeight - adjustedTotalHeight;
+      if (neededSpacerHeight < 0) neededSpacerHeight = 0;
+
+      // 측정 후 즉시 원래 스타일로 복구
+      if (tempHtmlFontSize) {
+        document.documentElement.style.setProperty('font-size', tempHtmlFontSize);
+      } else {
+        document.documentElement.style.removeProperty('font-size');
+      }
+      area.style.setProperty('position', tempAreaStyle.position);
+      area.style.setProperty('width', tempAreaStyle.width);
+      area.style.setProperty('padding', tempAreaStyle.padding);
+      area.style.setProperty('margin', tempAreaStyle.margin);
+      area.style.setProperty('box-sizing', tempAreaStyle.boxSizing);
+      footer.style.setProperty('position', tempFooterStyle.position);
+      content.style.setProperty('padding-bottom', tempContentStyle.paddingBottom);
+
+      // spacer 삽입
+      if (neededSpacerHeight > 0) {
+        const spacer = document.createElement('div');
+        spacer.id = 'print-spacer';
+        spacer.style.setProperty('height', `${neededSpacerHeight}px`, 'important');
+        spacer.style.setProperty('box-sizing', 'border-box', 'important');
+        spacer.style.setProperty('display', 'block', 'important');
+        content.appendChild(spacer);
+      }
+    };
+
+    const handleBeforePrint = () => {
+      isPrinting = true; // 일반 리사이즈 시 spacer 계산 방지
+
+      const area = document.querySelector('.printable-area') as HTMLElement;
+      const footer = document.querySelector('.doc-footer') as HTMLElement;
+      const content = document.querySelector('.doc-content-wrapper') as HTMLElement;
+      if (!area || !footer || !content) return;
+
+      const oldSpacer = document.getElementById('print-spacer');
+      if (oldSpacer) oldSpacer.remove();
+
+      // 인쇄 완료 전까지 유지할 원래 스타일 백업
+      savedHtmlFontSize = document.documentElement.style.fontSize;
+      savedAreaStyle = {
+        position: area.style.position,
+        width: area.style.width,
+        padding: area.style.padding,
+        margin: area.style.margin,
+        boxSizing: area.style.boxSizing,
+        display: area.style.display,
+      };
+      savedFooterStyle = {
+        position: footer.style.position,
+        display: footer.style.display,
+      };
+      savedContentStyle = {
+        paddingBottom: content.style.paddingBottom,
+        display: content.style.display,
+      };
+
+      // @media print 조건과 동일하게 강제 적용 (인쇄 완료 시까지 복구 지연)
+      const MM_TO_PX = 3.7795275591;
+      const A4_HEIGHT_MM = 297;
+      const MARGIN_TOP_MM = 10;
+      const MARGIN_BOTTOM_MM = 10;
+      const PAGE_HEIGHT_PX = (A4_HEIGHT_MM - MARGIN_TOP_MM - MARGIN_BOTTOM_MM) * MM_TO_PX;
+      const CONTENT_WIDTH = '190mm';
+      const PRINT_FONT_SIZE = '12pt';
+
+      document.documentElement.style.setProperty('font-size', PRINT_FONT_SIZE, 'important');
+      area.style.setProperty('position', 'static', 'important');
+      area.style.setProperty('width', CONTENT_WIDTH, 'important');
+      area.style.setProperty('padding', '0px', 'important');
+      area.style.setProperty('margin', '0px', 'important');
+      area.style.setProperty('box-sizing', 'border-box', 'important');
+      area.style.setProperty('display', 'block', 'important');
+      
+      footer.style.setProperty('position', 'static', 'important');
+      footer.style.setProperty('display', 'block', 'important');
+      
+      content.style.setProperty('padding-bottom', '0px', 'important');
+      content.style.setProperty('display', 'block', 'important');
+
+      // 레이아웃 강제 재계산 (reflow trigger)
+      void area.offsetHeight;
+
+      const contentHeight = content.offsetHeight;
+      const footerHeight = footer.offsetHeight;
+      const totalHeight = contentHeight + footerHeight;
+
+      // 필요 spacer 높이 계산
+      const BUFFER_PX = 25; // 브라우저 단수 오차 및 푸터 밀림 방지용 안전 버퍼
+      const adjustedTotalHeight = totalHeight + BUFFER_PX;
+      const pageCount = Math.ceil(adjustedTotalHeight / PAGE_HEIGHT_PX);
+      const targetTotalHeight = pageCount * PAGE_HEIGHT_PX;
+      let neededSpacerHeight = targetTotalHeight - adjustedTotalHeight;
+      if (neededSpacerHeight < 0) neededSpacerHeight = 0;
+
+      if (neededSpacerHeight > 0) {
+        const spacer = document.createElement('div');
+        spacer.id = 'print-spacer';
+        spacer.style.setProperty('height', `${neededSpacerHeight}px`, 'important');
+        spacer.style.setProperty('box-sizing', 'border-box', 'important');
+        spacer.style.setProperty('display', 'block', 'important');
+        content.appendChild(spacer);
+      }
+    };
+
+    const handleAfterPrint = () => {
+      const spacer = document.getElementById('print-spacer');
+      if (spacer) spacer.remove();
+
+      const area = document.querySelector('.printable-area') as HTMLElement;
+      const footer = document.querySelector('.doc-footer') as HTMLElement;
+      const content = document.querySelector('.doc-content-wrapper') as HTMLElement;
+
+      // 인쇄 완료 후 원래 스타일 복구
+      if (savedHtmlFontSize) {
+        document.documentElement.style.setProperty('font-size', savedHtmlFontSize);
+      } else {
+        document.documentElement.style.removeProperty('font-size');
+      }
+
+      if (area) {
+        area.style.setProperty('position', savedAreaStyle.position);
+        area.style.setProperty('width', savedAreaStyle.width);
+        area.style.setProperty('padding', savedAreaStyle.padding);
+        area.style.setProperty('margin', savedAreaStyle.margin);
+        area.style.setProperty('box-sizing', savedAreaStyle.boxSizing);
+        area.style.setProperty('display', savedAreaStyle.display);
+      }
+
+      if (footer) {
+        footer.style.setProperty('position', savedFooterStyle.position);
+        footer.style.setProperty('display', savedFooterStyle.display);
+      }
+
+      if (content) {
+        content.style.setProperty('padding-bottom', savedContentStyle.paddingBottom);
+        content.style.setProperty('display', savedContentStyle.display);
+      }
+
+      isPrinting = false;
+      
+      // 복구 완료 후 화면용 spacer 최신화 재트리거
+      updateSpacer();
+    };
+
+    updateSpacer();
+
+    // 1. 창 크기 변경 감지
+    window.addEventListener('resize', updateSpacer);
+    
+    // 2. 비동기 웹폰트 로딩 완료 감지
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(updateSpacer);
+    }
+
+    // 3. 비동기 이미지 (로고 및 서명) 로딩 완료 감지
+    const images = document.querySelectorAll('.printable-area img');
+    images.forEach(img => {
+      const htmlImg = img as HTMLImageElement;
+      if (htmlImg.complete) {
+        updateSpacer();
+      } else {
+        htmlImg.addEventListener('load', updateSpacer);
+      }
+    });
+
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+
+    return () => {
+      window.removeEventListener('resize', updateSpacer);
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+      images.forEach(img => {
+        img.removeEventListener('load', updateSpacer);
+      });
+    };
+  }, []);
 
   const handlePrint = () => {
     window.print();

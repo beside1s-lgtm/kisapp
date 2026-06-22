@@ -59,9 +59,14 @@ export function SettingsModal() {
   const [headerPreview, setHeaderPreview] = useState<string>('');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedHomeroomFile, setSelectedHomeroomFile] = useState<File | null>(null);
+  const [selectedDeptFile, setSelectedDeptFile] = useState<File | null>(null);
   const [org, setOrg] = useState<OrgStructure>({ principal: '', vicePrincipal: '', gradeHeads: {}, homerooms: {}, departments: [] });
-  const [newHomeroom, setNewHomeroom] = useState({ grade: '1', class: '1', email: '' });
+  const [newHomeroom, setNewHomeroom] = useState({ grade: '1', class: '1', email: '', isGradeHead: false });
   const [newDeptName, setNewDeptName] = useState('');
+  // 동명이인 처리용: { grade, class, isHead, candidates: UserProfile[] }
+  const [duplicatePendingRows, setDuplicatePendingRows] = useState<{ grade: string; class: string; isHead: boolean; candidates: UserProfile[] }[]>([]);
+  const [duplicateResolvedEmails, setDuplicateResolvedEmails] = useState<{ [key: string]: string }>({});
   
   const [delegationRules, setDelegationRules] = useState<DelegationRule[]>([]);
   const [selectedDelegationFile, setSelectedDelegationFile] = useState<File | null>(null);
@@ -306,6 +311,213 @@ export function SettingsModal() {
     xlsx.writeFile(workbook, 'user_template.xlsx');
   };
 
+  const handleHomeroomFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+        setSelectedHomeroomFile(e.target.files[0]);
+    }
+  };
+
+  const handleDownloadHomeroomTemplate = () => {
+    const templateData = [
+      { 학년: 1, 반: 1, 교사이름: '홍길동', 학년부장여부: 'N' },
+      { 학년: 1, 반: 2, 교사이름: '김철수', 학년부장여부: 'Y' },
+    ];
+    const worksheet = xlsx.utils.json_to_sheet(templateData);
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, worksheet, '담임 배정');
+    xlsx.writeFile(workbook, 'homeroom_template.xlsx');
+  };
+
+  const handleHomeroomUpload = () => {
+    if (!selectedHomeroomFile) {
+        toast({ variant: 'destructive', title: '파일 없음', description: '업로드할 엑셀 파일을 선택해주세요.' });
+        return;
+    }
+
+    startUploading(async () => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                const workbook = xlsx.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const json: any[] = xlsx.utils.sheet_to_json(worksheet);
+
+                const newHomerooms: { [key: string]: string } = {};
+                const newGradeHeads: { [key: string]: string } = { ...org.gradeHeads };
+                const duplicates: { grade: string; class: string; isHead: boolean; candidates: UserProfile[] }[] = [];
+
+                json.forEach((row) => {
+                    const grade = String(row['학년'] || '').trim();
+                    const clazz = String(row['반'] || '').trim();
+                    // 이름 기반 매칭: 이름, 교사이름, name 컬럼 지원
+                    const teacherName = (row['교사이름'] || row['이름'] || row['name'] || '').trim();
+                    // 레거시 이메일 컬럼도 여전히 지원 (이름이 없을 때 폴백)
+                    const directEmail = (row['교사이메일'] || row['이메일'] || '').trim().toLowerCase();
+                    const isHead = (row['학년부장여부'] || row['부장여부'] || '').trim().toUpperCase() === 'Y';
+
+                    if (!grade || !clazz) return;
+
+                    if (teacherName) {
+                        // 이름으로 사용자 목록에서 매칭
+                        const matched = users.filter(u => u.name === teacherName);
+                        if (matched.length === 1) {
+                            const key = `${grade}-${clazz}`;
+                            newHomerooms[key] = matched[0].email;
+                            if (isHead) newGradeHeads[grade] = matched[0].email;
+                        } else if (matched.length > 1) {
+                            // 동명이인 → 나중에 수동 선택 필요
+                            duplicates.push({ grade, class: clazz, isHead, candidates: matched });
+                        } else {
+                            toast({ variant: 'destructive', title: `"${teacherName}" 교사를 찾을 수 없음`, description: `${grade}학년 ${clazz}반에 배정된 "${teacherName}"(이)라는 이름의 교사를 찾을 수 없습니다. 사용자 목록을 확인해주세요.` });
+                        }
+                    } else if (directEmail) {
+                        // 레거시: 이메일 직접 지정
+                        const key = `${grade}-${clazz}`;
+                        newHomerooms[key] = directEmail;
+                        if (isHead) newGradeHeads[grade] = directEmail;
+                    }
+                });
+
+                setOrg(prev => ({
+                    ...prev,
+                    homerooms: { ...prev.homerooms, ...newHomerooms },
+                    gradeHeads: newGradeHeads
+                }));
+
+                if (duplicates.length > 0) {
+                    setDuplicatePendingRows(duplicates);
+                    setDuplicateResolvedEmails({});
+                    toast({ title: `동명이인 ${duplicates.length}건 발생`, description: '아래 목록에서 해당 교사를 선택해 주세요.' });
+                } else {
+                    toast({ title: '담임 배정 일괄 등록 성공', description: `${Object.keys(newHomerooms).length}개의 학급 배정이 설정되었습니다.` });
+                }
+            } catch (err: any) {
+                toast({ variant: 'destructive', title: '파일 파싱 오류', description: err.message });
+            }
+        };
+        reader.onerror = () => {
+            toast({ variant: 'destructive', title: '파일 읽기 오류', description: '파일을 읽는 중 문제가 발생했습니다.' });
+        };
+        reader.readAsArrayBuffer(selectedHomeroomFile);
+    });
+  };
+
+  const handleResolveDuplicates = () => {
+    const newHomerooms = { ...org.homerooms };
+    const newGradeHeads = { ...org.gradeHeads };
+    let resolvedCount = 0;
+    let missingCount = 0;
+    duplicatePendingRows.forEach(row => {
+      const key = `${row.grade}-${row.class}`;
+      const selectedEmail = duplicateResolvedEmails[key];
+      if (selectedEmail) {
+        newHomerooms[key] = selectedEmail;
+        if (row.isHead) newGradeHeads[row.grade] = selectedEmail;
+        resolvedCount++;
+      } else {
+        missingCount++;
+      }
+    });
+    if (missingCount > 0) {
+      toast({ variant: 'destructive', title: '선택 누락', description: `${missingCount}개 반의 교사를 아직 선택하지 않았습니다.` });
+      return;
+    }
+    setOrg(prev => ({ ...prev, homerooms: newHomerooms, gradeHeads: newGradeHeads }));
+    setDuplicatePendingRows([]);
+    setDuplicateResolvedEmails({});
+    toast({ title: '동명이인 처리 완료', description: `${resolvedCount}개 반의 담임 배정이 완료되었습니다.` });
+  };
+
+  // 부서 일괄 등록
+  const handleDeptFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) setSelectedDeptFile(e.target.files[0]);
+  };
+
+  const handleDownloadDeptTemplate = () => {
+    const templateData = [
+      { '부서명': '문예방과후부', '이름': '홍길동', '직책': '부장' },
+      { '부서명': '문예방과후부', '이름': '김철수', '직책': '부원' },
+      { '부서명': '문예방과후부', '이름': '이영희', '직책': '부원' },
+      { '부서명': '체육방과후부', '이름': '이영철', '직책': '부장' },
+      { '부서명': '체육방과후부', '이름': '최수진', '직책': '부원' },
+    ];
+    const worksheet = xlsx.utils.json_to_sheet(templateData);
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, worksheet, '부서 목록');
+    xlsx.writeFile(workbook, 'department_template.xlsx');
+  };
+
+  const handleDeptUpload = () => {
+    if (!selectedDeptFile) {
+      toast({ variant: 'destructive', title: '파일 없음', description: '업로드할 엑셀 파일을 선택해주세요.' });
+      return;
+    }
+    startUploading(async () => {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = xlsx.read(data, { type: 'array' });
+          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          const json: any[] = xlsx.utils.sheet_to_json(worksheet);
+
+          const resolveEmail = (name: string): string | null => {
+            if (!name) return null;
+            const matched = users.filter(u => u.name === name.trim());
+            if (matched.length === 1) return matched[0].email;
+            if (matched.length > 1) {
+              toast({ variant: 'destructive', title: `"${name}" 동명이인`, description: `"${name}"(이)라는 이름의 사용자가 여러 명입니다. 직접 등록 방식으로 배정하세요.` });
+            } else {
+              toast({ variant: 'destructive', title: `"${name}" 사용자 없음`, description: `"${name}"(이)라는 이름의 사용자를 찾을 수 없습니다.` });
+            }
+            return null;
+          };
+
+          // 부서명 기준으로 행을 그룹핑 (순서 유지를 위해 Map 사용)
+          const deptMap = new Map<string, { headEmail: string | null; memberEmails: string[] }>();
+          json.forEach((row) => {
+            const deptName = (row['부서명'] || '').trim();
+            const name = (row['이름'] || row['name'] || '').trim();
+            const role = (row['직책'] || row['역할'] || '').trim();
+            if (!deptName || !name) return;
+
+            if (!deptMap.has(deptName)) {
+              deptMap.set(deptName, { headEmail: null, memberEmails: [] });
+            }
+            const entry = deptMap.get(deptName)!;
+            const email = resolveEmail(name);
+            if (!email) return;
+
+            if (role === '부장') {
+              entry.headEmail = email;
+            } else {
+              // '부원' 또는 그 외 직첩은 모두 부원으로 처리
+              if (!entry.memberEmails.includes(email)) {
+                entry.memberEmails.push(email);
+              }
+            }
+          });
+
+          const newDepts = Array.from(deptMap.entries()).map(([deptName, entry], i) => ({
+            id: Date.now().toString() + i,
+            name: deptName,
+            headEmail: entry.headEmail,
+            memberEmails: entry.memberEmails,
+          }));
+
+          setOrg(prev => ({ ...prev, departments: [...(prev.departments || []), ...newDepts] }));
+          toast({ title: '부서 일괄 등록 성공', description: `${newDepts.length}개의 부서가 추가되었습니다.` });
+        } catch (err: any) {
+          toast({ variant: 'destructive', title: '파일 파싱 오류', description: err.message });
+        }
+      };
+      reader.onerror = () => toast({ variant: 'destructive', title: '파일 읽기 오류' });
+      reader.readAsArrayBuffer(selectedDeptFile);
+    });
+  };
+
   const handleDelegationFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
         setSelectedDelegationFile(e.target.files[0]);
@@ -425,26 +637,26 @@ export function SettingsModal() {
                 <SettingsIcon className="h-5 w-5 text-muted-foreground" />
             </Button>
         </DialogTrigger>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-4xl w-[90vw] h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-3 border-b">
           <DialogTitle>시스템 설정</DialogTitle>
           <DialogDescription>
             문서 템플릿, 번호 체계, 사용자 권한을 관리합니다.
           </DialogDescription>
         </DialogHeader>
         
-        <Tabs defaultValue="users" className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="general"><SettingsIcon className="mr-2 h-4 w-4 hidden md:block"/>일반</TabsTrigger>
-            <TabsTrigger value="org"><Network className="mr-2 h-4 w-4 hidden md:block"/>조직도</TabsTrigger>
-            <TabsTrigger value="delegation"><FileText className="mr-2 h-4 w-4 hidden md:block"/>전결규정</TabsTrigger>
-            <TabsTrigger value="users"><Users className="mr-2 h-4 w-4 hidden md:block"/>사용자</TabsTrigger>
-            <TabsTrigger value="audit"><FileText className="mr-2 h-4 w-4 hidden md:block"/>감사 로그</TabsTrigger>
+        <Tabs defaultValue="users" className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <TabsList className="grid w-full grid-cols-5 shrink-0 rounded-none border-b bg-muted/30 h-11">
+            <TabsTrigger value="general" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><SettingsIcon className="mr-2 h-4 w-4 hidden md:block"/>일반</TabsTrigger>
+            <TabsTrigger value="org" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><Network className="mr-2 h-4 w-4 hidden md:block"/>조직도</TabsTrigger>
+            <TabsTrigger value="delegation" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><FileText className="mr-2 h-4 w-4 hidden md:block"/>전결규정</TabsTrigger>
+            <TabsTrigger value="users" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><Users className="mr-2 h-4 w-4 hidden md:block"/>사용자</TabsTrigger>
+            <TabsTrigger value="audit" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><FileText className="mr-2 h-4 w-4 hidden md:block"/>감사 로그</TabsTrigger>
           </TabsList>
           
-          <TabsContent value="general" className="flex-1 overflow-hidden flex flex-col">
-            <ScrollArea className="h-[60vh] pr-4">
-              <div className="space-y-6 p-1">
+          <TabsContent value="general" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <div className="space-y-6">
                 <div className="space-y-2">
                   <Label htmlFor="nextNumber">다음 문서 번호</Label>
                   <Input id="nextNumber" name="nextNumber" type="number" value={config.nextNumber || 1} onChange={handleChange} />
@@ -498,18 +710,18 @@ export function SettingsModal() {
                   </div>
                 </div>
               </div>
-            </ScrollArea>
-             <DialogFooter className="mt-4 pt-4 border-t">
+            </div>
+            <div className="shrink-0 px-6 py-4 border-t flex justify-end">
               <Button onClick={handleSave} disabled={isSaving}>
                 {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 일반 설정 저장
               </Button>
-            </DialogFooter>
+            </div>
           </TabsContent>
 
-          <TabsContent value="org" className="flex-1 overflow-hidden flex flex-col">
-            <ScrollArea className="h-[60vh] pr-4">
-              <div className="space-y-6 p-1">
+          <TabsContent value="org" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <div className="space-y-6">
                 <div className="space-y-4">
                   <h4 className="font-semibold text-lg border-b pb-2">학교 리더십</h4>
                   <div className="grid grid-cols-2 gap-4">
@@ -535,39 +747,56 @@ export function SettingsModal() {
                 </div>
 
                 <div className="space-y-4">
-                  <h4 className="font-semibold text-lg border-b pb-2">학년 부장</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {[1, 2, 3, 4, 5, 6].map(grade => (
-                      <div key={grade} className="space-y-2">
-                        <Label>{grade}학년 부장</Label>
-                        <Select value={org.gradeHeads[grade] || ''} onValueChange={(val) => setOrg({ ...org, gradeHeads: { ...org.gradeHeads, [grade]: val } })}>
-                          <SelectTrigger><SelectValue placeholder="선택 안됨" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="unassigned">선택 안됨</SelectItem>
-                            {users.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-4">
                   <h4 className="font-semibold text-lg border-b pb-2">학급 담임 배정</h4>
                   
-                  <div className="flex gap-2 items-end bg-muted/30 p-4 rounded-lg border border-border/50">
-                    <div className="space-y-2 w-20">
-                      <Label>학년</Label>
-                      <Input type="number" min="1" max="6" value={newHomeroom.grade} onChange={e => setNewHomeroom({...newHomeroom, grade: e.target.value})} />
+                  {/* 담임 배정 일괄 등록 카드 */}
+                  <Card className="border shadow-sm bg-muted/20">
+                      <CardHeader className="p-4 pb-2">
+                          <CardTitle className="text-sm font-bold">담임 배정 일괄 등록</CardTitle>
+                          <CardDescription className="text-xs">
+                              엑셀 파일(.xlsx)로 여러 반의 담임 및 학년부장 여부를 일괄 등록합니다.
+                          </CardDescription>
+                      </CardHeader>
+                      <CardContent className="p-4 pt-0 flex flex-col sm:flex-row items-center gap-2">
+                          <Input type="file" accept=".xlsx, .xls" onChange={handleHomeroomFileSelect} className="h-9 flex-grow text-xs bg-white"/>
+                          <div className="flex gap-1.5 w-full sm:w-auto shrink-0">
+                              <Button onClick={handleDownloadHomeroomTemplate} variant="outline" size="sm" className="h-9 text-xs">
+                                  <Download className="mr-1.5 h-3.5 w-3.5"/>
+                                  양식
+                              </Button>
+                              <Button onClick={handleHomeroomUpload} disabled={isUploading || !selectedHomeroomFile} size="sm" className="h-9 text-xs">
+                                  {isUploading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> : <FileUp className="mr-1.5 h-3.5 w-3.5"/>}
+                                  업로드
+                              </Button>
+                          </div>
+                      </CardContent>
+                  </Card>
+                  
+                  <div className="flex flex-col md:flex-row gap-3 items-end bg-muted/30 p-4 rounded-lg border border-border/50 space-y-3 md:space-y-0">
+                    <div className="grid grid-cols-3 gap-2 w-full md:w-auto">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">학년</Label>
+                        <Input type="number" min="1" max="6" value={newHomeroom.grade} onChange={e => setNewHomeroom({...newHomeroom, grade: e.target.value})} className="h-9" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">반</Label>
+                        <Input type="number" min="1" max="20" value={newHomeroom.class} onChange={e => setNewHomeroom({...newHomeroom, class: e.target.value})} className="h-9" />
+                      </div>
+                      <div className="space-y-1.5 flex items-center justify-center pt-5">
+                        <Label className="text-xs flex items-center gap-1.5 cursor-pointer">
+                          <Switch 
+                            checked={newHomeroom.isGradeHead}
+                            onCheckedChange={(checked) => setNewHomeroom({ ...newHomeroom, isGradeHead: checked })}
+                          />
+                          <span className="font-semibold text-xs">학년부장</span>
+                        </Label>
+                      </div>
                     </div>
-                    <div className="space-y-2 w-20">
-                      <Label>반</Label>
-                      <Input type="number" min="1" max="20" value={newHomeroom.class} onChange={e => setNewHomeroom({...newHomeroom, class: e.target.value})} />
-                    </div>
-                    <div className="space-y-2 flex-1">
-                      <Label>담당 교사</Label>
+                    
+                    <div className="space-y-1.5 flex-1 w-full">
+                      <Label className="text-xs">담당 교사</Label>
                       <Select value={newHomeroom.email} onValueChange={(val) => setNewHomeroom({ ...newHomeroom, email: val })}>
-                        <SelectTrigger><SelectValue placeholder="교사 선택" /></SelectTrigger>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="교사 선택" /></SelectTrigger>
                         <SelectContent>
                           {users.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
                         </SelectContent>
@@ -576,12 +805,17 @@ export function SettingsModal() {
                     <Button onClick={() => {
                       if (!newHomeroom.email) return toast({ variant: 'destructive', description: '교사를 선택해주세요.'});
                       const key = `${newHomeroom.grade}-${newHomeroom.class}`;
-                      setOrg({ ...org, homerooms: { ...org.homerooms, [key]: newHomeroom.email } });
-                      setNewHomeroom({ grade: '1', class: '1', email: '' });
-                    }}>추가/변경</Button>
+                      const newHomerooms = { ...org.homerooms, [key]: newHomeroom.email };
+                      const newGradeHeads = { ...org.gradeHeads };
+                      if (newHomeroom.isGradeHead) {
+                        newGradeHeads[newHomeroom.grade] = newHomeroom.email;
+                      }
+                      setOrg({ ...org, homerooms: newHomerooms, gradeHeads: newGradeHeads });
+                      setNewHomeroom({ grade: '1', class: '1', email: '', isGradeHead: false });
+                    }} className="h-9 w-full md:w-auto font-bold bg-primary hover:bg-primary/90 text-white">추가/변경</Button>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mt-4">
                     {Object.entries(org.homerooms || {})
                       .sort(([a], [b]) => {
                         const [gA, cA] = a.split('-').map(Number);
@@ -590,27 +824,123 @@ export function SettingsModal() {
                       })
                       .map(([gradeClass, email]) => {
                         const user = users.find(u => u.email === email);
+                        const [grade, clazz] = gradeClass.split('-');
+                        const isGradeHead = org.gradeHeads[grade] === email;
+
                         return (
-                          <div key={gradeClass} className="flex justify-between items-center bg-card border p-2 rounded-md shadow-sm">
-                            <div className="flex flex-col overflow-hidden">
-                              <span className="font-bold text-sm">{gradeClass.replace('-', '학년 ')}반</span>
-                              <span className="text-xs text-muted-foreground truncate">{user ? user.name : email}</span>
+                          <div key={gradeClass} className="flex flex-col bg-card border p-3 rounded-lg shadow-sm space-y-3 justify-between">
+                            <div className="flex justify-between items-start">
+                              <div className="flex flex-col overflow-hidden">
+                                <span className="font-bold text-sm text-gray-900">{grade}학년 {clazz}반</span>
+                                <span className="text-xs text-muted-foreground truncate">{user ? user.name : email}</span>
+                              </div>
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0 hover:bg-red-50 hover:text-red-600 rounded" onClick={() => {
+                                const newHomerooms = { ...org.homerooms };
+                                delete newHomerooms[gradeClass];
+                                const newGradeHeads = { ...org.gradeHeads };
+                                if (newGradeHeads[grade] === email) {
+                                  delete newGradeHeads[grade];
+                                }
+                                setOrg({ ...org, homerooms: newHomerooms, gradeHeads: newGradeHeads });
+                              }}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
                             </div>
-                            <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0" onClick={() => {
-                              const newHomerooms = { ...org.homerooms };
-                              delete newHomerooms[gradeClass];
-                              setOrg({ ...org, homerooms: newHomerooms });
-                            }}>
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
+                            <div className="flex items-center justify-between border-t pt-2 mt-1">
+                              <Label className="text-xs flex items-center gap-1.5 cursor-pointer">
+                                <Switch 
+                                  checked={isGradeHead}
+                                  onCheckedChange={(checked) => {
+                                    const newGradeHeads = { ...org.gradeHeads };
+                                    if (checked) {
+                                      newGradeHeads[grade] = email;
+                                    } else if (newGradeHeads[grade] === email) {
+                                      delete newGradeHeads[grade];
+                                    }
+                                    setOrg({ ...org, gradeHeads: newGradeHeads });
+                                  }}
+                                />
+                                <span className={`text-[11px] font-bold transition-colors ${isGradeHead ? 'text-primary' : 'text-muted-foreground'}`}>학년부장</span>
+                              </Label>
+                            </div>
                           </div>
                         );
                     })}
                   </div>
                 </div>
 
+                {/* 동명이인 처리 UI */}
+                {duplicatePendingRows.length > 0 && (
+                  <div className="space-y-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="flex items-center justify-between">
+                      <h5 className="font-bold text-amber-800 text-sm">⚠️ 동명이인 발생 — 교사 선택 필요</h5>
+                      <span className="text-xs text-amber-600">{duplicatePendingRows.length}건</span>
+                    </div>
+                    <p className="text-xs text-amber-700">아래 반에 배정하려는 이름의 교사가 여러 명입니다. 정확한 교사를 직접 선택해 주세요.</p>
+                    <div className="space-y-2">
+                      {duplicatePendingRows.map(row => {
+                        const key = `${row.grade}-${row.class}`;
+                        return (
+                          <div key={key} className="flex items-center gap-3 bg-white rounded-lg border border-amber-200 px-3 py-2">
+                            <span className="text-sm font-bold text-gray-900 shrink-0 w-20">{row.grade}학년 {row.class}반</span>
+                            <Select
+                              value={duplicateResolvedEmails[key] || ''}
+                              onValueChange={(val) => setDuplicateResolvedEmails(prev => ({ ...prev, [key]: val }))}
+                            >
+                              <SelectTrigger className="h-8 flex-1 text-xs">
+                                <SelectValue placeholder="교사를 선택해 주세요" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {row.candidates.map(c => (
+                                  <SelectItem key={c.email} value={c.email}>
+                                    {c.name} ({c.email}) — {c.role}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {row.isHead && (
+                              <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded shrink-0">학년부장</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex gap-2 justify-end pt-1">
+                      <Button variant="outline" size="sm" onClick={() => { setDuplicatePendingRows([]); setDuplicateResolvedEmails({}); }}>
+                        취소
+                      </Button>
+                      <Button size="sm" onClick={handleResolveDuplicates} className="bg-amber-600 hover:bg-amber-700 text-white">
+                        선택 완료 ({Object.keys(duplicateResolvedEmails).length}/{duplicatePendingRows.length}건)
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-4">
-                  <h4 className="font-semibold text-lg border-b pb-2">행정 부서 관리</h4>
+                  <h4 className="font-semibold text-lg border-b pb-2">부서 관리</h4>
+                  
+                  {/* 부서 일괄 등록 카드 */}
+                  <Card className="border shadow-sm bg-muted/20">
+                    <CardHeader className="p-4 pb-2">
+                      <CardTitle className="text-sm font-bold">부서 일괄 등록</CardTitle>
+                      <CardDescription className="text-xs">
+                        엑셀 파일로 부서를 일괄 등록합니다. 한 행에 한 명씩 (부서명 / 이름 / 직책) 입력하세요. 같은 부서명끼리 자동 그룹핑됩니다.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0 flex flex-col sm:flex-row items-center gap-2">
+                      <Input type="file" accept=".xlsx, .xls" onChange={handleDeptFileSelect} className="h-9 flex-grow text-xs bg-white"/>
+                      <div className="flex gap-1.5 w-full sm:w-auto shrink-0">
+                        <Button onClick={handleDownloadDeptTemplate} variant="outline" size="sm" className="h-9 text-xs">
+                          <Download className="mr-1.5 h-3.5 w-3.5"/>
+                          양식
+                        </Button>
+                        <Button onClick={handleDeptUpload} disabled={isUploading || !selectedDeptFile} size="sm" className="h-9 text-xs">
+                          {isUploading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> : <FileUp className="mr-1.5 h-3.5 w-3.5"/>}
+                          업로드
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
                   
                   <div className="flex gap-2 items-center mb-4">
                     <Input 
@@ -678,16 +1008,17 @@ export function SettingsModal() {
                   </div>
                 </div>
               </div>
-            </ScrollArea>
-            <DialogFooter className="mt-4 pt-4 border-t">
+            </div>
+            <div className="shrink-0 px-6 py-4 border-t flex justify-end">
               <Button onClick={handleOrgSave} disabled={isSaving}>
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 조직도 저장
               </Button>
-            </DialogFooter>
+            </div>
           </TabsContent>
 
-          <TabsContent value="delegation" className="flex-1 overflow-hidden flex flex-col gap-4">
+          <TabsContent value="delegation" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
+            <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-4">
             <Card>
                 <CardHeader className="pb-3">
                     <CardTitle className="text-lg">위임전결규정 일괄 등록</CardTitle>
@@ -760,15 +1091,17 @@ export function SettingsModal() {
                   </TableBody>
               </Table>
             </div>
-            <DialogFooter className="mt-2 pt-2 border-t">
+            </div>
+            <div className="shrink-0 px-6 py-4 border-t flex justify-end">
               <Button onClick={handleDelegationSave} disabled={isSaving}>
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 전결규정 저장
               </Button>
-            </DialogFooter>
+            </div>
           </TabsContent>
 
-          <TabsContent value="users" className="flex-1 overflow-hidden flex flex-col gap-4">
+          <TabsContent value="users" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
+            <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-4">
               <Card>
                   <CardHeader className="pb-3">
                       <CardTitle className="text-lg">사용자 일괄 등록</CardTitle>
@@ -897,15 +1230,17 @@ export function SettingsModal() {
                     </TableBody>
                 </Table>
               </div>
+            </div>
           </TabsContent>
 
-          <TabsContent value="audit" className="flex-1 overflow-hidden flex flex-col gap-4">
+          <TabsContent value="audit" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
+            <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-4">
             <div className="flex justify-between items-center px-1">
               <div>
                 <h3 className="text-lg font-semibold">시스템 감사 로그 (최근 100건)</h3>
                 <p className="text-xs text-muted-foreground">누가, 언제, 어떤 문서에 대해 결재 관련 작업을 처리했는지 상세 이력을 조회합니다.</p>
               </div>
-              <Button variant="outline" size="sm" onClick={fetchAuditLogs} disabled={loadingLogs}>
+              <Button variant="outline" size="sm" onClick={() => fetchAuditLogs()} disabled={loadingLogs}>
                 {loadingLogs ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
                 새로고침
               </Button>
@@ -989,6 +1324,7 @@ export function SettingsModal() {
                 </Button>
               </div>
             )}
+            </div>
           </TabsContent>
         </Tabs>
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -17,7 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Briefcase, Calendar, Clock, Loader2, Send, ArrowLeft, Info, UserCheck, PlusCircle, Trash2, Search, Users, CalendarDays } from 'lucide-react';
-import { createDocument, getTeacherDutyStats } from '@/lib/services/documentService';
+import { createDocument, getTeacherDutyStats, getDocumentById } from '@/lib/services/documentService';
 import { TeacherDutyData } from '@/lib/types';
 import { getOrgStructure } from '@/lib/services/settingsService';
 import { getUserProfileByEmail, getUsersDirectory } from '@/lib/services/userService';
@@ -143,6 +143,8 @@ type DutyFormValues = z.infer<typeof dutySchema>;
 export default function TeacherDutyPage() {
   const { user, profile } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const cloneId = searchParams.get('cloneId');
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [org, setOrg] = useState<any>(null);
@@ -208,6 +210,36 @@ export default function TeacherDutyPage() {
     control,
     name: "travelItems"
   });
+
+  useEffect(() => {
+    async function loadCloneData() {
+      if (!cloneId) return;
+      try {
+        const fetched = await getDocumentById(cloneId);
+        if (fetched && fetched.teacherDutyData) {
+          const data = fetched.teacherDutyData;
+          setValue('mainType', data.mainType || '휴가');
+          setValue('subType', data.subType || '');
+          setValue('detailType', data.detailType || '');
+          setValue('startDate', data.startDate || '');
+          setValue('endDate', data.endDate || '');
+          setValue('startTime', data.startTime || '');
+          setValue('endTime', data.endTime || '');
+          setValue('totalDays', data.totalDays || 1);
+          setValue('reason', data.reason || '');
+          setValue('destination', data.destination || '');
+          setValue('noExpensesPaid', !!data.noExpensesPaid);
+          setValue('useCompanyVehicle', !!data.useCompanyVehicle);
+          if (data.travelItems) setValue('travelItems', data.travelItems);
+          if (data.studyAbroadPlan) setValue('studyAbroadPlan', data.studyAbroadPlan);
+          toast({ title: "문서 복사됨", description: "이전 복무 신청 내용을 불러왔습니다." });
+        }
+      } catch (e) {
+        console.error("Clone load error:", e);
+      }
+    }
+    loadCloneData();
+  }, [cloneId, setValue, toast]);
 
   const [isRepeatModalOpen, setIsRepeatModalOpen] = useState(false);
   const [repeatStartDate, setRepeatStartDate] = useState('');

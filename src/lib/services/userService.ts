@@ -28,14 +28,14 @@ export async function getUserProfileByEmail(email: string): Promise<UserProfile 
       uid: data?.uid || '',
       email: snap.id,
       isAdmin: data?.isAdmin || false,
-      parentPhone: data?.parentPhone,
-      parentSignature: data?.parentSignature,
-      hashedPin: data?.hashedPin,
-      parentName: data?.parentName,
-      studentName: data?.studentName,
-      studentGrade: data?.studentGrade,
-      studentClass: data?.studentClass,
-      studentNumber: data?.studentNumber,
+      parentPhone: data?.parentPhone ?? null,
+      parentSignature: data?.parentSignature ?? null,
+      hashedPin: data?.hashedPin ?? null,
+      parentName: data?.parentName ?? null,
+      studentName: data?.studentName ?? null,
+      studentGrade: data?.studentGrade ?? null,
+      studentClass: data?.studentClass ?? null,
+      studentNumber: data?.studentNumber ?? null,
     };
   } catch (error) {
     console.error(`[UserService] getUserProfileByEmail error:`, error);
@@ -48,7 +48,14 @@ export async function saveUserProfile(userId: string, email: string, profileData
   const userProfileRef = doc(getUsersCol(), email.toLowerCase());
   try {
     const docSnap = await getDoc(userProfileRef);
-    const dataToSave: Partial<UserProfile> = { ...profileData };
+    
+    // undefined 필드 제거 방어 코드
+    const dataToSave: any = {};
+    Object.entries(profileData).forEach(([key, val]) => {
+      if (val !== undefined) {
+        dataToSave[key] = val;
+      }
+    });
     
     if (!docSnap.exists() && userId) {
       dataToSave.uid = userId;

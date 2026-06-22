@@ -74,5 +74,32 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow update, delete: if false;
     }
+
+    // approval_presets 결재선 프리셋 컬렉션 보안 규칙
+    match /approval_presets/{presetId} {
+      // 읽기 권한
+      allow read: if isSignedIn() && (
+        // 1. 개인 프리셋인 경우 소유자 본인만 열람
+        (resource.data.type == 'personal' && resource.data.ownerEmail.lower() == getEmail()) ||
+        // 2. 부서 프리셋인 경우 로그인한 사용자 누구나 열람
+        resource.data.type == 'department'
+      );
+
+      // 생성 권한
+      allow create: if isSignedIn() && (
+        // 1. 개인 프리셋은 본인 소유로만 생성
+        (request.resource.data.type == 'personal' && request.resource.data.ownerEmail.lower() == getEmail()) ||
+        // 2. 부서 프리셋은 어드민만 생성 허용
+        (request.resource.data.type == 'department' && isAdmin())
+      );
+
+      // 수정 및 삭제 권한
+      allow update, delete: if isSignedIn() && (
+        // 1. 어드민이거나
+        isAdmin() ||
+        // 2. 개인 프리셋의 경우 본인 소유인 경우에만 수정/삭제 가능
+        (resource.data.type == 'personal' && resource.data.ownerEmail.lower() == getEmail())
+      );
+    }
   }
 }

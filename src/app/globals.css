@@ -74,11 +74,11 @@
     max-width: 100%;
     min-height: 297mm !important;
     margin: 20px auto !important;
-    padding: 20mm !important;
+    padding: 10mm !important; /* [수정] 좌우 여백을 인쇄 시의 @page margin (10mm)과 정확히 일치시킴 */
     background-color: white !important;
     box-sizing: border-box !important;
     outline: none;
-    font-size: 12pt !important; /* [추가] 기본 글씨 크기 12pt 설정 */
+    font-size: 12pt !important; /* 기본 글씨 크기 12pt 설정 */
     
     /* [핵심] A4(297mm) 단위로 회색 구분선을 그어 페이지 경계를 시각적으로 표시 */
     background-image: repeating-linear-gradient(
@@ -92,7 +92,7 @@
     /* 입체감 부여 */
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
     
-    /* [추가] 페이지 하단 고정을 위한 Flexbox 설정 */
+    /* 페이지 하단 고정을 위한 Flexbox 설정 */
     display: flex !important;
     flex-direction: column !important;
   }
@@ -107,15 +107,15 @@
     margin-top: auto; /* 항상 최하단 위치 보장 */
 }
 
-/* 좁은 화면(모바일/작은 모니터) 대응 */
-@media screen and (max-width: 220mm) {
+/* 좁은 화면(모바일/작은 모니터/창 분할) 대응 */
+@media screen and (max-width: 768px) {
     .printable-area, .ProseMirror {
         width: 100% !important;
         min-height: 100vh !important;
         margin: 0 auto !important;
         padding: 10mm !important;
         box-shadow: none !important;
-        background-image: none !important; /* 모바일에선 구분선 제거 */
+        background-image: none !important; /* 화면 폭이 좁을 때는 구분선 제거 */
     }
 }
 
@@ -127,24 +127,61 @@
     size: A4 portrait;
     margin: 10mm;
   }
-  html, body {
+  html {
+    /* [핵심] 뷰포트 크기와 무관하게 항상 동일한 인쇄 레이아웃을 보장하기 위해
+       반응형 font-size를 고정값(12pt = 16px @ 96 DPI)으로 강제 설정합니다.
+       이 값은 beforeprint JS 측정 시에도 동일하게 적용됩니다. */
+    font-size: 12pt !important;
+    height: auto !important;
+    position: relative !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+  body {
     height: auto !important;
     margin: 0 !important;
     padding: 0 !important;
     background: white !important;
   }
+  .print\:hidden, .print-hidden {
+    display: none !important;
+  }
   .printable-area {
+    position: static !important;
     display: block !important;
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
+    box-sizing: border-box !important;
   }
   .printable-area table {
     width: 100% !important;
     border-collapse: collapse;
   }
+  .doc-content-wrapper {
+    display: block !important;
+    padding-bottom: 0 !important; /* JS spacer가 자리를 차지하므로 강제 패딩 제거 */
+    box-sizing: border-box !important;
+  }
+  .doc-footer {
+    position: static !important; /* absolute 배치를 해제하여 spacer 뒤에 자연스럽게 붙도록 함 */
+    width: 100% !important;
+    box-sizing: border-box !important;
+    display: block !important;
+    page-break-inside: avoid !important;
+  }
+  #print-spacer {
+    display: block !important;
+  }
 }
+
+/* 화면 및 인쇄 모두에서 spacer를 표시 */
+#print-spacer {
+  display: block !important;
+}
+
 
 /* [Tiptap 에디터 내부 컨텐츠 포맷팅] */
 .ProseMirror p {

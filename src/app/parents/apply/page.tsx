@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { createDocument, getStudentFieldTripDays, getStudentAbsenceDays } from '@/lib/services/documentService';
+import { createDocument, getStudentFieldTripDays, getStudentAbsenceDays, getDocumentById } from '@/lib/services/documentService';
 import { getApproversByGradeClass } from '@/lib/services/userService';
 import { ParentFormData } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -81,6 +81,7 @@ function ApplyForm() {
   const [pendingData, setPendingData] = useState<FormValues | null>(null);
   
   const typeParam = searchParams.get('type') === 'field-trip' ? 'field-trip' : 'absence';
+  const cloneId = searchParams.get('cloneId');
   
   const { register, handleSubmit, watch, setValue, formState: { errors }, clearErrors } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -117,6 +118,52 @@ function ApplyForm() {
   const [accumulatedFieldTripDays, setAccumulatedFieldTripDays] = useState<number>(0);
   const [accumulatedAbsenceDays, setAccumulatedAbsenceDays] = useState<number>(0);
   const [isLoadingLimits, setIsLoadingLimits] = useState<boolean>(false);
+
+  useEffect(() => {
+    async function loadCloneData() {
+      if (!cloneId) return;
+      try {
+        const fetched = await getDocumentById(cloneId);
+        if (fetched && fetched.parentFormData) {
+          const data = fetched.parentFormData;
+          
+          if (data.type !== typeParam) {
+            router.replace(`/parents/apply?type=${data.type}&cloneId=${cloneId}`);
+            return;
+          }
+
+          setValue('type', data.type);
+          setValue('studentName', data.studentName || '');
+          setValue('gradeClassNumber', data.gradeClassNumber || '');
+
+          if (data.type === 'absence') {
+            setValue('absencePeriod.startDate', data.absencePeriod?.startDate || '');
+            setValue('absencePeriod.endDate', data.absencePeriod?.endDate || '');
+            setValue('absencePeriod.totalDays', data.absencePeriod?.totalDays || 1);
+            setValue('absenceType', data.absenceType || '병결');
+            setValue('absenceReason', data.absenceReason || '');
+          } else if (data.type === 'field-trip') {
+            setValue('phone', data.phone || '');
+            setValue('tripPeriod.startDate', data.tripPeriod?.startDate || '');
+            setValue('tripPeriod.endDate', data.tripPeriod?.endDate || '');
+            setValue('tripPeriod.totalDays', data.tripPeriod?.totalDays || 1);
+            setValue('cumulativeDays', data.cumulativeDays || 0);
+            setValue('tripType', data.tripType || '가족동반여행');
+            setValue('destination', data.destination || '');
+            setValue('companionName', data.companionName || '');
+            setValue('companionRelation', data.companionRelation || '');
+            setValue('purpose', data.purpose || '');
+            setValue('detailedPlan', data.detailedPlan || '');
+          }
+          
+          toast({ title: "문서 복사됨", description: "이전 신청서 내용을 불러왔습니다." });
+        }
+      } catch (e) {
+        console.error("Clone load error:", e);
+      }
+    }
+    loadCloneData();
+  }, [cloneId, typeParam, router, setValue, toast]);
 
   useEffect(() => {
     if (typeParam !== currentType) {

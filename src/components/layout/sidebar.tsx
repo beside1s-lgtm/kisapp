@@ -62,7 +62,7 @@ export default function AppSidebar() {
   }, [user]);
 
   return (
-    <aside className="w-64 space-y-4 shrink-0 p-4 h-[calc(100vh-65px)] sticky top-16 hidden md:block overflow-y-auto pb-8">
+    <aside className="w-64 space-y-4 shrink-0 p-4 h-[calc(100vh-65px)] sticky top-16 hidden lg:block overflow-y-auto pb-8">
       <Button asChild size="lg" className="w-full font-bold text-base h-12 rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow">
         <Link href="/new">
           <Plus className="mr-2 h-5 w-5" />
@@ -88,6 +88,7 @@ export default function AppSidebar() {
         <NavItem href="/teacher/duty" label="교원 복무" icon={<Briefcase size={18} />} />
         <NavItem href="/teacher/overtime" label="초과근무" icon={<Clock size={18} />} />
         <NavItem href="/teacher/substitution" label="보결 관리" icon={<UserPlus size={18} />} />
+        <NavItem href="/teacher/registry" label="교원 서비스 조회" icon={<ListFilter size={18} />} />
 
         <div className="mt-6 mb-2 px-3 flex items-center gap-2">
           <div className="h-px bg-border flex-1"></div>
@@ -98,6 +99,7 @@ export default function AppSidebar() {
         </div>
         <NavItem href="/parents-absence" label="결석계 조회" icon={<CalendarOff size={18} />} />
         <NavItem href="/parents-fieldtrip" label="체험학습 신청서 조회" icon={<Backpack size={18} />} />
+        <NavItem href="/parents/registry" label="출결/체험 내역 조회" icon={<ListFilter size={18} />} />
       </Card>
 
     </aside>

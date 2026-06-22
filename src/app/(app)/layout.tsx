@@ -55,17 +55,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="print:hidden">
         <AppHeader />
       </div>
-      <div className="flex print:block">
+      <div className="flex print:block pt-16">
         <div className="print:hidden">
           <AppSidebar />
         </div>
-        <main className="flex-1 pb-24 md:pb-8 print:p-0 print:m-0 print:block">
+        <main className="flex-1 pb-24 lg:pb-8 print:p-0 print:m-0 print:block">
             {children}
         </main>
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-card border-t z-40 grid grid-cols-5 items-center justify-around px-2">
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 h-20 bg-card border-t z-40 grid grid-cols-5 items-center justify-around px-2 print:hidden">
           <MobileNavItem href="/inbox" label="미결재함" icon={<Inbox size={20} />} />
           <MobileNavItem href="/sent" label="상신함" icon={<Send size={20} />} />
           <div className="flex justify-center">

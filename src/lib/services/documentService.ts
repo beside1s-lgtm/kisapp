@@ -30,6 +30,61 @@ import { getUserProfileByEmail, saveUserProfile } from '@/lib/services/userServi
 const getApprovalsCol = () => collection(db, 'approvals');
 const getSettingsCol = () => collection(db, 'settings');
 
+// ─────────────────────────────────────────────────────────────
+// kisbus 스쿨버스 연동: 결석/체험학습 승인 시 notBoarding 처리
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * YYYY-MM-DD 형식의 날짜 범위(startDate ~ endDate) 내 모든 평일(월~금) 날짜 배열을 반환합니다.
+ */
+function getWeekdayDatesInRange(startDate: string, endDate: string): string[] {
+  const dates: string[] = [];
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+  const cur = new Date(start);
+  while (cur <= end) {
+    const day = cur.getDay();
+    if (day !== 0 && day !== 6) { // 0=일, 6=토 제외
+      const yyyy = cur.getFullYear();
+      const mm = String(cur.getMonth() + 1).padStart(2, '0');
+      const dd = String(cur.getDate()).padStart(2, '0');
+      dates.push(`${yyyy}-${mm}-${dd}`);
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
+/**
+ * kisbus Cloud Function을 호출하여 해당 학생의 지정 날짜들에 notBoarding 처리합니다.
+ * 실패해도 예외를 던지지 않고 로그만 남깁니다 (메인 승인 흐름에 영향 없음).
+ */
+async function notifyKisbusAbsence(studentName: string, gradeClassNumber: string, dates: string[]): Promise<void> {
+  const KISBUS_API_URL = process.env.KISBUS_API_URL || 'https://us-central1-studio-8176556433-7698a.cloudfunctions.net/markStudentAbsence';
+  const KISBUS_API_KEY = process.env.KISBUS_API_KEY || 'kisbus-kisapp-secret-2026';
+
+  if (dates.length === 0) {
+    console.log('[kisbus] 처리할 날짜 없음, 스킵.');
+    return;
+  }
+
+  try {
+    const response = await fetch(KISBUS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studentName, gradeClassNumber, dates, apiKey: KISBUS_API_KEY }),
+    });
+    const result = await response.json();
+    if (result.success) {
+      console.log(`[kisbus] notBoarding 처리 성공: 학생=${studentName}, 노선=${result.updatedRoutes}개, 날짜=${result.updatedDates}일`);
+    } else {
+      console.warn(`[kisbus] notBoarding 처리 실패 (비치명적): ${result.error}`);
+    }
+  } catch (err) {
+    console.error('[kisbus] Cloud Function 호출 오류 (비치명적):', err);
+  }
+}
+
 // 이메일 알림 발송 헬퍼 함수 (Trigger Email Extension 연동)
 async function sendMailNotification(
   toEmail: string,
@@ -205,23 +260,57 @@ export async function getRegistryDocuments(lastDoc?: DocumentSnapshot) {
 
 export async function getAttendanceDocuments(userEmail: string, isAdmin: boolean) {
   if (!userEmail) return [];
-  const q = query(
-    getApprovalsCol(),
-    where('status', '==', 'approved'),
-    where('docType', '==', 'parent')
-  );
+  
   try {
-    const snapshot = await getDocs(q);
-    const docs = serializeDocs(snapshot.docs, 'completedAt');
     if (isAdmin) {
-      return docs;
+      const q = query(
+        getApprovalsCol(),
+        where('status', '==', 'approved'),
+        where('docType', '==', 'parent')
+      );
+      const snapshot = await getDocs(q);
+      return serializeDocs(snapshot.docs, 'completedAt');
+    } else {
+      const normalizedEmail = userEmail.toLowerCase();
+      
+      // 1. 기안자 쿼리
+      const q1 = query(
+        getApprovalsCol(),
+        where('status', '==', 'approved'),
+        where('docType', '==', 'parent'),
+        where('requesterEmail', '==', normalizedEmail)
+      );
+      
+      // 2. 결재자 쿼리
+      const q2 = query(
+        getApprovalsCol(),
+        where('status', '==', 'approved'),
+        where('docType', '==', 'parent'),
+        where('approverEmails', 'array-contains', normalizedEmail)
+      );
+      
+      const [snap1, snap2] = await Promise.all([
+        getDocs(q1),
+        getDocs(q2)
+      ]);
+      
+      const docMap = new Map<string, any>();
+      
+      const addDocsToMap = (docs: any[]) => {
+        docs.forEach(doc => {
+          docMap.set(doc.id, doc);
+        });
+      };
+      
+      addDocsToMap(serializeDocs(snap1.docs, 'completedAt'));
+      addDocsToMap(serializeDocs(snap2.docs, 'completedAt'));
+      
+      return Array.from(docMap.values()).sort((a, b) => {
+        const dateA = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+        const dateB = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+        return dateB - dateA;
+      });
     }
-    const normalizedEmail = userEmail.toLowerCase();
-    return docs.filter(doc => {
-      const isRequester = doc.requesterEmail?.toLowerCase() === normalizedEmail;
-      const isApprover = doc.approvers?.some((a: any) => a.email?.toLowerCase() === normalizedEmail);
-      return isRequester || isApprover;
-    });
   } catch (error) {
     console.error("[DocService] getAttendanceDocuments Error:", error);
     return [];
@@ -239,6 +328,75 @@ export async function getRecalledDocuments(userId: string, userEmail: string) {
     return serializeDocs(snapshot.docs, 'createdAt');
   } catch (error) {
     console.error("[DocService] getRecalledDocuments Error:", error);
+    return [];
+  }
+}
+
+export async function getTeacherRegistryDocuments(userEmail: string, isAdmin: boolean) {
+  if (!userEmail) return [];
+  
+  try {
+    if (isAdmin) {
+      const q = query(
+        getApprovalsCol(),
+        where('status', '==', 'approved'),
+        where('docType', 'in', ['teacher-duty', 'teacher-overtime'])
+      );
+      const snapshot = await getDocs(q);
+      return serializeDocs(snapshot.docs, 'completedAt');
+    } else {
+      const normalizedEmail = userEmail.toLowerCase();
+      
+      // 1. 기안자 쿼리
+      const q1 = query(
+        getApprovalsCol(),
+        where('status', '==', 'approved'),
+        where('docType', 'in', ['teacher-duty', 'teacher-overtime']),
+        where('requesterEmail', '==', normalizedEmail)
+      );
+      
+      // 2. 결재자 쿼리
+      const q2 = query(
+        getApprovalsCol(),
+        where('status', '==', 'approved'),
+        where('docType', 'in', ['teacher-duty', 'teacher-overtime']),
+        where('approverEmails', 'array-contains', normalizedEmail)
+      );
+      
+      // 3. 참조자 쿼리
+      const q3 = query(
+        getApprovalsCol(),
+        where('status', '==', 'approved'),
+        where('docType', 'in', ['teacher-duty', 'teacher-overtime']),
+        where('circularEmails', 'array-contains', normalizedEmail)
+      );
+      
+      const [snap1, snap2, snap3] = await Promise.all([
+        getDocs(q1),
+        getDocs(q2),
+        getDocs(q3)
+      ]);
+      
+      const docMap = new Map<string, any>();
+      
+      const addDocsToMap = (docs: any[]) => {
+        docs.forEach(doc => {
+          docMap.set(doc.id, doc);
+        });
+      };
+      
+      addDocsToMap(serializeDocs(snap1.docs, 'completedAt'));
+      addDocsToMap(serializeDocs(snap2.docs, 'completedAt'));
+      addDocsToMap(serializeDocs(snap3.docs, 'completedAt'));
+      
+      return Array.from(docMap.values()).sort((a, b) => {
+        const dateA = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+        const dateB = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+        return dateB - dateA;
+      });
+    }
+  } catch (error) {
+    console.error("[DocService] getTeacherRegistryDocuments Error:", error);
     return [];
   }
 }
@@ -263,27 +421,44 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       let nextNum = 1;
       const isFamily = payload.category === 'family'; 
       const isTeacherDuty = payload.docType === 'teacher-duty';
-      
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+      const schoolYear = (currentMonth === 1 || currentMonth === 2) ? currentYear - 1 : currentYear;
+
       if (settingsSnap.exists()) {
-        const data = settingsSnap.data() as DocConfig & { nextTeacherDutyNumber?: number };
-        if (isTeacherDuty) {
-          nextNum = data.nextTeacherDutyNumber || 1;
-          transaction.update(settingsRef, { nextTeacherDutyNumber: nextNum + 1 });
+        const data = settingsSnap.data() as any;
+        const savedYear = data.currentSchoolYear || 0;
+        
+        if (savedYear !== schoolYear) {
+          nextNum = 1;
+          transaction.update(settingsRef, {
+            nextNumber: isTeacherDuty ? 1 : 2,
+            nextFamilyNumber: 1,
+            nextTeacherDutyNumber: isTeacherDuty ? 2 : 1,
+            currentSchoolYear: schoolYear
+          });
         } else {
-          nextNum = isFamily ? (data.nextFamilyNumber || 1) : (data.nextNumber || 1);
-          transaction.update(settingsRef, isFamily ? { nextFamilyNumber: nextNum + 1 } : { nextNumber: nextNum + 1 });
+          if (isTeacherDuty) {
+            nextNum = data.nextTeacherDutyNumber || 1;
+            transaction.update(settingsRef, { nextTeacherDutyNumber: nextNum + 1 });
+          } else {
+            nextNum = isFamily ? (data.nextFamilyNumber || 1) : (data.nextNumber || 1);
+            transaction.update(settingsRef, isFamily ? { nextFamilyNumber: nextNum + 1 } : { nextNumber: nextNum + 1 });
+          }
         }
       } else {
         const initialData = { 
           nextNumber: isTeacherDuty ? 1 : 2, 
           nextFamilyNumber: 1, 
-          nextTeacherDutyNumber: isTeacherDuty ? 2 : 1 
+          nextTeacherDutyNumber: isTeacherDuty ? 2 : 1,
+          currentSchoolYear: schoolYear
         };
         transaction.set(settingsRef, initialData);
       }
       
-      if (isTeacherDuty) return `Kish-복무-${nextNum}`;
-      return isFamily ? `Kish-가통-${nextNum}` : `Kish-초등-${nextNum}`;
+      if (isTeacherDuty) return `Kish-${schoolYear}-복무-${nextNum}`;
+      return isFamily ? `Kish-${schoolYear}-가통-${nextNum}` : `Kish-${schoolYear}-초등-${nextNum}`;
     });
 
 
@@ -300,6 +475,8 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       status: hasApprovers ? 'pending' : 'approved',
       createdAt: serverTimestamp(),
       completedAt: hasApprovers ? null : serverTimestamp(),
+      approverEmails: payload.approvers?.map(a => a.email.toLowerCase()) || [],
+      circularEmails: payload.circulars?.map(c => c.email.toLowerCase()) || [],
     };
     await setDoc(newDocRef, newDocData);
 
@@ -381,6 +558,8 @@ export async function updateDocument(docId: string, payload: ApprovalDocPayload,
       completedAt: hasApprovers ? null : serverTimestamp(),
       updatedAt: serverTimestamp(),
       comment: '',
+      approverEmails: mergedApprovers?.map(a => a.email.toLowerCase()) || [],
+      circularEmails: payload.circulars?.map(c => c.email.toLowerCase()) || [],
     };
     await firestoreUpdateDoc(docRef, updatedData);
     return { success: true, docId };
@@ -485,6 +664,36 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
           </div>
         `;
         sendMailNotification(requesterEmail, subject, content, false);
+
+        // ── kisbus 스쿨버스 연동: 학부모 결석계/체험학습 승인 시 notBoarding 자동 처리 ──
+        // emailInfo는 transaction 내에서 설정되므로 여기서 docId로 원본 데이터를 재조회합니다
+        try {
+          const finalDocSnap = await getDoc(docRef);
+          if (finalDocSnap.exists()) {
+            const finalData = finalDocSnap.data() as ApprovalDoc;
+            if (finalData.docType === 'parent' && finalData.parentFormData) {
+              const pf = finalData.parentFormData;
+              const studentName = pf.studentName;
+              const gradeClassNumber = pf.gradeClassNumber; // 예: "5-2-15"
+
+              let absenceDates: string[] = [];
+              if (pf.type === 'absence' && pf.absencePeriod?.startDate && pf.absencePeriod?.endDate) {
+                absenceDates = getWeekdayDatesInRange(pf.absencePeriod.startDate, pf.absencePeriod.endDate);
+              } else if (pf.type === 'field-trip' && pf.tripPeriod?.startDate && pf.tripPeriod?.endDate) {
+                absenceDates = getWeekdayDatesInRange(pf.tripPeriod.startDate, pf.tripPeriod.endDate);
+              }
+
+              if (studentName && gradeClassNumber && absenceDates.length > 0) {
+                // 비동기로 호출 (메인 흐름 블로킹하지 않음)
+                notifyKisbusAbsence(studentName, gradeClassNumber, absenceDates);
+              }
+            }
+          }
+        } catch (kisbusErr) {
+          // kisbus 연동 실패는 승인 결과에 영향 없음
+          console.error('[kisbus] 연동 처리 중 오류 (비치명적):', kisbusErr);
+        }
+        // ───────────────────────────────────────────────────────────────────────
       } else if (nextApproverEmail) {
         // 다음 결재자에게 결재 대기 메일 알림 (첫 1회 발송 제한 적용)
         const subject = `[Kish 결재 시스템] 새 결재 대기 문서가 도착했습니다.`;
