@@ -10,12 +10,12 @@ import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } 
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+  apiKey: "AIzaSyDIG0l-il8rggQEBWK6rUFwFs0oFcNGkrg",
+  authDomain: "studio-9153973571-7837c.firebaseapp.com",
+  projectId: "studio-9153973571-7837c",
+  storageBucket: "studio-9153973571-7837c.appspot.com",
+  messagingSenderId: "450357468060",
+  appId: "1:450357468060:web:9987ff7b76682415ed8659"
 };
 
 // Next.js의 Hot Reloading 시 중복 초기화 방지
