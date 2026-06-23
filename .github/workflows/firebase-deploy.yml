@@ -28,5 +28,4 @@ jobs:
       - name: Deploy to Firebase
         run: firebase deploy --only firestore --project studio-9153973571-7837c --non-interactive
         env:
-          GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
