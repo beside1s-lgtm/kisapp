@@ -62,7 +62,7 @@ service cloud.firestore {
     // settings 컬렉션 보안 규칙
     match /settings/{settingId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow write: if isAdmin() || (settingId == 'docConfig' && isSignedIn());
     }
 
     // mail 컬렉션 보안 규칙 (Trigger Email 연동)
