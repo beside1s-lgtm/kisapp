@@ -421,6 +421,9 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       let nextNum = 1;
       const isFamily = payload.category === 'family'; 
       const isTeacherDuty = payload.docType === 'teacher-duty';
+      const isParentAbsence = payload.docType === 'parent' && payload.parentFormData?.type === 'absence';
+      const isParentFieldTrip = payload.docType === 'parent' && payload.parentFormData?.type === 'field-trip';
+      
       const now = new Date();
       const currentYear = now.getFullYear();
       const currentMonth = now.getMonth() + 1;
@@ -436,12 +439,20 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
             nextNumber: isTeacherDuty ? 1 : 2,
             nextFamilyNumber: 1,
             nextTeacherDutyNumber: isTeacherDuty ? 2 : 1,
+            nextAbsenceNumber: isParentAbsence ? 2 : 1,
+            nextFieldTripNumber: isParentFieldTrip ? 2 : 1,
             currentSchoolYear: schoolYear
           });
         } else {
           if (isTeacherDuty) {
             nextNum = data.nextTeacherDutyNumber || 1;
             transaction.update(settingsRef, { nextTeacherDutyNumber: nextNum + 1 });
+          } else if (isParentAbsence) {
+            nextNum = data.nextAbsenceNumber || 1;
+            transaction.update(settingsRef, { nextAbsenceNumber: nextNum + 1 });
+          } else if (isParentFieldTrip) {
+            nextNum = data.nextFieldTripNumber || 1;
+            transaction.update(settingsRef, { nextFieldTripNumber: nextNum + 1 });
           } else {
             nextNum = isFamily ? (data.nextFamilyNumber || 1) : (data.nextNumber || 1);
             transaction.update(settingsRef, isFamily ? { nextFamilyNumber: nextNum + 1 } : { nextNumber: nextNum + 1 });
@@ -452,12 +463,16 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
           nextNumber: isTeacherDuty ? 1 : 2, 
           nextFamilyNumber: 1, 
           nextTeacherDutyNumber: isTeacherDuty ? 2 : 1,
+          nextAbsenceNumber: isParentAbsence ? 2 : 1,
+          nextFieldTripNumber: isParentFieldTrip ? 2 : 1,
           currentSchoolYear: schoolYear
         };
         transaction.set(settingsRef, initialData);
       }
       
       if (isTeacherDuty) return `Kish-${schoolYear}-복무-${nextNum}`;
+      if (isParentAbsence) return `Kish-${schoolYear}-결석-${nextNum}`;
+      if (isParentFieldTrip) return `Kish-${schoolYear}-체험-${nextNum}`;
       return isFamily ? `Kish-${schoolYear}-가통-${nextNum}` : `Kish-${schoolYear}-초등-${nextNum}`;
     });
 
