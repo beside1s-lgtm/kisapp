@@ -311,7 +311,7 @@ function ApplyForm() {
       const studentClass = gradeClassParts[1] || '1';
       const approvers = await getApproversByGradeClass(grade, studentClass, !isAbsence);
 
-      await createDocument({
+      const res = await createDocument({
         title,
         content,
         docType: 'parent',
@@ -320,6 +320,10 @@ function ApplyForm() {
         approvers,
         attachments: [],
       }, user.email!, profile);
+
+      if (res && !res.success) {
+        throw new Error(res.error || '신청서 제출 중 오류가 발생했습니다.');
+      }
 
       toast({
         title: '제출 완료',
