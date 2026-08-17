@@ -649,7 +649,18 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
       const data = docSnap.data() as ApprovalDoc;
       const step = data.currentStep;
       
-      if (data.approvers[step]?.email?.toLowerCase() !== userProfile.email?.toLowerCase()) throw new Error("권한이 없습니다.");
+      const currentAp = data.approvers[step];
+      const currentApEmail = currentAp?.email?.trim().toLowerCase();
+      const currentApName = currentAp?.name?.trim();
+      const userEmail = userProfile.email?.trim().toLowerCase();
+      const userName = userProfile.name?.trim();
+
+      const isAuthorized = 
+        (userEmail && currentApEmail && userEmail === currentApEmail) || 
+        (userName && currentApName && userName === currentApName) || 
+        userProfile.isAdmin;
+
+      if (!isAuthorized) throw new Error("권한이 없습니다.");
 
       const updatedApprovers = [...data.approvers];
       updatedApprovers[step] = {
@@ -659,10 +670,6 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
         approvedAt: new Date().toISOString(),
         approverName: userProfile.name,
       };
-
-      if (updatedApprovers[step].role === '부장') {
-        updatedApprovers[step].type = 'final';
-      }
 
       const isFinal = updatedApprovers[step].type === 'final' || step === updatedApprovers.length - 1;
       
@@ -720,7 +727,7 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
             <p><strong>제목:</strong> ${title}</p>
             <p><strong>최종 승인자:</strong> ${userProfile.name}</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
-            <a href="https://studio-9153973571-7837c.firebaseapp.com/documents/${docId}" 
+            <a href="https://app.cjwave.kr/documents/${docId}" 
                style="display: inline-block; background-color: #10b981; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 10px;">
                문서 상세 보기
             </a>
@@ -769,7 +776,7 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
             <p><strong>제목:</strong> ${title}</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
             <p>대시보드에서 결재 처리를 진행해 주세요.</p>
-            <a href="https://studio-9153973571-7837c.firebaseapp.com/inbox" 
+            <a href="https://app.cjwave.kr/inbox" 
                style="display: inline-block; background-color: #6366f1; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 10px;">
                대시보드로 이동
             </a>
