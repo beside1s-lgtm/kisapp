@@ -173,8 +173,9 @@ export default function InboxPage() {
         if (profile?.email && user?.uid) {
             setLoading(true);
             const currentYear = new Date().getFullYear().toString();
-            const isTeacherOrAdmin = profile.role === 'teacher' || !!profile.isAdmin || profile.role === 'admin';
-            Promise.all([
+            const isTeacherOrAdmin = profile.role === 'teacher' || !!profile.isAdmin || profile.role === 'admin' || profile.role === '부장' || profile.role === '교감' || profile.role === '교장';
+            
+            Promise.allSettled([
                 getInboxDocuments(profile.email, profile.name),
                 getPendingDocuments(user.uid, profile.email),
                 getMyTeacherDocuments(profile.email),
@@ -185,13 +186,13 @@ export default function InboxPage() {
                 isTeacherOrAdmin
                     ? getOvertimeStatsByYear(profile.email, currentYear)
                     : Promise.resolve([] as { month: string; hours: number; }[]),
-            ]).then(([inboxData, pendingData, teacherData, parentData, statsData, overtimeData]) => {
-                setInboxDocs(inboxData);
-                setPendingDocs(pendingData);
-                setTeacherDocs(teacherData);
-                setParentDocs(parentData);
-                setDutyStats(statsData);
-                setOvertimeChart(overtimeData);
+            ]).then((results) => {
+                if (results[0].status === 'fulfilled') setInboxDocs(results[0].value || []);
+                if (results[1].status === 'fulfilled') setPendingDocs(results[1].value || []);
+                if (results[2].status === 'fulfilled') setTeacherDocs(results[2].value || []);
+                if (results[3].status === 'fulfilled') setParentDocs(results[3].value || []);
+                if (results[4].status === 'fulfilled') setDutyStats(results[4].value as any);
+                if (results[5].status === 'fulfilled') setOvertimeChart(results[5].value as any);
                 setLoading(false);
 
                 // 읽지 않은 결재 알림 상태가 true일 경우 리셋
