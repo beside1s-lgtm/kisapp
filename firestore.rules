@@ -238,5 +238,19 @@ service cloud.firestore {
     match /afterschool_substitutes/{id} {
       allow read, write: if true;
     }
+
+    // --- [이메일 알림 발송 큐 (Trigger Email Extension)] ---
+    match /mail/{id} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // --- [감사 로그 (audit_logs)] ---
+    match /audit_logs/{id} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
   }
 }

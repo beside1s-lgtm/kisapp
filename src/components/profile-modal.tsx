@@ -108,15 +108,21 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
       try {
         const result = await saveUserProfile(user.uid, user.email!, updatedProfileData);
         if (result.success) {
-          updateProfile(updatedProfileData);
-          await fetchProfile(user).catch(() => {});
+          if (typeof updateProfile === 'function') {
+            updateProfile(updatedProfileData);
+          }
+          if (typeof fetchProfile === 'function') {
+            await fetchProfile(user).catch(() => {});
+          }
           toast({ title: '프로필 업데이트됨' });
         } else {
           throw new Error(result.error || '권한 부족으로 Firestore 동기화 제외됨');
         }
       } catch (dbErr: any) {
         console.warn("[ProfileModal] DB sync skipped, applying local session profile:", dbErr);
-        updateProfile(updatedProfileData);
+        if (typeof updateProfile === 'function') {
+          updateProfile(updatedProfileData);
+        }
         toast({ title: '프로필 임시 적용 완료', description: '프로필 정보가 적용되었습니다.' });
       }
 
