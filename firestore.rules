@@ -21,22 +21,8 @@ service cloud.firestore {
 
     // approvals 컬렉션 보안 규칙
     match /approvals/{docId} {
-      // 읽기 권한
-      allow read: if isSignedIn() && (
-        // 1. 관리자이거나
-        isAdmin() ||
-        // 2. 기안자 본인이거나
-        resource.data.requesterId == request.auth.uid ||
-        (resource.data.requesterEmail != null && resource.data.requesterEmail == getEmail()) ||
-        // 3. 결재선에 등록된 결재자이거나
-        (resource.data.approverEmails != null && getEmail() in resource.data.approverEmails) ||
-        // 4. 참조인(circulars)에 등록된 참조인이거나
-        (resource.data.circularEmails != null && getEmail() in resource.data.circularEmails) ||
-        // 5. 일반 교내 결재 문서 (학부모 개인정보 문서 제외한 교원 기안 문서)
-        (resource.data.docType != 'parent') ||
-        // 6. 학부모 신청서/결석계 문서(docType == 'parent')의 경우 로그인한 사용자는 조회 가능하도록 허용 (한도 계산 및 담임 확인용)
-        (resource.data.docType == 'parent')
-      );
+      // 읽기 권한: 로그인된 사용자는 결재 대기/완료 쿼리를 실행할 수 있도록 허용 (상세 열람 권한은 document-view 컴포넌트에서 공개/비공개 및 결재선에 따라 철저히 제어)
+      allow read: if isSignedIn();
 
       // 생성 권한 (본인 기안만 허용)
       allow create: if isSignedIn() && (
