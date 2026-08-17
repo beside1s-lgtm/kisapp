@@ -244,18 +244,62 @@ export async function getSentDocuments(userId: string, userEmail: string) {
   }
 }
 
-export async function getPendingDocuments(userId: string, userEmail: string) {
+export async function getPendingDocuments(userId: string, userEmail: string, userName?: string) {
   if (!userId && !userEmail) return [];
   if (!auth.currentUser || userId?.startsWith('test_') || userEmail?.includes('test')) return [];
-  const q = query(getApprovalsCol(), and(
-    or(where('requesterId', '==', userId), where('requesterEmail', '==', userEmail.toLowerCase())),
-    where('status', '==', 'pending')
-  ));
+
+  const normalizedEmail = userEmail?.trim().toLowerCase();
+  const trimmedName = userName?.trim();
+
   try {
-    const snapshot = await getDocs(q);
-    const docs = serializeDocs(snapshot.docs, 'createdAt');
+    // 1. 내가 기안자인 진행중 문서
+    const q1 = query(getApprovalsCol(), and(
+      or(where('requesterId', '==', userId), where('requesterEmail', '==', normalizedEmail)),
+      where('status', '==', 'pending')
+    ));
+
+    // 2. 내가 결재선에 포함된 진행중 문서
+    const q2 = query(getApprovalsCol(), and(
+      where('approverEmails', 'array-contains', normalizedEmail),
+      where('status', '==', 'pending')
+    ));
+
+    const [snap1, snap2] = await Promise.all([
+      getDocs(q1),
+      getDocs(q2)
+    ]);
+
+    const docMap = new Map<string, any>();
+
+    // 기안자 문서 등록
+    serializeDocs(snap1.docs, 'createdAt').forEach(d => {
+      docMap.set(d.id, d);
+    });
+
+    // 결재자 문서 등록: 내가 이미 결재 승인(approved)을 마쳤으나 전체 상태가 pending인 문서
+    serializeDocs(snap2.docs, 'createdAt').forEach(d => {
+      const isMyApproved = d.approvers?.some((ap: any) => {
+        const apEmail = ap.email?.trim().toLowerCase();
+        const apName = ap.name?.trim();
+        const isMe = (normalizedEmail && apEmail && apEmail === normalizedEmail) ||
+                     (trimmedName && apName && apName === trimmedName);
+        return isMe && ap.status === 'approved';
+      });
+
+      if (isMyApproved) {
+        docMap.set(d.id, d);
+      }
+    });
+
+    const allDocs = Array.from(docMap.values());
     // 복무 및 초과근무 신청 문서는 일반 기안 상신 문서 목록에서 제외
-    return docs.filter(doc => doc.docType !== 'teacher-duty' && doc.docType !== 'teacher-overtime');
+    const filtered = allDocs.filter(doc => doc.docType !== 'teacher-duty' && doc.docType !== 'teacher-overtime');
+
+    return filtered.sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
   } catch (error) {
     console.error("[DocService] getPendingDocuments Error:", error);
     return [];

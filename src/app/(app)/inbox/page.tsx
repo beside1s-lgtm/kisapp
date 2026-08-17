@@ -177,7 +177,7 @@ export default function InboxPage() {
             
             Promise.allSettled([
                 getInboxDocuments(profile.email, profile.name),
-                getPendingDocuments(user.uid, profile.email),
+                getPendingDocuments(user.uid, profile.email, profile?.name),
                 getMyTeacherDocuments(profile.email),
                 getParentServiceDocuments(profile.email, !!profile.isAdmin),
                 isTeacherOrAdmin
@@ -232,7 +232,7 @@ export default function InboxPage() {
             title: "진행 중인 상신 문서",
             count: pendingDocs.length,
             icon: Send,
-            description: "내가 기안하여 결재 진행 중",
+            description: "내가 기안/결재하여 진행 중",
             color: "text-amber-500",
             bgColor: "bg-amber-500/10",
         },

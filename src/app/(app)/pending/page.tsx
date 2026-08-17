@@ -22,7 +22,7 @@ export default function PendingPage() {
         }
         try {
             setLoading(true);
-            const data = await getPendingDocuments(user.uid, profile.email);
+            const data = await getPendingDocuments(user.uid, profile.email, profile?.name);
             setDocs(data || []);
         } catch (err) {
             console.error('[PendingPage] Failed to load docs:', err);
@@ -54,9 +54,9 @@ export default function PendingPage() {
                 <div>
                     <h1 className="font-headline text-2xl sm:text-3xl font-bold flex items-center gap-3">
                         <FileClock className="h-7 w-7 text-primary" />
-                        내가 상신한 진행중 문서
+                        진행 문서함
                     </h1>
-                    <p className="text-muted-foreground mt-1 text-sm">내가 상신한 문서 중 결재 진행 중인 문서입니다.</p>
+                    <p className="text-muted-foreground mt-1 text-sm">내가 기안했거나 결재하여 현재 상위 결재선에서 진행 중인 문서들입니다.</p>
                 </div>
                 <Button variant="outline" size="sm" onClick={loadDocuments} className="self-start sm:self-auto h-9 gap-1.5 text-xs font-semibold">
                     <RefreshCw className="h-3.5 w-3.5" />
