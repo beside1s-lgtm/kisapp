@@ -332,9 +332,29 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     </div>
   );
 
-  const isRequester = initialDoc.requesterId === user.uid;
-  const isApprover = initialDoc.approvers?.some(ap => ap.email?.toLowerCase() === user.email?.toLowerCase()) ?? false;
-  const isCircular = initialDoc.circulars?.some(c => c.email?.toLowerCase() === profile.email?.toLowerCase()) ?? false;
+  const normalizedUserEmail = user.email?.trim().toLowerCase();
+  const normalizedProfileEmail = profile.email?.trim().toLowerCase();
+  const userName = profile.name?.trim();
+
+  const isRequester = Boolean(
+    initialDoc.requesterId === user.uid || 
+    (normalizedProfileEmail && initialDoc.requesterEmail?.trim().toLowerCase() === normalizedProfileEmail)
+  );
+  
+  const isApprover = initialDoc.approvers?.some(ap => {
+      const apEmail = ap.email?.trim().toLowerCase();
+      const apName = ap.name?.trim();
+      return (normalizedUserEmail && apEmail && apEmail === normalizedUserEmail) ||
+             (normalizedProfileEmail && apEmail && apEmail === normalizedProfileEmail) ||
+             (userName && apName && apName === userName);
+  }) ?? false;
+
+  const isCircular = initialDoc.circulars?.some(c => {
+      const cEmail = c.email?.trim().toLowerCase();
+      const cName = c.name?.trim();
+      return (normalizedProfileEmail && cEmail && cEmail === normalizedProfileEmail) ||
+             (userName && cName && cName === userName);
+  }) ?? false;
 
   let hasViewPermission = false;
   if (profile.isAdmin) hasViewPermission = true;
@@ -344,12 +364,13 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
       else hasViewPermission = isRequester || isApprover || isCircular;
   } else hasViewPermission = isRequester || isApprover || isCircular;
 
-  const hasAttachmentPermission = 
+  const hasAttachmentPermission = Boolean(
     initialDoc.publishStatus !== '부분공개' || 
     isRequester || 
     isApprover || 
     isCircular || 
-    profile.isAdmin;
+    profile.isAdmin
+  );
   
   if (!hasViewPermission) {
       return (
@@ -363,8 +384,15 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
       );
   }
 
-  const isMyTurn = initialDoc.status === 'pending' && 
-                   initialDoc.approvers[initialDoc.currentStep]?.email?.trim().toLowerCase() === user.email?.trim().toLowerCase();
+  const currentAp = initialDoc.approvers[initialDoc.currentStep];
+  const currentApEmail = currentAp?.email?.trim().toLowerCase();
+  const currentApName = currentAp?.name?.trim();
+
+  const isMyTurn = initialDoc.status === 'pending' && (
+      (normalizedUserEmail && currentApEmail && currentApEmail === normalizedUserEmail) ||
+      (normalizedProfileEmail && currentApEmail && currentApEmail === normalizedProfileEmail) ||
+      (userName && currentApName && currentApName === userName)
+  );
   const canRecall = isRequester && initialDoc.status === 'pending';
   const isRecalled = initialDoc.status === 'recalled';
   const isApproved = initialDoc.status === 'approved';
