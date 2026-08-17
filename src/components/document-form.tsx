@@ -8,7 +8,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
-import { File as FileIcon, Loader2, Plus, Sparkles, User as UserIcon, X, Paperclip, Trash2, Settings2, FolderOpen } from 'lucide-react';
+import { File as FileIcon, Loader2, Plus, Sparkles, User as UserIcon, X, Paperclip, Trash2, Settings2, FolderOpen, Lock } from 'lucide-react';
+import { getTeacherApplySettings, defaultTeacherApplySettings, getOrgStructure } from '@/lib/services/settingsService';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -21,8 +22,8 @@ import { cn } from '@/lib/utils';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import RichEditor from "./rich-editor";
-import { db } from '@/lib/firebase';
-import { doc, getDoc, getDocs, collection, runTransaction, serverTimestamp, setDoc, updateDoc, addDoc, query, where, deleteDoc } from 'firebase/firestore';
+import { getDb } from '@/lib/firebase';
+import { doc, getDoc, getDocs, collection, runTransaction, serverTimestamp, setDoc, updateDoc, addDoc, query, where, deleteDoc, limit } from 'firebase/firestore';
 import {
   Dialog,
   DialogContent,
@@ -33,26 +34,31 @@ import {
 } from "@/components/ui/dialog";
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getDocumentById } from '@/lib/services/documentService';
+import { generateAfterschoolSettlementWorkbook } from '@/lib/afterschool/excel';
+import { getRealtimeSemesterInfo } from '@/lib/services/academicCalendarService';
 
 const approverSchema = z.object({
-  name: z.string(),
-  email: z.string().email().or(z.literal('')),
-  role: z.string(),
-  type: z.enum(['normal', 'final', 'proxy']),
-  active: z.boolean(),
+  name: z.string().optional().default(''),
+  email: z.string().optional().default(''),
+  role: z.string().optional().default(''),
+  type: z.enum(['normal', 'final', 'proxy']).optional().default('normal'),
+  active: z.boolean().optional().default(false),
   status: z.enum(['pending', 'approved', 'rejected']).optional(),
-});
+  approverName: z.string().optional(),
+  signature: z.string().optional(),
+  comment: z.string().optional(),
+}).passthrough();
 
 const formSchema = z.object({
   title: z.string().min(1, '제목은 필수입니다.'),
   content: z.string().min(1, '내용은 필수입니다.'),
-  approvers: z.array(approverSchema),
-  circulars: z.array(z.object({ name: z.string(), email: z.string(), role: z.string() })),
-  attachments: z.array(z.object({ name: z.string(), size: z.number(), data: z.string() })),
-  publishStatus: z.enum(['공개', '비공개', '부분공개']),
-  docType: z.enum(['internal', 'external', 'parent', 'teacher-duty', 'teacher-overtime']),
-  receiverName: z.string().optional(),
-  receiverEmail: z.string().email().or(z.literal('')).optional(),
+  approvers: z.array(approverSchema).optional().default([]),
+  circulars: z.array(z.object({ name: z.string(), email: z.string(), role: z.string().optional() })).optional().default([]),
+  attachments: z.array(z.object({ name: z.string(), size: z.number().optional().default(0), data: z.string() })).optional().default([]),
+  publishStatus: z.enum(['공개', '비공개', '부분공개']).optional().default('공개'),
+  docType: z.enum(['internal', 'external', 'parent', 'teacher-duty', 'teacher-overtime', 'teacher-afterschool']).optional().default('internal'),
+  receiverName: z.string().optional().default(''),
+  receiverEmail: z.string().optional().default(''),
 });
 type FormData = z.infer<typeof formSchema>;
 
@@ -106,7 +112,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
 
     const loadPresetsAndOrg = async () => {
       try {
-        const orgSnap = await getDoc(doc(db, 'settings', 'orgStructure'));
+        const orgSnap = await getDoc(doc(getDb(), 'settings', 'orgStructure'));
         let myDepts: any[] = [];
         let allDepts: any[] = [];
         if (orgSnap.exists()) {
@@ -135,13 +141,13 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
         }
 
         const personalQuery = query(
-          collection(db, 'approval_presets'),
+          collection(getDb(), 'approval_presets'),
           where('type', '==', 'personal'),
           where('ownerEmail', '==', profile.email)
         );
         
         const deptQuery = query(
-          collection(db, 'approval_presets'),
+          collection(getDb(), 'approval_presets'),
           where('type', '==', 'department')
         );
 
@@ -224,7 +230,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
         newPreset.departmentName = dept.name;
       }
 
-      const docRef = await addDoc(collection(db, 'approval_presets'), newPreset);
+      const docRef = await addDoc(collection(getDb(), 'approval_presets'), newPreset);
       const addedPreset = {
         id: docRef.id,
         ...newPreset
@@ -247,7 +253,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
     if (!window.confirm(`"${selected.name}" 프리셋을 삭제하시겠습니까?`)) return;
 
     try {
-      await deleteDoc(doc(db, 'approval_presets', presetId));
+      await deleteDoc(doc(getDb(), 'approval_presets', presetId));
       setPresets(prev => prev.filter(p => p.id !== presetId));
       if (selectedPresetId === presetId) {
         setSelectedPresetId('');
@@ -262,8 +268,22 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
   const isTemplateMode = !!searchParams.get('templateId');
   const cloneId = searchParams.get('cloneId');
   
-  const isEditMode = !!docToEdit && !isTemplateMode && !cloneId;
+  const isEditMode = !!docToEdit && !!docToEdit.id && !isTemplateMode && !cloneId;
   const isFamily = category === 'family';
+
+  // 방과후 기안 자동화 설정 상태
+  const [approvedDocs, setApprovedDocs] = useState<any[]>([]);
+  const [afterschoolCourses, setAfterschoolCourses] = useState<any[]>([]);
+  const [afterschoolEnrollments, setAfterschoolEnrollments] = useState<any[]>([]);
+  const [afterschoolAttendance, setAfterschoolAttendance] = useState<any[]>([]);
+  const [afterschoolApprovalDocs, setAfterschoolApprovalDocs] = useState<any[]>([]);
+  const [afterschoolSubstitutes, setAfterschoolSubstitutes] = useState<any[]>([]);
+  const [teacherApplySettings, setTeacherApplySettings] = useState<any>(null);
+
+  const [selectedRelatedDocId, setSelectedRelatedDocId] = useState<string>('none');
+  const [selectedYear, setSelectedYear] = useState<string>('2026');
+  const [selectedSemester, setSelectedSemester] = useState<string>('1학기');
+  const [selectedTermType, setSelectedTermType] = useState<string>('학기중');
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -277,13 +297,64 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
   useEffect(() => {
     const fetchBasics = async () => {
         try {
-            const usersSnap = await getDocs(collection(db, 'users'));
+            const usersSnap = await getDocs(collection(getDb(), 'users'));
             const userList = usersSnap.docs.map(d => ({ email: d.id, ...d.data() } as UserProfile));
             setUsers(userList);
 
-            const configSnap = await getDoc(doc(db, 'settings', 'docConfig'));
+            const configSnap = await getDoc(doc(getDb(), 'settings', 'docConfig'));
             if (configSnap.exists()) {
                 setDocConfig(configSnap.data() as DocConfig);
+            }
+
+            // 관련 공문 매핑용 기안 목록 조회 (안전한 쿼리 처리)
+            try {
+                const approvalsSnap = await getDocs(query(collection(getDb(), 'approvals'), where('status', '==', 'approved'), limit(50)));
+                const appList = approvalsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+                setApprovedDocs(appList);
+            } catch (appErr) {
+                console.warn("Approvals query skipped:", appErr);
+            }
+
+            // 방과후 강좌 목록 조회
+            try {
+                const coursesSnap = await getDocs(collection(getDb(), 'afterschool_courses'));
+                const courseList = coursesSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+                setAfterschoolCourses(courseList);
+            } catch (courseErr) {
+                console.warn("Courses query skipped:", courseErr);
+            }
+
+            // 방과후 수강생, 출석부, 서류제출, 보결 기록 목록 조회
+            try {
+                const [enrSnap, attSnap, appDocSnap, subSnap] = await Promise.all([
+                  getDocs(collection(getDb(), 'afterschool_enrollments')).catch(() => ({ docs: [] })),
+                  getDocs(collection(getDb(), 'afterschool_attendance')).catch(() => ({ docs: [] })),
+                  getDocs(collection(getDb(), 'afterschool_approval_docs')).catch(() => ({ docs: [] })),
+                  getDocs(collection(getDb(), 'afterschool_substitutes')).catch(() => ({ docs: [] })),
+                ]);
+                setAfterschoolEnrollments(enrSnap.docs.map(d => ({ id: d.id, ...d.data() } as any)));
+                setAfterschoolAttendance(attSnap.docs.map(d => ({ id: d.id, ...d.data() } as any)));
+                setAfterschoolApprovalDocs(appDocSnap.docs.map(d => ({ id: d.id, ...d.data() } as any)));
+                setAfterschoolSubstitutes(subSnap.docs.map(d => ({ id: d.id, ...d.data() } as any)));
+            } catch (subErr) {
+                console.warn("Afterschool sub collections query skipped:", subErr);
+            }
+
+            // 강사용 개설 기준 설정 조회
+            const settings = await getTeacherApplySettings();
+            setTeacherApplySettings(settings);
+
+            const cfgData = configSnap.exists() ? (configSnap.data() as DocConfig) : undefined;
+            const realtimeSem = getRealtimeSemesterInfo(new Date(), cfgData?.academicCalendar);
+
+            if (settings) {
+              setSelectedYear(settings.year || realtimeSem.yearStr);
+              setSelectedSemester(settings.semester || realtimeSem.name);
+              setSelectedTermType((settings.semester || realtimeSem.name)?.includes('방학') ? '방학중' : '학기중');
+            } else {
+              setSelectedYear(realtimeSem.yearStr);
+              setSelectedSemester(realtimeSem.name);
+              setSelectedTermType(realtimeSem.isVacation ? '방학중' : '학기중');
             }
         } catch (e) {
             console.error("Load Error:", e);
@@ -296,6 +367,107 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
     const initializeForm = async () => {
         let targetData: ApprovalDoc | null = null;
         let isClone = false;
+
+        // 1. 시스템 설정의 조직도 및 사용자 목록으로부터 실제 기본 결재선 구성
+        let dynamicDefaultApprovers = defaultApproversTemplate.map(ap => ({...ap, active: ap.role !== '협조'}));
+        try {
+            const org = await getOrgStructure();
+            const usersSnap = await getDocs(collection(getDb(), 'users'));
+            const userList = usersSnap.docs.map(d => ({ email: d.id, ...d.data() } as UserProfile));
+
+            const principalUser = org?.principal ? userList.find(u => u.email?.trim().toLowerCase() === org.principal?.trim().toLowerCase()) : null;
+            const vicePrincipalUser = org?.vicePrincipal ? userList.find(u => u.email?.trim().toLowerCase() === org.vicePrincipal?.trim().toLowerCase()) : null;
+            
+            // 작성자 소속 부서 부장 찾기
+            const myDept = org?.departments?.find(d => 
+                d.memberEmails?.some(m => m?.trim().toLowerCase() === profile?.email?.trim().toLowerCase()) ||
+                d.headEmail?.trim().toLowerCase() === profile?.email?.trim().toLowerCase()
+            );
+            const headUser = myDept?.headEmail ? userList.find(u => u.email?.trim().toLowerCase() === myDept.headEmail?.trim().toLowerCase()) : null;
+
+            dynamicDefaultApprovers = [
+                {
+                    name: headUser?.name || '',
+                    email: headUser?.email || myDept?.headEmail || '',
+                    role: '부장',
+                    type: 'normal' as const,
+                    status: 'pending' as const,
+                    active: true,
+                },
+                {
+                    name: vicePrincipalUser?.name || '',
+                    email: vicePrincipalUser?.email || org?.vicePrincipal || '',
+                    role: '교감',
+                    type: 'normal' as const,
+                    status: 'pending' as const,
+                    active: true,
+                },
+                {
+                    name: '',
+                    email: '',
+                    role: '협조',
+                    type: 'normal' as const,
+                    status: 'pending' as const,
+                    active: false,
+                },
+                {
+                    name: principalUser?.name || '',
+                    email: principalUser?.email || org?.principal || '',
+                    role: '교장',
+                    type: 'final' as const,
+                    status: 'pending' as const,
+                    active: true,
+                },
+            ];
+        } catch (err) {
+            console.error("Failed to load dynamic approvers from org structure:", err);
+        }
+
+        const busTemplate = searchParams.get('busTemplate');
+        if (busTemplate === 'true') {
+            const draftJson = sessionStorage.getItem('pending_doc_draft');
+            if (draftJson) {
+                try {
+                    const draft = JSON.parse(draftJson);
+                    sessionStorage.removeItem('pending_doc_draft');
+                    const initialAttachments = draft.attachments || [];
+                    form.reset({
+                        title: draft.title || '',
+                        content: draft.content || '',
+                        publishStatus: '공개',
+                        docType: 'internal',
+                        receiverName: '',
+                        receiverEmail: '',
+                        circulars: [],
+                        attachments: initialAttachments,
+                        approvers: dynamicDefaultApprovers,
+                    });
+                    replaceApprovers(dynamicDefaultApprovers);
+                    replaceAttachments(initialAttachments);
+                    toast({ title: "스쿨버스 기안 불러오기 완료", description: `[${draft.title}] 양식 및 첨부파일(${initialAttachments.length}건)이 탑재되었습니다.` });
+                    return;
+                } catch (err) {
+                    console.error("Draft Parse Error:", err);
+                }
+            }
+        }
+
+        const afterschoolMode = searchParams.get('afterschoolMode');
+        if (afterschoolMode === 'plan' || afterschoolMode === 'result') {
+            form.reset({
+                title: afterschoolMode === 'plan' ? '[계획] 방과후학교 운영 계획 승인의 건' : '[결과] 방과후학교 운영 결과 보고 및 수당 지급 청구의 건',
+                content: '<p>데이터 로딩 중...</p>',
+                publishStatus: '공개',
+                docType: 'teacher-afterschool',
+                receiverName: '',
+                receiverEmail: '',
+                circulars: [],
+                attachments: [],
+                approvers: dynamicDefaultApprovers,
+            });
+            replaceApprovers(dynamicDefaultApprovers);
+            return;
+        }
 
         if (cloneId) {
             try {
@@ -331,6 +503,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                  mappedApprovers = defaultApproversTemplate.map(ap => ({...ap, active: ap.role !== '협조'}));
             }
 
+            const formattedAttachments = targetData.attachments?.map(a => ({...a, size: a.size || 0})) || [];
             form.reset({
                 title: targetData.title || '',
                 content: targetData.content || '',
@@ -339,21 +512,251 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                 receiverName: targetData.receiverInfo?.name || '',
                 receiverEmail: targetData.receiverInfo?.email || '',
                 circulars: targetData.circulars || [],
-                attachments: targetData.attachments?.map(a => ({...a, size: a.size || 0})) || [],
+                attachments: formattedAttachments,
                 approvers: mappedApprovers,
             });
+            replaceAttachments(formattedAttachments);
+        } else {
+            // 일반 신규 기안문 작성 시 동적 기본 결재선 세팅
+            form.setValue('approvers', dynamicDefaultApprovers);
+            replaceApprovers(dynamicDefaultApprovers);
         }
     };
 
     initializeForm();
   }, [docToEdit, cloneId, form]);
 
-  const { fields: approverFields } = useFieldArray({ control: form.control, name: 'approvers' });
-  const { fields: circularFields, append: appendCircular, remove: removeCircular } = useFieldArray({ control: form.control, name: 'circulars' });
-  const { fields: attachmentFields, append: appendAttachment, remove: removeAttachment } = useFieldArray({ control: form.control, name: 'attachments' });
+  // 방과후 기안 본문 및 제목 실시간 동적 생성
+  useEffect(() => {
+        const afterschoolMode = searchParams.get('afterschoolMode');
+        if (!afterschoolMode) return;
+
+        const targetSettings = teacherApplySettings || defaultTeacherApplySettings;
+        const openCourses = afterschoolCourses.filter(c => c.status === 'OPEN');
+        
+        let relatedDocText = '';
+        if (selectedRelatedDocId && selectedRelatedDocId !== 'none') {
+            const docItem = approvedDocs.find(d => d.id === selectedRelatedDocId);
+            if (docItem) {
+                const dateStr = docItem.createdAt ? new Date(docItem.createdAt).toLocaleDateString() : '2026.07.07';
+                relatedDocText = `${docItem.docNo || '예체능방과후부-' + docItem.id.slice(0, 4).toUpperCase()} (${dateStr}) 「${docItem.title}」`;
+            }
+        } else {
+            relatedDocText = `예체능방과후부-102 (2026.07.07) 「2026학년도 방과후학교 운영 계획 수립 기본계획(안)」`;
+        }
+
+        const termLabel = selectedTermType === '방학중' ? '방학중' : '학기중';
+        const semesterFull = `${selectedYear}학년도 제${selectedSemester} (${termLabel})`;
+
+        if (afterschoolMode === 'plan') {
+            const formattedTitle = `[계획] ${selectedYear}학년도 제${selectedSemester} 방과후학교 운영 계획 승인의 건`;
+            const firstCourseTitle = openCourses[0]?.title || '3D 크리에이터 되기';
+            const remainingCount = openCourses.length - 1;
+            const courseSummaryText = remainingCount > 0 
+                ? `${firstCourseTitle} 외 ${remainingCount}개` 
+                : `${firstCourseTitle}`;
+
+            const rate = targetSettings.teacherFee || 40000;
+            const rCurr = targetSettings.teacherFeeCurrency || 'KRW';
+            const formattedRateVal = rCurr === 'USD' ? `${rate.toLocaleString()}` : `${rate.toLocaleString()}${rCurr === 'VND' ? '동' : '원'}`;
+            const formattedRate = `${targetSettings.teacherFeeType || '시간당'} ${formattedRateVal}`;
+
+            const tFee = targetSettings.tuitionPerSession || 15000;
+            const tCurr = targetSettings.tuitionCurrency || 'KRW';
+            const formattedTuitionVal = tCurr === 'USD' ? `${tFee.toLocaleString()}` : `${tFee.toLocaleString()}${tCurr === 'VND' ? '동' : '원'}`;
+
+            const tuitionLabel = targetSettings.tuitionType === '학교예산' 
+                ? '학교 예산 지원 (학생 무료 수강)' 
+                : `수익자 부담 (유료 수강: 차시당 ${formattedTuitionVal})`;
+
+            const planContent = `
+<p><strong>1. 관련</strong>: ${relatedDocText}</p>
+<p><strong>2. 목적</strong>: 본교 학생들의 소질 계발과 창의적 체험 활동 기회 확대를 위해 ${semesterFull} 방과후학교 강좌 개설 예정 목록을 심의하고, 일괄 운영 계획을 보고합니다.</p>
+<br/>
+<p><strong>가. 개설 개요</strong></p>
+<p>① 운영 기간: ${semesterFull} (${targetSettings.operatingStartDate} ~ ${targetSettings.operatingEndDate})</p>
+<p>② 운영 대상: 초·중·고등부 신청 학생</p>
+<p>③ 수강료 구분: ${tuitionLabel}</p>
+<p>④ 강사료 단가: ${formattedRate} (지급 재원: ${targetSettings.fundingSource === '수익자부담' ? '수익자 부담' : targetSettings.fundingSource === '학교예산' ? '학교 예산 지원' : '혼용 (수익자 부담 + 학교 예산 지원)'})</p>
+<br/>
+<p><strong>나. 개설 강좌</strong></p>
+<p>① 개설 강좌: ${courseSummaryText}</p>
+<br/>
+<p><strong>다. 기대 효과</strong>: 사교육비 경감 및 다채로운 예체능·IT 융합 프로그램 제공</p>
+<p><strong>라. 붙임파일</strong>: ${selectedYear}-${selectedSemester}_방과후학교_운영계획_강좌목록.xlsx 1부. 끝.</p>
+            `.trim();
+
+            form.setValue('title', formattedTitle);
+            form.setValue('content', planContent);
+            form.setValue('attachments', [
+                {
+                    name: `${selectedYear}-${selectedSemester}_방과후학교_운영계획_강좌목록.xlsx`,
+                    size: 14200,
+                    data: 'data:text/plain;base64,QXNzaWdubmVudCBkYXRhCg=='
+                }
+            ]);
+        } else if (afterschoolMode === 'result') {
+            const formattedTitle = `[결과] ${selectedYear}학년도 제${selectedSemester} 방과후학교 운영 결과 보고 및 수당 지급 청구의 건`;
+            const totalStudents = openCourses.reduce((sum, c) => sum + (c.currentStudents || 0), 0);
+            const rate = targetSettings.teacherFee || 800000;
+            const submittedCourses = openCourses.filter(c => (afterschoolApprovalDocs || []).some((d: any) => d.courseId === c.id));
+            const unsubmittedCount = openCourses.length - submittedCourses.length;
+            
+            // ★ 올바른 계산: 학생 수와 무관하게 [강좌별 총 수업 차시 × 차시당 강사료 단가]
+            const totalSessionsSum = openCourses.reduce((sum, c) => {
+              const sessionsPerClass = c.sessionsPerClass || 2;
+              return sum + (c.totalSessions || (c.operatingWeeks ? c.operatingWeeks * sessionsPerClass : 20));
+            }, 0);
+            const totalRate = totalSessionsSum * rate;
+
+            const resultContent = `
+<p><strong>1. 관련</strong>: ${relatedDocText}</p>
+<p><strong>2. 보고</strong>: ${semesterFull} 방과후학교 프로그램이 성공적으로 종료됨에 따라, 다음과 같이 강좌별 운영 결과 및 출석부·강사출근부 내역을 종합 보고하고 강사료 수당 지급을 청구합니다.</p>
+<br/>
+<p><strong>가. 운영 결과 및 서류 제출 현황</strong></p>
+<p>① 총 개설 강좌 수: ${openCourses.length}개 강좌</p>
+<p>② 출석부·출근부 제출 완료: <strong>${submittedCourses.length}개 강좌 (정산 대상)</strong> ${unsubmittedCount > 0 ? ` / 서류 미제출: ${unsubmittedCount}개 강좌 (정산 보류)` : ''}</p>
+<p>③ 총 수강 학생 수: ${totalStudents}명</p>
+<p>④ 총 수업 이수 차시: 누적 ${totalSessionsSum}차시</p>
+<br/>
+<p><strong>나. 강사 수당 정산 및 청구 내역</strong></p>
+<p>① 총 강사 수당 청구액: <strong>${totalRate.toLocaleString()} VND</strong> (산정 기준: 총 ${totalSessionsSum}차시 × 차시당 ${rate.toLocaleString()} VND)</p>
+<p>② 지급 예정일: ${new Date().toLocaleDateString('ko-KR')} (학교 운영위원회 심의 및 서류 검토 후 지급)</p>
+<br/>
+<p><strong>다. 붙임파일</strong>: ${selectedYear}-${selectedSemester}_방과후학교_출석부_및_강사출근부_취합본.xlsx 1부 (강사료정산 총괄표, 수강생 출석부 취합본, 강사출근부 취합본 포함). 끝.</p>
+            `.trim();
+
+            form.setValue('title', formattedTitle);
+            form.setValue('content', resultContent);
+            form.setValue('attachments', [
+                {
+                    name: `${selectedYear}-${selectedSemester}_방과후학교_출석부_및_강사출근부_취합본.xlsx`,
+                    size: 28500,
+                    data: 'data:text/plain;base64,QXNzaWdubmVudCBkYXRhCg=='
+                }
+            ]);
+        }
+    }, [
+        selectedRelatedDocId,
+        selectedYear,
+        selectedSemester,
+        selectedTermType,
+        approvedDocs,
+        afterschoolCourses,
+        afterschoolEnrollments,
+        afterschoolAttendance,
+        afterschoolApprovalDocs,
+        teacherApplySettings
+    ]);
+
+  const handleDownloadAttachment = async (field: any) => {
+    if (field.name.includes('_방과후학교_운영계획_강좌목록.xlsx')) {
+      try {
+        const XLSX = await import('xlsx');
+        const openCourses = afterschoolCourses.filter(c => c.status === 'OPEN' || c.status === 'CLOSED');
+        const data = openCourses.map((c, idx) => ({
+          '순번': idx + 1,
+          '강좌명': c.title,
+          '담당강사': c.instructorName || '-',
+          '수업교실': c.classroom || '-',
+          '정원(명)': c.maxStudents,
+          '수강료(VND)': c.tuition,
+          '교재비(VND)': c.textbookFee || 0,
+          '재료비(VND)': c.materialFee || 0,
+          '요일': (c.classDays || []).join(','),
+          '시간': c.classTime || '09:00 ~ 12:00',
+        }));
+        
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, '개설강좌목록');
+        XLSX.writeFile(workbook, field.name);
+        
+        toast({
+          title: "다운로드 완료",
+          description: `"${field.name}" 엑셀 파일이 성공적으로 생성되어 다운로드되었습니다.`
+        });
+        return;
+      } catch (err) {
+        console.error("XLSX export error:", err);
+      }
+    }
+    
+    if (field.name.includes('_방과후학교_출석부_및_강사출근부_취합본.xlsx')) {
+      try {
+        const rate = teacherApplySettings?.teacherFee || 800000;
+        const targetCourses = afterschoolCourses.filter(c => c.status === 'OPEN' || c.status === 'CLOSED');
+        const coursesToUse = targetCourses.length > 0 ? targetCourses : afterschoolCourses;
+        
+        const workbook = generateAfterschoolSettlementWorkbook(
+          coursesToUse,
+          afterschoolEnrollments,
+          afterschoolAttendance,
+          afterschoolApprovalDocs,
+          rate,
+          `${selectedYear}-${selectedSemester}`,
+          afterschoolSubstitutes
+        );
+
+        const XLSX = await import('xlsx');
+        XLSX.writeFile(workbook, field.name);
+        
+        toast({
+          title: "다운로드 완료",
+          description: `"${field.name}" 종합 취합본(정산총괄표, 출석부, 강사출근부) 파일이 다운로드되었습니다.`
+        });
+        return;
+      } catch (err) {
+        console.error("XLSX export error:", err);
+      }
+    }
+
+    if (field.data) {
+      try {
+        if (field.data.startsWith('data:')) {
+          const res = await fetch(field.data);
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = field.name;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+        } else {
+          const link = document.createElement('a');
+          link.href = field.data;
+          link.download = field.name;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      } catch (e) {
+        console.error("Download error:", e);
+        window.open(field.data, '_blank');
+      }
+    } else {
+      toast({
+        variant: "destructive",
+        title: "오류",
+        description: "다운로드할 수 없는 첨부파일이거나 데이터가 유실되었습니다."
+      });
+    }
+  };
+
+  const { fields: approverFields, replace: replaceApprovers } = useFieldArray({ control: form.control, name: 'approvers' });
+  const { fields: circularFields, append: appendCircular, remove: removeCircular, replace: replaceCirculars } = useFieldArray({ control: form.control, name: 'circulars' });
+  const { fields: attachmentFields, append: appendAttachment, remove: removeAttachment, replace: replaceAttachments } = useFieldArray({ control: form.control, name: 'attachments' });
   const formDocType = form.watch('docType'); 
 
   const handleGenerateContent = async () => {
+    if (docConfig.enableAiDraft === false) {
+        toast({ variant: "destructive", title: "AI 기능 잠김", description: "관리자 설정에 의해 AI 초안 생성이 비활성화되어 있습니다." });
+        return;
+    }
     const { title, approvers, attachments } = form.getValues();
     if (!title) {
         toast({ variant: "destructive", title: "제목 필요", description: "제목을 먼저 입력해주세요." });
@@ -386,7 +789,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
     
     // [에러 원인 해결] 환경변수(config)에 스토리지 주소가 누락되었을 경우를 대비해
     // 알려주신 스토리지 주소를 명시적으로 강제 주입하여 길잃음(타임아웃)을 방지합니다.
-    const storage = getStorage(db.app, 'gs://studio-9153973571-7837c.firebasestorage.app');
+    const storage = getStorage(getDb().app, 'gs://studio-9153973571-7837c.firebasestorage.app');
 
     try {
         const uploadPromises = Array.from(e.target.files).map(async (file) => {
@@ -440,12 +843,18 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
   };
 
   const onInvalid = (errors: any) => {
-    console.error("Form Invalid:", errors);
+    console.error("Form Invalid Details:", errors);
     let msg = "입력 내용을 확인해주세요.";
-    if (errors.title) msg = "제목을 입력해주세요.";
-    else if (errors.content) msg = "내용을 입력해주세요.";
+    if (errors.title?.message) msg = String(errors.title.message);
+    else if (errors.content?.message) msg = String(errors.content.message);
     else if (errors.approvers) msg = "결재선 정보를 확인해주세요.";
-    toast({ variant: "destructive", title: "입력 오류", description: msg });
+    else {
+      const firstKey = Object.keys(errors)[0];
+      if (firstKey && errors[firstKey]?.message) {
+        msg = String(errors[firstKey].message);
+      }
+    }
+    toast({ variant: "destructive", title: "입력 확인 필요", description: msg });
   };
 
   const handleClientSubmit = async (data: FormData) => {
@@ -457,7 +866,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
          const activeApprovers = data.approvers.filter(a => a.active && a.name && a.name.trim() !== '');
          
          if (activeApprovers.length === 0 && !isEditMode) { 
-             throw new Error('최소 한 명 이상의 결재자를 지정해주세요.');
+             return { success: false, error: '최소 한 명 이상의 결재자를 지정해 주세요. (우측 결재선에서 부장, 교감, 교장 등 결재자를 선택해 주세요.)' };
          }
 
          const payload: any = {
@@ -494,9 +903,9 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
              }
          };
 
-         // 1. 수정 모드
-         if (isEditMode && docToEdit) {
-             const docRef = doc(db, 'approvals', docToEdit.id);
+         // 1. 수정 모드 (기존 문서 ID가 존재하는 경우)
+         if (isEditMode && docToEdit && docToEdit.id) {
+             const docRef = doc(getDb(), 'approvals', docToEdit.id);
              const docSnap = await getDoc(docRef);
              if (!docSnap.exists()) throw new Error("문서를 찾을 수 없습니다.");
              const docData = docSnap.data() as ApprovalDoc;
@@ -538,10 +947,10 @@ if (isCurrentApprover) {
          } 
          // 2. 신규 생성
          else {
-             const newDocRef = doc(collection(db, 'approvals'));
-             const settingsRef = doc(db, 'settings', 'docConfig');
+             const newDocRef = doc(collection(getDb(), 'approvals'));
+             const settingsRef = doc(getDb(), 'settings', 'docConfig');
              
-             const finalDocNoStr = await runTransaction(db, async (transaction) => {
+             const finalDocNoStr = await runTransaction(getDb(), async (transaction) => {
                 const settingsSnap = await transaction.get(settingsRef);
                 const now = new Date();
                 const currentYear = now.getFullYear();
@@ -631,6 +1040,90 @@ if (isCurrentApprover) {
     <>
       <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-8">
+        
+        {/* 방과후학교 일괄 기안 도우미 패널 */}
+        {searchParams.get('afterschoolMode') && (
+          <Card className="bg-slate-50/80 border border-slate-200 shadow-sm rounded-2xl p-5 mb-6 space-y-4 text-left">
+            <div className="flex items-center gap-2 border-b pb-2.5">
+              <Settings2 className="h-5 w-5 text-indigo-600" />
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">방과후학교 일괄 기안 도우미 설정</h3>
+                <p className="text-[10px] text-slate-500">선택된 항목에 따라 결재 기안서 본문 및 제목이 실시간으로 동적 조립됩니다.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+              {/* 1. 관련 기안문 선택 */}
+              <div className="md:col-span-2 space-y-1.5">
+                <Label className="font-semibold text-slate-600">1. 관련 기안문 선택 (기존 결재 완료 문서)</Label>
+                <Select value={selectedRelatedDocId} onValueChange={setSelectedRelatedDocId}>
+                  <SelectTrigger className="bg-white h-10 rounded-xl border-slate-300">
+                    <SelectValue placeholder="관련 공문을 선택해 주세요..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">(관련 문서 없음 - 디폴트 기본문서 자동 반영)</SelectItem>
+                    {approvedDocs.map(doc => (
+                      <SelectItem key={doc.id} value={doc.id}>
+                        {doc.docNo || '예체능방과후부-' + doc.id.slice(0, 4).toUpperCase()} | {doc.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 2. 학년도 선택 */}
+              <div className="space-y-1.5">
+                <Label className="font-semibold text-slate-600">2. 학년도 설정</Label>
+                <Select value={selectedYear} onValueChange={setSelectedYear}>
+                  <SelectTrigger className="bg-white h-10 rounded-xl border-slate-300">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2025">2025학년도</SelectItem>
+                    <SelectItem value="2026">2026학년도</SelectItem>
+                    <SelectItem value="2027">2027학년도</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 3. 학기 및 운영 구분 */}
+              <div className="space-y-1.5">
+                <Label className="font-semibold text-slate-600">3. 학기 및 운영 시점</Label>
+                <div className="flex gap-2">
+                  <Select value={selectedSemester} onValueChange={(val) => {
+                    setSelectedSemester(val);
+                    if (val.includes('방학')) {
+                      setSelectedTermType('방학중');
+                    } else {
+                      setSelectedTermType('학기중');
+                    }
+                  }}>
+                    <SelectTrigger className="bg-white h-10 rounded-xl border-slate-300 w-1/2">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1학기">1학기</SelectItem>
+                      <SelectItem value="여름방학">여름방학</SelectItem>
+                      <SelectItem value="2학기">2학기</SelectItem>
+                      <SelectItem value="겨울방학">겨울방학</SelectItem>
+                      <SelectItem value="특별강좌">특별강좌</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={selectedTermType} onValueChange={setSelectedTermType}>
+                    <SelectTrigger className="bg-white h-10 rounded-xl border-slate-300 w-1/2">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="학기중">학기중</SelectItem>
+                      <SelectItem value="방학중">방학중</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
         
         <FormField
           control={form.control}
@@ -863,21 +1356,42 @@ if (isCurrentApprover) {
         <FormField
           control={form.control}
           name="content"
-          render={({ field }) => (
-            <FormItem>
-              <div className="flex justify-between items-center">
-                <FormLabel className="text-lg font-bold">내용</FormLabel>
-                <Button type="button" onClick={handleGenerateContent} disabled={isGenerating}>
-                    {isGenerating ? <Loader2 className="animate-spin" /> : <Sparkles />}
-                    AI로 생성
-                </Button>
-              </div>
-              <FormControl>
-                <RichEditor value={field.value} onChange={field.onChange} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+          render={({ field }) => {
+            const isAiDraftEnabled = docConfig?.enableAiDraft !== false;
+            return (
+              <FormItem>
+                <div className="flex justify-between items-center">
+                  <FormLabel className="text-lg font-bold">내용</FormLabel>
+                  {isAiDraftEnabled ? (
+                    <Button 
+                      type="button" 
+                      onClick={handleGenerateContent} 
+                      disabled={isGenerating}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5"
+                    >
+                      {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-amber-300" />}
+                      AI로 생성
+                    </Button>
+                  ) : (
+                    <Button 
+                      type="button" 
+                      disabled 
+                      variant="outline" 
+                      className="opacity-60 cursor-not-allowed text-xs text-slate-400 border-slate-200 bg-slate-50 flex items-center gap-1"
+                      title="시스템 관리자에 의해 AI 초안 생성이 잠겨 있습니다."
+                    >
+                      <Lock className="w-3.5 h-3.5 text-slate-400" />
+                      AI 초안 생성 잠김
+                    </Button>
+                  )}
+                </div>
+                <FormControl>
+                  <RichEditor value={field.value} onChange={field.onChange} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            );
+          }}
         />
         
         <Card>
@@ -906,22 +1420,56 @@ if (isCurrentApprover) {
                         </Button>
                     </div>
 
-                    {attachmentFields.length > 0 && (
-                        <div className="space-y-2">
-                            {attachmentFields.map((field, index) => (
-                                <div key={field.id} className="flex items-center justify-between p-2 bg-muted rounded-md">
-                                    <div className="flex items-center gap-2">
-                                        <FileIcon className="h-4 w-4 text-muted-foreground" />
-                                        <span className="text-sm font-medium">{field.name}</span>
-                                        { field.size > 0 && <span className="text-xs text-muted-foreground">({(field.size / 1024 / 1024).toFixed(2)} MB)</span> }
-                                    </div>
-                                    <Button type="button" variant="ghost" size="icon" onClick={() => removeAttachment(index)}>
-                                        <Trash2 className="h-4 w-4 text-destructive" />
-                                    </Button>
+                    {(() => {
+                        const watchedAttachments = form.watch('attachments') || [];
+                        const listToRender = attachmentFields.length > 0 ? attachmentFields : watchedAttachments;
+                        if (listToRender.length === 0) return null;
+
+                        return (
+                            <div className="space-y-2 pt-2 border-t border-slate-100">
+                                <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1">
+                                    <span>📎 첨부된 파일 ({listToRender.length}건)</span>
                                 </div>
-                            ))}
-                        </div>
-                    )}
+                                {listToRender.map((field: any, index: number) => (
+                                    <div key={field.id || index} className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+                                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                                            <FileIcon className="h-4 w-4 text-indigo-600 shrink-0" />
+                                            <span 
+                                                className="text-xs font-bold hover:underline cursor-pointer text-indigo-700 truncate"
+                                                onClick={() => handleDownloadAttachment(field)}
+                                                title="파일 다운로드 받기"
+                                            >
+                                                {field.name}
+                                            </span>
+                                            { field.size > 0 && (
+                                                <span className="text-[11px] text-slate-400 shrink-0 font-medium">
+                                                    ({field.size < 1024 * 1024 
+                                                        ? (field.size / 1024).toFixed(1) + ' KB' 
+                                                        : (field.size / 1024 / 1024).toFixed(2) + ' MB'
+                                                    })
+                                                </span>
+                                            )}
+                                        </div>
+                                        <Button 
+                                            type="button" 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="h-7 w-7 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                                            onClick={() => {
+                                                if (attachmentFields.length > 0) {
+                                                    removeAttachment(index);
+                                                }
+                                                const curr = form.getValues('attachments') || [];
+                                                form.setValue('attachments', curr.filter((_, i) => i !== index));
+                                            }}
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        );
+                    })()}
                 </div>
             </CardContent>
         </Card>

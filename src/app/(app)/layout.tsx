@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
+import { SidebarProvider } from '@/components/layout/sidebar-context';
+
 const MobileNavItem = ({ href, label, icon }: { href: string, label: string, icon: React.ReactNode}) => {
   const pathname = usePathname();
   const isActive = pathname === href;
@@ -30,14 +32,18 @@ const MobileNavItem = ({ href, label, icon }: { href: string, label: string, ico
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, profile, profileLoading, isParent } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     if (!loading && !user) {
-      router.push('/login');
+      const redirectUrl = pathname && pathname !== '/' ? `/login?redirect=${encodeURIComponent(pathname)}` : '/login';
+      router.push(redirectUrl);
     } else if (!loading && user && isParent) {
-      router.push('/parents/apply');
+      if (!pathname.startsWith('/parents')) {
+        router.push('/parents/apply');
+      }
     }
-  }, [user, loading, isParent, router]);
+  }, [user, loading, isParent, router, pathname]);
   
   if (loading || !user || profileLoading) {
     return (
@@ -51,34 +57,36 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-body">
-      <div className="print:hidden">
-        <AppHeader />
-      </div>
-      <div className="flex print:block pt-16">
+    <SidebarProvider>
+      <div className="min-h-screen bg-background text-foreground font-body">
         <div className="print:hidden">
-          <AppSidebar />
+          <AppHeader />
         </div>
-        <main className="flex-1 pb-24 lg:pb-8 print:p-0 print:m-0 print:block">
-            {children}
-        </main>
-      </div>
-
-      {/* Mobile Bottom Navigation */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 h-20 bg-card border-t z-40 grid grid-cols-5 items-center justify-around px-2 print:hidden">
-          <MobileNavItem href="/inbox" label="미결재함" icon={<Inbox size={20} />} />
-          <MobileNavItem href="/sent" label="상신함" icon={<Send size={20} />} />
-          <div className="flex justify-center">
-            <Button asChild className="h-16 w-16 rounded-full shadow-lg -mt-8 bg-primary hover:bg-primary/90" size="icon">
-              <Link href="/new">
-                <Plus className="h-8 w-8" />
-                <span className="sr-only">새 결재문서 작성</span>
-              </Link>
-            </Button>
+        <div className="flex print:block pt-16">
+          <div className="print:hidden">
+            <AppSidebar />
           </div>
-          <MobileNavItem href="/recalled" label="회수함" icon={<Undo2 size={20} />} />
-          <MobileNavItem href="/registry" label="문서대장" icon={<ListFilter size={20} />} />
+          <main className="flex-1 pb-24 lg:pb-8 print:p-0 print:m-0 print:block">
+              {children}
+          </main>
+        </div>
+
+        {/* Mobile Bottom Navigation */}
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 h-20 bg-card border-t z-40 grid grid-cols-5 items-center justify-around px-2 print:hidden">
+            <MobileNavItem href="/inbox" label="미결재함" icon={<Inbox size={20} />} />
+            <MobileNavItem href="/sent" label="상신함" icon={<Send size={20} />} />
+            <div className="flex justify-center">
+              <Button asChild className="h-16 w-16 rounded-full shadow-lg -mt-8 bg-primary hover:bg-primary/90" size="icon">
+                <Link href="/new">
+                  <Plus className="h-8 w-8" />
+                  <span className="sr-only">새 결재문서 작성</span>
+                </Link>
+              </Button>
+            </div>
+            <MobileNavItem href="/recalled" label="회수함" icon={<Undo2 size={20} />} />
+            <MobileNavItem href="/registry" label="문서대장" icon={<ListFilter size={20} />} />
+        </div>
       </div>
-    </div>
+    </SidebarProvider>
   );
 }

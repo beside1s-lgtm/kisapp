@@ -8,7 +8,7 @@ import DocumentView from '@/components/document-view';
 import { Loader2, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { getDoc, doc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { getDb } from '@/lib/firebase';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { useParams } from 'next/navigation';
@@ -29,7 +29,7 @@ export default function ParentDocumentDetailPage() {
       try {
         const [docRes, configSnap] = await Promise.all([
           getDocumentById(id),
-          getDoc(doc(db, 'settings', 'docConfig'))
+          getDoc(doc(getDb(), 'settings', 'docConfig'))
         ]);
 
         if (!docRes) {
@@ -84,7 +84,7 @@ export default function ParentDocumentDetailPage() {
 
   return (
     <div className="max-w-4xl mx-auto py-8">
-      <div className="px-4 mb-4">
+      <div className="px-4 mb-4 print:hidden">
         <Button asChild variant="ghost">
           <Link href="/parents/history"><ArrowLeft className="w-4 h-4 mr-2" /> 목록으로 돌아가기</Link>
         </Button>

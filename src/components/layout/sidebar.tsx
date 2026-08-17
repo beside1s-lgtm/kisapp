@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { FileClock, Inbox, ListFilter, Plus, Send, Undo2, Users, CalendarOff, Backpack, Briefcase, Clock, UserPlus, CalendarCheck } from 'lucide-react';
+import { FileClock, Inbox, ListFilter, Plus, Send, Undo2, Users, CalendarOff, Backpack, Briefcase, Clock, UserPlus, CalendarCheck, BookOpen, Bus, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { getInboxDocuments } from '@/lib/services/documentService';
 import { cn } from '@/lib/utils';
 import { Card } from '../ui/card';
+import { useSidebar } from './sidebar-context';
 
 type NavItemProps = {
   href: string;
@@ -46,62 +47,81 @@ const NavItem = ({ href, label, icon, count }: NavItemProps) => {
 };
 
 export default function AppSidebar() {
-  const { user } = useAuth();
+  const { user, isParent } = useAuth();
   const [inboxCount, setInboxCount] = useState(0);
+  const { isSidebarOpen, toggleSidebar } = useSidebar();
 
   useEffect(() => {
-    if (user?.email) {
+    if (user?.email && !isParent) {
       const fetchCount = async () => {
-        const inboxItems = await getInboxDocuments(user.email!);
-        setInboxCount(inboxItems.length);
+        try {
+          const inboxItems = await getInboxDocuments(user.email!);
+          setInboxCount(inboxItems?.length || 0);
+        } catch {
+          setInboxCount(0);
+        }
       };
       fetchCount();
       const interval = setInterval(fetchCount, 30000); 
       return () => clearInterval(interval);
     }
-  }, [user]);
+  }, [user, isParent]);
+
+  if (!isSidebarOpen) {
+    return null;
+  }
 
   return (
-    <aside className="w-64 space-y-4 shrink-0 p-4 h-[calc(100vh-65px)] sticky top-16 hidden lg:block overflow-y-auto pb-8">
-      <Button asChild size="lg" className="w-full font-bold text-base h-12 rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow">
-        <Link href="/new">
-          <Plus className="mr-2 h-5 w-5" />
-          신규 기안 작성
-        </Link>
-      </Button>
+    <aside className="w-64 space-y-4 shrink-0 p-4 h-[calc(100vh-65px)] sticky top-16 hidden lg:block overflow-y-auto pb-8 transition-all">
+      {!isParent && (
+        <Button asChild size="lg" className="w-full font-bold text-base h-12 rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow">
+          <Link href="/new">
+            <Plus className="mr-2 h-5 w-5" />
+            신규 기안 작성
+          </Link>
+        </Button>
+      )}
       <Card className="p-2 bg-card shadow-sm">
-        <NavItem href="/inbox" label="미결재함" icon={<Inbox size={18} />} count={inboxCount} />
-        <NavItem href="/sent" label="상신함" icon={<Send size={18} />} />
-        <NavItem href="/pending" label="진행 문서함" icon={<FileClock size={18} />} />
-        <NavItem href="/recalled" label="회수 문서함" icon={<Undo2 size={18} />} />
-        <div className="h-px bg-border my-1 mx-2"></div>
-        <NavItem href="/registry" label="문서등록대장" icon={<ListFilter size={18} />} />
-        <NavItem href="/attendance-registry" label="출결문서 보관함" icon={<CalendarCheck size={18} />} />
-        
-        <div className="mt-6 mb-2 px-3 flex items-center gap-2">
-          <div className="h-px bg-border flex-1"></div>
-          <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-            <Briefcase size={14} /> 교원 서비스
-          </span>
-          <div className="h-px bg-border flex-1"></div>
-        </div>
-        <NavItem href="/teacher/duty" label="교원 복무" icon={<Briefcase size={18} />} />
-        <NavItem href="/teacher/overtime" label="초과근무" icon={<Clock size={18} />} />
-        <NavItem href="/teacher/substitution" label="보결 관리" icon={<UserPlus size={18} />} />
-        <NavItem href="/teacher/registry" label="교원 서비스 조회" icon={<ListFilter size={18} />} />
-
-        <div className="mt-6 mb-2 px-3 flex items-center gap-2">
-          <div className="h-px bg-border flex-1"></div>
-          <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-            <Users size={14} /> 학부모 서비스
-          </span>
-          <div className="h-px bg-border flex-1"></div>
-        </div>
-        <NavItem href="/parents-absence" label="결석계 조회" icon={<CalendarOff size={18} />} />
-        <NavItem href="/parents-fieldtrip" label="체험학습 신청서 조회" icon={<Backpack size={18} />} />
-        <NavItem href="/parents/registry" label="출결/체험 내역 조회" icon={<ListFilter size={18} />} />
+        {!isParent ? (
+          <>
+            <NavItem href="/inbox" label="미결재함" icon={<Inbox size={18} />} count={inboxCount} />
+            <NavItem href="/sent" label="상신함" icon={<Send size={18} />} />
+            <NavItem href="/pending" label="진행 문서함" icon={<FileClock size={18} />} />
+            <NavItem href="/recalled" label="회수 문서함" icon={<Undo2 size={18} />} />
+            <div className="h-px bg-border my-1 mx-2"></div>
+            <NavItem href="/registry" label="문서등록대장" icon={<ListFilter size={18} />} />
+            <NavItem href="/attendance-registry" label="결석계 보관함" icon={<CalendarCheck size={18} />} />
+            <NavItem href="/field-trip-registry" label="체험학습 문서함" icon={<FileText size={18} />} />
+            
+            <div className="mt-6 mb-2 px-3 flex items-center gap-2">
+              <div className="h-px bg-border flex-1"></div>
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                <Briefcase size={14} /> 교원 서비스
+              </span>
+              <div className="h-px bg-border flex-1"></div>
+            </div>
+            <NavItem href="/teacher/duty" label="교원 복무" icon={<Briefcase size={18} />} />
+            <NavItem href="/teacher/overtime" label="초과근무" icon={<Clock size={18} />} />
+            <NavItem href="/teacher/substitution" label="보결 관리" icon={<UserPlus size={18} />} />
+            <NavItem href="/teacher/registry" label="교원 서비스 조회" icon={<ListFilter size={18} />} />
+          </>
+        ) : (
+          <>
+            <div className="mt-2 mb-2 px-3 flex items-center gap-2">
+              <div className="h-px bg-border flex-1"></div>
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                <Users size={14} /> 학부모 서비스
+              </span>
+              <div className="h-px bg-border flex-1"></div>
+            </div>
+            <NavItem href="/parents-absence" label="결석계 조회" icon={<CalendarOff size={18} />} />
+            <NavItem href="/parents-fieldtrip" label="체험학습 신청서 조회" icon={<Backpack size={18} />} />
+            <NavItem href="/parents/registry" label="출결/체험 내역 조회" icon={<ListFilter size={18} />} />
+            <NavItem href="/parents/afterschool" label="방과후학교" icon={<BookOpen size={18} />} />
+            <NavItem href="/parents/bus" label="스쿨버스" icon={<Bus size={18} />} />
+          </>
+        )}
       </Card>
-
     </aside>
   );
 }

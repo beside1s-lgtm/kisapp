@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth"; 
 import { useEffect, useState, use } from "react";
 import { ApprovalDoc } from "@/lib/types";
-import { db } from "@/lib/firebase"; 
+import { getDb } from "@/lib/firebase"; 
 import { doc, getDoc, Timestamp } from "firebase/firestore";
 
 type EditDocumentPageProps = {
@@ -34,7 +34,7 @@ export default function EditDocumentPage({ params }: EditDocumentPageProps) {
             const decodedId = decodeURIComponent(id);
             console.log("Fetching doc for edit:", decodedId);
 
-            const docRef = doc(db, "approvals", decodedId);
+            const docRef = doc(getDb(), "approvals", decodedId);
             const docSnap = await getDoc(docRef);
             
             if (docSnap.exists()) {

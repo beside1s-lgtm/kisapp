@@ -1,0 +1,1161 @@
+[
+  {
+    "id": "TC001",
+    "title": "Parent signs in and reaches the dashboard",
+    "description": "This verifies that a parent can authenticate and access the main dashboard they use for afterschool bus management.",
+    "category": "Parent Dashboard and Bus Checkout",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /parents/login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the parent login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the parent dashboard is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify child bus participation details are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC002",
+    "title": "Teacher marks a student as boarded",
+    "description": "A teacher can open the bus checklist, choose an assigned line, and mark a student as boarded with the progress updated.",
+    "category": "Student Bus Boarding Check",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /teacher/bus"
+      },
+      {
+        "type": "action",
+        "description": "Select an assigned bus line"
+      },
+      {
+        "type": "action",
+        "description": "Mark an individual student as boarded"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the student appears as boarded"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the boarding progress statistics update"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC003",
+    "title": "Parent completes a bus checkout for a child",
+    "description": "This verifies that a parent can review a child’s bus participation and complete the checkout action with the updated state shown afterward.",
+    "category": "Parent Dashboard and Bus Checkout",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /parents/login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the parent login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Review the child’s bus participation details"
+      },
+      {
+        "type": "action",
+        "description": "Complete the checkout action for the child"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the parent dashboard reflects the updated checkout state"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the child is no longer shown as awaiting checkout"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC004",
+    "title": "Complete parent bus checkout for a child",
+    "description": "A parent can review a child’s bus participation details, complete checkout, and see the dashboard reflect the updated state.",
+    "category": "Parent Bus Checkout",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /parents/login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the parent credentials with {{LOGIN_USER}} and {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Review a child’s bus participation details"
+      },
+      {
+        "type": "action",
+        "description": "Complete the bus checkout action for the child"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the child’s bus checkout state is updated on the parent dashboard"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC005",
+    "title": "View parent dashboard after sign in",
+    "description": "A parent can sign in and land on the dashboard with their child’s bus information available.",
+    "category": "Parent Bus Checkout",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /parents/login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the parent credentials with {{LOGIN_USER}} and {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the parent dashboard is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the child’s bus participation information is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC006",
+    "title": "Teacher opens the bus checklist and marks students boarded",
+    "description": "This verifies that a teacher can access the bus checklist, select an assigned bus line, and mark students as boarded with progress updating.",
+    "category": "Teacher Bus Boarding Checklist",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the teacher login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the bus checklist section"
+      },
+      {
+        "type": "action",
+        "description": "Select an assigned bus line"
+      },
+      {
+        "type": "action",
+        "description": "Mark a student as boarded"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify boarding progress statistics are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the student is shown as boarded"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC007",
+    "title": "Admin completes afterschool master administration workflow",
+    "description": "An admin can sign in, upload a bulk course file, edit student information and bus mappings, download the banking template, and export the final student list.",
+    "category": "Afterschool Master Administration",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the admin credentials with {{LOGIN_USER}} and {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open the afterschool administration panel"
+      },
+      {
+        "type": "action",
+        "description": "Upload a valid bulk course spreadsheet"
+      },
+      {
+        "type": "action",
+        "description": "Edit a student record and bus mapping"
+      },
+      {
+        "type": "action",
+        "description": "Download the school banking template"
+      },
+      {
+        "type": "action",
+        "description": "Export the full student list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the imported and edited student data is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the template and export actions complete successfully"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC008",
+    "title": "Admin configures a custom bus destination group and fare",
+    "description": "A bus admin can create a destination group, set a VND fare, and see the new pricing structure reflected in the destination list.",
+    "category": "Custom Bus Fare Setup",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the bus admin credentials with {{LOGIN_USER}} and {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open the bus management panel"
+      },
+      {
+        "type": "action",
+        "description": "Create a custom destination group"
+      },
+      {
+        "type": "action",
+        "description": "Assign a VND fare to the destination group"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new destination group is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the assigned fare is displayed in the destination list"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC009",
+    "title": "Bus admin creates a custom destination group with a VND fare",
+    "description": "This verifies that a bus administrator can create a new destination group, assign a fare, and see it added to the destination list.",
+    "category": "Custom Bus Fare Setting",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the bus administrator login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the bus administration section"
+      },
+      {
+        "type": "action",
+        "description": "Create a custom destination group"
+      },
+      {
+        "type": "action",
+        "description": "Set a valid VND fare for the group"
+      },
+      {
+        "type": "action",
+        "description": "Save the new fare group"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new destination group is displayed in the destination list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the configured fare is shown for the new group"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC010",
+    "title": "Administrator uploads bulk courses and reviews imported classes",
+    "description": "This verifies that an administrator can upload a bulk course file and see imported classes reflected in the afterschool administration panel.",
+    "category": "Afterschool Master Administration",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the administrator login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the afterschool administration section"
+      },
+      {
+        "type": "action",
+        "description": "Upload a valid Excel file for bulk course creation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify imported classes are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the afterschool administration panel remains accessible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC011",
+    "title": "Admin uploads a valid bulk course file",
+    "description": "An admin can upload a correctly formatted Excel file and see the new courses reflected in the afterschool administration panel.",
+    "category": "Afterschool Master Administration",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the admin credentials with {{LOGIN_USER}} and {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open the afterschool administration panel"
+      },
+      {
+        "type": "action",
+        "description": "Upload a valid bulk course spreadsheet"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the uploaded course records are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the administration panel shows the updated course list"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC012",
+    "title": "Administrator edits a student and bus mapping",
+    "description": "This verifies that an administrator can update student information and bus mapping and see the saved student list reflect the changes.",
+    "category": "Afterschool Master Administration",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the administrator login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the afterschool administration section"
+      },
+      {
+        "type": "action",
+        "description": "Open student management"
+      },
+      {
+        "type": "action",
+        "description": "Edit a student’s information and bus mapping"
+      },
+      {
+        "type": "action",
+        "description": "Save the changes"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated student list is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the edited student record is reflected in the list"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC013",
+    "title": "Admin edits a student record and bus mapping",
+    "description": "An admin can update student information and bus mapping and see the changes persist in the afterschool panel.",
+    "category": "Afterschool Master Administration",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the admin credentials with {{LOGIN_USER}} and {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open the afterschool administration panel"
+      },
+      {
+        "type": "action",
+        "description": "Edit a student record"
+      },
+      {
+        "type": "action",
+        "description": "Update the student’s bus mapping"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated student record is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated bus mapping is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC014",
+    "title": "Bus admin maps a local destination to a custom group",
+    "description": "This verifies that a bus administrator can assign a local destination to a custom destination group and see the updated mapping in the list.",
+    "category": "Custom Bus Fare Setting",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the bus administrator login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the bus administration section"
+      },
+      {
+        "type": "action",
+        "description": "Choose a local destination from the mapping list"
+      },
+      {
+        "type": "action",
+        "description": "Assign the destination to a custom destination group"
+      },
+      {
+        "type": "action",
+        "description": "Save the mapping"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the destination group assignment is updated"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the mapped destination appears under the custom group"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC015",
+    "title": "Teacher switches or unboards a student",
+    "description": "A teacher can change a boarded student to another route or unboard them and see the student’s status update.",
+    "category": "Student Bus Boarding Check",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /teacher/bus"
+      },
+      {
+        "type": "action",
+        "description": "Select an assigned bus line"
+      },
+      {
+        "type": "action",
+        "description": "Select a boarded student"
+      },
+      {
+        "type": "action",
+        "description": "Switch the student to another route or unboard the student"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the student’s status changes accordingly"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the boarding list reflects the updated route assignment or removal"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC016",
+    "title": "Administrator downloads the school banking template and uploads completed data",
+    "description": "This verifies that an administrator can download the school banking template, later upload the completed file, and see merged student records.",
+    "category": "Afterschool Master Administration",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the administrator login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the afterschool administration section"
+      },
+      {
+        "type": "action",
+        "description": "Download the school banking Excel template"
+      },
+      {
+        "type": "action",
+        "description": "Upload the completed school banking file"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify merged student records are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the student list includes the uploaded entries"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC017",
+    "title": "Admin downloads the school banking template and exports students",
+    "description": "An admin can download the school banking template and export the full student list from the afterschool administration panel.",
+    "category": "Afterschool Master Administration",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the admin credentials with {{LOGIN_USER}} and {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open the afterschool administration panel"
+      },
+      {
+        "type": "action",
+        "description": "Download the school banking template"
+      },
+      {
+        "type": "action",
+        "description": "Export the full student list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the template download action completes successfully"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the exported student list action completes successfully"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC018",
+    "title": "Teacher reviews boarding progress for the current line",
+    "description": "A teacher can open the bus checklist and review the current boarding progress statistics for the selected line.",
+    "category": "Student Bus Boarding Check",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /teacher/bus"
+      },
+      {
+        "type": "action",
+        "description": "Select an assigned bus line"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the boarding progress statistics are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the current bus line’s student list is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC019",
+    "title": "Administrator exports the full student list",
+    "description": "This verifies that an administrator can review the full student list and export the school banking data for administration use.",
+    "category": "Afterschool Master Administration",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the administrator login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the afterschool administration section"
+      },
+      {
+        "type": "action",
+        "description": "Review the full student list"
+      },
+      {
+        "type": "action",
+        "description": "Export the school banking data"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the full student list is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an export confirmation is visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC020",
+    "title": "Admin maps local destinations individually and in bulk",
+    "description": "A bus admin can map local destinations one by one or through bulk upload and see the destination list updated.",
+    "category": "Custom Bus Fare Setup",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the bus admin credentials with {{LOGIN_USER}} and {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open the bus management panel"
+      },
+      {
+        "type": "action",
+        "description": "Map a local destination individually"
+      },
+      {
+        "type": "action",
+        "description": "Upload a destination mapping spreadsheet"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the mapped destinations are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the destination list reflects the updated mappings"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC021",
+    "title": "Bus admin downloads a destination mapping template and uploads completed mappings",
+    "description": "This verifies that a bus administrator can download the destination mapping template, upload the completed file, and see the bulk mapping applied.",
+    "category": "Custom Bus Fare Setting",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the bus administrator login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the bus administration section"
+      },
+      {
+        "type": "action",
+        "description": "Download the destination mapping template"
+      },
+      {
+        "type": "action",
+        "description": "Upload the completed destination mapping file"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the bulk destination mapping is applied"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the destination list reflects the uploaded mappings"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC022",
+    "title": "Teacher unboards a student from the bus checklist",
+    "description": "This verifies that a teacher can change a boarded student back to unboarded and see the checklist update accordingly.",
+    "category": "Teacher Bus Boarding Checklist",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the teacher login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the bus checklist section"
+      },
+      {
+        "type": "action",
+        "description": "Select an assigned bus line"
+      },
+      {
+        "type": "action",
+        "description": "Mark a student as unboarded"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the student is shown as unboarded"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the boarding progress statistics are updated"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC023",
+    "title": "Bus admin removes a custom destination group and reassigns destinations",
+    "description": "This verifies that removing a custom destination group reassigns affected destinations to a default zone and updates the destination list.",
+    "category": "Custom Bus Fare Setting",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the bus administrator login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the bus administration section"
+      },
+      {
+        "type": "action",
+        "description": "Select a custom destination group"
+      },
+      {
+        "type": "action",
+        "description": "Remove the selected group"
+      },
+      {
+        "type": "action",
+        "description": "Reassign affected destinations to a default zone"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the destination list is updated"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the affected destinations are shown under a default zone"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC024",
+    "title": "Teacher switches a student to another route",
+    "description": "This verifies that a teacher can move a student to a different route from the bus checklist and see the updated route assignment.",
+    "category": "Teacher Bus Boarding Checklist",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the teacher login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the bus checklist section"
+      },
+      {
+        "type": "action",
+        "description": "Select an assigned bus line"
+      },
+      {
+        "type": "action",
+        "description": "Switch a student to another route"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the student appears on the new route"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the previous route no longer shows the student"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC025",
+    "title": "Teacher sees an empty boarding state when no students are assigned",
+    "description": "A teacher opening the bus checklist without assigned students sees an empty state instead of a checklist.",
+    "category": "Student Bus Boarding Check",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /teacher/bus"
+      },
+      {
+        "type": "action",
+        "description": "Select an assigned bus line with no boarded students"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an empty or partial boarding state is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify boarding progress statistics remain visible"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC026",
+    "title": "Parent sees an invalid login error",
+    "description": "This verifies that a parent entering incorrect credentials stays on the login screen and sees a validation error.",
+    "category": "Parent Dashboard and Bus Checkout",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /parents/login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the parent login credentials with invalid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a login error is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the parent dashboard is not displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC027",
+    "title": "Admin sees validation for malformed afterschool upload",
+    "description": "An admin uploading a malformed Excel template sees validation feedback and no new data is applied.",
+    "category": "Afterschool Master Administration",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the admin credentials with {{LOGIN_USER}} and {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open the afterschool administration panel"
+      },
+      {
+        "type": "action",
+        "description": "Upload a malformed bulk course spreadsheet"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a file validation error is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no new course records are displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC028",
+    "title": "Admin sees validation for duplicate destination group names or invalid fares",
+    "description": "A bus admin entering duplicate destination group names or invalid fare values sees validation feedback and cannot save the configuration.",
+    "category": "Custom Bus Fare Setup",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the bus admin credentials with {{LOGIN_USER}} and {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open the bus management panel"
+      },
+      {
+        "type": "action",
+        "description": "Create a destination group with a duplicate name or invalid fare value"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a validation error is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the invalid destination group is not saved"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC029",
+    "title": "Administrator sees a validation error for a malformed course upload",
+    "description": "This verifies that uploading an invalid Excel course file is rejected with a visible validation error and no imported classes.",
+    "category": "Afterschool Master Administration",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the administrator login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the afterschool administration section"
+      },
+      {
+        "type": "action",
+        "description": "Upload a malformed Excel file for bulk course creation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a file validation error is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no imported classes are displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC030",
+    "title": "Prevent parent access with invalid credentials",
+    "description": "A parent entering invalid credentials sees a login error and cannot access the dashboard.",
+    "category": "Parent Bus Checkout",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /parents/login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the parent credentials with invalid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a login validation error is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the parent dashboard is not displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC031",
+    "title": "Teacher sees a bus checklist with no students available",
+    "description": "This verifies that an empty or partial boarding list is handled with a clear state and the checklist remains usable.",
+    "category": "Teacher Bus Boarding Checklist",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the teacher login credentials with valid values"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the bus checklist section"
+      },
+      {
+        "type": "action",
+        "description": "Select an assigned bus line"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an empty or partial boarding list state is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the bus checklist remains available"
+      }
+    ],
+    "priority": "Low"
+  }
+]

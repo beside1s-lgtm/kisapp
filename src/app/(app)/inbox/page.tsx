@@ -9,14 +9,25 @@ import {
   getOvertimeStatsByYear,
 } from "@/lib/services/documentService";
 import { saveUserProfile } from "@/lib/services/userService";
+import { getOrgStructure } from "@/lib/services/settingsService";
 import { DocumentList } from "@/components/document-list";
 import { useAuth } from "@/hooks/use-auth";
 import { ApprovalDoc } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Inbox, Send, Briefcase, Users, Loader2, Clock } from "lucide-react";
+import { Inbox, Send, Briefcase, Users, Loader2, Clock, BookOpen, Bus, ShieldAlert, Navigation } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 // ─── 순수 SVG 막대 차트 컴포넌트 ─────────────────────────────────────
 function OvertimeBarChart({ data }: { data: { month: string; hours: number }[] }) {
@@ -103,6 +114,7 @@ function OvertimeBarChart({ data }: { data: { month: string; hours: number }[] }
 
 export default function InboxPage() {
     const { user, profile } = useAuth();
+    const router = useRouter();
     
     const [inboxDocs, setInboxDocs] = useState<ApprovalDoc[]>([]);
     const [pendingDocs, setPendingDocs] = useState<ApprovalDoc[]>([]);
@@ -114,17 +126,65 @@ export default function InboxPage() {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState("inbox");
 
+    // 권한 분기용 상태
+    const [isBusManager, setIsBusManager] = useState(false);
+    const [isAfterschoolManager, setIsAfterschoolManager] = useState(false);
+    const [isBusDialogOpen, setIsBusDialogOpen] = useState(false);
+    const [isAfterschoolDialogOpen, setIsAfterschoolDialogOpen] = useState(false);
+
+    useEffect(() => {
+        if (profile?.email) {
+            getOrgStructure().then(orgData => {
+                const emailLower = profile.email.toLowerCase();
+                const systemAdmin = profile.isAdmin === true;
+                
+                // 스쿨버스 담당자 여부 확인
+                const busManagers = orgData.busManagers || (orgData.busManager ? [orgData.busManager] : []);
+                const hasBusAuth = systemAdmin || busManagers.some((m: string) => m.toLowerCase() === emailLower);
+                setIsBusManager(hasBusAuth);
+
+                // 방과후학교 담당자 여부 확인
+                const afterschoolManagers = orgData.afterschoolManagers || (orgData.afterschoolManager ? [orgData.afterschoolManager] : []);
+                const hasAfterschoolAuth = systemAdmin || afterschoolManagers.some((m: string) => m.toLowerCase() === emailLower);
+                setIsAfterschoolManager(hasAfterschoolAuth);
+            }).catch(err => {
+                console.error("Failed to load org structure for auth check in inbox:", err);
+            });
+        }
+    }, [profile]);
+
+    const handleBusClick = (e: React.MouseEvent) => {
+        if (isBusManager) {
+            e.preventDefault();
+            setIsBusDialogOpen(true);
+        }
+        // 담당자가 아니면 Link의 원래 href(/teacher/bus)로 기본 이동
+    };
+
+    const handleAfterschoolClick = (e: React.MouseEvent) => {
+        if (isAfterschoolManager) {
+            e.preventDefault();
+            setIsAfterschoolDialogOpen(true);
+        }
+        // 담당자가 아니면 Link의 원래 href(/teacher/afterschool)로 기본 이동
+    };
+
     useEffect(() => {
         if (profile?.email && user?.uid) {
             setLoading(true);
             const currentYear = new Date().getFullYear().toString();
+            const isTeacherOrAdmin = profile.role === 'teacher' || !!profile.isAdmin || profile.role === 'admin';
             Promise.all([
                 getInboxDocuments(profile.email),
                 getPendingDocuments(user.uid, profile.email),
                 getMyTeacherDocuments(profile.email),
                 getParentServiceDocuments(profile.email, !!profile.isAdmin),
-                getTeacherDutyStats(profile.email, currentYear, profile.annualLeaveLimit || 21),
-                getOvertimeStatsByYear(profile.email, currentYear),
+                isTeacherOrAdmin
+                    ? getTeacherDutyStats(profile.email, currentYear, profile.annualLeaveLimit || 21)
+                    : Promise.resolve({ annualUsed: 0, sickUsed: 0, otherUsed: 0, earlyUsedHours: 0, earlyConvertedDays: 0, remainingEarlyHours: 0, totalAnnualUsed: 0, annualLimit: 21, annualRemaining: 21 }),
+                isTeacherOrAdmin
+                    ? getOvertimeStatsByYear(profile.email, currentYear)
+                    : Promise.resolve([] as { month: string; hours: number; }[]),
             ]).then(([inboxData, pendingData, teacherData, parentData, statsData, overtimeData]) => {
                 setInboxDocs(inboxData);
                 setPendingDocs(pendingData);
@@ -339,6 +399,172 @@ export default function InboxPage() {
                     <DocumentList documents={parentDocs} />
                 </TabsContent>
             </Tabs>
+
+            {/* 하단 단축 바로가기 서비스 배너 */}
+            <div className="pt-8 border-t border-slate-200">
+                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <Briefcase className="h-5 w-5 text-primary" />
+                    교원 연계 서비스 바로가기
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* 방과후학교 배너 */}
+                    <Link href="/teacher/afterschool" className="group" onClick={handleAfterschoolClick}>
+                        <div className="p-6 rounded-2xl bg-gradient-to-br from-teal-500 via-emerald-600 to-teal-700 text-white shadow-lg shadow-teal-500/15 hover:shadow-teal-500/25 transition-all duration-300 hover:-translate-y-1 relative overflow-hidden flex flex-col justify-center min-h-[195px] border border-teal-400/20">
+                            <div className="absolute right-0 bottom-0 translate-x-6 translate-y-6 opacity-10 group-hover:scale-110 transition-transform duration-500 pointer-events-none">
+                                <BookOpen size={180} />
+                            </div>
+                            <div className="relative z-10 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <span className="bg-white/20 backdrop-blur-md text-white text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider whitespace-nowrap">
+                                        Afterschool Program
+                                    </span>
+                                    <span className="text-xs font-bold flex items-center gap-1 group-hover:translate-x-1 transition-transform whitespace-nowrap bg-white/10 px-2 py-0.5 rounded-full">
+                                        바로가기 &rarr;
+                                    </span>
+                                </div>
+                                <h4 className="text-xl font-bold font-headline whitespace-nowrap">방과후학교 콘솔</h4>
+                                <p className="text-xs text-teal-100/90 leading-relaxed">
+                                    강좌 개설 기안, 출석부 기록, 대기 신청자 및 환불 조회를 종합 관리합니다.
+                                </p>
+                            </div>
+                        </div>
+                    </Link>
+
+                    {/* 스쿨버스 배너 */}
+                    <Link href="/teacher/bus" className="group" onClick={handleBusClick}>
+                        <div className="p-6 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-600 to-blue-700 text-white shadow-lg shadow-blue-500/15 hover:shadow-blue-500/25 transition-all duration-300 hover:-translate-y-1 relative overflow-hidden flex flex-col justify-center min-h-[195px] border border-blue-400/20">
+                            <div className="absolute right-0 bottom-0 translate-x-6 translate-y-6 opacity-10 group-hover:scale-110 transition-transform duration-500 pointer-events-none">
+                                <Bus size={180} />
+                            </div>
+                            <div className="relative z-10 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <span className="bg-white/20 backdrop-blur-md text-white text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider whitespace-nowrap">
+                                        School Bus System
+                                    </span>
+                                    <span className="text-xs font-bold flex items-center gap-1 group-hover:translate-x-1 transition-transform whitespace-nowrap bg-white/10 px-2 py-0.5 rounded-full">
+                                        바로가기 &rarr;
+                                    </span>
+                                </div>
+                                <h4 className="text-xl font-bold font-headline whitespace-nowrap">스쿨버스 노선 & 출결</h4>
+                                <p className="text-xs text-blue-100/90 leading-relaxed">
+                                    차량별 매핑된 학생 현황 및 실시간 노선 조회, 도우미용 출결을 확인합니다.
+                                </p>
+                            </div>
+                        </div>
+                    </Link>
+
+                    {/* 통합 학생 마스터 계정 대시보드 배너 */}
+                    <Link href="/admin/students" className="group">
+                        <div className="p-6 rounded-2xl bg-gradient-to-br from-purple-600 via-indigo-700 to-slate-900 text-white shadow-lg shadow-indigo-500/15 hover:shadow-indigo-500/25 transition-all duration-300 hover:-translate-y-1 relative overflow-hidden flex flex-col justify-center min-h-[195px] border border-indigo-400/20">
+                            <div className="absolute right-0 bottom-0 translate-x-6 translate-y-6 opacity-10 group-hover:scale-110 transition-transform duration-500 pointer-events-none">
+                                <Users size={180} />
+                            </div>
+                            <div className="relative z-10 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <span className="bg-white/20 backdrop-blur-md text-white text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider whitespace-nowrap">
+                                        Master Student DB
+                                    </span>
+                                    <span className="text-xs font-bold flex items-center gap-1 group-hover:translate-x-1 transition-transform whitespace-nowrap bg-white/10 px-2 py-0.5 rounded-full">
+                                        대시보드 바로가기 &rarr;
+                                    </span>
+                                </div>
+                                <h4 className="text-xl font-bold font-headline whitespace-nowrap">통합 학생 계정 관리</h4>
+                                <p className="text-xs text-indigo-100/90 leading-relaxed">
+                                    이메일 단일 계정 기반으로 방과후, 스쿨버스, 출결, 체험학습을 한곳에서 통합 관리합니다.
+                                </p>
+                            </div>
+                        </div>
+                    </Link>
+                </div>
+            </div>
+
+            {/* 스쿨버스 이동 분기 선택 다이얼로그 */}
+            <Dialog open={isBusDialogOpen} onOpenChange={setIsBusDialogOpen}>
+              <DialogContent className="sm:max-w-md p-6">
+                <DialogHeader className="text-center">
+                  <DialogTitle className="text-lg font-bold flex items-center justify-center gap-2">
+                    <Bus className="h-5 w-5 text-blue-500" />스쿨버스 서비스 연결
+                  </DialogTitle>
+                  <DialogDescription className="text-xs pt-1">
+                    스쿨버스 담당자 권한을 가지고 있습니다. 이동할 페이지를 선택해주세요.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex flex-col gap-3 py-4">
+                  <Button 
+                    className="h-12 justify-start px-4 text-left font-semibold text-sm border-blue-100 hover:bg-blue-50/50" 
+                    variant="outline"
+                    onClick={() => {
+                      setIsBusDialogOpen(false);
+                      router.push("/admin/bus");
+                    }}
+                  >
+                    <ShieldAlert className="mr-3 h-5 w-5 text-blue-600 shrink-0" />
+                    <div className="flex flex-col">
+                      <span>스쿨버스 관리자 페이지 이동</span>
+                      <span className="text-[11px] text-muted-foreground font-normal">노선 기안, 버스 배치, 전반적인 데이터 셋업</span>
+                    </div>
+                  </Button>
+                  <Button 
+                    className="h-12 justify-start px-4 text-left font-semibold text-sm border-slate-100 hover:bg-slate-50" 
+                    variant="outline"
+                    onClick={() => {
+                      setIsBusDialogOpen(false);
+                      router.push("/teacher/bus");
+                    }}
+                  >
+                    <Navigation className="mr-3 h-5 w-5 text-slate-500 shrink-0" />
+                    <div className="flex flex-col">
+                      <span>스쿨버스 선생님/도우미 페이지 이동</span>
+                      <span className="text-[11px] text-muted-foreground font-normal">노선 조회, 학생 탑승 출결 등록 및 체크</span>
+                    </div>
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* 방과후학교 이동 분기 선택 다이얼로그 */}
+            <Dialog open={isAfterschoolDialogOpen} onOpenChange={setIsAfterschoolDialogOpen}>
+              <DialogContent className="sm:max-w-md p-6">
+                <DialogHeader className="text-center">
+                  <DialogTitle className="text-lg font-bold flex items-center justify-center gap-2">
+                    <BookOpen className="h-5 w-5 text-teal-500" />방과후학교 서비스 연결
+                  </DialogTitle>
+                  <DialogDescription className="text-xs pt-1">
+                    방과후학교 담당자 권한을 가지고 있습니다. 이동할 페이지를 선택해주세요.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex flex-col gap-3 py-4">
+                  <Button 
+                    className="h-12 justify-start px-4 text-left font-semibold text-sm border-teal-100 hover:bg-teal-50/50" 
+                    variant="outline"
+                    onClick={() => {
+                      setIsAfterschoolDialogOpen(false);
+                      router.push("/admin/afterschool");
+                    }}
+                  >
+                    <ShieldAlert className="mr-3 h-5 w-5 text-teal-600 shrink-0" />
+                    <div className="flex flex-col">
+                      <span>방과후학교 관리자 콘솔 이동</span>
+                      <span className="text-[11px] text-muted-foreground font-normal">강좌 개설, 수강생 승인, 대기 현황 관리</span>
+                    </div>
+                  </Button>
+                  <Button 
+                    className="h-12 justify-start px-4 text-left font-semibold text-sm border-slate-100 hover:bg-slate-50" 
+                    variant="outline"
+                    onClick={() => {
+                      setIsAfterschoolDialogOpen(false);
+                      router.push("/teacher/afterschool");
+                    }}
+                  >
+                    <Navigation className="mr-3 h-5 w-5 text-slate-500 shrink-0" />
+                    <div className="flex flex-col">
+                      <span>방과후학교 선생님 페이지 이동</span>
+                      <span className="text-[11px] text-muted-foreground font-normal">강사 일지 및 강좌별 출석부 체크</span>
+                    </div>
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
         </div>
     );
 }

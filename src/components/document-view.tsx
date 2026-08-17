@@ -4,11 +4,13 @@ import { ApprovalDoc, DocConfig } from '@/lib/types';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { approveDocument, rejectDocument, recallDocument, deleteDocument } from '@/lib/services/documentService';
+import { getUserProfileByEmail } from '@/lib/services/userService';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, Printer, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, Paperclip, Trash2, Lock } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition, useEffect } from 'react';
 import Link from 'next/link'; 
+import { useRouter } from 'next/navigation'; 
 import {
     AlertDialog,
     AlertDialogAction,
@@ -25,12 +27,18 @@ import { Textarea } from './ui/textarea';
 import { ParentFormView } from './parent-form-view';
 import { TeacherDutyView } from './teacher-duty-view';
 import { TeacherOvertimeView } from './teacher-overtime-view';
+import { AfterschoolFormView } from './afterschool-form-view';
+import { useReactToPrint } from 'react-to-print';
+import { OfficialDocumentPrint } from './official-document-print';
+import { formatOfficialDocumentHtml } from '@/lib/documentFormatter';
+import { useRef } from 'react';
 type DocumentViewProps = {
   initialDoc: ApprovalDoc;
   initialConfig: DocConfig;
 };
 
 export default function DocumentView({ initialDoc, initialConfig }: DocumentViewProps) {
+  const router = useRouter();
   const { user, profile } = useAuth();
   const { toast } = useToast();
   const [isApproving, startApproveTransition] = useTransition();
@@ -52,6 +60,26 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     confirmMethod: initialDoc.parentFormData?.teacherConfirmMethod || '',
     confirmDate: initialDoc.parentFormData?.teacherConfirmDate || format(new Date(), 'yyyy-MM-dd')
   });
+
+  const [approverSignatures, setApproverSignatures] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!initialDoc?.approvers) return;
+    const emails = initialDoc.approvers.map(a => a.email?.trim().toLowerCase()).filter(Boolean) as string[];
+    if (emails.length === 0) return;
+    
+    Promise.all(emails.map(email => getUserProfileByEmail(email)))
+      .then(profiles => {
+        const sigs: Record<string, string> = {};
+        profiles.forEach(p => {
+          if (p && p.signature && p.email) {
+            sigs[p.email.trim().toLowerCase()] = p.signature;
+          }
+        });
+        setApproverSignatures(sigs);
+      })
+      .catch(err => console.error("Failed to load approver signatures:", err));
+  }, [initialDoc]);
 
   useEffect(() => {
     // 스타일 백업을 보관할 상위 스코프 변수
@@ -354,7 +382,14 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const containerMaxWidth = (initialDoc.docType === 'teacher-duty' || initialDoc.docType === 'teacher-overtime') ? 'max-w-full' : 'max-w-[210mm]';
 
   const handleApprove = () => {
-    if (!profile?.signature) { if(!window.confirm("저장된 서명이 없습니다. 서명 없이 결재하시겠습니까?")) return; }
+    if (!profile?.signature) {
+      toast({
+        variant: 'destructive',
+        title: '결재 불가',
+        description: '서명이 등록되어 있지 않습니다. 우측 상단 프로필에서 서명을 먼저 등록해 주세요.'
+      });
+      return;
+    }
     
     if (isTeacherTurn) {
       if (!teacherConfirmData.confirmMethod) {
@@ -375,8 +410,13 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
       } : undefined;
 
       const result = await approveDocument(initialDoc.id, profile, parentUpdateData);
-      if (result.success) { toast({ title: '결재 완료!' }); window.location.href = '/inbox'; } 
-      else { toast({ variant: 'destructive', title: '결재 실패', description: result.error }); }
+      if (result.success) { 
+        toast({ title: '결재 완료!' }); 
+        router.push('/inbox');
+        router.refresh();
+      } else { 
+        toast({ variant: 'destructive', title: '결재 실패', description: result.error }); 
+      }
     });
   };
   
@@ -384,16 +424,27 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     if (!rejectionReason) { toast({ variant: 'destructive', title: '반려 사유 입력 필요' }); return; }
     startRejectTransition(async () => {
         const result = await rejectDocument(initialDoc.id, profile, rejectionReason);
-        if (result.success) { toast({ title: '반려됨' }); setShowRejectModal(false); window.location.href = '/inbox'; } 
-        else { toast({ variant: 'destructive', title: '반려 실패', description: result.error }); }
+        if (result.success) { 
+          toast({ title: '반려됨' }); 
+          setShowRejectModal(false); 
+          router.push('/inbox');
+          router.refresh();
+        } else { 
+          toast({ variant: 'destructive', title: '반려 실패', description: result.error }); 
+        }
     });
   };
 
   const handleRecall = () => {
     startRecallTransition(async () => {
         const result = await recallDocument(initialDoc.id, user.uid);
-        if (result.success) { toast({ title: '회수 완료' }); window.location.href = '/recalled'; } 
-        else { toast({ variant: 'destructive', title: '회수 실패', description: result.error }); }
+        if (result.success) { 
+          toast({ title: '회수 완료' }); 
+          router.push('/recalled');
+          router.refresh();
+        } else { 
+          toast({ variant: 'destructive', title: '회수 실패', description: result.error }); 
+        }
     });
   };
 
@@ -401,28 +452,144 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     if (!window.confirm("문서를 완전히 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
     startDeleteTransition(async () => {
         const result = await deleteDocument(initialDoc.id, user.uid);
-        if (result.success) { toast({ title: '삭제 완료' }); window.location.href = '/recalled'; } 
-        else { toast({ variant: 'destructive', title: '삭제 실패', description: result.error }); }
+        if (result.success) { 
+          toast({ title: '삭제 완료' }); 
+          router.push('/recalled');
+          router.refresh();
+        } else { 
+          toast({ variant: 'destructive', title: '삭제 실패', description: result.error }); 
+        }
     });
   };
 
-  const downloadFile = (file: { data: string; name: string }) => {
+  const downloadFile = async (file: { data: string; name: string }) => {
     if (!hasAttachmentPermission) {
       toast({ variant: 'destructive', title: '권한 없음', description: '첨부파일을 다운로드할 권한이 없습니다.' });
       return;
     }
-    const link = document.createElement('a'); 
-    link.href = file.data; 
-    link.download = file.name;
-    link.target = '_blank'; 
-    document.body.appendChild(link); 
-    link.click(); 
-    document.body.removeChild(link);
+    try {
+      if (file.data && file.data.startsWith('data:')) {
+        const res = await fetch(file.data);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = file.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      } else {
+        const link = document.createElement('a');
+        link.href = file.data;
+        link.download = file.name;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (e) {
+      console.error("Download Error:", e);
+      window.open(file.data, '_blank');
+    }
   };
+
+  const handleBypassApprove = () => {
+    if (process.env.NODE_ENV !== 'development') return;
+    
+    const activeApprover = initialDoc.approvers[initialDoc.currentStep];
+    if (!activeApprover) {
+      toast({ variant: 'destructive', title: '에러', description: '진행 중인 결재선이 없습니다.' });
+      return;
+    }
+
+    startApproveTransition(async () => {
+      const mockProfile = {
+        email: activeApprover.email,
+        name: activeApprover.name || activeApprover.role,
+        role: activeApprover.role,
+        uid: (activeApprover as any).uid || 'mock_uid_' + activeApprover.role
+      };
+      
+      const parentUpdateData = activeApprover.role === '담임' && initialDoc.parentFormData?.type === 'absence' ? {
+        absenceType: teacherConfirmData.absenceType,
+        teacherConfirmMethod: teacherConfirmData.confirmMethod || '유선연락',
+        teacherConfirmDate: teacherConfirmData.confirmDate || format(new Date(), 'yyyy-MM-dd')
+      } : undefined;
+
+      const result = await approveDocument(initialDoc.id, mockProfile as any, parentUpdateData);
+      if (result.success) {
+        toast({ title: `[개발자 우회] ${activeApprover.role}(${activeApprover.name || ''}) 결재 승인 완료!` });
+        window.location.reload();
+      } else {
+        toast({ variant: 'destructive', title: '우회 결재 실패', description: result.error });
+      }
+    });
+  };
+
+  const handleBypassReject = () => {
+    if (process.env.NODE_ENV !== 'development') return;
+
+    const activeApprover = initialDoc.approvers[initialDoc.currentStep];
+    if (!activeApprover) return;
+
+    const reason = window.prompt("[개발자 우회] 반려 사유를 입력해 주세요:", "테스트 반려 처리");
+    if (reason === null) return;
+
+    startRejectTransition(async () => {
+      const mockProfile = {
+        email: activeApprover.email,
+        name: activeApprover.name || activeApprover.role,
+        role: activeApprover.role,
+        uid: (activeApprover as any).uid || 'mock_uid_' + activeApprover.role
+      };
+
+      const result = await rejectDocument(initialDoc.id, mockProfile as any, reason);
+      if (result.success) {
+        toast({ title: `[개발자 우회] ${activeApprover.role} 반려 완료!` });
+        window.location.reload();
+      } else {
+        toast({ variant: 'destructive', title: '우회 반려 실패', description: result.error });
+      }
+    });
+  };
+
+  const printRef = useRef<HTMLDivElement>(null);
+
+  const handleReactPrint = useReactToPrint({
+    contentRef: printRef,
+    documentTitle: initialDoc.title || '공문서',
+  });
+
+
 
   return (
     <div className="relative w-full bg-muted/30 py-8 min-h-screen print:bg-white print:py-0 print:min-h-0 print:block">
         <div className={`print:hidden flex justify-end gap-2 mb-6 ${containerMaxWidth} mx-auto px-4`}>
+             {process.env.NODE_ENV === 'development' && initialDoc.status === 'pending' && (
+                 <div className="flex gap-2 p-1 border border-amber-200 bg-amber-50 rounded-xl shadow-inner mr-auto items-center">
+                     <span className="text-[10px] text-amber-800 font-bold px-2">🛠️ 개발자 우회 결재:</span>
+                     <Button 
+                         variant="outline" 
+                         onClick={handleBypassApprove}
+                         className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-8 px-3 border-none font-bold rounded-lg"
+                         disabled={isApproving}
+                     >
+                         {isApproving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                         강제 승인 ({initialDoc.approvers[initialDoc.currentStep]?.role})
+                     </Button>
+                     <Button 
+                         variant="outline" 
+                         onClick={handleBypassReject}
+                         className="bg-red-600 hover:bg-red-700 text-white text-xs h-8 px-3 border-none font-bold rounded-lg"
+                         disabled={isRejecting}
+                     >
+                         강제 반려
+                     </Button>
+                 </div>
+             )}
+
             {canRecall && (
                 <AlertDialog>
                     <AlertDialogTrigger asChild><Button variant="outline" disabled={isRecalling}>회수하기</Button></AlertDialogTrigger>
@@ -466,8 +633,13 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </Button>
             )}
 
-            <Button variant="outline" type="button" onClick={handlePrint} className="cursor-pointer shadow-sm bg-white hover:bg-gray-100">
-                <Printer className="mr-2 h-4 w-4" /> 인쇄 / PDF로 저장
+            <Button 
+                variant="outline" 
+                type="button" 
+                onClick={() => handleReactPrint()} 
+                className="cursor-pointer shadow-sm bg-white hover:bg-gray-100 font-bold border-slate-300"
+            >
+                <Printer className="mr-2 h-4 w-4" /> 인쇄 / PDF 저장
             </Button>
         </div>
 
@@ -511,20 +683,38 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             <div className={`w-full ${containerMaxWidth} mx-auto px-4`}>
                 <TeacherOvertimeView doc={initialDoc} />
             </div>
+        ) : initialDoc.docType === 'teacher-afterschool' ? (
+            <div className={`w-full ${containerMaxWidth} mx-auto px-4`}>
+                <AfterschoolFormView doc={initialDoc} approverSignatures={approverSignatures} />
+            </div>
         ) : (
-        <div className="printable-area flex flex-col print:block print:w-full print:max-w-none print:m-0 print:p-0">
+        <div 
+            id="a4-document-paper" 
+            style={{
+                width: '210mm',
+                minHeight: '275mm',
+                padding: '10mm 15mm 10mm 15mm',
+                boxSizing: 'border-box' as const,
+                display: 'flex' as const,
+                flexDirection: 'column' as const,
+                justifyContent: 'space-between' as const,
+                backgroundColor: '#ffffff',
+            }}
+            className="printable-area mx-auto shadow-2xl border border-slate-300 rounded-sm print:shadow-none print:border-none print:m-0"
+        >
             {initialDoc.docType === 'parent' ? (
                 <ParentFormView 
                   doc={initialDoc} 
                   teacherMode={isTeacherTurn} 
                   teacherData={teacherConfirmData}
                   onTeacherDataChange={setTeacherConfirmData}
+                  approverSignatures={approverSignatures}
                 />
             ) : (
                 <>
-                    <div className="doc-content-wrapper">
+                    <div className="doc-content-wrapper flex-1 flex flex-col justify-start">
                         <header className="text-center mb-4 shrink-0">
-                            <p className="text-sm font-medium text-gray-500 mb-6 tracking-tight">{initialConfig.slogan || '글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교'}</p>
+                            <p className="text-sm font-medium text-gray-500 mb-4 tracking-tight">{initialConfig.slogan || '글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교'}</p>
                             {isFamily ? (
                                     <h1 className="text-3xl md:text-5xl font-extrabold tracking-[0.3em] text-gray-900 mb-6 border-2 border-black inline-block px-8 py-2">가 정 통 신 문</h1>
                             ) : (
@@ -532,7 +722,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                             )}
                         </header>
 
-                        <div className="doc-body">
+                        <div className="doc-body flex-1">
                             {!isFamily && (
                                 <div className="mb-4">
                                     <div className="space-y-1 mb-2">
@@ -544,14 +734,16 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                                 </div>
                             )}
                             
-                            <div className="text-[12pt] leading-loose font-serif text-gray-800 tracking-normal" dangerouslySetInnerHTML={{ __html: initialDoc.content }} />
+                            <div className="text-[12pt] leading-loose font-serif text-gray-800 tracking-normal" dangerouslySetInnerHTML={{ __html: formatOfficialDocumentHtml(initialDoc.content) }} />
                         </div>
                     </div>
                     
-                    <footer className="doc-footer pt-10 mt-auto">
-                        <div className="text-center mb-16 h-[80px] flex items-center justify-center">
-                            {initialDoc.docType === 'external' && <h2 className="text-3xl md:text-4xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>}
-                        </div>
+                    <footer className="doc-footer shrink-0 pt-2 mt-auto">
+                        {initialDoc.docType === 'external' && (
+                            <div className="text-center mb-6 h-[40px] flex items-center justify-center">
+                                <h2 className="text-3xl md:text-4xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>
+                            </div>
+                        )}
                         <div className="border-t-2 border-black pt-4 pb-2">
                             <div className="flex items-center justify-between text-sm w-full">
                                 <div className="flex items-center gap-1 md:gap-2">
@@ -628,6 +820,16 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                  </div>
              </div>
         )}
+
+        {/* react-to-print 전용 격리 렌더링 영역 */}
+        <div className="hidden">
+            <OfficialDocumentPrint 
+                ref={printRef} 
+                doc={initialDoc} 
+                config={initialConfig} 
+                approverSignatures={approverSignatures} 
+            />
+        </div>
     </div>
   );
 }

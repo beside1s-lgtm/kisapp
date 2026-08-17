@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useEffect, useState, use } from "react";
 import { ApprovalDoc, DocConfig } from "@/lib/types";
 import { useAuth } from "@/hooks/use-auth"; 
-import { db } from "@/lib/firebase"; 
+import { getDb } from "@/lib/firebase"; 
 import { doc, getDoc, Timestamp } from "firebase/firestore";
 
 type DocumentPageProps = {
@@ -38,10 +38,10 @@ export default function DocumentPage({ params }: DocumentPageProps) {
                 const decodedId = decodeURIComponent(id);
                 console.log("Fetching View Doc ID:", decodedId);
 
-                const docRef = doc(db, "approvals", decodedId);
+                const docRef = doc(getDb(), "approvals", decodedId);
                 const docSnap = await getDoc(docRef);
 
-                const configRef = doc(db, "settings", "docConfig");
+                const configRef = doc(getDb(), "settings", "docConfig");
                 const configSnap = await getDoc(configRef);
                 const config = configSnap.exists() ? (configSnap.data() as DocConfig) : {};
 

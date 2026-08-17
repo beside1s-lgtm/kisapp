@@ -1,0 +1,19 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:9002",
+  "loginUser": "beside1s@kshcm.net",
+  "loginPassword": "cjwave83**",
+  "executionArgs": {
+    "projectName": "kisapp",
+    "projectPath": "c:/myapp/kisapp",
+    "testIds": [],
+    "additionalInstruction": "",
+    "serverMode": "development",
+    "envs": {
+      "API_KEY": "sk-user-f8O-j-F3iHOmbMc9HHs4CCn-wK67vfYaPW_4TNhZRG7V6lh3ZRNBNt7WDYxNuNMFym0uSOSBqIs0UPZbW3RoHvvuywAhE9E1Zy_dkS5SBUFD4_uvUCs6YjdS-vCYW716cXI"
+    }
+  },
+  "serverPort": 58870
+}

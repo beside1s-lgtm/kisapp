@@ -24,7 +24,7 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
       if (!hasSetup && pathname !== '/parents/setup' && pathname !== '/parents/login') {
         router.push('/parents/setup');
       } else if (hasSetup && pathname === '/parents/setup') {
-        router.push('/parents/apply');
+        router.push('/parents');
       }
     }
   }, [user, loading, isParent, pathname, router, profile]);
@@ -57,7 +57,7 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
             </div>
             KISAPP 학부모 서비스
           </Link>
-          <nav className="hidden md:flex items-center gap-2">
+          <nav className="hidden lg:flex items-center gap-2">
             <Button 
               variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
               asChild
@@ -69,6 +69,48 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
               asChild
             >
               <Link href="/parents/history">제출 내역</Link>
+            </Button>
+            <Button 
+              variant={pathname.startsWith('/parents/bus') ? 'default' : 'ghost'} 
+              asChild
+            >
+              <Link href="/parents/bus">스쿨버스</Link>
+            </Button>
+            <Button 
+              variant={pathname.startsWith('/parents/afterschool') ? 'default' : 'ghost'} 
+              asChild
+            >
+              <Link href="/parents/afterschool">방과후학교</Link>
+            </Button>
+          </nav>
+          <nav className="hidden md:flex lg:hidden items-center gap-1">
+            <Button 
+              variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
+              className="text-xs px-2"
+              asChild
+            >
+              <Link href="/parents/apply">신청서</Link>
+            </Button>
+            <Button 
+              variant={pathname === '/parents/history' ? 'default' : 'ghost'} 
+              className="text-xs px-2"
+              asChild
+            >
+              <Link href="/parents/history">내역</Link>
+            </Button>
+            <Button 
+              variant={pathname.startsWith('/parents/bus') ? 'default' : 'ghost'} 
+              className="text-xs px-2"
+              asChild
+            >
+              <Link href="/parents/bus/apply">스쿨버스</Link>
+            </Button>
+            <Button 
+              variant={pathname.startsWith('/parents/afterschool') ? 'default' : 'ghost'} 
+              className="text-xs px-2"
+              asChild
+            >
+              <Link href="/parents/afterschool">방과후</Link>
             </Button>
           </nav>
         </div>
@@ -83,22 +125,38 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
       </header>
       
       {/* Mobile nav */}
-      <div className="md:hidden flex items-center justify-around border-b bg-muted/30 p-2 print:hidden">
+      <div className="md:hidden grid grid-cols-4 gap-1 border-b bg-muted/30 p-2 print:hidden">
         <Button 
           variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
           size="sm"
-          className="flex-1"
+          className="text-xs h-9 px-1"
           asChild
         >
-          <Link href="/parents/apply">신청서 제출</Link>
+          <Link href="/parents/apply">신청서</Link>
         </Button>
         <Button 
           variant={pathname === '/parents/history' ? 'default' : 'ghost'} 
           size="sm"
-          className="flex-1"
+          className="text-xs h-9 px-1"
           asChild
         >
-          <Link href="/parents/history">제출 내역</Link>
+          <Link href="/parents/history">내역</Link>
+        </Button>
+        <Button 
+          variant={pathname.startsWith('/parents/bus') ? 'default' : 'ghost'} 
+          size="sm"
+          className="text-xs h-9 px-1"
+          asChild
+        >
+          <Link href="/parents/bus/apply">스쿨버스</Link>
+        </Button>
+        <Button 
+          variant={pathname.startsWith('/parents/afterschool') ? 'default' : 'ghost'} 
+          size="sm"
+          className="text-xs h-9 px-1"
+          asChild
+        >
+          <Link href="/parents/afterschool">방과후</Link>
         </Button>
       </div>
 

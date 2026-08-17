@@ -1,9 +1,10 @@
 'use client';
+
+import { Suspense, useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { FileText, Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
 // Google Icon SVG
@@ -16,24 +17,33 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-
-export default function LoginPage() {
-  const { user, loading, googleSignIn } = useAuth();
+function LoginForm() {
+  const { user, loading, googleSignIn, bypassLogin, isParent } = useAuth();
   const { toast } = useToast();
   const [isSigningIn, setIsSigningIn] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // 리다이렉트할 대상 경로 확인 (예: /teacher/afterschool, /teacher/bus)
+  const redirectTarget = searchParams.get('redirect') || searchParams.get('next') || searchParams.get('returnUrl');
 
   useEffect(() => {
     if (!loading && user) {
-      router.push('/inbox');
+      if (redirectTarget && redirectTarget.startsWith('/')) {
+        router.replace(redirectTarget);
+      } else if (isParent) {
+        router.replace('/parents/apply');
+      } else {
+        router.replace('/inbox');
+      }
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, redirectTarget, isParent]);
 
   const handleSignIn = async () => {
     setIsSigningIn(true);
     try {
       await googleSignIn();
-      // The useEffect will handle redirection on success
+      // useEffect will handle redirection on success
     } catch (error: any) {
       console.error('Sign-in failed', error);
       let description = '로그인 중 오류가 발생했습니다.';
@@ -82,10 +92,39 @@ export default function LoginPage() {
           )}
           Google로 로그인
         </Button>
-         <p className="text-xs text-muted-foreground mt-8">
+
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-8 p-4 border border-amber-200 bg-amber-50/70 rounded-2xl text-left space-y-3 shadow-inner">
+            <p className="text-xs font-bold text-amber-800">🛠️ 개발자 테스트 도구 (교직원/어드민)</p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => bypassLogin('admin')}
+                className="bg-white border-amber-300 text-amber-900 text-xs w-full h-10 rounded-xl"
+              >
+                교직원/어드민 세션 주입
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground mt-8">
           KSHCM 도메인의 승인된 사용자만 이 시스템에 접근할 수 있습니다.
         </p>
       </main>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-12 w-12 text-primary animate-spin" />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }

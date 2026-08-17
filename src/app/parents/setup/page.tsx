@@ -150,11 +150,6 @@ export default function ParentsSetupPage() {
       const signatureDataUrl = signatureMode === 'draw' 
         ? sigCanvas.current!.getTrimmedCanvas().toDataURL('image/png')
         : uploadedSignatureUrl!;
-
-      // 기존 Storage 업로드 로직 우회
-      // const sigRef = ref(storage, `profile_signatures/${user.uid}.png`);
-      // await uploadString(sigRef, signatureDataUrl, 'data_url');
-      // const signatureUrl = await getDownloadURL(sigRef);
       
       const signatureUrl = signatureDataUrl;
       
@@ -173,7 +168,7 @@ export default function ParentsSetupPage() {
       if (res.success) {
         toast({ title: '등록 완료', description: '인증 정보가 성공적으로 등록되었습니다.' });
         await fetchProfile(user);
-        router.push('/parents/apply');
+        router.push('/parents');
       } else {
         throw new Error(res.error);
       }

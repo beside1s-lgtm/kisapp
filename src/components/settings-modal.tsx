@@ -3,8 +3,8 @@
 import { bulkRegisterUsers, getUsersDirectory, saveUserProfile, deleteUser } from '@/lib/services/userService';
 import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules } from '@/lib/services/settingsService';
 import { getAuditLogs } from '@/lib/services/documentService';
-import { DocConfig, UserProfile, OrgStructure, DelegationRule } from '@/lib/types';
-import { compressImage } from '@/lib/utils';
+import { DocConfig, UserProfile, OrgStructure, DelegationRule, AcademicCalendarConfig, AcademicEvent, AcademicSemesterPeriod } from '@/lib/types';
+import { compressImage, generateAcademicIcsFile } from '@/lib/utils';
 import { ChangeEvent, useEffect, useState, useTransition } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -27,9 +27,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from './ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Loader2, Image as ImageIcon, Users, Settings as SettingsIcon, FileUp, Download, PlusCircle, Save, XCircle, Trash2, Network, FileText } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Users, Settings as SettingsIcon, FileUp, Download, PlusCircle, Save, XCircle, Trash2, Network, FileText, Pencil, Calendar, Globe, Sparkles } from 'lucide-react';
 import NextImage from 'next/image';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ScrollArea } from './ui/scroll-area';
@@ -49,6 +50,71 @@ import { useAuth } from '@/hooks/use-auth';
 
 const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
 
+function getUserDepartmentOrClass(email: string, orgStructure: OrgStructure): string {
+  if (!email) return '미배정';
+  const emailLower = email.toLowerCase();
+  const roles: string[] = [];
+
+  if (orgStructure.principal?.toLowerCase() === emailLower) roles.push('교장');
+  if (orgStructure.vicePrincipal?.toLowerCase() === emailLower) roles.push('교감');
+  
+  if (orgStructure.systemManagers?.map(m => m.toLowerCase()).includes(emailLower)) {
+    roles.push('시스템 설정 담당');
+  }
+  if (orgStructure.afterschoolManagers?.map(m => m.toLowerCase()).includes(emailLower)) {
+    roles.push('방과후학교 담당');
+  }
+  if (orgStructure.busManagers?.map(m => m.toLowerCase()).includes(emailLower)) {
+    roles.push('스쿨버스 담당');
+  }
+
+  if (orgStructure.healthTeachers?.map(m => m.toLowerCase()).includes(emailLower)) {
+    roles.push('보건교사');
+  }
+  if (orgStructure.specialTeachers?.map(m => m.toLowerCase()).includes(emailLower)) {
+    roles.push('특수교사');
+  }
+  if (orgStructure.librarianTeachers?.map(m => m.toLowerCase()).includes(emailLower)) {
+    roles.push('사서교사');
+  }
+  if (orgStructure.subjectTeacherGroups) {
+    for (const group of orgStructure.subjectTeacherGroups) {
+      if (group.teacherEmails?.map(m => m.toLowerCase()).includes(emailLower)) {
+        roles.push(`${group.categoryName} 교과전담`);
+      }
+    }
+  }
+
+  if (orgStructure.gradeHeads) {
+    for (const [grade, headEmail] of Object.entries(orgStructure.gradeHeads)) {
+      if (headEmail?.toLowerCase() === emailLower) {
+        roles.push(`${grade}학년 부장`);
+      }
+    }
+  }
+
+  if (orgStructure.homerooms) {
+    for (const [gradeClass, teacherEmail] of Object.entries(orgStructure.homerooms)) {
+      if (teacherEmail?.toLowerCase() === emailLower) {
+        roles.push(`${gradeClass} 담임`);
+      }
+    }
+  }
+
+  if (orgStructure.departments) {
+    for (const dept of orgStructure.departments) {
+      if (dept.headEmail?.toLowerCase() === emailLower) {
+        roles.push(`${dept.name} (부장)`);
+      }
+      if (dept.memberEmails?.some(m => m?.toLowerCase() === emailLower)) {
+        roles.push(`${dept.name} (부원)`);
+      }
+    }
+  }
+
+  return roles.length > 0 ? roles.join(', ') : '미배정';
+}
+
 export function SettingsModal() {
   const { profile } = useAuth();
   const { toast } = useToast();
@@ -57,12 +123,111 @@ export function SettingsModal() {
   const [isUploading, startUploading] = useTransition();
   const [config, setConfig] = useState<DocConfig>({});
   const [headerPreview, setHeaderPreview] = useState<string>('');
+
+  const DEFAULT_ACADEMIC_CALENDAR: AcademicCalendarConfig = {
+    year: 2026,
+    annualSchoolDays: 190,
+    semesters: {
+      sem1: { id: 'sem1', name: '2026학년도 1학기', startDate: '2026-03-02', endDate: '2026-07-17', type: 'regular' },
+      vacationSummer: { id: 'vacationSummer', name: '2026학년도 여름방학', startDate: '2026-07-18', endDate: '2026-08-23', type: 'vacation' },
+      sem2: { id: 'sem2', name: '2026학년도 2학기', startDate: '2026-08-24', endDate: '2026-12-31', type: 'regular' },
+      vacationWinter: { id: 'vacationWinter', name: '2027학년도 겨울방학', startDate: '2027-01-01', endDate: '2027-02-28', type: 'vacation' }
+    },
+    events: [
+      { id: '1', date: '2026-03-01', title: '삼일절', type: 'PUBLIC_HOLIDAY', isSchoolDay: false },
+      { id: '2', date: '2026-05-01', title: '근로자의 날 / 재량휴업일', type: 'HOLIDAY', isSchoolDay: false },
+      { id: '3', date: '2026-05-05', title: '어린이날', type: 'PUBLIC_HOLIDAY', isSchoolDay: false },
+      { id: '4', date: '2026-09-02', title: '독립기념일 (베트남)', type: 'PUBLIC_HOLIDAY', isSchoolDay: false },
+      { id: '5', date: '2026-09-24', title: '추석 연휴', type: 'PUBLIC_HOLIDAY', isSchoolDay: false },
+      { id: '6', date: '2026-10-09', title: '한글날', type: 'PUBLIC_HOLIDAY', isSchoolDay: false },
+      { id: '7', date: '2026-10-16', title: '학교 창립기념 행사의 날', type: 'SCHOOL_EVENT', isSchoolDay: true }
+    ]
+  };
+
+  const [academicCal, setAcademicCal] = useState<AcademicCalendarConfig>(DEFAULT_ACADEMIC_CALENDAR);
+  const [newEventDate, setNewEventDate] = useState('');
+  const [newEventTitle, setNewEventTitle] = useState('');
+  const [newEventType, setNewEventType] = useState<'HOLIDAY' | 'PUBLIC_HOLIDAY' | 'SCHOOL_EVENT'>('HOLIDAY');
+  const [isNewEventParentPrivate, setIsNewEventParentPrivate] = useState(false);
+
+  const handleAddAcademicEvent = () => {
+    if (!newEventDate || !newEventTitle.trim()) {
+      toast({ variant: 'destructive', title: '입력 오류', description: '날짜와 행사명을 입력해주세요.' });
+      return;
+    }
+    const isSchoolDay = newEventType === 'SCHOOL_EVENT';
+    const newEv: AcademicEvent = {
+      id: Date.now().toString(),
+      date: newEventDate,
+      title: newEventTitle.trim(),
+      type: newEventType,
+      isSchoolDay,
+      isParentPrivate: isNewEventParentPrivate
+    };
+    setAcademicCal(prev => ({
+      ...prev,
+      events: [...prev.events.filter(e => e.date !== newEventDate), newEv].sort((a, b) => a.date.localeCompare(b.date))
+    }));
+    setNewEventDate('');
+    setNewEventTitle('');
+    setIsNewEventParentPrivate(false);
+    toast({ title: '학사 일정 추가', description: `${newEventDate} (${newEventTitle.trim()})가 추가되었습니다.` });
+  };
+
+  const handleBroadcastCalendarSync = async () => {
+    try {
+      const nextVer = (academicCal.publishedVersion || 0) + 1;
+      const updatedCal: AcademicCalendarConfig = {
+        ...academicCal,
+        publishedVersion: nextVer,
+        lastPublishedAt: new Date().toISOString()
+      };
+      setAcademicCal(updatedCal);
+      const finalConfig = {
+        ...config,
+        annualSchoolDays: updatedCal.annualSchoolDays,
+        academicCalendar: updatedCal
+      };
+      await saveDocConfig(finalConfig);
+      toast({
+        title: '전체 사용자 공유 알림 발송 완료',
+        description: `(v${nextVer}) 전체 교직원 및 학부모 계정 접속 시 최신 학사 일정 캘린더 공유 팝업 알림이 전송됩니다.`
+      });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: '발송 오류', description: err.message });
+    }
+  };
+
+  const handleDeleteAcademicEvent = (eventId: string) => {
+    setAcademicCal(prev => ({
+      ...prev,
+      events: prev.events.filter(e => e.id !== eventId)
+    }));
+  };
+
+  const handleExportIcsFile = () => {
+    try {
+      const icsContent = generateAcademicIcsFile(academicCal);
+      const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `KSHCM_academic_calendar_${academicCal.year || 2026}.ics`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast({ title: '캘린더 파일 내보내기 완료', description: 'Google Calendar/Outlook/스마트폰에 등록 가능한 .ics 파일이 다운로드되었습니다.' });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: '내보내기 실패', description: err.message });
+    }
+  };
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedHomeroomFile, setSelectedHomeroomFile] = useState<File | null>(null);
   const [selectedDeptFile, setSelectedDeptFile] = useState<File | null>(null);
-  const [org, setOrg] = useState<OrgStructure>({ principal: '', vicePrincipal: '', gradeHeads: {}, homerooms: {}, departments: [] });
+  const [org, setOrg] = useState<OrgStructure>({ principal: '', vicePrincipal: '', gradeHeads: {}, homerooms: {}, departments: [], afterschoolManager: '', busManager: '', afterschoolManagers: [], busManagers: [], systemManagers: [], healthTeachers: [], specialTeachers: [], librarianTeachers: [], subjectTeacherGroups: [] });
   const [newHomeroom, setNewHomeroom] = useState({ grade: '1', class: '1', email: '', isGradeHead: false });
+  const [newSubjectCategoryName, setNewSubjectCategoryName] = useState('');
   const [newDeptName, setNewDeptName] = useState('');
   // 동명이인 처리용: { grade, class, isHead, candidates: UserProfile[] }
   const [duplicatePendingRows, setDuplicatePendingRows] = useState<{ grade: string; class: string; isHead: boolean; candidates: UserProfile[] }[]>([]);
@@ -134,8 +299,14 @@ export function SettingsModal() {
       toast({ variant: 'destructive', title: '추출 오류', description: err.message });
     }
   };
-  const [newUser, setNewUser] = useState({ email: '', name: '', role: '교사' });
+  const [newUser, setNewUser] = useState({ email: '', name: '', role: '교사', dept: '' });
+  const [newStudent, setNewStudent] = useState({ grade: '', class: '', number: '', studentName: '', parentName: '', email: '', phone: '' });
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
+  // 학생/학부모 인라인 편집 state
+  const [editingStudent, setEditingStudent] = useState<UserProfile | null>(null);
+  const [editStudentForm, setEditStudentForm] = useState({ grade: '', class: '', number: '', studentName: '', parentName: '', phone: '' });
+  // 일괄 등록 다이얼로그 state
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
 
   const fetchUsers = async () => {
     const data = await getUsersDirectory();
@@ -149,6 +320,11 @@ export function SettingsModal() {
       getDocConfig().then(data => {
         setConfig(data);
         setHeaderPreview(data.headerImage || '');
+        if (data.academicCalendar) {
+          setAcademicCal(data.academicCalendar);
+        } else if (data.annualSchoolDays) {
+          setAcademicCal(prev => ({ ...prev, annualSchoolDays: data.annualSchoolDays || 190 }));
+        }
       });
       getOrgStructure().then(data => {
         setOrg({
@@ -156,7 +332,16 @@ export function SettingsModal() {
           vicePrincipal: data.vicePrincipal || '',
           gradeHeads: data.gradeHeads || {},
           homerooms: data.homerooms || {},
-          departments: data.departments || []
+          departments: data.departments || [],
+          afterschoolManager: data.afterschoolManager || '',
+          busManager: data.busManager || '',
+          afterschoolManagers: data.afterschoolManagers || [],
+          busManagers: data.busManagers || [],
+          systemManagers: data.systemManagers || [],
+          healthTeachers: data.healthTeachers || [],
+          specialTeachers: data.specialTeachers || [],
+          librarianTeachers: data.librarianTeachers || [],
+          subjectTeacherGroups: data.subjectTeacherGroups || []
         });
       });
       getDelegationRules().then(data => {
@@ -169,7 +354,10 @@ export function SettingsModal() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setConfig(prev => ({ ...prev, [name]: name === 'nextNumber' ? parseInt(value) : value }));
+    setConfig(prev => ({ 
+      ...prev, 
+      [name]: (name === 'nextNumber' || name === 'afterschoolFeePerSession' || name === 'annualSchoolDays') ? (parseInt(value) || 0) : value 
+    }));
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -182,15 +370,36 @@ export function SettingsModal() {
 
   const handleSave = () => {
     startSaving(async () => {
-      let finalConfig = { ...config };
+      let finalConfig = { 
+        ...config,
+        annualSchoolDays: academicCal.annualSchoolDays,
+        academicCalendar: academicCal
+      };
       if (headerPreview && headerPreview !== config.headerImage) {
         finalConfig.headerImage = await compressImage(headerPreview, 600);
       }
 
       const result = await saveDocConfig(finalConfig);
       if (result.success) {
-        toast({ title: '설정 저장됨' });
+        toast({ title: '일반 설정이 저장되었습니다.' });
         setIsOpen(false);
+      } else {
+        toast({ variant: 'destructive', title: '저장 실패', description: result.error });
+      }
+    });
+  };
+
+  const handleSaveAcademicCalendar = () => {
+    startSaving(async () => {
+      let finalConfig = { 
+        ...config,
+        annualSchoolDays: academicCal.annualSchoolDays,
+        academicCalendar: academicCal
+      };
+
+      const result = await saveDocConfig(finalConfig);
+      if (result.success) {
+        toast({ title: '학사 일정 및 학기 설정이 저장되었습니다.' });
       } else {
         toast({ variant: 'destructive', title: '저장 실패', description: result.error });
       }
@@ -263,10 +472,68 @@ export function SettingsModal() {
           toast({ title: '사용자 추가됨' });
           fetchUsers(); // Refresh the list
           setIsAddingNewUser(false);
-          setNewUser({ email: '', name: '', role: '교사' });
+          setNewUser({ email: '', name: '', role: '교사', dept: '' });
       } else {
           toast({ variant: 'destructive', title: '추가 실패', description: result.error });
       }
+  };
+  const handleAddNewStudent = async () => {
+      if (!newStudent.email || !newStudent.studentName || !newStudent.parentName) {
+          toast({ variant: 'destructive', title: '입력 오류', description: '이메일, 학생 이름, 학부모 이름을 모두 입력해야 합니다.' });
+          return;
+      }
+      const payload = {
+          email: newStudent.email,
+          name: newStudent.parentName,
+          parentName: newStudent.parentName,
+          studentName: newStudent.studentName,
+          studentGrade: newStudent.grade,
+          studentClass: newStudent.class,
+          studentNumber: newStudent.number,
+          parentPhone: newStudent.phone,
+          role: '학부모'
+      };
+      const result = await saveUserProfile('', newStudent.email, payload as any);
+      if (result.success) {
+          toast({ title: '학생/학부모 추가됨' });
+          fetchUsers();
+          setIsAddingNewUser(false);
+          setNewStudent({ grade: '', class: '', number: '', studentName: '', parentName: '', email: '', phone: '' });
+      } else {
+          toast({ variant: 'destructive', title: '추가 실패', description: result.error });
+      }
+  };
+
+  const handleStartEditStudent = (user: UserProfile) => {
+    setEditingStudent(user);
+    setEditStudentForm({
+      grade: user.studentGrade || '',
+      class: user.studentClass || '',
+      number: user.studentNumber || '',
+      studentName: user.studentName || '',
+      parentName: user.parentName || user.name || '',
+      phone: user.parentPhone || '',
+    });
+  };
+
+  const handleSaveEditStudent = async () => {
+    if (!editingStudent) return;
+    const payload = {
+      studentName: editStudentForm.studentName.trim(),
+      studentGrade: editStudentForm.grade,
+      studentClass: editStudentForm.class,
+      studentNumber: editStudentForm.number,
+      parentName: editStudentForm.parentName.trim(),
+      parentPhone: editStudentForm.phone,
+    };
+    const result = await saveUserProfile(editingStudent.uid || '', editingStudent.email, payload as any);
+    if (result.success) {
+      toast({ title: '수정 완료', description: '학생/학부모 정보가 업데이트되었습니다.' });
+      fetchUsers();
+      setEditingStudent(null);
+    } else {
+      toast({ variant: 'destructive', title: '수정 실패', description: result.error });
+    }
   };
 
   const handleBulkUpload = () => {
@@ -627,27 +894,27 @@ export function SettingsModal() {
       toast({ variant: 'destructive', title: '삭제 실패', description: result.error });
     }
     setUserToDelete(null);
-  }
-
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogTrigger asChild>
-           <Button variant="ghost" size="icon">
-                <SettingsIcon className="h-5 w-5 text-muted-foreground" />
-            </Button>
-        </DialogTrigger>
-      <DialogContent className="sm:max-w-4xl w-[90vw] h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="icon">
+          <SettingsIcon className="h-5 w-5 text-muted-foreground" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="w-[95vw] max-w-[95vw] h-[92vh] flex flex-col p-0 gap-0 overflow-hidden">
         <DialogHeader className="shrink-0 px-6 pt-6 pb-3 border-b">
           <DialogTitle>시스템 설정</DialogTitle>
           <DialogDescription>
-            문서 템플릿, 번호 체계, 사용자 권한을 관리합니다.
+            문서 템플릿, 번호 체계, 학사 일정, 사용자 권한을 관리합니다.
           </DialogDescription>
         </DialogHeader>
         
-        <Tabs defaultValue="users" className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          <TabsList className="grid w-full grid-cols-5 shrink-0 rounded-none border-b bg-muted/30 h-11">
+        <Tabs defaultValue="general" className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <TabsList className="grid w-full grid-cols-6 shrink-0 rounded-none border-b bg-muted/30 h-11 text-xs md:text-sm">
             <TabsTrigger value="general" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><SettingsIcon className="mr-2 h-4 w-4 hidden md:block"/>일반</TabsTrigger>
+            <TabsTrigger value="academicCalendar" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary font-medium"><Calendar className="mr-2 h-4 w-4 hidden md:block"/>학사 일정 관리</TabsTrigger>
             <TabsTrigger value="org" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><Network className="mr-2 h-4 w-4 hidden md:block"/>조직도</TabsTrigger>
             <TabsTrigger value="delegation" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><FileText className="mr-2 h-4 w-4 hidden md:block"/>전결규정</TabsTrigger>
             <TabsTrigger value="users" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><Users className="mr-2 h-4 w-4 hidden md:block"/>사용자</TabsTrigger>
@@ -656,18 +923,38 @@ export function SettingsModal() {
           
           <TabsContent value="general" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
             <div className="flex-1 overflow-y-auto px-6 py-4">
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="nextNumber">다음 문서 번호</Label>
-                  <Input id="nextNumber" name="nextNumber" type="number" value={config.nextNumber || 1} onChange={handleChange} />
+              <div className="space-y-6 max-w-4xl">
+                {/* 🤖 AI 초안 생성 기능 On/Off 스위치 */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-slate-50/90 rounded-xl border border-slate-200 shadow-2xs">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="enableAiDraft" className="font-bold text-slate-800 text-sm flex items-center gap-2 cursor-pointer">
+                      <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                      기안문 작성 시 AI 초안 생성 (Sparkles) 사용
+                    </Label>
+                    <p className="text-xs text-slate-500">
+                      켜짐 설정 시 교직원이 결재 기안문 작성 화면에서 AI 초안 자동 작성 버튼을 이용할 수 있으며, 끄면 버튼이 잠금(비활성화) 처리됩니다.
+                    </p>
+                  </div>
+                  <Switch
+                    id="enableAiDraft"
+                    checked={config.enableAiDraft !== false}
+                    onCheckedChange={(checked) => setConfig((prev) => ({ ...prev, enableAiDraft: checked }))}
+                  />
                 </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="slogan">상단 문구 (슬로건)</Label>
+                  <Label htmlFor="nextNumber" className="font-semibold text-slate-800">다음 문서 번호</Label>
+                  <Input id="nextNumber" name="nextNumber" type="number" value={config.nextNumber || 1} onChange={handleChange} className="w-full sm:w-60" />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="slogan" className="font-semibold text-slate-800">상단 문구 (슬로건)</Label>
                   <Input id="slogan" name="slogan" value={config.slogan || ''} onChange={handleChange} placeholder="예: 글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교" />
                 </div>
+                
                 <div className="space-y-2">
-                  <Label>헤더 이미지</Label>
-                  <div className="p-4 border-2 border-dashed rounded-lg text-center relative group">
+                  <Label className="font-semibold text-slate-800">헤더 이미지</Label>
+                  <div className="p-4 border-2 border-dashed rounded-lg text-center relative group bg-slate-50/50">
                     <Input id="header-up" type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
                     <Label htmlFor="header-up" className="cursor-pointer block">
                       {headerPreview ? (
@@ -684,13 +971,14 @@ export function SettingsModal() {
                     </Label>
                   </div>
                 </div>
+
                 <div className="space-y-4 pt-4 border-t">
-                  <h4 className="font-semibold">바닥글 정보</h4>
+                  <h4 className="font-semibold text-slate-900">바닥글 정보</h4>
                   <div className="space-y-2">
                     <Label htmlFor="address">주소</Label>
                     <Input id="address" name="address" value={config.address || ''} onChange={handleChange} />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="phone">전화번호</Label>
                         <Input id="phone" name="phone" value={config.phone || ''} onChange={handleChange} />
@@ -711,10 +999,327 @@ export function SettingsModal() {
                 </div>
               </div>
             </div>
-            <div className="shrink-0 px-6 py-4 border-t flex justify-end">
+            <div className="shrink-0 px-6 py-4 border-t flex justify-end bg-slate-50/50">
               <Button onClick={handleSave} disabled={isSaving}>
                 {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 일반 설정 저장
+              </Button>
+            </div>
+          </TabsContent>
+
+          {/* 📅 학사 일정 관리 탭 */}
+          <TabsContent value="academicCalendar" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <div className="space-y-5 text-xs">
+                {/* 헤더 안내 및 연동 버튼 */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2 flex-wrap">
+                      <Calendar className="w-5 h-5 text-indigo-600 shrink-0" />
+                      중앙 학사 일정 및 학기 통합 관리
+                      <Badge variant="outline" className="text-[10px] sm:text-xs bg-indigo-50 text-indigo-700 border-indigo-200 font-semibold whitespace-nowrap">
+                        🔗 버스·방과후·결석/체험학습 100% 연동
+                      </Badge>
+                    </h4>
+                    <p className="text-slate-500 text-xs mt-0.5">
+                      학교 전체 표준 학기 기간, 연간 총 수업일수, 휴업일/공휴일/학교행사를 통합 설정합니다.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleBroadcastCalendarSync}
+                      className="h-8 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-lg whitespace-nowrap shadow-xs"
+                    >
+                      전체 사용자 캘린더 공유 알림 발송
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        handleExportIcsFile();
+                        window.open('https://calendar.google.com/calendar/r/settings/export', '_blank');
+                        toast({ title: '구글 캘린더 연동 안내', description: '학사일정 .ics 파일이 다운로드되었습니다. 열린 구글 캘린더 설정창에서 [가져오기]를 누르고 파일만 넣어주시면 구글 캘린더에 1초 만에 전체 등록됩니다!' });
+                      }}
+                      className="h-8 text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-300 rounded-lg whitespace-nowrap"
+                    >
+                      <Globe className="w-3.5 h-3.5 mr-1 text-blue-600 shrink-0" />
+                      구글 캘린더에 바로 연동
+                    </Button>
+                  </div>
+                </div>
+
+                {/* 1. 연간 총 수업일수 */}
+                <div className="space-y-1.5 bg-white p-4 rounded-xl border border-slate-200">
+                  <Label htmlFor="annualSchoolDays" className="font-bold text-slate-800 text-xs sm:text-sm">
+                    연간 총 수업일수 (일)
+                  </Label>
+                  <Input 
+                    id="annualSchoolDays" 
+                    type="number" 
+                    value={academicCal.annualSchoolDays || 190} 
+                    onChange={e => setAcademicCal(prev => ({ ...prev, annualSchoolDays: parseInt(e.target.value) || 190 }))} 
+                    className="text-xs font-bold w-full sm:w-48 bg-white"
+                    placeholder="기본값: 190"
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    학부모 체험학습 허용 한도(10%) 및 출석인정 수업일수(2/3 수료 기준)의 원천 계산 기준입니다.
+                  </p>
+                </div>
+
+                {/* 2. 학기 및 방학 운영 기간 4개 Grid */}
+                <div className="space-y-2 bg-white p-4 rounded-xl border border-slate-200">
+                  <Label className="font-bold text-slate-800 text-xs sm:text-sm block">
+                    학기 및 방학 운영 기간 설정 (4개 교시)
+                  </Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    {/* 1학기 */}
+                    <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-200 space-y-2">
+                      <span className="font-bold text-indigo-900 text-xs block">🏫 2026학년도 1학기</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-semibold block">시작일</span>
+                          <Input 
+                            type="date" 
+                            value={academicCal.semesters.sem1.startDate} 
+                            onChange={e => setAcademicCal(prev => ({
+                              ...prev,
+                              semesters: { ...prev.semesters, sem1: { ...prev.semesters.sem1, startDate: e.target.value } }
+                            }))}
+                            className="text-[11px] h-8 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-semibold block">종료일</span>
+                          <Input 
+                            type="date" 
+                            value={academicCal.semesters.sem1.endDate} 
+                            onChange={e => setAcademicCal(prev => ({
+                              ...prev,
+                              semesters: { ...prev.semesters, sem1: { ...prev.semesters.sem1, endDate: e.target.value } }
+                            }))}
+                            className="text-[11px] h-8 bg-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 여름방학 */}
+                    <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200 space-y-2">
+                      <span className="font-bold text-amber-900 text-xs block">🏖️ 2026학년도 여름방학</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-semibold block">시작일</span>
+                          <Input 
+                            type="date" 
+                            value={academicCal.semesters.vacationSummer.startDate} 
+                            onChange={e => setAcademicCal(prev => ({
+                              ...prev,
+                              semesters: { ...prev.semesters, vacationSummer: { ...prev.semesters.vacationSummer, startDate: e.target.value } }
+                            }))}
+                            className="text-[11px] h-8 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-semibold block">종료일</span>
+                          <Input 
+                            type="date" 
+                            value={academicCal.semesters.vacationSummer.endDate} 
+                            onChange={e => setAcademicCal(prev => ({
+                              ...prev,
+                              semesters: { ...prev.semesters, vacationSummer: { ...prev.semesters.vacationSummer, endDate: e.target.value } }
+                            }))}
+                            className="text-[11px] h-8 bg-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 2학기 */}
+                    <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-2">
+                      <span className="font-bold text-emerald-900 text-xs block">🏫 2026학년도 2학기</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-semibold block">시작일</span>
+                          <Input 
+                            type="date" 
+                            value={academicCal.semesters.sem2.startDate} 
+                            onChange={e => setAcademicCal(prev => ({
+                              ...prev,
+                              semesters: { ...prev.semesters, sem2: { ...prev.semesters.sem2, startDate: e.target.value } }
+                            }))}
+                            className="text-[11px] h-8 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-semibold block">종료일</span>
+                          <Input 
+                            type="date" 
+                            value={academicCal.semesters.sem2.endDate} 
+                            onChange={e => setAcademicCal(prev => ({
+                              ...prev,
+                              semesters: { ...prev.semesters, sem2: { ...prev.semesters.sem2, endDate: e.target.value } }
+                            }))}
+                            className="text-[11px] h-8 bg-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 겨울방학 */}
+                    <div className="p-3 bg-sky-50/60 rounded-xl border border-sky-200 space-y-2">
+                      <span className="font-bold text-sky-900 text-xs block">☃️ 2026학년도 겨울방학</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-semibold block">시작일</span>
+                          <Input 
+                            type="date" 
+                            value={academicCal.semesters.vacationWinter.startDate} 
+                            onChange={e => setAcademicCal(prev => ({
+                              ...prev,
+                              semesters: { ...prev.semesters, vacationWinter: { ...prev.semesters.vacationWinter, startDate: e.target.value } }
+                            }))}
+                            className="text-[11px] h-8 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-semibold block">종료일</span>
+                          <Input 
+                            type="date" 
+                            value={academicCal.semesters.vacationWinter.endDate} 
+                            onChange={e => setAcademicCal(prev => ({
+                              ...prev,
+                              semesters: { ...prev.semesters, vacationWinter: { ...prev.semesters.vacationWinter, endDate: e.target.value } }
+                            }))}
+                            className="text-[11px] h-8 bg-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. 휴업일 / 공휴일 / 학교행사 실시간 등록 */}
+                <div className="space-y-3 bg-white p-4 rounded-xl border border-slate-200">
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <Label className="font-bold text-slate-800 text-xs sm:text-sm">
+                      휴업일 / 공휴일 / 학교행사 관리 ({academicCal.events.length}건)
+                    </Label>
+                    <span className="text-[11px] text-slate-400">
+                      휴업일·공휴일은 수업일수 제외, 학교행사는 수업일 포함
+                    </span>
+                  </div>
+
+                  {/* 등록 폼 */}
+                  <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                      <div className="sm:col-span-3">
+                        <Input 
+                          type="date" 
+                          value={newEventDate} 
+                          onChange={e => setNewEventDate(e.target.value)} 
+                          className="text-[11px] h-8 bg-white" 
+                        />
+                      </div>
+                      <div className="sm:col-span-4">
+                        <Input 
+                          type="text" 
+                          placeholder="행사/휴업일 명칭..." 
+                          value={newEventTitle} 
+                          onChange={e => setNewEventTitle(e.target.value)} 
+                          className="text-[11px] h-8 bg-white font-medium" 
+                        />
+                      </div>
+                      <div className="sm:col-span-3">
+                        <Select value={newEventType} onValueChange={(val: any) => setNewEventType(val)}>
+                          <SelectTrigger className="h-8 text-[11px] bg-white">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="HOLIDAY" className="text-xs font-bold text-amber-700">재량휴업일 (수업일 X)</SelectItem>
+                            <SelectItem value="PUBLIC_HOLIDAY" className="text-xs font-bold text-rose-700">법정공휴일 (수업일 X)</SelectItem>
+                            <SelectItem value="SCHOOL_EVENT" className="text-xs font-bold text-indigo-700">학교 행사 (수업일 O)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <Button 
+                          type="button" 
+                          size="sm" 
+                          onClick={handleAddAcademicEvent} 
+                          className="w-full h-8 text-[11px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg whitespace-nowrap"
+                        >
+                          <PlusCircle className="w-3.5 h-3.5 mr-1 shrink-0" />
+                          등록
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 pt-0.5 px-1">
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700 select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={isNewEventParentPrivate} 
+                          onChange={e => setIsNewEventParentPrivate(e.target.checked)} 
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                        />
+                        🔒 학부모 비공개 (교직원 전용 일정)
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        (체크 시 학부모 접속 팝업 및 학부모 캘린더에서 가려집니다)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 등록 목록 테이블 */}
+                  <div className="max-h-[180px] overflow-y-auto border rounded-xl divide-y divide-slate-100 bg-white">
+                    {academicCal.events.length > 0 ? (
+                      academicCal.events.map(ev => (
+                        <div key={ev.id} className="flex items-center justify-between px-3 py-2 text-xs">
+                          <div className="flex items-center gap-2 font-mono flex-wrap">
+                            <span className="font-bold text-slate-800">{ev.date}</span>
+                            <span className="font-semibold text-slate-700">{ev.title}</span>
+                            <Badge 
+                              variant="outline" 
+                              className={`text-[10px] font-semibold px-1.5 py-0 ${
+                                ev.type === 'PUBLIC_HOLIDAY' 
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                                  : ev.type === 'HOLIDAY' 
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200' 
+                                    : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                              }`}
+                            >
+                              {ev.type === 'PUBLIC_HOLIDAY' ? '공휴일' : ev.type === 'HOLIDAY' ? '휴업일' : '학교행사 (수업일포함)'}
+                            </Badge>
+                            {ev.isParentPrivate && (
+                              <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-200 font-bold px-1.5 py-0">
+                                🔒 학부모 비공개
+                              </Badge>
+                            )}
+                          </div>
+                          <button 
+                            type="button" 
+                            onClick={() => handleDeleteAcademicEvent(ev.id)} 
+                            className="text-slate-400 hover:text-rose-600 p-1 transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-6 text-center text-slate-400 text-xs">
+                        등록된 휴업일 / 학교 행사가 없습니다.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="shrink-0 px-6 py-4 border-t flex justify-end bg-slate-50/50">
+              <Button onClick={handleSaveAcademicCalendar} disabled={isSaving} className="bg-indigo-600 hover:bg-indigo-700 font-bold">
+                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                학사 일정 설정 저장
               </Button>
             </div>
           </TabsContent>
@@ -723,8 +1328,10 @@ export function SettingsModal() {
             <div className="flex-1 overflow-y-auto px-6 py-4">
               <div className="space-y-6">
                 <div className="space-y-4">
-                  <h4 className="font-semibold text-lg border-b pb-2">학교 리더십</h4>
-                  <div className="grid grid-cols-2 gap-4">
+                  <h4 className="font-semibold text-lg border-b pb-2">학교 리더십 및 업무 담당자</h4>
+                  
+                  {/* 교장/교감은 2열 구성 */}
+                  <div className="grid grid-cols-2 gap-4 max-w-md">
                     <div className="space-y-2">
                       <Label>학교장 (교장)</Label>
                       <Select value={org.principal} onValueChange={(val) => setOrg({ ...org, principal: val })}>
@@ -742,6 +1349,368 @@ export function SettingsModal() {
                           {users.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
                         </SelectContent>
                       </Select>
+                    </div>
+                  </div>
+
+                  {/* 각 업무 담당자 복수 지정은 3열 구성 */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                    {/* 방과후학교 담당자 */}
+                    <div className="space-y-2 border p-3 rounded-lg bg-slate-50/50">
+                      <Label className="font-bold text-violet-700">방과후학교 담당자 (복수)</Label>
+                      <div className="flex flex-wrap gap-1 p-2 border rounded-md min-h-[50px] bg-white">
+                        {(org.afterschoolManagers || []).length === 0 ? (
+                          <span className="text-xs text-muted-foreground self-center">지정된 담당자 없음</span>
+                        ) : (
+                          (org.afterschoolManagers || []).map(email => {
+                            const u = users.find(x => x.email === email);
+                            return (
+                              <span key={email} className="inline-flex items-center gap-1 bg-violet-100 text-violet-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                {u ? u.name : email}
+                                <button 
+                                  type="button" 
+                                  onClick={() => setOrg(p => ({ ...p, afterschoolManagers: (p.afterschoolManagers || []).filter(x => x !== email) }))}
+                                  className="text-violet-500 hover:text-violet-700 font-bold ml-1"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })
+                        )}
+                      </div>
+                      <Select 
+                        value="" 
+                        onValueChange={(val) => {
+                          if (val && !(org.afterschoolManagers || []).includes(val)) {
+                            setOrg(p => ({ ...p, afterschoolManagers: [...(p.afterschoolManagers || []), val] }));
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="교직원 선택..." /></SelectTrigger>
+                        <SelectContent>
+                          {users.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* 스쿨버스 담당자 */}
+                    <div className="space-y-2 border p-3 rounded-lg bg-slate-50/50">
+                      <Label className="font-bold text-amber-700">스쿨버스 담당자 (복수)</Label>
+                      <div className="flex flex-wrap gap-1 p-2 border rounded-md min-h-[50px] bg-white">
+                        {(org.busManagers || []).length === 0 ? (
+                          <span className="text-xs text-muted-foreground self-center">지정된 담당자 없음</span>
+                        ) : (
+                          (org.busManagers || []).map(email => {
+                            const u = users.find(x => x.email === email);
+                            return (
+                              <span key={email} className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                {u ? u.name : email}
+                                <button 
+                                  type="button" 
+                                  onClick={() => setOrg(p => ({ ...p, busManagers: (p.busManagers || []).filter(x => x !== email) }))}
+                                  className="text-amber-500 hover:text-amber-700 font-bold ml-1"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })
+                        )}
+                      </div>
+                      <Select 
+                        value="" 
+                        onValueChange={(val) => {
+                          if (val && !(org.busManagers || []).includes(val)) {
+                            setOrg(p => ({ ...p, busManagers: [...(p.busManagers || []), val] }));
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="교직원 선택..." /></SelectTrigger>
+                        <SelectContent>
+                          {users.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* 시스템 설정 담당자 */}
+                    <div className="space-y-2 border p-3 rounded-lg bg-slate-50/50">
+                      <Label className="font-bold text-sky-700">시스템 설정 담당자 (복수)</Label>
+                      <div className="flex flex-wrap gap-1 p-2 border rounded-md min-h-[50px] bg-white">
+                        {(org.systemManagers || []).length === 0 ? (
+                          <span className="text-xs text-muted-foreground self-center">지정된 담당자 없음</span>
+                        ) : (
+                          (org.systemManagers || []).map(email => {
+                            const u = users.find(x => x.email === email);
+                            return (
+                              <span key={email} className="inline-flex items-center gap-1 bg-sky-100 text-sky-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                {u ? u.name : email}
+                                <button 
+                                  type="button" 
+                                  onClick={() => setOrg(p => ({ ...p, systemManagers: (p.systemManagers || []).filter(x => x !== email) }))}
+                                  className="text-sky-500 hover:text-sky-700 font-bold ml-1"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })
+                        )}
+                      </div>
+                      <Select 
+                        value="" 
+                        onValueChange={(val) => {
+                          if (val && !(org.systemManagers || []).includes(val)) {
+                            setOrg(p => ({ ...p, systemManagers: [...(p.systemManagers || []), val] }));
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="교직원 선택..." /></SelectTrigger>
+                        <SelectContent>
+                          {users.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* 보건교사, 특수교사, 사서교사 지정 카드 (3열 구성) */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                    {/* 보건교사 */}
+                    <div className="space-y-2 border p-3 rounded-lg bg-emerald-50/50">
+                      <Label className="font-bold text-emerald-800">보건교사 (복수)</Label>
+                      <div className="flex flex-wrap gap-1 p-2 border rounded-md min-h-[50px] bg-white">
+                        {(org.healthTeachers || []).length === 0 ? (
+                          <span className="text-xs text-muted-foreground self-center">지정된 교사 없음</span>
+                        ) : (
+                          (org.healthTeachers || []).map(email => {
+                            const u = users.find(x => x.email === email);
+                            return (
+                              <span key={email} className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                {u ? u.name : email}
+                                <button 
+                                  type="button" 
+                                  onClick={() => setOrg(p => ({ ...p, healthTeachers: (p.healthTeachers || []).filter(x => x !== email) }))}
+                                  className="text-emerald-600 hover:text-emerald-800 font-bold ml-1"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })
+                        )}
+                      </div>
+                      <Select 
+                        value="" 
+                        onValueChange={(val) => {
+                          if (val && !(org.healthTeachers || []).includes(val)) {
+                            setOrg(p => ({ ...p, healthTeachers: [...(p.healthTeachers || []), val] }));
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="교직원 선택..." /></SelectTrigger>
+                        <SelectContent>
+                          {users.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* 특수교사 (도움반) */}
+                    <div className="space-y-2 border p-3 rounded-lg bg-teal-50/50">
+                      <Label className="font-bold text-teal-800">특수교사 / 도움반 (복수)</Label>
+                      <div className="flex flex-wrap gap-1 p-2 border rounded-md min-h-[50px] bg-white">
+                        {(org.specialTeachers || []).length === 0 ? (
+                          <span className="text-xs text-muted-foreground self-center">지정된 교사 없음</span>
+                        ) : (
+                          (org.specialTeachers || []).map(email => {
+                            const u = users.find(x => x.email === email);
+                            return (
+                              <span key={email} className="inline-flex items-center gap-1 bg-teal-100 text-teal-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                {u ? u.name : email}
+                                <button 
+                                  type="button" 
+                                  onClick={() => setOrg(p => ({ ...p, specialTeachers: (p.specialTeachers || []).filter(x => x !== email) }))}
+                                  className="text-teal-600 hover:text-teal-800 font-bold ml-1"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })
+                        )}
+                      </div>
+                      <Select 
+                        value="" 
+                        onValueChange={(val) => {
+                          if (val && !(org.specialTeachers || []).includes(val)) {
+                            setOrg(p => ({ ...p, specialTeachers: [...(p.specialTeachers || []), val] }));
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="교직원 선택..." /></SelectTrigger>
+                        <SelectContent>
+                          {users.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* 사서교사 */}
+                    <div className="space-y-2 border p-3 rounded-lg bg-indigo-50/50">
+                      <Label className="font-bold text-indigo-800">사서교사 (복수)</Label>
+                      <div className="flex flex-wrap gap-1 p-2 border rounded-md min-h-[50px] bg-white">
+                        {(org.librarianTeachers || []).length === 0 ? (
+                          <span className="text-xs text-muted-foreground self-center">지정된 교사 없음</span>
+                        ) : (
+                          (org.librarianTeachers || []).map(email => {
+                            const u = users.find(x => x.email === email);
+                            return (
+                              <span key={email} className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                {u ? u.name : email}
+                                <button 
+                                  type="button" 
+                                  onClick={() => setOrg(p => ({ ...p, librarianTeachers: (p.librarianTeachers || []).filter(x => x !== email) }))}
+                                  className="text-indigo-600 hover:text-indigo-800 font-bold ml-1"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })
+                        )}
+                      </div>
+                      <Select 
+                        value="" 
+                        onValueChange={(val) => {
+                          if (val && !(org.librarianTeachers || []).includes(val)) {
+                            setOrg(p => ({ ...p, librarianTeachers: [...(p.librarianTeachers || []), val] }));
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="교직원 선택..." /></SelectTrigger>
+                        <SelectContent>
+                          {users.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* 교과전담교사 등록 카드 (과목명 커스텀 등록 및 교원 지정) */}
+                  <div className="space-y-3 border p-4 rounded-xl bg-purple-50/40 border-purple-200 mt-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h5 className="font-bold text-sm text-purple-900">교과전담교사 등록 및 담당 지정</h5>
+                        <p className="text-xs text-purple-700/80">체육전담, 영어전담 등 과목 명칭을 관리자가 직접 등록하고 담당 교원을 배정합니다.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 max-w-md">
+                      <Input 
+                        placeholder="새 과목 명칭 입력 (예: 체육전담, 영어전담)" 
+                        value={newSubjectCategoryName} 
+                        onChange={e => setNewSubjectCategoryName(e.target.value)}
+                        className="h-8 text-xs bg-white border-purple-200"
+                      />
+                      <Button 
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          if (!newSubjectCategoryName.trim()) {
+                            toast({ variant: 'destructive', title: '과목명 입력', description: '추가할 과목 명칭을 입력하세요.' });
+                            return;
+                          }
+                          const newGrp = {
+                            id: Date.now().toString(),
+                            categoryName: newSubjectCategoryName.trim(),
+                            teacherEmails: []
+                          };
+                          setOrg(p => ({ ...p, subjectTeacherGroups: [...(p.subjectTeacherGroups || []), newGrp] }));
+                          setNewSubjectCategoryName('');
+                          toast({ title: '과목 등록 완료', description: `"${newGrp.categoryName}" 카테고리가 추가되었습니다.` });
+                        }}
+                        className="h-8 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shrink-0"
+                      >
+                        <PlusCircle className="w-3.5 h-3.5 mr-1" />
+                        과목 추가
+                      </Button>
+                    </div>
+
+                    {/* 등록된 교과전담 과목 및 담당 교사 태그 목록 */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                      {(org.subjectTeacherGroups || []).length === 0 ? (
+                        <div className="col-span-full py-4 text-center text-xs text-slate-400">
+                          등록된 교과전담 과목이 없습니다. 위에서 과목 명칭을 입력하여 추가하세요.
+                        </div>
+                      ) : (
+                        (org.subjectTeacherGroups || []).map(group => (
+                          <div key={group.id} className="border border-purple-200 rounded-lg p-2.5 bg-white space-y-2">
+                            <div className="flex items-center justify-between border-b pb-1.5">
+                              <span className="font-bold text-xs text-purple-900">{group.categoryName}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOrg(p => ({
+                                    ...p,
+                                    subjectTeacherGroups: (p.subjectTeacherGroups || []).filter(g => g.id !== group.id)
+                                  }));
+                                }}
+                                className="text-slate-400 hover:text-rose-600 text-xs font-bold p-0.5"
+                              >
+                                삭제
+                              </button>
+                            </div>
+
+                            <div className="flex flex-wrap gap-1 min-h-[36px] items-center p-1 border border-dashed rounded bg-slate-50">
+                              {group.teacherEmails.length === 0 ? (
+                                <span className="text-[11px] text-slate-400">담당 교사 없음</span>
+                              ) : (
+                                group.teacherEmails.map(email => {
+                                  const u = users.find(x => x.email === email);
+                                  return (
+                                    <span key={email} className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                      {u ? u.name : email}
+                                      <button 
+                                        type="button" 
+                                        onClick={() => {
+                                          setOrg(p => ({
+                                            ...p,
+                                            subjectTeacherGroups: (p.subjectTeacherGroups || []).map(g => 
+                                              g.id === group.id 
+                                                ? { ...g, teacherEmails: g.teacherEmails.filter(x => x !== email) }
+                                                : g
+                                            )
+                                          }));
+                                        }}
+                                        className="text-purple-600 hover:text-purple-800 font-bold ml-0.5"
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                  );
+                                })
+                              )}
+                            </div>
+
+                            <Select 
+                              value="" 
+                              onValueChange={(val) => {
+                                if (val && !group.teacherEmails.includes(val)) {
+                                  setOrg(p => ({
+                                    ...p,
+                                    subjectTeacherGroups: (p.subjectTeacherGroups || []).map(g => 
+                                      g.id === group.id 
+                                        ? { ...g, teacherEmails: [...g.teacherEmails, val] }
+                                        : g
+                                    )
+                                  }));
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="h-7 text-[11px]"><SelectValue placeholder="담당 교사 지정..." /></SelectTrigger>
+                              <SelectContent>
+                                {users.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1101,135 +2070,286 @@ export function SettingsModal() {
           </TabsContent>
 
           <TabsContent value="users" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
-            <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-4">
-              <Card>
-                  <CardHeader className="pb-3">
-                      <CardTitle className="text-lg">사용자 일괄 등록</CardTitle>
-                      <CardDescription>
-                         엑셀 파일로 사용자를 추가하거나 업데이트합니다.
-                      </CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex flex-col sm:flex-row items-center gap-4">
-                      <Input type="file" accept=".xlsx, .xls" onChange={onFileSelect} className="flex-grow"/>
-                      <div className="flex gap-2 w-full sm:w-auto">
-                          <Button onClick={handleDownloadTemplate} variant="outline" size="sm">
-                              <Download className="mr-2 h-4 w-4"/>
-                              양식
-                          </Button>
-                          <Button onClick={handleBulkUpload} disabled={isUploading || !selectedFile} size="sm">
-                              {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileUp className="mr-2 h-4 w-4"/>}
-                              업로드
-                          </Button>
-                      </div>
-                  </CardContent>
-              </Card>
-
-              <div className="flex justify-between items-center px-1">
-                  <h3 className="text-lg font-semibold">사용자 목록 ({users.length})</h3>
-                  {!isAddingNewUser && (
-                      <Button variant="outline" size="sm" onClick={() => setIsAddingNewUser(true)}>
-                          <PlusCircle className="mr-2 h-4 w-4" />
-                          추가
+            <div className="flex-1 min-h-0 px-6 py-4 flex flex-col gap-3">
+              {/* 일괄 등록 팝업 다이얼로그 */}
+              <Dialog open={isBulkUploadOpen} onOpenChange={setIsBulkUploadOpen}>
+                <DialogContent className="sm:max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>사용자 일괄 등록</DialogTitle>
+                    <DialogDescription>엑셀 파일로 사용자를 추가하거나 업데이트합니다.</DialogDescription>
+                  </DialogHeader>
+                  <div className="flex flex-col gap-4 py-2">
+                    <Input type="file" accept=".xlsx, .xls" onChange={onFileSelect} />
+                    <div className="flex gap-2 justify-end">
+                      <Button onClick={handleDownloadTemplate} variant="outline" size="sm">
+                        <Download className="mr-2 h-4 w-4"/>양식 다운로드
                       </Button>
-                  )}
-              </div>
+                      <Button onClick={() => { handleBulkUpload(); setIsBulkUploadOpen(false); }} disabled={isUploading || !selectedFile} size="sm">
+                        {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileUp className="mr-2 h-4 w-4"/>}
+                        업로드
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
 
-              <div className="border rounded-md flex-1 overflow-y-auto">
-                <Table>
-                    <TableHeader className="sticky top-0 bg-background z-10">
-                    <TableRow>
-                        <TableHead>사용자</TableHead>
-                        <TableHead className="w-[130px]">직책</TableHead>
-                        <TableHead className="w-[90px] text-center">연가(일)</TableHead>
-                        <TableHead className="w-[100px]">관리자</TableHead>
-                        <TableHead className="w-[70px] text-right">관리</TableHead>
-                    </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                    {isAddingNewUser && (
-                        <TableRow className="bg-muted/50">
-                            <TableCell className="flex flex-col gap-2">
-                            <Input 
-                                placeholder="이름" 
-                                value={newUser.name}
-                                onChange={(e) => setNewUser(p => ({ ...p, name: e.target.value }))}
-                                className="h-8"
-                            />
-                            <Input 
-                                placeholder="이메일" 
-                                value={newUser.email} 
-                                onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
-                                className="h-8"
-                            />
+              <Tabs defaultValue="teachers" className="flex-1 min-h-0 flex flex-col">
+                <div className="flex justify-between items-center px-1 shrink-0 mb-2">
+                    <TabsList className="grid grid-cols-2 w-[340px]">
+                      <TabsTrigger value="teachers">교직원 ({users.filter(u => u.email === 'beside1s@kshcm.net' || (!u.studentName && u.role !== '학부모' && u.role !== 'student')).length})</TabsTrigger>
+                      <TabsTrigger value="students">학생 계정 ({users.filter(u => u.email !== 'beside1s@kshcm.net' && (!!u.studentName || u.role === '학부모' || u.role === 'student' || /^\d{4}[a-zA-Z]+@kshcm\.net$/i.test(u.email))).length})</TabsTrigger>
+                    </TabsList>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setIsBulkUploadOpen(true)}>
+                        <FileUp className="mr-2 h-4 w-4" />일괄 등록
+                      </Button>
+                      {!isAddingNewUser && (
+                          <Button variant="outline" size="sm" onClick={() => setIsAddingNewUser(true)}>
+                              <PlusCircle className="mr-2 h-4 w-4" />추가
+                          </Button>
+                      )}
+                    </div>
+                </div>
+
+                <TabsContent value="teachers" className="flex-1 min-h-0 data-[state=active]:flex flex-col border rounded-md overflow-y-auto">
+                  <Table>
+                      <TableHeader className="sticky top-0 bg-background z-10">
+                      <TableRow>
+                          <TableHead className="w-[150px]">사용자</TableHead>
+                          <TableHead>소속 (학년/부서)</TableHead>
+                          <TableHead className="w-[140px]">직책</TableHead>
+                          <TableHead className="w-[80px] text-center">연가(일)</TableHead>
+                          <TableHead className="w-[85px]">관리자</TableHead>
+                          <TableHead className="w-[60px] text-right">관리</TableHead>
+                      </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                      {isAddingNewUser && (
+                          <TableRow className="bg-muted/50">
+                              <TableCell className="flex flex-col gap-2">
+                              <Input 
+                                  placeholder="이름" 
+                                  value={newUser.name}
+                                  onChange={(e) => setNewUser(p => ({ ...p, name: e.target.value }))}
+                                  className="h-8"
+                              />
+                              <Input 
+                                  placeholder="이메일" 
+                                  value={newUser.email} 
+                                  onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
+                                  className="h-8"
+                              />
+                              </TableCell>
+                              <TableCell className="align-top pt-3">
+                              <Input 
+                                  placeholder="소속 (예: 1학년부)" 
+                                  value={newUser.dept || ''} 
+                                  onChange={(e) => setNewUser(p => ({ ...p, dept: e.target.value }))}
+                                  className="h-8"
+                              />
+                              </TableCell>
+                              <TableCell className="align-top pt-3">
+                                  <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r }))}>
+                                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                                      <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+                                  </Select>
+                              </TableCell>
+                              <TableCell className="align-top pt-3"></TableCell>
+                              <TableCell></TableCell>
+                              <TableCell className="text-right align-top pt-3">
+                                  <div className="flex justify-end gap-1">
+                                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleAddNewUser}><Save className="h-4 w-4 text-primary"/></Button>
+                                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setIsAddingNewUser(false)}><XCircle className="h-4 w-4 text-muted-foreground"/></Button>
+                                  </div>
+                              </TableCell>
+                          </TableRow>
+                      )}
+                      {users.filter(user => user.email === 'beside1s@kshcm.net' || (!user.studentName && user.role !== '학부모' && user.role !== 'student')).map(user => (
+                        <TableRow key={user.email}>
+                          <TableCell>
+                          <div className="font-medium">{user.name}</div>
+                          <div className="text-xs text-muted-foreground">{user.email}</div>
+                          </TableCell>
+                          <TableCell className="text-sm font-semibold text-slate-600 max-w-[200px] truncate" title={user.dept || getUserDepartmentOrClass(user.email, org)}>
+                            {user.dept || getUserDepartmentOrClass(user.email, org)}
+                          </TableCell>
+                          <TableCell>
+                          <Select 
+                              value={user.role} 
+                              onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
+                              >
+                              <SelectTrigger className="h-8">
+                                  <SelectValue placeholder="직책" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                  {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                              </SelectContent>
+                              </Select>
+                          </TableCell>
+                          <TableCell className="text-center">
+                              <Input
+                                  type="number"
+                                  min={1}
+                                  max={30}
+                                  className="h-8 w-16 text-center mx-auto"
+                                  value={user.annualLeaveLimit ?? 21}
+                                  onChange={async (e) => {
+                                      const val = parseInt(e.target.value);
+                                      if (!isNaN(val) && val > 0) {
+                                          await handleUserUpdate(user.uid, user.email, 'annualLeaveLimit', val);
+                                      }
+                                  }}
+                              />
+                          </TableCell>
+                          <TableCell>
+                              <Switch 
+                                  id={`admin-${user.email}`} 
+                                  checked={user.isAdmin}
+                                  onCheckedChange={(checked) => handleUserUpdate(user.uid, user.email, 'isAdmin', checked)}
+                                  disabled={user.email === 'beside1s@kshcm.net'} // 슈퍼 관리자 보호
+                              />
+                          </TableCell>
+                          <TableCell className="text-right">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive/90" onClick={() => confirmDeleteUser(user)}>
+                                  <Trash2 className="h-4 w-4" />
+                              </Button>
+                          </TableCell>
+                      </TableRow>
+                      ))}
+                      </TableBody>
+                  </Table>
+                </TabsContent>
+
+                <TabsContent value="students" className="flex-1 min-h-0 data-[state=active]:flex flex-col border rounded-md overflow-y-auto mt-0">
+                  <Table>
+                      <TableHeader className="sticky top-0 bg-background z-10">
+                      <TableRow>
+                          <TableHead className="w-[120px]">학년/반/번호</TableHead>
+                          <TableHead>학생 이름</TableHead>
+                          <TableHead>보호자 이름</TableHead>
+                          <TableHead>학생 계정 이메일 (학부모 겸용)</TableHead>
+                          <TableHead>보호자 연락처</TableHead>
+                          <TableHead className="w-[100px] text-center">PIN 설정</TableHead>
+                          <TableHead className="w-[70px] text-right">관리</TableHead>
+                      </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                      {isAddingNewUser && (
+                          <TableRow className="bg-muted/50">
+                              <TableCell className="flex gap-1.5 align-top pt-3">
+                              <Input 
+                                  placeholder="학년" 
+                                  value={newStudent.grade}
+                                  onChange={(e) => setNewStudent(p => ({ ...p, grade: e.target.value }))}
+                                  className="h-8 w-12"
+                              />
+                              <Input 
+                                  placeholder="반" 
+                                  value={newStudent.class}
+                                  onChange={(e) => setNewStudent(p => ({ ...p, class: e.target.value }))}
+                                  className="h-8 w-12"
+                              />
+                              <Input 
+                                  placeholder="번호" 
+                                  value={newStudent.number}
+                                  onChange={(e) => setNewStudent(p => ({ ...p, number: e.target.value }))}
+                                  className="h-8 w-14"
+                              />
+                              </TableCell>
+                              <TableCell className="align-top pt-3">
+                              <Input 
+                                  placeholder="학생 이름" 
+                                  value={newStudent.studentName}
+                                  onChange={(e) => setNewStudent(p => ({ ...p, studentName: e.target.value }))}
+                                  className="h-8"
+                              />
+                              </TableCell>
+                              <TableCell className="align-top pt-3">
+                              <Input 
+                                  placeholder="학부모 이름" 
+                                  value={newStudent.parentName}
+                                  onChange={(e) => setNewStudent(p => ({ ...p, parentName: e.target.value }))}
+                                  className="h-8"
+                              />
+                              </TableCell>
+                              <TableCell className="align-top pt-3">
+                              <Input 
+                                  placeholder="학부모 이메일" 
+                                  value={newStudent.email}
+                                  onChange={(e) => setNewStudent(p => ({ ...p, email: e.target.value }))}
+                                  className="h-8"
+                              />
+                              </TableCell>
+                              <TableCell className="align-top pt-3">
+                              <Input 
+                                  placeholder="학부모 연락처" 
+                                  value={newStudent.phone}
+                                  onChange={(e) => setNewStudent(p => ({ ...p, phone: e.target.value }))}
+                                  className="h-8"
+                              />
+                              </TableCell>
+                              <TableCell className="align-top pt-3 text-center"></TableCell>
+                              <TableCell className="text-right align-top pt-3">
+                                  <div className="flex justify-end gap-1">
+                                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleAddNewStudent}><Save className="h-4 w-4 text-primary"/></Button>
+                                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setIsAddingNewUser(false)}><XCircle className="h-4 w-4 text-muted-foreground"/></Button>
+                                  </div>
+                              </TableCell>
+                          </TableRow>
+                      )}
+                      {users.filter(user => user.email !== 'beside1s@kshcm.net' && (!!user.studentName || user.role === '학부모' || user.role === 'student' || /^\d{4}[a-zA-Z]+@kshcm\.net$/i.test(user.email))).map(user => (
+                      <TableRow key={user.email} className={editingStudent?.email === user.email ? 'bg-blue-50' : ''}>
+                        {editingStudent?.email === user.email ? (
+                          <>
+                            <TableCell className="p-1">
+                              <div className="flex gap-1">
+                                <Input placeholder="학년" value={editStudentForm.grade} onChange={(e) => setEditStudentForm(p => ({...p, grade: e.target.value}))} className="h-7 w-12 text-xs"/>
+                                <Input placeholder="반" value={editStudentForm.class} onChange={(e) => setEditStudentForm(p => ({...p, class: e.target.value}))} className="h-7 w-12 text-xs"/>
+                                <Input placeholder="번호" value={editStudentForm.number} onChange={(e) => setEditStudentForm(p => ({...p, number: e.target.value}))} className="h-7 w-12 text-xs"/>
+                              </div>
                             </TableCell>
-                            <TableCell className="align-top pt-3">
-                                <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r }))}>
-                                    <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                                    <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
-                                </Select>
+                            <TableCell className="p-1"><Input placeholder="학생 이름" value={editStudentForm.studentName} onChange={(e) => setEditStudentForm(p => ({...p, studentName: e.target.value}))} className="h-7 text-xs"/></TableCell>
+                            <TableCell className="p-1"><Input placeholder="학부모 이름" value={editStudentForm.parentName} onChange={(e) => setEditStudentForm(p => ({...p, parentName: e.target.value}))} className="h-7 text-xs"/></TableCell>
+                            <TableCell className="p-1 text-xs text-slate-500">{user.email}</TableCell>
+                            <TableCell className="p-1"><Input placeholder="연락처" value={editStudentForm.phone} onChange={(e) => setEditStudentForm(p => ({...p, phone: e.target.value}))} className="h-7 text-xs"/></TableCell>
+                            <TableCell className="text-center text-xs">{user.hashedPin ? '✅ 설정됨' : '❌ 미설정'}</TableCell>
+                            <TableCell className="text-right p-1">
+                              <div className="flex justify-end gap-1">
+                                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={handleSaveEditStudent}><Save className="h-3.5 w-3.5 text-primary"/></Button>
+                                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingStudent(null)}><XCircle className="h-3.5 w-3.5 text-muted-foreground"/></Button>
+                              </div>
                             </TableCell>
-                            <TableCell className="align-top pt-3"></TableCell>
-                            <TableCell></TableCell>
-                            <TableCell className="text-right align-top pt-3">
-                                <div className="flex justify-end gap-1">
-                                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleAddNewUser}><Save className="h-4 w-4 text-primary"/></Button>
-                                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setIsAddingNewUser(false)}><XCircle className="h-4 w-4 text-muted-foreground"/></Button>
-                                </div>
+                          </>
+                        ) : (
+                          <>
+                            <TableCell className="font-semibold text-slate-700">
+                              {user.studentGrade ? `${user.studentGrade}학년 ${user.studentClass}반 ${user.studentNumber ? `${user.studentNumber}번` : ''}` : '미배정'}
                             </TableCell>
-                        </TableRow>
-                    )}
-                    {users.map(user => (
-                    <TableRow key={user.email}>
-                        <TableCell>
-                        <div className="font-medium">{user.name}</div>
-                        <div className="text-xs text-muted-foreground">{user.email}</div>
-                        </TableCell>
-                        <TableCell>
-                        <Select 
-                            value={user.role} 
-                            onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
-                            >
-                            <SelectTrigger className="h-8">
-                                <SelectValue placeholder="직책" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                            </SelectContent>
-                            </Select>
-                        </TableCell>
-                        <TableCell className="text-center">
-                            <Input
-                                type="number"
-                                min={1}
-                                max={30}
-                                className="h-8 w-16 text-center mx-auto"
-                                value={user.annualLeaveLimit ?? 21}
-                                onChange={async (e) => {
-                                    const val = parseInt(e.target.value);
-                                    if (!isNaN(val) && val > 0) {
-                                        await handleUserUpdate(user.uid, user.email, 'annualLeaveLimit', val);
-                                    }
-                                }}
-                            />
-                        </TableCell>
-                        <TableCell>
-                            <Switch 
-                                id={`admin-${user.email}`} 
-                                checked={user.isAdmin}
-                                onCheckedChange={(checked) => handleUserUpdate(user.uid, user.email, 'isAdmin', checked)}
-                                disabled={user.email === 'beside1s@kshcm.net'} // 슈퍼 관리자 보호
-                            />
-                        </TableCell>
-                        <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive/90" onClick={() => confirmDeleteUser(user)}>
-                                <Trash2 className="h-4 w-4" />
-                            </Button>
-                        </TableCell>
-                    </TableRow>
-                    ))}
-                    </TableBody>
-                </Table>
-              </div>
+                            <TableCell className="font-bold text-slate-900">{user.studentName || '-'}</TableCell>
+                            <TableCell className="font-medium text-slate-800">{user.parentName || user.name}</TableCell>
+                            <TableCell className="text-slate-600 text-xs">{user.email}</TableCell>
+                            <TableCell className="text-slate-600 text-xs">{user.parentPhone || '-'}</TableCell>
+                            <TableCell className="text-center text-xs">
+                              {user.hashedPin ? '✅ 설정됨' : '❌ 미설정'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-slate-900" onClick={() => handleStartEditStudent(user)}>
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive/90" onClick={() => confirmDeleteUser(user)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </>
+                        )}
+                      </TableRow>
+                      ))}
+                      </TableBody>
+                  </Table>
+                </TabsContent>
+              </Tabs>
             </div>
           </TabsContent>
 

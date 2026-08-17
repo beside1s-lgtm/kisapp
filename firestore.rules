@@ -27,12 +27,15 @@ service cloud.firestore {
         isAdmin() ||
         // 2. 기안자 본인이거나
         resource.data.requesterId == request.auth.uid ||
+        (resource.data.requesterEmail != null && resource.data.requesterEmail == getEmail()) ||
         // 3. 결재선에 등록된 결재자이거나
         (resource.data.approverEmails != null && getEmail() in resource.data.approverEmails) ||
         // 4. 참조인(circulars)에 등록된 참조인이거나
         (resource.data.circularEmails != null && getEmail() in resource.data.circularEmails) ||
         // 5. 완료된 공개 문서이거나 (단, 학부모/학생 출결 및 체험학습 문서는 개인정보이므로 공개 열람 대상에서 원천 배제)
-        (resource.data.docType != 'parent' && resource.data.status == 'approved' && (resource.data.publishStatus == '공개' || resource.data.publishStatus == '부분공개'))
+        (resource.data.docType != 'parent' && resource.data.status == 'approved' && (resource.data.publishStatus == '공개' || resource.data.publishStatus == '부분공개')) ||
+        // 6. 학부모 신청서/결석계 문서(docType == 'parent')의 경우 로그인한 사용자는 조회 가능하도록 허용 (한도 계산 및 담임 확인용)
+        (resource.data.docType == 'parent')
       );
 
       // 생성 권한 (본인 기안만 허용)
@@ -46,23 +49,32 @@ service cloud.firestore {
         // 1. 관리자이거나
         isAdmin() ||
         // 2. 기안자 본인이 문서가 대기중이거나 회수된 상태에서 수정할 때
-        (resource.data.requesterId == request.auth.uid && (resource.data.status == 'pending' || resource.data.status == 'recalled')) ||
+        ((resource.data.requesterId == request.auth.uid || (resource.data.requesterEmail != null && resource.data.requesterEmail == getEmail())) && (resource.data.status == 'pending' || resource.data.status == 'recalled')) ||
         // 3. 결재 참여자(결재선에 있는 사람)가 결재 진행중인 단계에서 업데이트할 때
-        (resource.data.approverEmails != null && getEmail() in resource.data.approverEmails)
+        (resource.data.approverEmails != null && getEmail() in resource.data.approverEmails) ||
+        // 4. [체험학습 결과보고서 일체형 병합] 기안자 본인이 승인 완료된 체험학습 신청서에 보고서 데이터를 추가(병합)할 때
+        (resource.data.status == 'approved' && resource.data.docType == 'parent' &&
+          (resource.data.requesterId == request.auth.uid || (resource.data.requesterEmail != null && resource.data.requesterEmail == getEmail())) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parentFormData', 'content', 'reportSubmitted', 'reportSubmittedAt', 'updatedAt']))
       );
     }
 
     // users 컬렉션 보안 규칙
     match /users/{email} {
-      allow read: if isSignedIn();
+      allow get, list, read: if true;
       // 관리자이거나 본인 프로필만 쓰기 가능
-      allow write: if isSignedIn() && (isAdmin() || email.lower() == getEmail());
+      allow write: if true;
+    }
+
+    // master_students 통합 학생 마스터 컬렉션 보안 규칙
+    match /master_students/{id} {
+      allow read, write: if true;
     }
 
     // settings 컬렉션 보안 규칙
     match /settings/{settingId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() || (settingId == 'docConfig' && isSignedIn());
+      allow read: if isSignedIn() || settingId == 'global' || settingId == 'busSettings' || settingId == 'afterschoolSettings' || settingId == 'afterschoolTimer' || settingId == 'afterschoolTeacherApplySettings' || settingId == 'docConfig' || settingId == 'orgStructure' || settingId == 'materialBudgetSettings';
+      allow write: if isAdmin() || (settingId == 'docConfig' && isSignedIn()) || (settingId == 'afterschoolTimer' && isSignedIn()) || (settingId == 'afterschoolTeacherApplySettings' && isSignedIn()) || (settingId == 'materialBudgetSettings' && isSignedIn());
     }
 
     // mail 컬렉션 보안 규칙 (Trigger Email 연동)
@@ -103,6 +115,128 @@ service cloud.firestore {
         // 2. 개인 프리셋의 경우 본인 소유인 경우에만 수정/삭제 가능
         (resource.data.type == 'personal' && resource.data.ownerEmail.lower() == getEmail())
       );
+    }
+
+    // --- [스쿨버스 서비스 관련 규칙] ---
+    match /buses/{id} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+    match /routes/{id} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+    match /destinations/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /assignments/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /teachers/{id} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+    match /students/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /attendance/{id} {
+      allow read, write: if true;
+    }
+    match /lost-items/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /lostItems/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /group-leaders/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /groupLeaders/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /afterSchoolTeachers/{id} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+    match /saturdayTeachers/{id} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+    match /notifications/{id} {
+      allow read, write: if true;
+    }
+
+    // --- [방과후학교 서비스 관련 규칙] ---
+    match /after-school-classes/{id} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+    match /afterSchoolClasses/{id} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // --- [설정/설정관리용 config 컬렉션 규칙] ---
+    match /config/{id} {
+      allow read: if true;
+      allow write: if isAdmin() || isSignedIn(); // 교사도 일부 PIN/비밀번호 등을 쓸 수 있으므로 허용
+    }
+
+    // --- [방과후학교 강좌/신청 실시간 연동 규칙] ---
+    match /afterschool_courses/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /afterschool_enrollments/{id} {
+      allow read, write: if true;
+    }
+    match /afterschool_classrooms/{id} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+    // 학습준비물 신청: 로그인한 강사 누구나 신청(create), 관리자만 승인/반려(update), 누구나 읽기
+    match /afterschool_material_requests/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn(); // 강사 본인 수정 + 관리자 승인/반려 모두 허용
+      allow delete: if isSignedIn();
+    }
+    // 지출증빙서류 제출
+    match /afterschool_expense_proofs/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+    // 제출 독촉 알림
+    match /afterschool_reminders/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+    // 방과후 출석부 저장
+    match /afterschool_attendance/{id} {
+      allow read, write: if true;
+    }
+    // 강좌 출석부/출근부 결재 기안 문서
+    match /afterschool_approval_docs/{id} {
+      allow read, write: if true;
+    }
+    // 환불 내역 저장
+    match /afterschool_refunds/{id} {
+      allow read, write: if true;
+    }
+    // 보결 강사 및 결강/보결 기록 저장
+    match /afterschool_substitutes/{id} {
+      allow read, write: if true;
     }
   }
 }

@@ -1,27 +1,49 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 
-export default function AppPage() {
+function RootRedirect() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const searchParams = useSearchParams();
+  const { user, loading, isParent } = useAuth();
+
+  const redirectTarget = searchParams.get('redirect') || searchParams.get('next');
 
   useEffect(() => {
-    if(!loading) {
+    if (!loading) {
       if (user) {
-        router.replace('/inbox');
+        if (redirectTarget && redirectTarget.startsWith('/')) {
+          router.replace(redirectTarget);
+        } else if (isParent) {
+          router.replace('/parents/apply');
+        } else {
+          router.replace('/inbox');
+        }
       } else {
-        router.replace('/login');
+        const loginUrl = redirectTarget ? `/login?redirect=${encodeURIComponent(redirectTarget)}` : '/login';
+        router.replace(loginUrl);
       }
     }
-  }, [router, user, loading]);
+  }, [router, user, loading, redirectTarget, isParent]);
 
   return (
-    <div className="flex h-full w-full items-center justify-center">
+    <div className="flex h-screen w-full items-center justify-center bg-background">
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
     </div>
+  );
+}
+
+export default function AppPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    }>
+      <RootRedirect />
+    </Suspense>
   );
 }

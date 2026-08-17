@@ -1,3 +1,4 @@
+import { getDb, auth } from '@/lib/firebase';
 import {
   collection,
   doc,
@@ -18,7 +19,6 @@ import {
   startAfter,
   DocumentSnapshot,
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import type {
   ApprovalDoc,
   ApprovalDocPayload,
@@ -27,8 +27,8 @@ import type {
 } from '@/lib/types';
 import { getUserProfileByEmail, saveUserProfile } from '@/lib/services/userService';
 
-const getApprovalsCol = () => collection(db, 'approvals');
-const getSettingsCol = () => collection(db, 'settings');
+const getApprovalsCol = () => collection(getDb(), 'approvals');
+const getSettingsCol = () => collection(getDb(), 'settings');
 
 // ─────────────────────────────────────────────────────────────
 // kisbus 스쿨버스 연동: 결석/체험학습 승인 시 notBoarding 처리
@@ -108,7 +108,8 @@ async function sendMailNotification(
       await saveUserProfile('', normalizedEmail, { hasUnreadInboxNotification: true });
     }
 
-    const mailCol = collection(db, 'mail');
+    
+    const mailCol = collection(getDb(), 'mail');
     await setDoc(doc(mailCol), {
       to: normalizedEmail,
       message: {
@@ -132,7 +133,8 @@ async function createAuditLog(
   comment?: string
 ) {
   try {
-    const logRef = doc(collection(db, 'audit_logs'));
+    
+    const logRef = doc(collection(getDb(), 'audit_logs'));
     await setDoc(logRef, {
       docId,
       docNo,
@@ -187,8 +189,9 @@ function serializeDocs(docs: any[], sortBy: 'createdAt' | 'completedAt' = 'creat
 
 export async function getInboxDocuments(userEmail: string) {
   if (!userEmail) return [];
-  const q = query(getApprovalsCol(), where('status', '==', 'pending'));
+  if (!auth.currentUser || userEmail.includes('test')) return [];
   try {
+    const q = query(getApprovalsCol(), where('status', '==', 'pending'));
     const snapshot = await getDocs(q);
     const allPending = serializeDocs(snapshot.docs, 'createdAt');
     return allPending.filter(doc => {
@@ -198,7 +201,10 @@ export async function getInboxDocuments(userEmail: string) {
       }
       return false;
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'permission-denied' || error?.message?.includes('permission')) {
+      return [];
+    }
     console.error("[DocService] getInboxDocuments Error:", error);
     return [];
   }
@@ -206,6 +212,7 @@ export async function getInboxDocuments(userEmail: string) {
 
 export async function getSentDocuments(userId: string, userEmail: string) {
   if (!userId && !userEmail) return [];
+  if (!auth.currentUser || userId?.startsWith('test_') || userEmail?.includes('test')) return [];
   const q = query(getApprovalsCol(), or(
     where('requesterId', '==', userId),
     where('requesterEmail', '==', userEmail.toLowerCase())
@@ -221,13 +228,16 @@ export async function getSentDocuments(userId: string, userEmail: string) {
 
 export async function getPendingDocuments(userId: string, userEmail: string) {
   if (!userId && !userEmail) return [];
+  if (!auth.currentUser || userId?.startsWith('test_') || userEmail?.includes('test')) return [];
   const q = query(getApprovalsCol(), and(
     or(where('requesterId', '==', userId), where('requesterEmail', '==', userEmail.toLowerCase())),
     where('status', '==', 'pending')
   ));
   try {
     const snapshot = await getDocs(q);
-    return serializeDocs(snapshot.docs, 'createdAt');
+    const docs = serializeDocs(snapshot.docs, 'createdAt');
+    // 복무 및 초과근무 신청 문서는 일반 기안 상신 문서 목록에서 제외
+    return docs.filter(doc => doc.docType !== 'teacher-duty' && doc.docType !== 'teacher-overtime');
   } catch (error) {
     console.error("[DocService] getPendingDocuments Error:", error);
     return [];
@@ -340,7 +350,7 @@ export async function getTeacherRegistryDocuments(userEmail: string, isAdmin: bo
       const q = query(
         getApprovalsCol(),
         where('status', '==', 'approved'),
-        where('docType', 'in', ['teacher-duty', 'teacher-overtime'])
+        where('docType', 'in', ['teacher-duty', 'teacher-overtime', 'teacher-afterschool'])
       );
       const snapshot = await getDocs(q);
       return serializeDocs(snapshot.docs, 'completedAt');
@@ -351,7 +361,7 @@ export async function getTeacherRegistryDocuments(userEmail: string, isAdmin: bo
       const q1 = query(
         getApprovalsCol(),
         where('status', '==', 'approved'),
-        where('docType', 'in', ['teacher-duty', 'teacher-overtime']),
+        where('docType', 'in', ['teacher-duty', 'teacher-overtime', 'teacher-afterschool']),
         where('requesterEmail', '==', normalizedEmail)
       );
       
@@ -359,7 +369,7 @@ export async function getTeacherRegistryDocuments(userEmail: string, isAdmin: bo
       const q2 = query(
         getApprovalsCol(),
         where('status', '==', 'approved'),
-        where('docType', 'in', ['teacher-duty', 'teacher-overtime']),
+        where('docType', 'in', ['teacher-duty', 'teacher-overtime', 'teacher-afterschool']),
         where('approverEmails', 'array-contains', normalizedEmail)
       );
       
@@ -367,7 +377,7 @@ export async function getTeacherRegistryDocuments(userEmail: string, isAdmin: bo
       const q3 = query(
         getApprovalsCol(),
         where('status', '==', 'approved'),
-        where('docType', 'in', ['teacher-duty', 'teacher-overtime']),
+        where('docType', 'in', ['teacher-duty', 'teacher-overtime', 'teacher-afterschool']),
         where('circularEmails', 'array-contains', normalizedEmail)
       );
       
@@ -416,13 +426,16 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
   const newDocRef = doc(getApprovalsCol());
   const settingsRef = doc(getSettingsCol(), 'docConfig');
   try {
-    const finalDocNoStr = await runTransaction(db, async (transaction: any) => {
+    
+    const finalDocNoStr = await runTransaction(getDb(), async (transaction: any) => {
       const settingsSnap = await transaction.get(settingsRef);
       let nextNum = 1;
       const isFamily = payload.category === 'family'; 
       const isTeacherDuty = payload.docType === 'teacher-duty';
+      const isTeacherAfterschool = payload.docType === 'teacher-afterschool';
       const isParentAbsence = payload.docType === 'parent' && payload.parentFormData?.type === 'absence';
       const isParentFieldTrip = payload.docType === 'parent' && payload.parentFormData?.type === 'field-trip';
+      const isParentFieldTripReport = payload.docType === 'parent' && payload.parentFormData?.type === 'field-trip-report';
       
       const now = new Date();
       const currentYear = now.getFullYear();
@@ -436,23 +449,31 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
         if (savedYear !== schoolYear) {
           nextNum = 1;
           transaction.update(settingsRef, {
-            nextNumber: isTeacherDuty ? 1 : 2,
+            nextNumber: (isTeacherDuty || isTeacherAfterschool) ? 1 : 2,
             nextFamilyNumber: 1,
             nextTeacherDutyNumber: isTeacherDuty ? 2 : 1,
+            nextAfterschoolNumber: isTeacherAfterschool ? 2 : 1,
             nextAbsenceNumber: isParentAbsence ? 2 : 1,
             nextFieldTripNumber: isParentFieldTrip ? 2 : 1,
+            nextFieldTripReportNumber: isParentFieldTripReport ? 2 : 1,
             currentSchoolYear: schoolYear
           });
         } else {
           if (isTeacherDuty) {
             nextNum = data.nextTeacherDutyNumber || 1;
             transaction.update(settingsRef, { nextTeacherDutyNumber: nextNum + 1 });
+          } else if (isTeacherAfterschool) {
+            nextNum = data.nextAfterschoolNumber || 1;
+            transaction.update(settingsRef, { nextAfterschoolNumber: nextNum + 1 });
           } else if (isParentAbsence) {
             nextNum = data.nextAbsenceNumber || 1;
             transaction.update(settingsRef, { nextAbsenceNumber: nextNum + 1 });
           } else if (isParentFieldTrip) {
             nextNum = data.nextFieldTripNumber || 1;
             transaction.update(settingsRef, { nextFieldTripNumber: nextNum + 1 });
+          } else if (isParentFieldTripReport) {
+            nextNum = data.nextFieldTripReportNumber || 1;
+            transaction.update(settingsRef, { nextFieldTripReportNumber: nextNum + 1 });
           } else {
             nextNum = isFamily ? (data.nextFamilyNumber || 1) : (data.nextNumber || 1);
             transaction.update(settingsRef, isFamily ? { nextFamilyNumber: nextNum + 1 } : { nextNumber: nextNum + 1 });
@@ -460,19 +481,27 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
         }
       } else {
         const initialData = { 
-          nextNumber: isTeacherDuty ? 1 : 2, 
+          nextNumber: (isTeacherDuty || isTeacherAfterschool) ? 1 : 2, 
           nextFamilyNumber: 1, 
           nextTeacherDutyNumber: isTeacherDuty ? 2 : 1,
+          nextAfterschoolNumber: isTeacherAfterschool ? 2 : 1,
           nextAbsenceNumber: isParentAbsence ? 2 : 1,
           nextFieldTripNumber: isParentFieldTrip ? 2 : 1,
+          nextFieldTripReportNumber: isParentFieldTripReport ? 2 : 1,
           currentSchoolYear: schoolYear
         };
         transaction.set(settingsRef, initialData);
       }
       
       if (isTeacherDuty) return `Kish-${schoolYear}-복무-${nextNum}`;
-      if (isParentAbsence) return `Kish-${schoolYear}-결석-${nextNum}`;
-      if (isParentFieldTrip) return `Kish-${schoolYear}-체험-${nextNum}`;
+      if (isTeacherAfterschool) return `Kish-${schoolYear}-방과후-${nextNum}`;
+      if (isParentAbsence) return `결석-${schoolYear}-${nextNum}`;
+      if (isParentFieldTrip) {
+        const gradeClassParts = payload.parentFormData?.gradeClassNumber?.replace(/[^0-9-]/g, '-').split('-').filter(Boolean) || [];
+        const gradeStr = gradeClassParts[0] || userProfile.studentGrade || '1';
+        return `체험-${schoolYear}-${gradeStr}-${nextNum}`;
+      }
+      if (isParentFieldTripReport) return `결과-${schoolYear}-${nextNum}`;
       return isFamily ? `Kish-${schoolYear}-가통-${nextNum}` : `Kish-${schoolYear}-초등-${nextNum}`;
     });
 
@@ -483,15 +512,15 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       docNo: finalDocNoStr,
       requesterId: userProfile.uid,
       requesterName: payload.docType === 'parent' ? (userProfile.parentName || userProfile.name) : userProfile.name,
-      requesterEmail: userProfile.email,
+      requesterEmail: userProfile.email?.toLowerCase() || '',
       requesterRole: userProfile.role,
       requesterSignature: userProfile.parentSignature || userProfile.signature || '',
       currentStep: 0,
       status: hasApprovers ? 'pending' : 'approved',
       createdAt: serverTimestamp(),
       completedAt: hasApprovers ? null : serverTimestamp(),
-      approverEmails: payload.approvers?.map(a => a.email.toLowerCase()) || [],
-      circularEmails: payload.circulars?.map(c => c.email.toLowerCase()) || [],
+      approverEmails: payload.approvers?.map(a => a.email?.toLowerCase()?.trim()).filter(Boolean) || [],
+      circularEmails: payload.circulars?.map(c => c.email?.toLowerCase()?.trim()).filter(Boolean) || [],
     };
     await setDoc(newDocRef, newDocData);
 
@@ -595,7 +624,8 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
       nextApproverEmail?: string;
     } | null = null;
 
-    await runTransaction(db, async (transaction: any) => {
+    
+    await runTransaction(getDb(), async (transaction: any) => {
       const docSnap = await transaction.get(docRef);
       if (!docSnap.exists()) throw new Error("문서가 없습니다.");
       const data = docSnap.data() as ApprovalDoc;
@@ -746,7 +776,8 @@ export async function rejectDocument(docId: string, userProfile: UserProfile, re
       docNo: string;
     } | null = null;
 
-    await runTransaction(db, async (transaction: any) => {
+    
+    await runTransaction(getDb(), async (transaction: any) => {
       const docSnap = await transaction.get(docRef);
       if (!docSnap.exists()) throw new Error("문서가 없습니다.");
       const data = docSnap.data() as ApprovalDoc;
@@ -1136,7 +1167,7 @@ export async function getTeacherDutyStats(userEmail: string, year: string, annua
       annualRemaining
     };
   } catch (error) {
-    console.error("[DocService] getTeacherDutyStats Error:");
+    console.error("[DocService] getTeacherDutyStats Error:", error);
     return { annualUsed: 0, sickUsed: 0, otherUsed: 0, earlyUsedHours: 0, earlyConvertedDays: 0, remainingEarlyHours: 0, totalAnnualUsed: 0, annualLimit, annualRemaining: annualLimit };
   }
 }
@@ -1163,7 +1194,8 @@ export async function getAuditLogs(
     constraints.push(startAfter(lastDoc));
   }
 
-  const q = query(collection(db, 'audit_logs'), ...constraints);
+  
+  const q = query(collection(getDb(), 'audit_logs'), ...constraints);
   try {
     const snapshot = await getDocs(q);
     const logs = snapshot.docs.map(d => {
@@ -1188,6 +1220,135 @@ export async function getAuditLogs(
   } catch (error) {
     console.error("[DocService] getAuditLogs Error:", error);
     return { logs: [], lastVisible: null, hasMore: false };
+  }
+}
+
+/** 체험학습 결과보고서를 승인 완료된 신청서에 결합 제출 */
+export async function submitFieldTripReport(
+  originalDocId: string,
+  reportData: {
+    reportTitle: string;
+    reportContent: string;
+    submittedAt: string;
+  },
+  userProfile: any
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docRef = doc(getApprovalsCol(), originalDocId);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) throw new Error("원본 체험학습 신청서를 찾을 수 없습니다.");
+    
+    const docData = docSnap.data() as ApprovalDoc;
+    if (docData.status !== 'approved') {
+      throw new Error("승인 완료된 신청서에만 보고서를 제출할 수 있습니다.");
+    }
+
+    // 1. 기존 parentFormData 와 reportData 를 합쳐서 머지
+    const updatedParentFormData = {
+      ...docData.parentFormData,
+      reportSubmitted: true,
+      reportTitle: reportData.reportTitle,
+      reportContent: reportData.reportContent,
+      reportSubmittedAt: reportData.submittedAt,
+    };
+
+    // 2. 문서 content 영역 하단에 결과보고서 양식 HTML 덧붙임
+    const reportHtml = `
+      <div class="field-trip-report-page" style="page-break-before: always; break-before: page; margin-top: 30px; font-family: serif; text-align: left; width: 100%;">
+        <div style="font-family: serif; text-align: center; margin-bottom: 20px;">
+          <h2 style="font-size: 20px; font-weight: bold; margin-bottom: 5px;">「학교장허가 교외체험학습」 결과보고서</h2>
+          <span style="font-size: 11px; color: #dc2626; font-weight: bold;">(체험학습 실시 후 7일 이내 제출)</span>
+        </div>
+        
+        <table style="width: 100%; border-collapse: collapse; border: 1px solid black; font-size: 12px; text-align: center;">
+          <tbody>
+            <tr>
+              <th style="border: 1px solid black; background-color: #f8fafc; padding: 8px; width: 120px; font-weight: bold;">성 명</th>
+              <td style="border: 1px solid black; padding: 8px;">${docData.parentFormData?.studentName || ''}</td>
+              <th style="border: 1px solid black; background-color: #f8fafc; padding: 8px; width: 120px; font-weight: bold;">학년 반 번</th>
+              <td style="border: 1px solid black; padding: 8px;">${docData.parentFormData?.gradeClassNumber || ''}</td>
+            </tr>
+            <tr>
+              <th style="border: 1px solid black; background-color: #f8fafc; padding: 8px; font-weight: bold;">교외체험학습 기간</th>
+              <td style="border: 1px solid black; padding: 8px; text-align: left;" colSpan="3">
+                ${docData.parentFormData?.tripPeriod?.startDate} ~ ${docData.parentFormData?.tripPeriod?.endDate} (총 ${docData.parentFormData?.tripPeriod?.totalDays}일간)
+              </td>
+            </tr>
+            <tr>
+              <th style="border: 1px solid black; background-color: #f8fafc; padding: 8px; font-weight: bold;">교외체험학습 장소</th>
+              <td style="border: 1px solid black; padding: 8px; text-align: left;" colSpan="3">
+                ${docData.parentFormData?.destination || ''}
+              </td>
+            </tr>
+            <tr>
+              <th style="border: 1px solid black; background-color: #f8fafc; padding: 8px; font-weight: bold;">학습 형태</th>
+              <td style="border: 1px solid black; padding: 8px; text-align: left;" colSpan="3">
+                ${docData.parentFormData?.tripType || ''}
+              </td>
+            </tr>
+            <tr>
+              <th style="border: 1px solid black; background-color: #f8fafc; padding: 8px; font-weight: bold;">제 목</th>
+              <td style="border: 1px solid black; padding: 8px; text-align: left;" colSpan="3">
+                <strong>${reportData.reportTitle}</strong>
+              </td>
+            </tr>
+            <tr>
+              <th style="border: 1px solid black; background-color: #f8fafc; padding: 8px; height: 240px; font-weight: bold; vertical-align: middle;">교외<br/>체험학습<br/>결과</th>
+              <td style="border: 1px solid black; padding: 12px; text-align: left; vertical-align: top; line-height: 1.6;" colSpan="3">
+                <div style="font-size: 11px; color: #64748b; margin-bottom: 8px; font-style: italic;">* 각 일정별로 느낀 점, 배운 점 등을 기록함.</div>
+                ${reportData.reportContent.replace(/\n/g, '<br/>')}
+              </td>
+            </tr>
+            <tr>
+              <td style="border: 1px solid black; padding: 20px; position: relative;" colSpan="4">
+                <div style="font-weight: bold; font-size: 13px; margin-bottom: 8px; text-align: center;">위와 같이 「학교장허가 교외체험학습」 결과보고서를 제출합니다.</div>
+                <div style="font-size: 12px; margin-bottom: 20px; text-align: center;">
+                  ${reportData.submittedAt.substring(0, 4)}년 &nbsp; 
+                  ${reportData.submittedAt.substring(5, 7)}월 &nbsp; 
+                  ${reportData.submittedAt.substring(8, 10)}일
+                </div>
+                <div style="display: flex; justify-content: flex-end; align-items: center; padding-right: 40px; font-size: 12px; gap: 8px;">
+                  <span>보호자 :</span>
+                  <span style="font-weight: bold; color: #1e3a8a;">${userProfile.parentName || '학부모'}</span>
+                  <span>(인)</span>
+                  ${userProfile.parentSignature ? `<img src="${userProfile.parentSignature}" style="width: 45px; height: 45px; object-fit: contain; margin-left: 10px;" alt="sig" />` : ''}
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    const updatedContent = docData.content + reportHtml;
+
+    // 3. Firestore 업데이트
+    await firestoreUpdateDoc(docRef, {
+      parentFormData: updatedParentFormData,
+      content: updatedContent,
+      reportSubmitted: true,
+      reportSubmittedAt: reportData.submittedAt,
+      updatedAt: serverTimestamp()
+    });
+
+    // 4. 감사 로그 기록
+    createAuditLog(
+      originalDocId,
+      docData.docNo || '',
+      docData.title,
+      'approve',
+      {
+        uid: userProfile.uid,
+        name: userProfile.parentName || userProfile.name,
+        email: userProfile.email,
+        role: userProfile.role,
+      }
+    );
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error submitting field trip report:", error);
+    return { success: false, error: error.message };
   }
 }
 

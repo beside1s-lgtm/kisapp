@@ -1,11 +1,12 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import DocumentForm from "@/components/document-form";
-import { PenTool, Loader2 } from "lucide-react";
+import { PenTool, Loader2, ChevronLeft } from "lucide-react";
 import { getDocumentById } from '@/lib/services/documentService';
 import { ApprovalDoc } from '@/lib/types';
+import { Button } from '@/components/ui/button';
 
 // [핵심] useSearchParams를 사용하는 로직을 별도 컴포넌트로 분리
 function NewDocumentContent() {
@@ -17,9 +18,32 @@ function NewDocumentContent() {
     // 템플릿 ID가 있으면 해당 문서를 불러와서 폼의 초기값(docToEdit)으로 전달
     useEffect(() => {
         const fetchTemplate = async () => {
+            const pendingDraft = sessionStorage.getItem('pending_doc_draft');
+            if (pendingDraft) {
+                try {
+                    const { title, content, attachments } = JSON.parse(pendingDraft);
+                    sessionStorage.removeItem('pending_doc_draft');
+                    setTemplateDoc({
+                        id: '',
+                        docNumber: '',
+                        title,
+                        content,
+                        attachments: attachments || [],
+                        writer: '',
+                        department: '스쿨버스 관리팀',
+                        status: 'DRAFT',
+                        createdAt: new Date().toISOString(),
+                        approvalLine: [],
+                    } as any);
+                    setLoading(false);
+                    return;
+                } catch (e) {
+                    console.error('Failed to parse pending draft', e);
+                }
+            }
+
             if (templateId) {
                 try {
-                    // getDocumentById는 클라이언트 SDK를 사용하므로 직접 호출 가능
                     const doc = await getDocumentById(templateId);
                     setTemplateDoc(doc);
                 } catch (error) {
@@ -46,9 +70,20 @@ function NewDocumentContent() {
 }
 
 export default function NewDocumentPage() {
+  const router = useRouter();
+
   return (
     <div className="max-w-4xl mx-auto p-4 md:p-8">
        <div className="mb-8">
+            <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.back()}
+                className="mb-4 -ml-2 text-muted-foreground hover:text-foreground flex items-center gap-1"
+            >
+                <ChevronLeft className="h-4 w-4" />
+                뒤로가기
+            </Button>
             <h1 className="font-headline text-3xl font-bold flex items-center gap-3">
                 <PenTool className="h-8 w-8 text-primary" />
                 새 결재문서 작성

@@ -18,7 +18,7 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 
 export default function ParentsLoginPage() {
-  const { user, loading, googleSignIn, isParent } = useAuth();
+  const { user, loading, googleSignIn, isParent, bypassLogin } = useAuth();
   const { toast } = useToast();
   const [isSigningIn, setIsSigningIn] = useState(false);
   const router = useRouter();
@@ -26,7 +26,7 @@ export default function ParentsLoginPage() {
   useEffect(() => {
     if (!loading && user) {
       if (isParent) {
-        router.push('/parents/apply');
+        router.push('/parents');
       } else {
         router.push('/inbox');
       }
@@ -86,6 +86,23 @@ export default function ParentsLoginPage() {
           )}
           학생 계정으로 계속하기
         </Button>
+
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-8 p-4 border border-amber-200 bg-amber-50/70 rounded-2xl text-left space-y-3 shadow-inner">
+            <p className="text-xs font-bold text-amber-800">🛠️ 개발자 테스트 도구 (학부모)</p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => bypassLogin('parent')}
+                className="bg-white border-amber-300 text-amber-900 text-xs w-full h-10 rounded-xl"
+              >
+                학부모 세션 주입
+              </Button>
+            </div>
+          </div>
+        )}
+
          <p className="text-xs text-muted-foreground mt-8">
           지정된 학생 계정 도메인 사용자만 이 서비스에 접근할 수 있습니다.
         </p>

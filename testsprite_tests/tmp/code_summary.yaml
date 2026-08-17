@@ -1,0 +1,84 @@
+version: "2"
+type: frontend
+tech_stack:
+  - TypeScript
+  - React
+  - Next.js
+  - Tailwind CSS
+  - Firebase Auth
+  - Firestore
+routes:
+  - path: /login
+    file: src/app/(auth)/login/page.tsx
+    auth_required: false
+    description: Admin and Teacher login page
+  - path: /parents/login
+    file: src/app/parents/login/page.tsx
+    auth_required: false
+    description: Parents authentication portal
+  - path: /parents
+    file: src/app/parents/page.tsx
+    auth_required: true
+    description: Parents application dashboard and checkout
+  - path: /admin/afterschool
+    file: src/app/(app)/admin/afterschool/page.tsx
+    auth_required: true
+    description: Afterschool program master administration panel
+  - path: /admin/bus
+    file: src/app/(app)/admin/bus/page.tsx
+    auth_required: true
+    description: School bus routes and destination zone fare management
+  - path: /teacher/bus
+    file: src/app/teacher/bus/page.tsx
+    auth_required: true
+    description: Teacher checkout screen for student boarding check
+features:
+  - name: Admin Login
+    description: Secure login for administrators and teachers
+    files:
+      - src/app/(auth)/login/page.tsx
+    entry_route: /login
+    user_interactions:
+      - Input admin email credentials
+      - Input password
+      - Click Login button
+    api_calls: []
+    auth_required: false
+  - name: Afterschool Master Administration
+    description: Manage classes and export student school banking data
+    files:
+      - src/components/afterschool/teacher/StudentManagement.tsx
+      - src/components/afterschool/teacher/AdminPanel.tsx
+    entry_route: /admin/afterschool
+    user_interactions:
+      - Click Bulk Course Creation via Excel Upload
+      - Edit student information and bus mapping
+      - Download school banking excel template
+      - Sync student list to school bus system
+    api_calls: []
+    auth_required: true
+  - name: Custom Bus Fare Setting
+    description: Manage custom destination zones and fares dynamically
+    files:
+      - src/app/(app)/admin/bus/components/bus-configuration-tab.tsx
+      - src/lib/kisbus/destinations.ts
+    entry_route: /admin/bus
+    user_interactions:
+      - Create custom destination group name like Phu My Hung
+      - Set VND fare amount per custom destination group
+      - Map local destinations to custom groups via dropdown or excel bulk upload
+      - Delete custom groups and re-assign default zones
+    api_calls: []
+    auth_required: true
+  - name: Student Bus Boarding Check
+    description: Realtime boarding checklist for teachers and drivers
+    files:
+      - src/app/teacher/bus/page.tsx
+    entry_route: /teacher/bus
+    user_interactions:
+      - Board individual student onto the assigned bus line
+      - Unboard student or switch routes
+      - Check total boarding progress stats
+    api_calls: []
+    auth_required: true
+known_limitations: []
