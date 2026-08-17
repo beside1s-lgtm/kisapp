@@ -270,13 +270,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const fetchedProfile = await fetchProfile(firebaseUser);
             if (fetchedProfile) {
               const isTeacher = !isStudentPattern(firebaseUser.email);
-              if (isTeacher) {
+              const mfaSessionKey = `mfa_verified_${firebaseUser.email.trim().toLowerCase()}`;
+              let isAlreadyVerified = false;
+              try {
+                const sess = sessionStorage.getItem(mfaSessionKey);
+                const local = localStorage.getItem(mfaSessionKey);
+                if (sess === 'true') {
+                  isAlreadyVerified = true;
+                } else if (local) {
+                  // 7일간 신뢰할 수 있는 브라우저 세션 유지
+                  const passedTime = Date.now() - parseInt(local, 10);
+                  if (!isNaN(passedTime) && passedTime < 7 * 24 * 60 * 60 * 1000) {
+                    isAlreadyVerified = true;
+                    sessionStorage.setItem(mfaSessionKey, 'true');
+                  }
+                }
+              } catch (e) {}
+
+              if (isTeacher && !isAlreadyVerified) {
                 setPendingMfaUser(firebaseUser);
                 setPendingMfaProfile(fetchedProfile);
                 setUser(null);
                 setProfile(null);
               } else {
                 setUser(firebaseUser);
+                setProfile(fetchedProfile);
+                setPendingMfaUser(null);
+                setPendingMfaProfile(null);
               }
             } else {
               toast({ variant: 'destructive', title: '로그인 실패', description: '등록되지 않은 계정이거나 올바른 학교 계정(@kshcm.net)이 아닙니다.' });
@@ -320,6 +340,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     isDevBypassRef.current = false; // bypass 플래그 초기화
+    if (user?.email) {
+      try {
+        const mfaKey = `mfa_verified_${user.email.trim().toLowerCase()}`;
+        sessionStorage.removeItem(mfaKey);
+        localStorage.removeItem(mfaKey);
+      } catch (e) {}
+    }
     await signOut(auth);
     setUser(null);
     setProfile(null);
@@ -412,6 +439,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const finalizeMfa = () => {
+    if (pendingMfaUser?.email) {
+      try {
+        const mfaKey = `mfa_verified_${pendingMfaUser.email.trim().toLowerCase()}`;
+        sessionStorage.setItem(mfaKey, 'true');
+        localStorage.setItem(mfaKey, Date.now().toString());
+      } catch (e) {}
+    }
     setUser(pendingMfaUser);
     setProfile(pendingMfaProfile);
     setPendingMfaUser(null);

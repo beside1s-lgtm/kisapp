@@ -27,7 +27,7 @@ const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무�
 const ADMIN_EMAIL = 'beside1s@kshcm.net';
 
 export function ProfileModal({ children }: { children: React.ReactNode }) {
-  const { user, profile, profileLoading, fetchProfile } = useAuth();
+  const { user, profile, profileLoading, fetchProfile, updateProfile } = useAuth();
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
 
@@ -108,14 +108,16 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
       try {
         const result = await saveUserProfile(user.uid, user.email!, updatedProfileData);
         if (result.success) {
-          await fetchProfile(user);
+          updateProfile(updatedProfileData);
+          await fetchProfile(user).catch(() => {});
           toast({ title: '프로필 업데이트됨' });
         } else {
           throw new Error(result.error || '권한 부족으로 Firestore 동기화 제외됨');
         }
       } catch (dbErr: any) {
         console.warn("[ProfileModal] DB sync skipped, applying local session profile:", dbErr);
-        toast({ title: '프로필 임시 적용 완료', description: '테스트 세션에 프로필 정보가 적용되었습니다.' });
+        updateProfile(updatedProfileData);
+        toast({ title: '프로필 임시 적용 완료', description: '프로필 정보가 적용되었습니다.' });
       }
 
       setIsOpen(false);
@@ -252,20 +254,27 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
                 {signatureMode === 'draw' ? (
                   <div className="space-y-2">
                     <div className="flex justify-end">
-                      <Button variant="ghost" size="sm" onClick={clearSignature} className="h-7 px-2 text-muted-foreground text-xs">
+                      <Button variant="ghost" size="sm" onClick={clearSignature} className="h-7 px-2 text-muted-foreground text-xs hover:text-foreground">
                         <Eraser className="h-3 w-3 mr-1" /> 다시 그리기
                       </Button>
                     </div>
-                    <div className="border-2 border-dashed rounded-lg bg-white overflow-hidden touch-none relative h-28">
+                    <div className="border-2 border-dashed border-slate-300 rounded-lg bg-white overflow-hidden touch-none relative h-32 flex items-center justify-center shadow-inner">
                       <SignatureCanvas 
                         ref={sigCanvas}
-                        canvasProps={{ className: 'w-full h-full' }}
+                        canvasProps={{ 
+                          width: 440, 
+                          height: 128, 
+                          className: 'w-full h-full cursor-crosshair touch-none' 
+                        }}
                         penColor="black"
+                        minWidth={1.5}
+                        maxWidth={3.5}
+                        dotSize={2}
                         onEnd={() => setCanvasEmpty(sigCanvas.current?.isEmpty() ?? true)}
                       />
                     </div>
-                    <p className="text-[10px] text-muted-foreground text-center">
-                      영역 안에 마우스나 터치로 서명을 그려주세요.
+                    <p className="text-[11px] text-muted-foreground text-center">
+                      영역 안에 마우스나 터치펜/손가락으로 서명을 정성껏 그려주세요.
                     </p>
                   </div>
                 ) : (
