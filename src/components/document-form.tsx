@@ -33,6 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { sendMailNotification } from '@/lib/services/documentService';
 import { getDocumentById } from '@/lib/services/documentService';
 import { generateAfterschoolSettlementWorkbook } from '@/lib/afterschool/excel';
 import { getRealtimeSemesterInfo } from '@/lib/services/academicCalendarService';
@@ -1037,6 +1038,30 @@ if (isCurrentApprover) {
                  createdAt: serverTimestamp(),
                  completedAt: null,
              });
+
+             // 첫 번째 결재자에게 이메일 도착 알림 큐잉
+             if (payload.approvers && payload.approvers.length > 0) {
+                 const firstApprover = payload.approvers[0];
+                 if (firstApprover?.email) {
+                     const mailSubject = `[Kish 결재 시스템] 새 결재 문서가 상신되었습니다.`;
+                     const mailContent = `
+                       <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px; max-width: 600px;">
+                         <h2 style="color: #6366f1; margin-top: 0;">새 결재 대기 알림</h2>
+                         <p><strong>기안자:</strong> ${profile.name} (${profile.email})</p>
+                         <p><strong>문서번호:</strong> ${finalDocNoStr}</p>
+                         <p><strong>제목:</strong> ${payload.title}</p>
+                         <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                         <p>결재 대기 중인 새 기안문이 있습니다. 결재 시스템 대시보드에 접속하여 확인해 주세요.</p>
+                         <a href="https://app.cjwave.kr/inbox" 
+                            style="display: inline-block; background-color: #6366f1; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 10px;">
+                            미결재함으로 이동
+                         </a>
+                       </div>
+                     `;
+                     sendMailNotification(firstApprover.email, mailSubject, mailContent, true).catch(() => {});
+                 }
+             }
+
              return { success: true };
          }
      } catch (error: any) {

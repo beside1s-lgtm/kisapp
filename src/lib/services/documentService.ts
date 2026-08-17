@@ -86,7 +86,7 @@ async function notifyKisbusAbsence(studentName: string, gradeClassNumber: string
 }
 
 // 이메일 알림 발송 헬퍼 함수 (Trigger Email Extension 연동)
-async function sendMailNotification(
+export async function sendMailNotification(
   toEmail: string,
   subject: string,
   htmlContent: string,
