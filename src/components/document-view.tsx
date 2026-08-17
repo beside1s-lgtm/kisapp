@@ -395,6 +395,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   );
   const canRecall = isRequester && initialDoc.status === 'pending';
   const isRecalled = initialDoc.status === 'recalled';
+  const isRejected = initialDoc.status === 'rejected';
   const isApproved = initialDoc.status === 'approved';
   const isFamily = initialDoc.category === 'family';
 
@@ -628,15 +629,15 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </AlertDialog>
             )}
 
-            {isRecalled && isRequester && (
+            {(isRecalled || isRejected) && isRequester && (
                 <>
-                <Button asChild variant="default" className="shadow-sm cursor-pointer">
+                <Button asChild variant="default" className="shadow-sm cursor-pointer bg-primary hover:bg-primary/90 text-primary-foreground font-bold">
                     <Link href={`/edit/${initialDoc.id}`}>
                         <Edit className="mr-2 h-4 w-4" />
                         수정 및 재기안
                     </Link>
                 </Button>
-                <Button variant="destructive" className="shadow-sm cursor-pointer" onClick={handleDelete} disabled={isDeleting}>
+                <Button variant="destructive" className="shadow-sm cursor-pointer font-bold" onClick={handleDelete} disabled={isDeleting}>
                     {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
                     삭제
                 </Button>
@@ -670,6 +671,29 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 <Printer className="mr-2 h-4 w-4" /> 인쇄 / PDF 저장
             </Button>
         </div>
+
+        {/* ── 반려 사유 상단 안내 배너 (화면 전용, 인쇄시 숨김) ── */}
+        {initialDoc.status === 'rejected' && (
+            <div className={`print:hidden ${containerMaxWidth} mx-auto px-4 mb-6`}>
+                <div className="p-5 bg-red-50 border-2 border-red-200 rounded-2xl shadow-sm space-y-2">
+                    <div className="flex items-center gap-2 text-red-700 font-black text-base">
+                        <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+                        <span>결재가 반려된 문서입니다.</span>
+                    </div>
+                    <div className="bg-white/80 p-3 rounded-xl border border-red-100 text-sm text-red-950">
+                        <p className="font-semibold text-xs text-red-600 mb-1">반려 사유:</p>
+                        <p className="whitespace-pre-wrap font-medium">
+                            {initialDoc.comment || initialDoc.approvers.find(ap => ap.status === 'rejected')?.comment || '반려 사유가 입력되지 않았습니다.'}
+                        </p>
+                    </div>
+                    {isRequester && (
+                        <p className="text-xs text-red-600/90 font-medium pt-1">
+                            💡 상단의 <strong>[수정 및 재기안]</strong> 버튼을 누르면 내용을 보완하여 다시 상신할 수 있습니다.
+                        </p>
+                    )}
+                </div>
+            </div>
+        )}
 
         {/* [수정] 본문 밖으로 분리된 첨부파일 다운로드 영역 (화면 전용, 인쇄시 숨김) */}
         {initialDoc.attachments && initialDoc.attachments.length > 0 && hasAttachmentPermission && (

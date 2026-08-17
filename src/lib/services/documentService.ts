@@ -360,6 +360,21 @@ export async function getRecalledDocuments(userId: string, userEmail: string) {
   }
 }
 
+export async function getRejectedDocuments(userId: string, userEmail: string) {
+  if (!userId && !userEmail) return [];
+  const q = query(getApprovalsCol(), and(
+    or(where('requesterId', '==', userId), where('requesterEmail', '==', userEmail.toLowerCase())),
+    where('status', '==', 'rejected')
+  ));
+  try {
+    const snapshot = await getDocs(q);
+    return serializeDocs(snapshot.docs, 'completedAt');
+  } catch (error) {
+    console.error("[DocService] getRejectedDocuments Error:", error);
+    return [];
+  }
+}
+
 export async function getTeacherRegistryDocuments(userEmail: string, isAdmin: boolean) {
   if (!userEmail) return [];
   
@@ -673,11 +688,56 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
 
       const isFinal = updatedApprovers[step].type === 'final' || step === updatedApprovers.length - 1;
       
+      let finalDocNoStr = data.docNo || '';
+      if (isFinal) {
+        // '미채번', '(결재 진행 중)', '진행 중' 등 미완료 번호인 경우 정식 일련번호 채번
+        const needsNewDocNo = !finalDocNoStr || finalDocNoStr === '미채번' || finalDocNoStr.includes('진행 중') || finalDocNoStr.includes('임시');
+        if (needsNewDocNo) {
+          const settingsRef = doc(getSettingsCol(), 'docConfig');
+          const settingsSnap = await transaction.get(settingsRef);
+          const now = new Date();
+          const currentYear = now.getFullYear();
+          const currentMonth = now.getMonth() + 1;
+          const schoolYear = (currentMonth === 1 || currentMonth === 2) ? currentYear - 1 : currentYear;
+
+          let nextNum = 1;
+          const isFamilyCat = data.category === 'family';
+
+          if (settingsSnap.exists()) {
+            const sData = settingsSnap.data() as any;
+            const savedYear = sData.currentSchoolYear || 0;
+            if (savedYear !== schoolYear) {
+              nextNum = 1;
+              if (isFamilyCat) {
+                transaction.update(settingsRef, { nextFamilyNumber: 2, nextNumber: 1, currentSchoolYear: schoolYear });
+              } else {
+                transaction.update(settingsRef, { nextNumber: 2, nextFamilyNumber: 1, currentSchoolYear: schoolYear });
+              }
+            } else {
+              if (isFamilyCat) {
+                nextNum = sData.nextFamilyNumber || 1;
+                transaction.update(settingsRef, { nextFamilyNumber: nextNum + 1 });
+              } else {
+                nextNum = sData.nextNumber || 1;
+                transaction.update(settingsRef, { nextNumber: nextNum + 1 });
+              }
+            }
+          } else {
+            const initialData = isFamilyCat
+              ? { nextNumber: 1, nextFamilyNumber: 2, currentSchoolYear: schoolYear }
+              : { nextNumber: 2, nextFamilyNumber: 1, currentSchoolYear: schoolYear };
+            transaction.set(settingsRef, initialData);
+          }
+          finalDocNoStr = isFamilyCat ? `Kish-${schoolYear}-가통-${nextNum}` : `Kish-${schoolYear}-초등-${nextNum}`;
+        }
+      }
+
       const updates: any = {
         approvers: updatedApprovers,
         currentStep: isFinal ? step : step + 1,
         status: isFinal ? 'approved' : 'pending',
         completedAt: isFinal ? serverTimestamp() : null,
+        ...(isFinal ? { docNo: finalDocNoStr } : {}),
       };
 
       if (updatedParentData && data.parentFormData) {
@@ -694,7 +754,7 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
         requesterEmail: data.requesterEmail,
         requesterName: data.requesterName,
         title: data.title,
-        docNo: data.docNo || '',
+        docNo: finalDocNoStr,
         nextApproverEmail: isFinal ? undefined : updatedApprovers[step + 1]?.email,
       };
     });
@@ -808,7 +868,18 @@ export async function rejectDocument(docId: string, userProfile: UserProfile, re
       const data = docSnap.data() as ApprovalDoc;
       const step = data.currentStep;
 
-      if (data.approvers[step]?.email?.toLowerCase() !== userProfile.email?.toLowerCase()) throw new Error("권한이 없습니다.");
+      const currentAp = data.approvers[step];
+      const currentApEmail = currentAp?.email?.trim().toLowerCase();
+      const currentApName = currentAp?.name?.trim();
+      const userEmail = userProfile.email?.trim().toLowerCase();
+      const userName = userProfile.name?.trim();
+
+      const isAuthorized = 
+        (userEmail && currentApEmail && userEmail === currentApEmail) || 
+        (userName && currentApName && userName === currentApName) || 
+        userProfile.isAdmin;
+
+      if (!isAuthorized) throw new Error("권한이 없습니다.");
 
       const updatedApprovers = [...data.approvers];
       updatedApprovers[step] = {
@@ -912,8 +983,11 @@ export async function deleteDocument(docId: string, userId: string) {
   const docRef = doc(getApprovalsCol(), docId);
   try {
     const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) return { success: false, error: "문서 없음" };
     const docData = docSnap.data() as ApprovalDoc;
-    if (docData.requesterId !== userId || docData.status !== 'recalled') return { success: false, error: "삭제 불가" };
+    if (docData.requesterId !== userId || (docData.status !== 'recalled' && docData.status !== 'rejected')) {
+      return { success: false, error: "삭제할 권한이 없거나 삭제할 수 없는 문서 상태입니다." };
+    }
     await firestoreDeleteDoc(docRef);
 
     // 삭제 감사 로그 기록

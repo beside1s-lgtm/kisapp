@@ -948,7 +948,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
              let mergedApprovers = payload.approvers;
              let newStep = 0;
              let newStatus: any = 'pending';
-if (isCurrentApprover) {
+             if (isCurrentApprover) {
                  newStep = docData.currentStep;
                  mergedApprovers = payload.approvers.map((newAp: any, idx: number) => {
                      const oldAp = docData.approvers[idx];
@@ -978,52 +978,7 @@ if (isCurrentApprover) {
              const newDocRef = doc(collection(getDb(), 'approvals'));
              const settingsRef = doc(getDb(), 'settings', 'docConfig');
              
-             const finalDocNoStr = await runTransaction(getDb(), async (transaction) => {
-                const settingsSnap = await transaction.get(settingsRef);
-                const now = new Date();
-                const currentYear = now.getFullYear();
-                const currentMonth = now.getMonth() + 1;
-                const schoolYear = (currentMonth === 1 || currentMonth === 2) ? currentYear - 1 : currentYear;
-
-                let nextNum = 1;
-                const isFamilyCat = category === 'family'; 
-
-                if (settingsSnap.exists()) {
-                    const data = settingsSnap.data() as any;
-                    const savedYear = data.currentSchoolYear || 0;
-                    
-                    if (savedYear !== schoolYear) {
-                        nextNum = 1;
-                        if (isFamilyCat) {
-                            transaction.update(settingsRef, {
-                                nextFamilyNumber: 2,
-                                nextNumber: 1,
-                                currentSchoolYear: schoolYear
-                            });
-                        } else {
-                            transaction.update(settingsRef, {
-                                nextNumber: 2,
-                                nextFamilyNumber: 1,
-                                currentSchoolYear: schoolYear
-                            });
-                        }
-                    } else {
-                        if (isFamilyCat) {
-                            nextNum = data.nextFamilyNumber || 1;
-                            transaction.update(settingsRef, { nextFamilyNumber: nextNum + 1 });
-                        } else {
-                            nextNum = data.nextNumber || 1;
-                            transaction.update(settingsRef, { nextNumber: nextNum + 1 });
-                        }
-                    }
-                } else {
-                    const initialData = isFamilyCat 
-                      ? { nextNumber: 1, nextFamilyNumber: 2, currentSchoolYear: schoolYear } 
-                      : { nextNumber: 2, nextFamilyNumber: 1, currentSchoolYear: schoolYear };
-                    transaction.set(settingsRef, initialData);
-                }
-                return isFamilyCat ? `Kish-${schoolYear}-가통-${nextNum}` : `Kish-${schoolYear}-초등-${nextNum}`;
-             });
+             const finalDocNoStr = '(결재 진행 중)';
 
              await setDoc(newDocRef, {
                  ...payload,
