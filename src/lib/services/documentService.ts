@@ -187,17 +187,30 @@ function serializeDocs(docs: any[], sortBy: 'createdAt' | 'completedAt' = 'creat
   });
 }
 
-export async function getInboxDocuments(userEmail: string) {
-  if (!userEmail) return [];
-  if (!auth.currentUser || userEmail.includes('test')) return [];
+export async function getInboxDocuments(userEmail: string, userName?: string) {
+  if (!userEmail && !userName) return [];
+  if (!auth.currentUser || userEmail?.includes('test')) return [];
   try {
     const q = query(getApprovalsCol(), where('status', '==', 'pending'));
     const snapshot = await getDocs(q);
     const allPending = serializeDocs(snapshot.docs, 'createdAt');
+    const normalizedEmail = userEmail?.trim().toLowerCase();
+    const normalizedName = userName?.trim();
+
     return allPending.filter(doc => {
       if (doc.currentStep >= 0 && doc.currentStep < doc.approvers.length) {
         const currentApprover = doc.approvers[doc.currentStep];
-        return currentApprover?.email?.toLowerCase() === userEmail?.toLowerCase();
+        const approverEmail = currentApprover?.email?.trim().toLowerCase();
+        const approverName = currentApprover?.name?.trim();
+
+        // 1) 이메일 일치 검사
+        if (normalizedEmail && approverEmail && approverEmail === normalizedEmail) {
+          return true;
+        }
+        // 2) 이름 일치 검사 (이메일이 누락되었거나 이름으로만 지정된 경우 보조 매칭)
+        if (normalizedName && approverName && approverName === normalizedName) {
+          return true;
+        }
       }
       return false;
     });
@@ -213,10 +226,15 @@ export async function getInboxDocuments(userEmail: string) {
 export async function getSentDocuments(userId: string, userEmail: string) {
   if (!userId && !userEmail) return [];
   if (!auth.currentUser || userId?.startsWith('test_') || userEmail?.includes('test')) return [];
-  const q = query(getApprovalsCol(), or(
-    where('requesterId', '==', userId),
-    where('requesterEmail', '==', userEmail.toLowerCase())
-  ));
+  // limit(200): 과거 상신 문서 전체 목록 중 최근 200건만 로드 (Firestore 무제한 쿼리 방지)
+  const q = query(
+    getApprovalsCol(),
+    or(
+      where('requesterId', '==', userId),
+      where('requesterEmail', '==', userEmail.toLowerCase())
+    ),
+    limit(200)
+  );
   try {
     const snapshot = await getDocs(q);
     return serializeDocs(snapshot.docs, 'createdAt');

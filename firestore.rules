@@ -32,8 +32,8 @@ service cloud.firestore {
         (resource.data.approverEmails != null && getEmail() in resource.data.approverEmails) ||
         // 4. 참조인(circulars)에 등록된 참조인이거나
         (resource.data.circularEmails != null && getEmail() in resource.data.circularEmails) ||
-        // 5. 완료된 공개 문서이거나 (단, 학부모/학생 출결 및 체험학습 문서는 개인정보이므로 공개 열람 대상에서 원천 배제)
-        (resource.data.docType != 'parent' && resource.data.status == 'approved' && (resource.data.publishStatus == '공개' || resource.data.publishStatus == '부분공개')) ||
+        // 5. 일반 교내 결재 문서 (학부모 개인정보 문서 제외한 교원 기안 문서)
+        (resource.data.docType != 'parent') ||
         // 6. 학부모 신청서/결석계 문서(docType == 'parent')의 경우 로그인한 사용자는 조회 가능하도록 허용 (한도 계산 및 담임 확인용)
         (resource.data.docType == 'parent')
       );

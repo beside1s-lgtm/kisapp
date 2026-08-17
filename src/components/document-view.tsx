@@ -765,7 +765,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                                             {ap.type !== 'normal' && <span className="text-xs text-primary font-bold">{getTypeText(ap.type)}</span>}
                                         </div>
                                         <div className="flex items-center gap-1">
-                                            <span className="font-semibold">{ap.approverName}</span>
+                                            <span className="font-semibold">{ap.approverName || ap.name}</span>
                                             {ap.status === 'approved' && ap.signature && <div className="w-10 h-10 flex items-center justify-center"><img src={ap.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
                                             {ap.status === 'rejected' && <span className="text-destructive font-bold text-xs">반려</span>}
                                         </div>

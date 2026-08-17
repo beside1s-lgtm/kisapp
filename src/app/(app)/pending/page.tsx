@@ -1,28 +1,44 @@
-
 'use client';
 
 import { getPendingDocuments } from "@/lib/services/documentService";
 import { DocumentList } from "@/components/document-list";
 import { useAuth } from "@/hooks/use-auth";
 import { ApprovalDoc } from "@/lib/types";
-import { FileClock, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { FileClock, Loader2, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
 
 export default function PendingPage() {
     const { user, profile } = useAuth();
+    const { toast } = useToast();
     const [docs, setDocs] = useState<ApprovalDoc[]>([]);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        if (user?.uid && profile?.email) {
-            getPendingDocuments(user.uid, profile.email).then(data => {
-                setDocs(data);
-                setLoading(false);
+    const loadDocuments = useCallback(async () => {
+        if (!user?.uid || !profile?.email) {
+            setLoading(false);
+            return;
+        }
+        try {
+            setLoading(true);
+            const data = await getPendingDocuments(user.uid, profile.email);
+            setDocs(data || []);
+        } catch (err) {
+            console.error('[PendingPage] Failed to load docs:', err);
+            toast({
+                variant: 'destructive',
+                title: '문서 로딩 실패',
+                description: '진행중 문서를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
             });
-        } else if (!user || !profile) {
+        } finally {
             setLoading(false);
         }
-    }, [user, profile]);
+    }, [user, profile, toast]);
+
+    useEffect(() => {
+        loadDocuments();
+    }, [loadDocuments]);
 
     if (loading) {
         return (
@@ -34,12 +50,18 @@ export default function PendingPage() {
     
     return (
         <div className="p-4 md:p-8">
-            <div className="mb-8">
-                <h1 className="font-headline text-3xl font-bold flex items-center gap-3">
-                    <FileClock className="h-8 w-8 text-primary" />
-                    내가 상신한 진행중 문서
-                </h1>
-                <p className="text-muted-foreground mt-1">내가 상신한 문서 중 결재 진행 중인 문서입니다.</p>
+            <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <h1 className="font-headline text-2xl sm:text-3xl font-bold flex items-center gap-3">
+                        <FileClock className="h-7 w-7 text-primary" />
+                        내가 상신한 진행중 문서
+                    </h1>
+                    <p className="text-muted-foreground mt-1 text-sm">내가 상신한 문서 중 결재 진행 중인 문서입니다.</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={loadDocuments} className="self-start sm:self-auto h-9 gap-1.5 text-xs font-semibold">
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    새로고침
+                </Button>
             </div>
             <DocumentList documents={docs} />
         </div>

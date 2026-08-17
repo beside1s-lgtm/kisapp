@@ -7,7 +7,7 @@ import {
     Undo2, Loader2, Trash2, Edit3, CheckSquare, Square, 
     AlertTriangle, FileText, User, ChevronRight, RefreshCw 
 } from "lucide-react";
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +41,7 @@ export default function RecalledPage() {
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [singleDeleteTargetId, setSingleDeleteTargetId] = useState<string | null>(null);
 
-    const loadDocuments = async () => {
+    const loadDocuments = useCallback(async () => {
         if (!user?.uid || !profile?.email) {
             setLoading(false);
             return;
@@ -57,11 +57,11 @@ export default function RecalledPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [user, profile, toast]);
 
     useEffect(() => {
         loadDocuments();
-    }, [user, profile]);
+    }, [loadDocuments]);
 
     // 전체 선택 토글
     const isAllSelected = useMemo(() => {

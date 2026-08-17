@@ -375,28 +375,35 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
             const usersSnap = await getDocs(collection(getDb(), 'users'));
             const userList = usersSnap.docs.map(d => ({ email: d.id, ...d.data() } as UserProfile));
 
-            const principalUser = org?.principal ? userList.find(u => u.email?.trim().toLowerCase() === org.principal?.trim().toLowerCase()) : null;
-            const vicePrincipalUser = org?.vicePrincipal ? userList.find(u => u.email?.trim().toLowerCase() === org.vicePrincipal?.trim().toLowerCase()) : null;
+            const principalUser = org?.principal 
+                ? userList.find(u => u.email?.trim().toLowerCase() === org.principal?.trim().toLowerCase() || u.name?.trim() === org.principal?.trim()) 
+                : userList.find(u => u.role === 'principal' || u.role === '교장');
+
+            const vicePrincipalUser = org?.vicePrincipal 
+                ? userList.find(u => u.email?.trim().toLowerCase() === org.vicePrincipal?.trim().toLowerCase() || u.name?.trim() === org.vicePrincipal?.trim()) 
+                : userList.find(u => u.role === 'vicePrincipal' || u.role === '교감');
             
             // 작성자 소속 부서 부장 찾기
             const myDept = org?.departments?.find(d => 
                 d.memberEmails?.some(m => m?.trim().toLowerCase() === profile?.email?.trim().toLowerCase()) ||
                 d.headEmail?.trim().toLowerCase() === profile?.email?.trim().toLowerCase()
             );
-            const headUser = myDept?.headEmail ? userList.find(u => u.email?.trim().toLowerCase() === myDept.headEmail?.trim().toLowerCase()) : null;
+            const headUser = myDept?.headEmail 
+                ? userList.find(u => u.email?.trim().toLowerCase() === myDept.headEmail?.trim().toLowerCase() || u.name?.trim() === myDept.headEmail?.trim()) 
+                : null;
 
             dynamicDefaultApprovers = [
                 {
-                    name: headUser?.name || '',
-                    email: headUser?.email || myDept?.headEmail || '',
+                    name: headUser?.name || myDept?.headEmail || '부장',
+                    email: headUser?.email || (myDept?.headEmail?.includes('@') ? myDept.headEmail : ''),
                     role: '부장',
                     type: 'normal' as const,
                     status: 'pending' as const,
                     active: true,
                 },
                 {
-                    name: vicePrincipalUser?.name || '',
-                    email: vicePrincipalUser?.email || org?.vicePrincipal || '',
+                    name: vicePrincipalUser?.name || org?.vicePrincipal || '교감',
+                    email: vicePrincipalUser?.email || (org?.vicePrincipal?.includes('@') ? org.vicePrincipal : ''),
                     role: '교감',
                     type: 'normal' as const,
                     status: 'pending' as const,
@@ -411,8 +418,8 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                     active: false,
                 },
                 {
-                    name: principalUser?.name || '',
-                    email: principalUser?.email || org?.principal || '',
+                    name: principalUser?.name || org?.principal || '교장',
+                    email: principalUser?.email || (org?.principal?.includes('@') ? org.principal : ''),
                     role: '교장',
                     type: 'final' as const,
                     status: 'pending' as const,
@@ -885,13 +892,22 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                  role: c.role || ''
              })),
              category: category || 'draft',
-             approvers: activeApprovers.map(a => ({
-                 name: a.name,
-                 email: a.email,
-                 role: a.role,
-                 type: a.type,
-                 status: 'pending'
-             })),
+             approvers: activeApprovers.map(a => {
+                 let resolvedEmail = (a.email || '').trim();
+                 if (!resolvedEmail && a.name) {
+                     const matchedUser = users.find(u => u.name?.trim() === a.name?.trim());
+                     if (matchedUser?.email) {
+                         resolvedEmail = matchedUser.email.trim();
+                     }
+                 }
+                 return {
+                     name: a.name.trim(),
+                     email: resolvedEmail,
+                     role: a.role,
+                     type: a.type,
+                     status: 'pending'
+                 };
+             }),
              receiverInfo: data.docType === 'external' ? { name: data.receiverName || '', email: data.receiverEmail || '' } : null,
              headerImage: (docConfig as any).headerImage || '',
              footerInfo: { 
@@ -902,6 +918,17 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                 homepage: docConfig.homepage || '',
              }
          };
+
+         const approverEmails = (payload.approvers || [])
+             .map((a: any) => a.email?.trim().toLowerCase())
+             .filter(Boolean);
+
+         const circularEmails = (data.circulars || [])
+             .map((c: any) => c.email?.trim().toLowerCase())
+             .filter(Boolean);
+
+         payload.approverEmails = approverEmails;
+         payload.circularEmails = circularEmails;
 
          // 1. 수정 모드 (기존 문서 ID가 존재하는 경우)
          if (isEditMode && docToEdit && docToEdit.id) {

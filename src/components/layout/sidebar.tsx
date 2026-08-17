@@ -47,7 +47,7 @@ const NavItem = ({ href, label, icon, count }: NavItemProps) => {
 };
 
 export default function AppSidebar() {
-  const { user, isParent } = useAuth();
+  const { user, profile, isParent } = useAuth();
   const [inboxCount, setInboxCount] = useState(0);
   const { isSidebarOpen, toggleSidebar } = useSidebar();
 
@@ -55,7 +55,7 @@ export default function AppSidebar() {
     if (user?.email && !isParent) {
       const fetchCount = async () => {
         try {
-          const inboxItems = await getInboxDocuments(user.email!);
+          const inboxItems = await getInboxDocuments(user.email!, profile?.name);
           setInboxCount(inboxItems?.length || 0);
         } catch {
           setInboxCount(0);
@@ -65,7 +65,7 @@ export default function AppSidebar() {
       const interval = setInterval(fetchCount, 30000); 
       return () => clearInterval(interval);
     }
-  }, [user, isParent]);
+  }, [user, profile, isParent]);
 
   if (!isSidebarOpen) {
     return null;

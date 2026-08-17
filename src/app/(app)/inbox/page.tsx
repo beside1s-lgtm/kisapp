@@ -175,7 +175,7 @@ export default function InboxPage() {
             const currentYear = new Date().getFullYear().toString();
             const isTeacherOrAdmin = profile.role === 'teacher' || !!profile.isAdmin || profile.role === 'admin';
             Promise.all([
-                getInboxDocuments(profile.email),
+                getInboxDocuments(profile.email, profile.name),
                 getPendingDocuments(user.uid, profile.email),
                 getMyTeacherDocuments(profile.email),
                 getParentServiceDocuments(profile.email, !!profile.isAdmin),
