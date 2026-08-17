@@ -755,7 +755,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
     }
   };
 
-  const { fields: approverFields, replace: replaceApprovers } = useFieldArray({ control: form.control, name: 'approvers' });
+  const { fields: approverFields, replace: replaceApprovers, update: updateApprover } = useFieldArray({ control: form.control, name: 'approvers' });
   const { fields: circularFields, append: appendCircular, remove: removeCircular, replace: replaceCirculars } = useFieldArray({ control: form.control, name: 'circulars' });
   const { fields: attachmentFields, append: appendAttachment, remove: removeAttachment, replace: replaceAttachments } = useFieldArray({ control: form.control, name: 'attachments' });
   const formDocType = form.watch('docType'); 
@@ -1268,7 +1268,16 @@ if (isCurrentApprover) {
                     <CardTitle className="text-base">{field.role}</CardTitle>
                     <FormField control={form.control} name={`approvers.${index}.active`} render={({field: f}) => (
                       <FormItem className="flex gap-2 items-center space-y-0">
-                        <FormControl><Switch checked={f.value} onCheckedChange={f.onChange}/></FormControl>
+                        <FormControl>
+                          <Switch 
+                            checked={f.value} 
+                            onCheckedChange={(checked) => {
+                              f.onChange(checked);
+                              const cur = form.getValues(`approvers.${index}`);
+                              updateApprover(index, { ...cur, active: checked });
+                            }}
+                          />
+                        </FormControl>
                       </FormItem>
                     )} />
                   </CardHeader>
@@ -1287,6 +1296,8 @@ if (isCurrentApprover) {
                                         form.setValue(`approvers.${index}.name`, u.name, { shouldValidate: true, shouldDirty: true });
                                         form.setValue(`approvers.${index}.email`, u.email, { shouldValidate: true, shouldDirty: true });
                                         form.clearErrors(`approvers.${index}.name`);
+                                        const cur = form.getValues(`approvers.${index}`);
+                                        updateApprover(index, { ...cur, name: u.name, email: u.email });
                                     }}
                                     placeholder={`${targetRole} 검색...`}
                                   />
@@ -1297,8 +1308,15 @@ if (isCurrentApprover) {
                         <Controller
                           control={form.control}
                           name={`approvers.${index}.type`}
-                          render={({ field }) => (
-                             <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          render={({ field: typeField }) => (
+                             <Select 
+                                value={typeField.value || 'normal'}
+                                onValueChange={(val) => {
+                                   typeField.onChange(val);
+                                   const cur = form.getValues(`approvers.${index}`);
+                                   updateApprover(index, { ...cur, type: val as any });
+                                }}
+                             >
                                  <SelectTrigger>
                                      <SelectValue placeholder="결재 유형" />
                                  </SelectTrigger>
