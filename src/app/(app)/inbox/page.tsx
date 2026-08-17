@@ -310,11 +310,33 @@ export default function InboxPage() {
                 </TabsContent>
                 
                 <TabsContent value="pending" className="space-y-4">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Send className="h-5 w-5 text-amber-500" />
-                        <h2 className="text-xl font-bold">진행 중인 상신 문서 목록 ({pendingDocs.length})</h2>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                            <Send className="h-5 w-5 text-amber-500" />
+                            <h2 className="text-xl font-bold">진행 중인 상신 문서 목록 ({pendingDocs.length})</h2>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs">
+                            <Button asChild variant="outline" size="sm" className="h-8 text-xs font-semibold gap-1">
+                                <Link href="/sent">
+                                    <Send className="w-3.5 h-3.5" /> 상신함 전체보기
+                                </Link>
+                            </Button>
+                            <Button asChild variant="outline" size="sm" className="h-8 text-xs font-semibold gap-1 text-primary border-primary/30">
+                                <Link href="/registry">
+                                    문서등록대장 바로가기 →
+                                </Link>
+                            </Button>
+                        </div>
                     </div>
-                    <DocumentList documents={pendingDocs} />
+                    {pendingDocs.length === 0 && (
+                        <div className="p-6 bg-slate-50 border rounded-xl text-center space-y-2">
+                            <p className="text-sm font-semibold text-slate-700">현재 결재가 진행 중인 상신 문서가 없습니다.</p>
+                            <p className="text-xs text-muted-foreground">
+                                결재가 최종 완료된 문서는 <Link href="/sent" className="text-primary underline font-bold">상신함</Link> 또는 <Link href="/registry" className="text-primary underline font-bold">문서등록대장</Link>에서 확인하실 수 있습니다.
+                            </p>
+                        </div>
+                    )}
+                    {pendingDocs.length > 0 && <DocumentList documents={pendingDocs} />}
                 </TabsContent>
                 
                 <TabsContent value="teacher" className="space-y-4">
