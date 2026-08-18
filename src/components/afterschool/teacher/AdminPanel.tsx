@@ -7,8 +7,10 @@ import {
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { downloadClassroomTemplateExcel, parseClassroomExcel, downloadCourseTemplateExcel, parseCourseExcel } from '@/lib/afterschool/excel';
-import { defaultTeacherApplySettings, getTeacherApplySettings, onTeacherApplySettingsUpdate, saveTeacherApplySettings, updateAfterschoolCourse, deleteAfterschoolCourse, saveAfterschoolCoursesBatch, addAfterschoolClassroom, deleteAfterschoolClassroom, saveAfterschoolClassroomsBatch, onMaterialRequestsUpdate, onExpenseProofsUpdate, sendSubmissionReminder, purgeAfterschoolOperationalData, onAttendanceRecordsUpdate, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord } from '@/lib/services/settingsService';
+import { defaultTeacherApplySettings, getTeacherApplySettings, onTeacherApplySettingsUpdate, saveTeacherApplySettings, updateAfterschoolCourse, deleteAfterschoolCourse, saveAfterschoolCoursesBatch, addAfterschoolClassroom, deleteAfterschoolClassroom, saveAfterschoolClassroomsBatch, onMaterialRequestsUpdate, onExpenseProofsUpdate, sendSubmissionReminder, purgeAfterschoolOperationalData, onAttendanceRecordsUpdate, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord, onDocConfigUpdate } from '@/lib/services/settingsService';
 import { countOperatingDays, getCourseSessionsPerClass, generateCalendarSchedule, generateCalendarScheduleByDateRange, ScheduleDay } from '@/lib/afterschool/schedule';
+import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
+import type { DocConfig } from '@/lib/types';
 import { StudentManagement } from './StudentManagement';
 import { OfficialSeal } from './AttendanceManagement';
 import { useAuth } from '@/hooks/use-auth';
@@ -58,11 +60,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [selectedCourseId, setSelectedCourseId] = useState<string>(courses[0]?.id || '');
 
   const [teacherApplySettings, setTeacherApplySettings] = useState<typeof defaultTeacherApplySettings>(defaultTeacherApplySettings);
+  const [docConfig, setDocConfig] = useState<Partial<DocConfig>>({});
   const [isStageControlFolded, setIsStageControlFolded] = useState<boolean>(false);
   const [materialRequests, setMaterialRequests] = useState<MaterialRequest[]>([]);
   const [expenseProofs, setExpenseProofs] = useState<ExpenseProof[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [substituteRecords, setSubstituteRecords] = useState<SubstituteRecord[]>([]);
+
+  useEffect(() => {
+    const unsub = onDocConfigUpdate((cfg) => {
+      if (cfg) setDocConfig(cfg);
+    });
+    return () => unsub();
+  }, []);
+
+  const holidayDates = React.useMemo(() => {
+    return (docConfig?.academicCalendar?.events || DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || [])
+      .filter(e => !e.isSchoolDay || e.type === 'HOLIDAY' || e.type === 'PUBLIC_HOLIDAY')
+      .map(e => e.date);
+  }, [docConfig]);
 
   // 서류 검토 팝업 모달 상태
   const [viewingDocCourse, setViewingDocCourse] = useState<Course | null>(null);
@@ -379,7 +395,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const fallbackSessions = applySettings?.sessionsPerClass ?? 2;
       const sessionsPerClass = getCourseSessionsPerClass(rest, fallbackSessions); // 강좌별 차시 수(1~4차시 등 자동 감지)
       const courseDays = (rest.classDays && rest.classDays.length > 0) ? rest.classDays : (applySettings?.allowedDays || ['월']);
-      const totalOperatingDays = countOperatingDays(startDate, endDate, courseDays); // 운영 기간 내 총 수업 일수
+      const totalOperatingDays = countOperatingDays(startDate, endDate, courseDays, holidayDates); // 운영 기간 내 총 수업 일수 (휴업일 제외)
       const totalSessions = sessionsPerClass * totalOperatingDays; // 총 차시 수
       const sessionCount = totalSessions || 1;
 
@@ -469,7 +485,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     // 미리보기: 강좌별 감산된 수강료 표시
     const previewLines = targetCourses.slice(0, 5).map(c => {
       const courseDays = (c.classDays && c.classDays.length > 0) ? c.classDays : allowedDays;
-      const totalDays = countOperatingDays(opStart, opEnd, courseDays);
+      const totalDays = countOperatingDays(opStart, opEnd, courseDays, holidayDates);
       const courseSessions = getCourseSessionsPerClass(c, fallbackSessions);
       const totalSessions = courseSessions * totalDays;
       const newTuition = (c.isFree || tuitionType === '학교예산') ? 0 : tuitionPerSession * totalSessions;
@@ -477,7 +493,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     });
     const moreText = targetCourses.length > 5 ? `\n... 외 ${targetCourses.length - 5}개` : '';
 
-    if (!window.confirm(`모든 강좌(${targetCourses.length}개)의 수강료를 운영기간 기반으로 일괄 적용합니까?\n\n공식: (강좌별 차시/회) × 운영일수 × 차시당 ${tuitionPerSession.toLocaleString()}\n\n[미리보기 - 상위 5개]\n${previewLines.join('\n')}${moreText}`)) {
+    if (!window.confirm(`모든 강좌(${targetCourses.length}개)의 수강료를 운영기간 기반으로 일괄 적용합니까?\n\n공식: (강좌별 차시/회) × 운영일수(휴업일 제외) × 차시당 ${tuitionPerSession.toLocaleString()}\n\n[미리보기 - 상위 5개]\n${previewLines.join('\n')}${moreText}`)) {
       return;
     }
 
@@ -485,7 +501,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     try {
       const updatedCourses = targetCourses.map(c => {
         const courseDays = (c.classDays && c.classDays.length > 0) ? c.classDays : allowedDays;
-        const totalDays = countOperatingDays(opStart, opEnd, courseDays);
+        const totalDays = countOperatingDays(opStart, opEnd, courseDays, holidayDates);
         const courseSessions = getCourseSessionsPerClass(c, fallbackSessions); // 개별 강좌 차시 수 판별 (예: 1~4차시 -> 4)
         const totalSessions = courseSessions * totalDays;
         const newTuition = (c.isFree || tuitionType === '학교예산') ? 0 : tuitionPerSession * totalSessions;
@@ -2317,7 +2333,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   : (teacherApplySettings?.allowedDays || ['월']);
                 const opStart = teacherApplySettings?.operatingStartDate || '';
                 const opEnd = teacherApplySettings?.operatingEndDate || '';
-                const totalOpDays = opStart && opEnd ? countOperatingDays(opStart, opEnd, courseDays) : 0;
+                const totalOpDays = opStart && opEnd ? countOperatingDays(opStart, opEnd, courseDays, holidayDates) : 0;
                 const sessionCount = totalOpDays > 0
                   ? sessionsPerClass * totalOpDays
                   : (editingCourse.sessionCount || sessionsPerClass);
@@ -2331,7 +2347,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <div className="bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 text-xs text-amber-800 space-y-1">
                     <div className="font-bold text-amber-700 mb-1">📐 마스터 설정 기반 자동 계산 (참고)</div>
                     <div className="text-[11px] text-amber-600 space-y-0.5">
-                      <div>공식: <b>{sessionsPerClass}차시/회</b> × <b>{totalOpDays}일</b>(운영 일수) = <b>{sessionCount}차시</b></div>
+                      <div>공식: <b>{sessionsPerClass}차시/회</b> × <b>{totalOpDays}일</b>(운영 일수) = <b>{sessionCount}차시</b> (학사일정 휴업일 제외됨)</div>
                       <div className="flex gap-4 flex-wrap">
                         <span>수강료: <b>{editingCourse.isFree ? '0원 (무료 강좌)' : `${perSession.toLocaleString()} ${cur} × ${sessionCount}차시 = ${autoTuition.toLocaleString()} ${cur}`}</b></span>
                         <span>강사료: <b>{teacherFeePerSess.toLocaleString()} {tcur} × {sessionCount}차시 = {autoTeacherFee.toLocaleString()} {tcur}</b></span>
@@ -2412,7 +2428,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         const effectiveSessions = getCourseSessionsPerClass(c, teacherApplySettings?.sessionsPerClass || 2);
 
         const scheduleDays: ScheduleDay[] = (opStart && opEnd)
-          ? generateCalendarScheduleByDateRange(opStart, opEnd, effectiveDays, effectiveSessions)
+          ? generateCalendarScheduleByDateRange(opStart, opEnd, effectiveDays, effectiveSessions, holidayDates)
           : generateCalendarSchedule(c.startDate || '2026-03-30', operatingWeeks, effectiveDays, effectiveSessions);
 
         const courseStudents = enrollments.filter((e) => e.courseId === c.id && e.status === 'ENROLLED');

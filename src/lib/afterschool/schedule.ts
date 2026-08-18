@@ -70,18 +70,21 @@ export function generateCalendarSchedule(
 /**
  * 운영 기간(startDate ~ endDate) + 수업 요일 기반으로 달력 스케줄 생성 [이슈 4]
  * - 마스터 설정의 operatingStartDate ~ operatingEndDate 및 allowedDays를 그대로 반영
+ * - 학사일정 공휴일/휴업일(holidayDates) 자동 제외 지원
  */
 export function generateCalendarScheduleByDateRange(
   startDateStr: string,
   endDateStr: string,
   classDays: string[] = ['월'],
-  sessionsPerClass: number = 2
+  sessionsPerClass: number = 2,
+  holidayDates?: string[] | Set<string>
 ): ScheduleDay[] {
   const dayNameMap: { [key: number]: string } = {
     0: '일', 1: '월', 2: '화', 3: '수', 4: '목', 5: '금', 6: '토'
   };
 
   const normalizedDays = (classDays && classDays.length > 0) ? classDays : ['월'];
+  const holidaySet = holidayDates instanceof Set ? holidayDates : new Set(holidayDates || []);
   const schedule: ScheduleDay[] = [];
 
   let start = new Date(startDateStr.replace(' ', 'T'));
@@ -100,11 +103,13 @@ export function generateCalendarScheduleByDateRange(
 
   while (current <= end) {
     const dayOfWeek = dayNameMap[current.getDay()];
-    if (normalizedDays.includes(dayOfWeek)) {
-      const month = String(current.getMonth() + 1).padStart(2, '0');
-      const date = String(current.getDate()).padStart(2, '0');
+    const month = String(current.getMonth() + 1).padStart(2, '0');
+    const date = String(current.getDate()).padStart(2, '0');
+    const fullDate = `${current.getFullYear()}-${month}-${date}`;
+
+    // 해당 요일이 수업 요일이고 학사일정 공휴일이 아닌 경우에만 포함
+    if (normalizedDays.includes(dayOfWeek) && !holidaySet.has(fullDate)) {
       const dateStr = `${month}/${date}(${dayOfWeek})`;
-      const fullDate = `${current.getFullYear()}-${month}-${date}`;
 
       const sessionNos: number[] = [];
       for (let s = 0; s < sessionsPerClass; s++) {
@@ -133,17 +138,20 @@ export function generateCalendarScheduleByDateRange(
 /**
  * 운영 기간 내 실제 수업 일수 카운트 [이슈 3 - 수강료 계산식에 사용]
  * 총 수강료 = sessionsPerClass × countOperatingDays × tuitionPerSession
+ * - 학사일정 공휴일/휴업일(holidayDates) 자동 제외 지원
  */
 export function countOperatingDays(
   startDateStr: string,
   endDateStr: string,
-  classDays: string[] = ['월']
+  classDays: string[] = ['월'],
+  holidayDates?: string[] | Set<string>
 ): number {
   const dayNameMap: { [key: number]: string } = {
     0: '일', 1: '월', 2: '화', 3: '수', 4: '목', 5: '금', 6: '토'
   };
 
   const normalizedDays = (classDays && classDays.length > 0) ? classDays : ['월'];
+  const holidaySet = holidayDates instanceof Set ? holidayDates : new Set(holidayDates || []);
 
   let start = new Date(startDateStr.replace(' ', 'T'));
   let end = new Date(endDateStr.replace(' ', 'T'));
@@ -156,12 +164,74 @@ export function countOperatingDays(
   let current = new Date(start);
   while (current <= end) {
     const dayOfWeek = dayNameMap[current.getDay()];
-    if (normalizedDays.includes(dayOfWeek)) {
+    const month = String(current.getMonth() + 1).padStart(2, '0');
+    const date = String(current.getDate()).padStart(2, '0');
+    const fullDate = `${current.getFullYear()}-${month}-${date}`;
+
+    if (normalizedDays.includes(dayOfWeek) && !holidaySet.has(fullDate)) {
       count++;
     }
     current.setDate(current.getDate() + 1);
   }
   return count;
+}
+
+/**
+ * 운영 기간 및 휴업일을 고려한 실제 수업 운영 주수 및 요일별 수업 횟수 자동 산출
+ */
+export function calculateRealOperatingWeeksAndDays(
+  startDateStr: string,
+  endDateStr: string,
+  classDays: string[] = ['월', '화', '수', '목', '금'],
+  holidayDates?: string[] | Set<string>
+): {
+  operatingWeeks: number;
+  totalDays: number;
+  daysByWeekday: Record<string, number>;
+} {
+  const dayNameMap: { [key: number]: string } = {
+    0: '일', 1: '월', 2: '화', 3: '수', 4: '목', 5: '금', 6: '토'
+  };
+
+  const normalizedDays = (classDays && classDays.length > 0) ? classDays : ['월', '화', '수', '목', '금'];
+  const holidaySet = holidayDates instanceof Set ? holidayDates : new Set(holidayDates || []);
+  const daysByWeekday: Record<string, number> = {};
+  normalizedDays.forEach(d => { daysByWeekday[d] = 0; });
+
+  let start = new Date(startDateStr.replace(' ', 'T'));
+  let end = new Date(endDateStr.replace(' ', 'T'));
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+    return { operatingWeeks: 0, totalDays: 0, daysByWeekday };
+  }
+
+  end.setHours(23, 59, 59, 999);
+
+  let totalDays = 0;
+  let current = new Date(start);
+
+  while (current <= end) {
+    const dayOfWeek = dayNameMap[current.getDay()];
+    const month = String(current.getMonth() + 1).padStart(2, '0');
+    const date = String(current.getDate()).padStart(2, '0');
+    const fullDate = `${current.getFullYear()}-${month}-${date}`;
+
+    if (normalizedDays.includes(dayOfWeek) && !holidaySet.has(fullDate)) {
+      daysByWeekday[dayOfWeek] = (daysByWeekday[dayOfWeek] || 0) + 1;
+      totalDays++;
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  // 평균 주수 (또는 가장 많은 요일 기준 주수)
+  const maxDayCount = Math.max(0, ...Object.values(daysByWeekday));
+  const operatingWeeks = maxDayCount;
+
+  return {
+    operatingWeeks,
+    totalDays,
+    daysByWeekday
+  };
 }
 
 /**

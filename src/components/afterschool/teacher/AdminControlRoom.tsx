@@ -29,7 +29,8 @@ import {
   Printer,
   FileCheck,
   CreditCard,
-  ImageIcon
+  ImageIcon,
+  RotateCw
 } from 'lucide-react';
 import { safeParseDate } from '../student/StudentView';
 import {
@@ -55,7 +56,8 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/kisbus/utils';
 import type { DocConfig } from '@/lib/types';
-import { generateCalendarSchedule } from '@/lib/afterschool/schedule';
+import { generateCalendarSchedule, calculateRealOperatingWeeksAndDays } from '@/lib/afterschool/schedule';
+import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
 
 interface AdminControlRoomProps {
   timerConfig: GlobalTimerConfig;
@@ -230,11 +232,85 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
       alert(`설정 저장 실패: ${res.error}`);
     }
   };
+
   const handleApplyDateChange = (field: 'applyStartDate' | 'applyEndDate', datetimeLocalVal: string) => {
     if (!datetimeLocalVal) return;
     const formatted = datetimeLocalVal.replace('T', ' ') + ':00';
     setDraftTeacherApply(prev => ({ ...prev, [field]: formatted }));
   };
+
+  // 학사일정 기반 학기별 시작일/종료일 및 휴업일 자동 연동
+  const getSemesterDatesFromAcademicCalendar = (semName: string) => {
+    const cal = docConfig?.academicCalendar || DEFAULT_ACADEMIC_CALENDAR_CONFIG;
+    const { sem1, vacationSummer, sem2, vacationWinter } = cal.semesters || DEFAULT_ACADEMIC_CALENDAR_CONFIG.semesters;
+    
+    if (semName === '1학기' && sem1) {
+      return { startDate: sem1.startDate || '2026-03-02', endDate: sem1.endDate || '2026-07-17', year: String(cal.year || 2026) };
+    }
+    if (semName === '여름방학' && vacationSummer) {
+      return { startDate: vacationSummer.startDate || '2026-07-18', endDate: vacationSummer.endDate || '2026-08-16', year: String(cal.year || 2026) };
+    }
+    if (semName === '2학기' && sem2) {
+      return { startDate: sem2.startDate || '2026-08-17', endDate: sem2.endDate || '2027-01-08', year: String(cal.year || 2026) };
+    }
+    if (semName === '겨울방학' && vacationWinter) {
+      return { startDate: vacationWinter.startDate || '2027-01-09', endDate: vacationWinter.endDate || '2027-02-28', year: String(cal.year || 2026) };
+    }
+    return { startDate: draftTeacherApply.operatingStartDate, endDate: draftTeacherApply.operatingEndDate, year: String(cal.year || 2026) };
+  };
+
+  const handleSemesterChange = (newSem: string) => {
+    const { startDate, endDate, year } = getSemesterDatesFromAcademicCalendar(newSem);
+    const holidayDates = (docConfig?.academicCalendar?.events || DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || [])
+      .filter(e => !e.isSchoolDay || e.type === 'HOLIDAY' || e.type === 'PUBLIC_HOLIDAY')
+      .map(e => e.date);
+    const allowedDays = draftTeacherApply.allowedDays || ['월', '화', '수', '목', '금'];
+    const { operatingWeeks } = calculateRealOperatingWeeksAndDays(startDate, endDate, allowedDays, holidayDates);
+
+    setDraftTeacherApply(prev => ({
+      ...prev,
+      semester: newSem as any,
+      year: year || prev.year,
+      operatingStartDate: startDate,
+      operatingEndDate: endDate,
+      operatingWeeks: operatingWeeks > 0 ? operatingWeeks : prev.operatingWeeks
+    }));
+  };
+
+  const handleOperatingDateChange = (field: 'operatingStartDate' | 'operatingEndDate', val: string) => {
+    const nextStart = field === 'operatingStartDate' ? val : draftTeacherApply.operatingStartDate;
+    const nextEnd = field === 'operatingEndDate' ? val : draftTeacherApply.operatingEndDate;
+    const holidayDates = (docConfig?.academicCalendar?.events || DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || [])
+      .filter(e => !e.isSchoolDay || e.type === 'HOLIDAY' || e.type === 'PUBLIC_HOLIDAY')
+      .map(e => e.date);
+    const allowedDays = draftTeacherApply.allowedDays || ['월', '화', '수', '목', '금'];
+    const { operatingWeeks } = calculateRealOperatingWeeksAndDays(nextStart, nextEnd, allowedDays, holidayDates);
+
+    setDraftTeacherApply(prev => ({
+      ...prev,
+      [field]: val,
+      operatingWeeks: operatingWeeks > 0 ? operatingWeeks : prev.operatingWeeks
+    }));
+  };
+
+  const handleSyncWithAcademicCalendar = () => {
+    const currentSem = draftTeacherApply.semester || '2학기';
+    handleSemesterChange(currentSem);
+  };
+
+  // 실시간 운영 통계 (휴업일 제외 실제 수업일수 및 요일별 횟수)
+  const realtimeOperatingStats = React.useMemo(() => {
+    const holidayDates = (docConfig?.academicCalendar?.events || DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || [])
+      .filter(e => !e.isSchoolDay || e.type === 'HOLIDAY' || e.type === 'PUBLIC_HOLIDAY')
+      .map(e => e.date);
+    const allowedDays = draftTeacherApply.allowedDays || ['월', '화', '수', '목', '금'];
+    return calculateRealOperatingWeeksAndDays(
+      draftTeacherApply.operatingStartDate || '2026-08-17',
+      draftTeacherApply.operatingEndDate || '2027-01-08',
+      allowedDays,
+      holidayDates
+    );
+  }, [draftTeacherApply.operatingStartDate, draftTeacherApply.operatingEndDate, draftTeacherApply.allowedDays, docConfig?.academicCalendar]);
 
   // 수업 시간대 템플릿 관리용 임시 상태
   const [newSlotLabel, setNewSlotLabel] = useState('');
@@ -1361,47 +1437,88 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
                   </div>
                 </div>
 
-                <div className="pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-600 font-semibold mb-1">실제 수업 운영 주수</label>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min="1"
-                        max="52"
-                        value={draftTeacherApply.operatingWeeks || 10}
-                        onChange={(e) => setDraftTeacherApply(prev => ({ ...prev, operatingWeeks: parseInt(e.target.value, 10) || 10 }))}
-                        className="w-20 border border-slate-300 p-2 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 font-mono text-center font-bold"
-                      />
-                      <span className="text-xs text-slate-600 font-semibold">주 운영</span>
+                <div className="pt-2.5 border-t border-slate-100 space-y-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-600 font-semibold mb-1 flex items-center justify-between">
+                        <span>실제 수업 운영 주수</span>
+                        <span className="text-[10px] text-indigo-600 font-normal">학사일정 자동계산</span>
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="1"
+                          max="52"
+                          value={draftTeacherApply.operatingWeeks || 10}
+                          onChange={(e) => setDraftTeacherApply(prev => ({ ...prev, operatingWeeks: parseInt(e.target.value, 10) || 10 }))}
+                          className="w-20 border border-slate-300 p-2 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 font-mono text-center font-bold text-indigo-700 bg-indigo-50/40"
+                        />
+                        <span className="text-xs text-slate-600 font-semibold">주 운영</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-600 font-semibold mb-1 flex items-center justify-between">
+                        <span>1회당 기본 차시 수</span>
+                        <span className="text-[10px] text-slate-400 font-normal">시스템 기본값</span>
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          value={draftTeacherApply.sessionsPerClass || 2}
+                          onChange={(e) => setDraftTeacherApply(prev => ({ ...prev, sessionsPerClass: parseInt(e.target.value, 10) || 2 }))}
+                          className="w-20 border border-slate-300 p-2 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 font-mono text-center font-bold text-indigo-700 bg-indigo-50/40"
+                        />
+                        <span className="text-xs text-slate-600 font-semibold">차시 / 회</span>
+                      </div>
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-slate-600 font-semibold mb-1">1회 수업당 표준 차시 수</label>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={draftTeacherApply.sessionsPerClass || 2}
-                        onChange={(e) => setDraftTeacherApply(prev => ({ ...prev, sessionsPerClass: parseInt(e.target.value, 10) || 2 }))}
-                        className="w-20 border border-slate-300 p-2 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 font-mono text-center font-bold text-indigo-700 bg-indigo-50/50"
-                      />
-                      <span className="text-xs text-slate-600 font-semibold">차시 / 회</span>
+                  {/* 실시간 휴업일 제외 수업일수 및 요일별 현황 뱃지 */}
+                  <div className="p-2.5 bg-indigo-50/70 border border-indigo-200/80 rounded-xl space-y-1 text-[11px] text-indigo-900">
+                    <div className="font-bold flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                        운영 기간 내 실제 수업일수 (휴업일 자동 제외)
+                      </span>
+                      <span className="bg-indigo-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
+                        총 {realtimeOperatingStats.totalDays}일 수업 ({realtimeOperatingStats.operatingWeeks}주)
+                      </span>
                     </div>
+                    <div className="text-[10.5px] text-indigo-700 flex flex-wrap gap-x-2.5 gap-y-0.5 pt-0.5">
+                      {draftTeacherApply.allowedDays?.map((d) => (
+                        <span key={d} className="font-medium">
+                          {d}요일: <b className="text-indigo-950 font-bold">{realtimeOperatingStats.daysByWeekday[d] || 0}회</b>
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-indigo-600/80 pt-0.5 border-t border-indigo-200/50">
+                      💡 <b>차시 안내:</b> 주중 강좌는 보통 <b>2차시</b>, 토요일/방학 집중 특강은 <b>4차시</b>로 강좌 개설 시 교시 선택을 통해 강좌별로 자유롭게 자동 적용됩니다.
+                    </p>
                   </div>
-                  <p className="col-span-2 text-[10px] text-slate-400 mt-0.5">※ 주당 1회 수업 시 총 차시 수 = 운영 주수 × 1회당 차시 수 (예: 10주 × 2차시 = 총 20차시)</p>
                 </div>
               </div>
             </div>
 
             {/* 2. 수업 표준 요건 및 재원 구분 */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
-              <h4 className="font-bold text-slate-800 text-[13px] border-b pb-2 flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-indigo-500" />
-                수업 표준 학기 및 정산 요건
-              </h4>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b pb-2">
+                <h4 className="font-bold text-slate-800 text-[13px] flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-indigo-500" />
+                  수업 표준 학기 및 정산 요건
+                </h4>
+                <button
+                  type="button"
+                  onClick={handleSyncWithAcademicCalendar}
+                  className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] px-2.5 py-1 rounded-lg border border-indigo-200 flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                  title="중앙 학사일정에서 현재 학기 시작일/종료일 및 휴업일을 실시간으로 가져옵니다"
+                >
+                  <RotateCw className="w-3 h-3 text-indigo-600" />
+                  학사일정 자동 동기화
+                </button>
+              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1418,8 +1535,8 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
                   <label className="block text-slate-600 font-semibold mb-1">표준 학기</label>
                   <select
                     value={draftTeacherApply.semester}
-                    onChange={(e) => setDraftTeacherApply(prev => ({ ...prev, semester: e.target.value as any }))}
-                    className="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 cursor-pointer bg-white"
+                    onChange={(e) => handleSemesterChange(e.target.value)}
+                    className="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 cursor-pointer bg-white font-bold text-slate-800"
                   >
                     <option value="1학기">1학기</option>
                     <option value="여름방학">여름방학</option>
@@ -1436,8 +1553,8 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
                   <input
                     type="date"
                     value={draftTeacherApply.operatingStartDate}
-                    onChange={(e) => setDraftTeacherApply(prev => ({ ...prev, operatingStartDate: e.target.value }))}
-                    className="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500"
+                    onChange={(e) => handleOperatingDateChange('operatingStartDate', e.target.value)}
+                    className="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 font-mono"
                   />
                 </div>
                 <div>
@@ -1445,8 +1562,8 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
                   <input
                     type="date"
                     value={draftTeacherApply.operatingEndDate}
-                    onChange={(e) => setDraftTeacherApply(prev => ({ ...prev, operatingEndDate: e.target.value }))}
-                    className="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500"
+                    onChange={(e) => handleOperatingDateChange('operatingEndDate', e.target.value)}
+                    className="w-full border border-slate-300 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 font-mono"
                   />
                 </div>
               </div>

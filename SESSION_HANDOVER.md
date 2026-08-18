@@ -52,8 +52,13 @@
 8. **React Hook 규칙 준수 및 런타임 에러 해결**:
    - `TeacherPage` 컴포넌트 내 조건부 렌더링/조기 반환(`if (loading)`, `if (!isAuthenticated)`) 하단에 있던 `useMemo` 훅들(`loggedInTeacherDoc`, `teacherBusInfoText`)을 컴포넌트 최상단으로 재배치하여 `Rules of Hooks` 위반 런타임 에러 완전 해결.
 
-9. **배포 정보 (Deployment Info)**:
-   - 프로덕션 빌드 검증 및 GitHub (`main`) 푸시 배포 완료: 최신 커밋(`1d1b263`)이 원격 저장소(`origin/main`)에 성공적으로 푸시되어 Firebase App Hosting 배포 파이프라인이 정상 트리거되었습니다.
+9. **방과후 관리자 화면 축소 시 버튼 오버플로우/삐져나옴 해결**:
+   - 선택 강좌 일괄 액션바(`[일괄 승인]`, `[일괄 대기]`, `[일괄 폐강]`, `[영구 삭제]`)에 `flex-wrap` 및 화면 크기별 동적 텍스트 축약(`hidden 2xl:inline` / `2xl:hidden`)을 적용하여 창 크기가 줄어들어도 버튼이 우측으로 잘리거나 삐져나가지 않도록 완벽 대응.
+   - 상단 5단계 운영 상태 전환 버튼 그리드(`RECRUITING`, `APPLYING`, `CONFIRMED`, `OPERATING`, `CLOSED`)를 반응형(`grid-cols-2 sm:grid-cols-3 xl:grid-cols-5`) 및 텍스트 `truncate` 처리로 개선.
+   - 미제출 서류 독촉 배너 및 상태 뱃지도 유연한 `flex-col sm:flex-row` 레이아웃으로 보강.
+
+10. **배포 정보 (Deployment Info)**:
+    - 프로덕션 빌드 검증 및 GitHub (`main`) 푸시 배포 완료: 최신 커밋(`d3071db`)이 원격 저장소(`origin/main`)에 성공적으로 푸시되어 Firebase App Hosting 배포 파이프라인이 정상 트리거되었습니다.
 
 ---
 
@@ -61,7 +66,6 @@
 
 | 파일 경로 | 수정 사유 및 주요 변경 내용 |
 | :--- | :--- |
-| [`src/components/settings-modal.tsx`](file:///c:/myapp/kisapp/src/components/settings-modal.tsx) | 학사일정 기본값 수정 (추석 9월 25일로 정정) |
 | [`src/app/(app)/admin/bus/components/morning-gate-duty-tab.tsx`](file:///c:/myapp/kisapp/src/app/%28app%29/admin/bus/components/morning-gate-duty-tab.tsx) | `DEFAULT_HOLIDAYS` 내 9월 24일 제거, 시스템 학사일정 실시간 연동 및 과거 데이터 자동 클렌징 |
 | [`src/app/(app)/admin/bus/components/teacher-management-tab.tsx`](file:///c:/myapp/kisapp/src/app/%28app%29/admin/bus/components/teacher-management-tab.tsx) | 통학버스 배정(개별/일괄/초기화/해제) 시 Morning과 Afternoon 노선 모두 일괄 동기화 및 마운트 시 자동 검증/복구 구현 |
 | [`src/app/teacher/bus/page.tsx`](file:///c:/myapp/kisapp/src/app/teacher/bus/page.tsx) | `TeacherAssignmentViewDialog` 실시간 구독(`onSnapshot`) 전환, 통학/방과후/토요 탭 분리, Hook 최상단 재배치로 Hook 에러 완벽 해결 |
