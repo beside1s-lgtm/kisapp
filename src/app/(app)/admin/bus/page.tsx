@@ -971,8 +971,8 @@ export default function AdminPage() {
             getOrgStructure().then(orgData => {
                 const emailLower = (profile?.email || user?.email || '').toLowerCase();
                 const busManagers = orgData?.busManagers || (orgData?.busManager ? [orgData.busManager] : []);
-                const isBusManager = busManagers.some((m: string) => m.toLowerCase() === emailLower);
-                const isSystemAdmin = profile?.isAdmin === true || emailLower === 'beside1s@kshcm.net';
+                const isBusManager = busManagers.some((m: string) => m.toLowerCase() === emailLower) || emailLower === 'bus@kshcm.net';
+                const isSystemAdmin = profile?.isAdmin === true || emailLower === 'beside1s@kshcm.net' || emailLower === 'bus@kshcm.net';
                 
                 if (isSystemAdmin || isBusManager) {
                     setIsAuthorized(true);

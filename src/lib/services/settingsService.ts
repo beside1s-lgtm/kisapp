@@ -54,20 +54,20 @@ export async function saveDocConfig(payload: Partial<DocConfig>) {
 
 export async function getOrgStructure(): Promise<Partial<import('@/lib/types').OrgStructure>> {
   try {
-    if (!auth.currentUser) return { afterschoolManagers: ['beside1s@kshcm.net'], busManagers: ['beside1s@kshcm.net'] };
+    if (!auth.currentUser) return { afterschoolManagers: ['beside1s@kshcm.net'], busManagers: ['beside1s@kshcm.net', 'bus@kshcm.net'] };
     const snap = await getDoc(doc(getSettingsCol(), 'orgStructure'));
     if (snap.exists()) {
       const data = snap.data() as import('@/lib/types').OrgStructure;
       return {
         ...data,
         afterschoolManagers: Array.from(new Set([...(data.afterschoolManagers || []), 'beside1s@kshcm.net'])),
-        busManagers: Array.from(new Set([...(data.busManagers || []), 'beside1s@kshcm.net'])),
+        busManagers: Array.from(new Set([...(data.busManagers || []), 'beside1s@kshcm.net', 'bus@kshcm.net'])),
       };
     }
-    return { afterschoolManagers: ['beside1s@kshcm.net'], busManagers: ['beside1s@kshcm.net'] };
+    return { afterschoolManagers: ['beside1s@kshcm.net'], busManagers: ['beside1s@kshcm.net', 'bus@kshcm.net'] };
   } catch (e) {
     console.error("[SettingsService] getOrgStructure error:", e);
-    return { afterschoolManagers: ['beside1s@kshcm.net'], busManagers: ['beside1s@kshcm.net'] };
+    return { afterschoolManagers: ['beside1s@kshcm.net'], busManagers: ['beside1s@kshcm.net', 'bus@kshcm.net'] };
   }
 }
 

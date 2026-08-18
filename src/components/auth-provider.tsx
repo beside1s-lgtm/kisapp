@@ -177,14 +177,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       let userProfile = await getUserProfileByEmail(firebaseUser.email);
-      const isHardcodedAdmin = firebaseUser.email === ADMIN_EMAIL;
+      const emailLower = firebaseUser.email.toLowerCase().trim();
+      const isHardcodedAdmin = emailLower === ADMIN_EMAIL || emailLower === 'bus@kshcm.net';
       
       let needsSave = false;
       const profileUpdates: Partial<UserProfile> = {};
 
-      // 1. 프로필이 없으면 (즉, users 컬렉션에 없는 경우) -> 학생 패턴인지 확인
+      // 1. 프로필이 없으면 (즉, users 컬렉션에 없는 경우) -> 버스 담당자 또는 학생 패턴인지 확인
       if (!userProfile) {
-        if (isStudentPattern(firebaseUser.email)) {
+        if (emailLower === 'bus@kshcm.net') {
+          console.log("Auto-provisioning bus manager account.");
+          needsSave = true;
+          userProfile = {
+              uid: firebaseUser.uid,
+              name: firebaseUser.displayName || '스쿨버스 담당자',
+              email: emailLower,
+              role: '행정실',
+              signature: '',
+              isAdmin: true,
+          };
+        } else if (isStudentPattern(firebaseUser.email)) {
           console.log("No profile found, but matches student pattern. Creating parent profile.");
           needsSave = true;
           userProfile = {
