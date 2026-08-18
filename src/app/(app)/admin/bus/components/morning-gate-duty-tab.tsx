@@ -31,18 +31,11 @@ const DEFAULT_TEACHER_SEQUENCE = [
     '정유진', '김주연', '오혜령', '배유미'
 ];
 
-// Default holiday dates for 2026
+// Default holiday dates for 2026 (공식 학사일정 기본값 연동)
 const DEFAULT_HOLIDAYS = [
-    '2026-04-24',
-    '2026-04-27',
-    '2026-04-28',
-    '2026-04-29',
-    '2026-04-30',
-    '2026-05-01',
-    '2026-05-05',
-    '2026-09-24', // 2학기 추석/휴업 예시
+    '2026-09-02',
     '2026-09-25',
-    '2026-10-09'  // 한글날
+    '2026-10-09'
 ];
 
 export interface DayDutySlot {
@@ -206,52 +199,70 @@ export function MorningGateDutyTab({ teachers, semesterMode = 'regular' }: Morni
                     const centralSemesters: Record<string, SemesterPeriodInfo> = {
                         '2026_1': {
                             id: '2026_1',
-                            name: cal.semesters.sem1.name || '2026학년도 1학기',
+                            name: cal.semesters?.sem1?.name || '2026학년도 1학기',
                             type: 'regular',
-                            startDate: cal.semesters.sem1.startDate,
-                            endDate: cal.semesters.sem1.endDate
+                            startDate: cal.semesters?.sem1?.startDate || '2026-03-02',
+                            endDate: cal.semesters?.sem1?.endDate || '2026-07-17'
                         },
                         '2026_summer': {
                             id: '2026_summer',
-                            name: cal.semesters.vacationSummer.name || '2026학년도 여름방학',
+                            name: cal.semesters?.vacationSummer?.name || '2026학년도 여름방학',
                             type: 'vacation',
-                            startDate: cal.semesters.vacationSummer.startDate,
-                            endDate: cal.semesters.vacationSummer.endDate,
+                            startDate: cal.semesters?.vacationSummer?.startDate || '2026-07-18',
+                            endDate: cal.semesters?.vacationSummer?.endDate || '2026-08-23',
                             isVacationFixedMode: true,
                             vacationFixedTeacherName: '강지욱'
                         },
                         '2026_2': {
                             id: '2026_2',
-                            name: cal.semesters.sem2.name || '2026학년도 2학기',
+                            name: cal.semesters?.sem2?.name || '2026학년도 2학기',
                             type: 'regular',
-                            startDate: cal.semesters.sem2.startDate,
-                            endDate: cal.semesters.sem2.endDate,
+                            startDate: cal.semesters?.sem2?.startDate || '2026-08-24',
+                            endDate: cal.semesters?.sem2?.endDate || '2026-12-31',
                             startFromLastSemesterContinuity: true
                         },
                         '2026_winter': {
                             id: '2026_winter',
-                            name: cal.semesters.vacationWinter.name || '2027학년도 겨울방학',
+                            name: cal.semesters?.vacationWinter?.name || '2027학년도 겨울방학',
                             type: 'vacation',
-                            startDate: cal.semesters.vacationWinter.startDate,
-                            endDate: cal.semesters.vacationWinter.endDate,
+                            startDate: cal.semesters?.vacationWinter?.startDate || '2027-01-01',
+                            endDate: cal.semesters?.vacationWinter?.endDate || '2027-02-28',
                             isVacationFixedMode: true,
                             vacationFixedTeacherName: '강지욱'
                         }
                     };
 
-                    const centralHolidays = cal.events ? cal.events.filter(e => !e.isSchoolDay).map(e => e.date) : DEFAULT_HOLIDAYS;
+                    const holidayEvents = (cal.events || []).filter(e => !e.isSchoolDay || e.type === 'HOLIDAY' || e.type === 'PUBLIC_HOLIDAY');
+                    const centralHolidays = holidayEvents.map(e => e.date);
+                    const holidayNameMap: Record<string, string> = {};
+                    holidayEvents.forEach(e => {
+                        holidayNameMap[e.date] = e.title;
+                    });
 
                     const mergedSemesters = { ...DEFAULT_SEMESTERS, ...(docData.semesters || {}), ...centralSemesters };
-                    const mergedHolidays = Array.from(new Set([...(docData.holidays || DEFAULT_HOLIDAYS), ...centralHolidays])).sort();
+                    
+                    // Central academic calendar is the authoritative source for holidays
+                    const effectiveHolidays = centralHolidays.length > 0 
+                        ? centralHolidays 
+                        : (docData.holidays ? docData.holidays.filter(d => d !== '2026-09-24') : DEFAULT_HOLIDAYS);
 
-                    if (!docSnap.exists()) {
-                        initAndSaveAllSemesters(mergedSemesters, DEFAULT_TEACHER_SEQUENCE, mergedHolidays);
+                    // Check if existing saved holidays or schedule had outdated dummy dates (e.g. 2026-09-24)
+                    const hadOutdatedHoliday = docData.holidays && docData.holidays.includes('2026-09-24') && !centralHolidays.includes('2026-09-24');
+                    const hasEmptySchedule = !docData.schedules || Object.keys(docData.schedules).length === 0;
+
+                    if (!docSnap.exists() || hadOutdatedHoliday || hasEmptySchedule) {
+                        await initAndSaveAllSemesters(
+                            mergedSemesters, 
+                            docData.teacherSequence || DEFAULT_TEACHER_SEQUENCE, 
+                            effectiveHolidays, 
+                            holidayNameMap
+                        );
                     } else {
                         setConfig(prev => ({
                             ...prev,
                             ...docData,
                             semesters: mergedSemesters,
-                            holidays: mergedHolidays
+                            holidays: effectiveHolidays
                         }));
                     }
                     return;
@@ -261,9 +272,11 @@ export function MorningGateDutyTab({ teachers, semesterMode = 'regular' }: Morni
             }
 
             if (docSnap.exists()) {
+                const cleanedHolidays = (docData.holidays || DEFAULT_HOLIDAYS).filter(d => d !== '2026-09-24');
                 setConfig(prev => ({
                     ...prev,
                     ...docData,
+                    holidays: cleanedHolidays,
                     semesters: { ...DEFAULT_SEMESTERS, ...(docData.semesters || {}) }
                 }));
             } else {
@@ -320,7 +333,8 @@ export function MorningGateDutyTab({ teachers, semesterMode = 'regular' }: Morni
         semInfo: SemesterPeriodInfo,
         sequence: string[],
         holidayList: string[],
-        allSchedules: Record<string, WeekDutyRow[]>
+        allSchedules: Record<string, WeekDutyRow[]>,
+        holidayNameMap: Record<string, string> = {}
     ): WeekDutyRow[] => {
         if (!semInfo.startDate || !semInfo.endDate) return [];
         const start = new Date(semInfo.startDate);
@@ -398,12 +412,13 @@ export function MorningGateDutyTab({ teachers, semesterMode = 'regular' }: Morni
                         roundNumber: currentRound
                     };
                 } else {
+                    const customLabel = holidayNameMap[dateString];
                     daysMap[dayKey] = {
                         dateStr: dateString,
                         dayOfWeekName: dayKey,
                         teacherName: '',
                         isHoliday: true,
-                        holidayName: isOutOfBounds ? '' : '휴업일'
+                        holidayName: isOutOfBounds ? '' : (customLabel || (holidaySet.has(dateString) ? '휴업일' : ''))
                     };
                 }
             }
@@ -426,18 +441,19 @@ export function MorningGateDutyTab({ teachers, semesterMode = 'regular' }: Morni
     const initAndSaveAllSemesters = async (
         semestersMap = DEFAULT_SEMESTERS,
         seq = DEFAULT_TEACHER_SEQUENCE,
-        hols = DEFAULT_HOLIDAYS
+        hols = DEFAULT_HOLIDAYS,
+        holidayNameMap: Record<string, string> = {}
     ) => {
         const newSchedules: Record<string, WeekDutyRow[]> = {};
         
         // Process in chronological order (2026_1 -> 2026_summer -> 2026_2 -> 2026_winter)
         const sortedSemesterIds = Object.keys(semestersMap).sort((a, b) => {
-            return semestersMap[a].startDate.localeCompare(semestersMap[b].startDate);
+            return (semestersMap[a].startDate || '').localeCompare(semestersMap[b].startDate || '');
         });
 
         sortedSemesterIds.forEach(id => {
             const semInfo = semestersMap[id];
-            newSchedules[id] = generateSemesterRows(semInfo, seq, hols, newSchedules);
+            newSchedules[id] = generateSemesterRows(semInfo, seq, hols, newSchedules, holidayNameMap);
         });
 
         const newConfig: MultiSemesterMorningGateDutyConfig = {
@@ -461,31 +477,57 @@ export function MorningGateDutyTab({ teachers, semesterMode = 'regular' }: Morni
     };
 
     // Save and re-generate current active semester
-    const saveAndGenerateActiveSemester = async (updatedSemesters = config.semesters, updatedSeq = config.teacherSequence, updatedHols = config.holidays) => {
+    const saveAndGenerateActiveSemester = async (
+        updatedSemesters = config.semesters, 
+        updatedSeq = config.teacherSequence, 
+        updatedHols?: string[]
+    ) => {
+        let effectiveHolidays = updatedHols || config.holidays;
+        let holidayNameMap: Record<string, string> = {};
+
+        try {
+            const sysDoc = await getDocConfig();
+            if (sysDoc?.academicCalendar) {
+                const cal = sysDoc.academicCalendar;
+                const holidayEvents = (cal.events || []).filter(e => !e.isSchoolDay || e.type === 'HOLIDAY' || e.type === 'PUBLIC_HOLIDAY');
+                if (holidayEvents.length > 0 && !updatedHols) {
+                    effectiveHolidays = holidayEvents.map(e => e.date);
+                }
+                holidayEvents.forEach(e => {
+                    holidayNameMap[e.date] = e.title;
+                });
+            }
+        } catch (e) {
+            console.error('Failed to get academic calendar on save:', e);
+        }
+
+        // Clean out any obsolete hardcoded dummy dates
+        effectiveHolidays = effectiveHolidays.filter(d => d !== '2026-09-24' || holidayNameMap['2026-09-24']);
+
         const newSchedules = { ...config.schedules };
 
         // Re-generate in chronological order to maintain continuity
         const sortedSemesterIds = Object.keys(updatedSemesters).sort((a, b) => {
-            return updatedSemesters[a].startDate.localeCompare(updatedSemesters[b].startDate);
+            return (updatedSemesters[a].startDate || '').localeCompare(updatedSemesters[b].startDate || '');
         });
 
         sortedSemesterIds.forEach(id => {
             const semInfo = updatedSemesters[id];
-            newSchedules[id] = generateSemesterRows(semInfo, updatedSeq, updatedHols, newSchedules);
+            newSchedules[id] = generateSemesterRows(semInfo, updatedSeq, effectiveHolidays, newSchedules, holidayNameMap);
         });
 
         const newConfig: MultiSemesterMorningGateDutyConfig = {
             ...config,
             semesters: updatedSemesters,
             teacherSequence: updatedSeq,
-            holidays: updatedHols,
+            holidays: effectiveHolidays,
             schedules: newSchedules
         };
 
         setConfig(newConfig);
         try {
             await setDoc(doc(db(), 'config', 'morningGateDutyMulti'), sanitizeForFirestore(newConfig));
-            toast({ title: '배정표 업데이트 성공', description: '학기/방학 등교 지도 배정표가 최신화되었습니다.' });
+            toast({ title: '배정표 업데이트 성공', description: '학사일정이 동기화되어 등교 지도 배정표가 최신화되었습니다.' });
         } catch (err) {
             console.error('Save Multi Semester Error:', err);
             toast({ title: '저장 오류', description: '배정표 저장 중 오류가 발생했습니다.', variant: 'destructive' });

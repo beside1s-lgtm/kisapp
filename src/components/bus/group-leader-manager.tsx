@@ -50,18 +50,14 @@ export function GroupLeaderManager({ records, setRecords }: GroupLeaderManagerPr
 
   const processedRecords = useMemo(() => {
     const today = new Date();
-    return records.map(record => {
-      if (record.endDate === null) {
+    return records
+      .filter(record => record.endDate === null)
+      .map(record => {
         const startDate = new Date(record.startDate);
         const days = differenceInDays(today, startDate) + 1;
         return { ...record, days };
-      }
-      return record;
-    }).sort((a, b) => {
-        if (a.endDate === null && b.endDate !== null) return -1;
-        if (a.endDate !== null && b.endDate === null) return 1;
-        return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
-    });
+      })
+      .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
   }, [records]);
 
 

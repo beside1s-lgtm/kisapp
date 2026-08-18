@@ -138,7 +138,7 @@ export function SettingsModal() {
       { id: '2', date: '2026-05-01', title: '근로자의 날 / 재량휴업일', type: 'HOLIDAY', isSchoolDay: false },
       { id: '3', date: '2026-05-05', title: '어린이날', type: 'PUBLIC_HOLIDAY', isSchoolDay: false },
       { id: '4', date: '2026-09-02', title: '독립기념일 (베트남)', type: 'PUBLIC_HOLIDAY', isSchoolDay: false },
-      { id: '5', date: '2026-09-24', title: '추석 연휴', type: 'PUBLIC_HOLIDAY', isSchoolDay: false },
+      { id: '5', date: '2026-09-25', title: '추석', type: 'PUBLIC_HOLIDAY', isSchoolDay: false },
       { id: '6', date: '2026-10-09', title: '한글날', type: 'PUBLIC_HOLIDAY', isSchoolDay: false },
       { id: '7', date: '2026-10-16', title: '학교 창립기념 행사의 날', type: 'SCHOOL_EVENT', isSchoolDay: true }
     ]

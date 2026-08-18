@@ -27,7 +27,7 @@ import { BusSeatMap } from '@/components/bus/bus-seat-map';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Crown, Users, Printer, UserX, AlertCircle, Search, GraduationCap, Download, MapPin, CheckCircle2, FileDown, Upload, Pencil, Check, UserMinus, Phone, Bell, Clock, User, LogOut, Settings, Save, Copy, QrCode } from 'lucide-react';
+import { Crown, Users, Printer, UserX, AlertCircle, Search, GraduationCap, Download, MapPin, CheckCircle2, FileDown, Upload, Pencil, Check, UserMinus, Phone, Bell, Clock, User, LogOut, Settings, Save, Copy, QrCode, Sun } from 'lucide-react';
 import jsQR from 'jsqr';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -45,6 +45,8 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { LostAndFound } from '@/components/bus/lost-and-found';
 import { AfterSchoolInquiryDialog } from '@/components/bus/after-school-inquiry-dialog';
+import { MorningGateDutyDialog } from '@/components/bus/morning-gate-duty-dialog';
+import { onTeacherApplySettingsUpdate } from '@/lib/services/settingsService';
 import { useTranslation } from '@/hooks/use-translation';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
@@ -226,6 +228,10 @@ const AllGroupLeadersStatus = ({ relevantRoutes, students, buses, formatStudentN
         await Promise.all(busIds.map(async (busId) => {
             const recs = await getGroupLeaderRecords("", busId, "Morning");
             const active = recs.filter(x => x.endDate === null);
+            // Stale ended records cleanup
+            if (recs.length !== active.length) {
+                saveGroupLeaderRecords("", active, busId, "Morning").catch(console.error);
+            }
             if (active.length > 0) {
                 const minDate = Math.min(...active.map(l => new Date(l.startDate).getTime()));
                 const days = differenceInDays(new Date(), new Date(minDate)) + 1;
@@ -328,9 +334,8 @@ const AllGroupLeadersStatus = ({ relevantRoutes, students, buses, formatStudentN
 
     const handleDemoteAll = async (busId: string, silent = false) => {
         if (!silent && !confirm(t('teacher_page.group_leader_management.delete_confirm.description'))) return;
-        const current = await getGroupLeaderRecords("", busId, "Morning");
-        const updated = current.map(r => r.endDate === null ? { ...r, endDate: format(new Date(), 'yyyy-MM-dd') } : r);
-        await saveGroupLeaderRecords("", updated, busId, "Morning");
+        // Completely delete all group leader records for this bus
+        await saveGroupLeaderRecords("", [], busId, "Morning");
         if (!silent) {
             toast({ title: t('teacher_page.demote_leader') });
             fetchAll();
@@ -350,19 +355,21 @@ const AllGroupLeadersStatus = ({ relevantRoutes, students, buses, formatStudentN
 
     const startEditing = async (busId: string) => {
         const recs = await getGroupLeaderRecords("", busId, "Morning");
-        setEditingBusRecords(recs);
+        const activeOnly = recs.filter(r => r.endDate === null);
+        setEditingBusRecords(activeOnly);
         setEditingBusId(busId);
         setSearchQuery("");
     };
 
     const toggleLeaderInDialog = (student: Student) => {
-        const active = editingBusRecords.filter(r => r.endDate === null);
-        const isCurrentlyLeader = active.some(r => r.studentId === student.id);
+        const isCurrentlyLeader = editingBusRecords.some(r => r.studentId === student.id && r.endDate === null);
         
         let next: GroupLeaderRecord[];
         if (isCurrentlyLeader) {
-            next = editingBusRecords.map(r => (r.studentId === student.id && r.endDate === null) ? { ...r, endDate: format(new Date(), 'yyyy-MM-dd') } : r);
+            // Completely remove student from group leader records
+            next = editingBusRecords.filter(r => r.studentId !== student.id);
         } else {
+            const active = editingBusRecords.filter(r => r.endDate === null);
             if (active.length >= 3) { toast({ title: "실패", description: "조장은 최대 3명입니다.", variant: "destructive" }); return; }
             next = [...editingBusRecords, {
                 studentId: student.id,
@@ -682,73 +689,258 @@ const AllGroupLeadersStatus = ({ relevantRoutes, students, buses, formatStudentN
     );
 };
 
-const TeacherAssignmentViewDialog = ({ buses, teachers, afterSchoolTeachers, saturdayTeachers, selectedDay, selectedRouteType, t }: { buses: Bus[]; teachers: Teacher[]; afterSchoolTeachers: Teacher[]; saturdayTeachers: Teacher[]; selectedDay: DayOfWeek; selectedRouteType: RouteType; t: any; }) => {
+const TeacherAssignmentViewDialog = ({ 
+    buses, 
+    teachers, 
+    afterSchoolTeachers, 
+    saturdayTeachers, 
+    selectedDay: initialDay, 
+    selectedRouteType: initialRouteType, 
+    semesterMode = 'regular',
+    t 
+}: { 
+    buses: Bus[]; 
+    teachers: Teacher[]; 
+    afterSchoolTeachers: Teacher[]; 
+    saturdayTeachers: Teacher[]; 
+    selectedDay: DayOfWeek; 
+    selectedRouteType: RouteType; 
+    semesterMode?: 'regular' | 'vacation';
+    t: any; 
+}) => {
+    // Mode: 'commute' (통학버스 [등·하교 통합]), 'afterSchool' (방과후 요일별), 'saturday' (토요)
+    const [viewCategory, setViewCategory] = useState<'commute' | 'afterSchool' | 'saturday'>(() => {
+        if (initialDay === 'Saturday') return 'saturday';
+        if (initialRouteType === 'AfterSchool') return 'afterSchool';
+        return 'commute';
+    });
+
+    const [afterSchoolDay, setAfterSchoolDay] = useState<DayOfWeek>(() => {
+        return initialDay === 'Saturday' ? 'Monday' : initialDay;
+    });
+
     const [routesList, setRoutesList] = useState<Route[]>([]);
     const [loading, setLoading] = useState(true);
 
+    // Sync initial state on open
     useEffect(() => {
-      setLoading(true);
-      const q = query(
-        collection(db(), 'routes'), 
-        where('dayOfWeek', '==', selectedDay), 
-        where('type', '==', selectedRouteType)
-      );
-      
-      getDocs(q).then((snap: any) => {
-        setRoutesList(snap.docs.map((d: any) => ({ id: d.id, ...d.data() } as Route)));
-        setLoading(false);
-      }).catch((e: any) => {
-        console.error(e);
-        setLoading(false);
-      });
-    }, [selectedDay, selectedRouteType]);
+        if (initialDay === 'Saturday') {
+            setViewCategory('saturday');
+        } else if (initialRouteType === 'AfterSchool') {
+            setViewCategory('afterSchool');
+            setAfterSchoolDay(initialDay);
+        } else {
+            setViewCategory('commute');
+        }
+    }, [initialDay, initialRouteType]);
 
-    const getNames = (bid: string) => {
-        const r = routesList.find(x => x.busId === bid);
-        if (!r?.teacherIds?.length) return t('unassigned');
-        const pool = selectedDay === 'Saturday' ? saturdayTeachers : (selectedRouteType === 'AfterSchool' ? afterSchoolTeachers : teachers);
-        return r.teacherIds.map(id => pool.find(x => x.id === id)?.name).filter(Boolean).join(', ') || t('unassigned');
+    // Real-time listener for current selected category/day, strictly filtering by semesterMode
+    useEffect(() => {
+        setLoading(true);
+        let q;
+        if (viewCategory === 'commute') {
+            // Commute uses Afternoon / Morning routes (which are strictly synchronized)
+            q = query(
+                collection(db(), 'routes'), 
+                where('dayOfWeek', '==', 'Monday'), 
+                where('type', '==', 'Afternoon')
+            );
+        } else if (viewCategory === 'afterSchool') {
+            q = query(
+                collection(db(), 'routes'), 
+                where('dayOfWeek', '==', afterSchoolDay), 
+                where('type', '==', semesterMode === 'vacation' ? 'Afternoon' : 'AfterSchool')
+            );
+        } else {
+            q = query(
+                collection(db(), 'routes'), 
+                where('dayOfWeek', '==', 'Saturday')
+            );
+        }
+        
+        const unsub = onSnapshot(q, (snap) => {
+            const fetched = snap.docs
+                .map((d: any) => ({ id: d.id, ...d.data() } as Route))
+                .filter(r => (r.semesterMode || 'regular') === semesterMode);
+            setRoutesList(fetched);
+            setLoading(false);
+        }, (e: any) => {
+            console.error("Assignment dialog real-time fetch error:", e);
+            setLoading(false);
+        });
+
+        return () => unsub();
+    }, [viewCategory, afterSchoolDay, semesterMode]);
+
+    // Unified teacher lookup map across all teacher categories (filtered by current semesterMode)
+    const allTeachersMap = useMemo(() => {
+        const map = new Map<string, Teacher>();
+        (teachers || []).filter(tc => (tc.semesterMode || 'regular') === semesterMode).forEach(tc => { if (tc?.id) map.set(tc.id, tc); });
+        (afterSchoolTeachers || []).filter(tc => (tc.semesterMode || 'regular') === semesterMode).forEach(tc => { if (tc?.id && !map.has(tc.id)) map.set(tc.id, tc); });
+        (saturdayTeachers || []).filter(tc => (tc.semesterMode || 'regular') === semesterMode).forEach(tc => { if (tc?.id && !map.has(tc.id)) map.set(tc.id, tc); });
+        return map;
+    }, [teachers, afterSchoolTeachers, saturdayTeachers, semesterMode]);
+
+    // Filter to active, operational buses strictly belonging to the CURRENT semesterMode
+    const operationalBuses = useMemo(() => {
+        return sortBuses(
+            (buses || []).filter(b => 
+                (b.semesterMode || 'regular') === semesterMode &&
+                (b.isActive ?? true) && 
+                !b.excludeFromAssignment
+            )
+        );
+    }, [buses, semesterMode]);
+
+    const getAssignedNames = (busId: string): string[] => {
+        const r = routesList.find(x => x.busId === busId);
+        
+        // 1. Authoritative Route assignment
+        if (r) {
+            if (r.teacherIds && r.teacherIds.filter(Boolean).length > 0) {
+                const names = r.teacherIds
+                    .map(id => allTeachersMap.get(id)?.name)
+                    .filter((n): n is string => Boolean(n));
+                if (names.length > 0) return Array.from(new Set(names));
+            }
+            // Route exists but has no assigned teachers -> correctly return empty (미배정)
+            return [];
+        }
+
+        // 2. Fallback only if no route document exists at all in database
+        if (viewCategory === 'commute') {
+            const busTeachers = (teachers || []).filter(tc => 
+                (tc.semesterMode || 'regular') === semesterMode && 
+                tc.assignedBusId === busId
+            );
+            if (busTeachers.length > 0) {
+                return Array.from(new Set(busTeachers.map(tc => tc.name).filter(Boolean)));
+            }
+        }
+        return [];
     };
     
     return (
-        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
-            <DialogHeader>
-                <DialogTitle>{t('teacher_page.assignments_dialog.title')}</DialogTitle>
-                <DialogDescription>
-                    {t('teacher_page.assignments_dialog.description')}<br/>
-                    {t('day')}: {t(`day.${selectedDay.toLowerCase()}`)} | {t('route')}: {selectedRouteType === 'AfterSchool' ? t('route_type.after_school') : t(`route_type.${selectedRouteType.toLowerCase()}`)}
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-5">
+            <DialogHeader className="space-y-1.5 pb-2 border-b">
+                <div className="flex items-center justify-between gap-2">
+                    <DialogTitle className="text-base sm:text-lg font-extrabold text-slate-900 whitespace-nowrap truncate">
+                        {t('teacher_page.assignments_dialog.title')}
+                    </DialogTitle>
+                    <Badge 
+                        variant={semesterMode === 'vacation' ? 'destructive' : 'secondary'} 
+                        className="text-[10px] font-bold px-2 py-0.5 shrink-0"
+                    >
+                        {semesterMode === 'vacation' ? (t('vacation') || '방학 중') : (t('regular') || '학기 중')}
+                    </Badge>
+                </div>
+                <DialogDescription className="text-xs text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis">
+                    {t('teacher_page.assignments_dialog.description')}
                 </DialogDescription>
             </DialogHeader>
-            <div className="mt-4 border rounded-md overflow-y-auto flex-1 min-h-0">
+
+            {/* Filter Selector Row */}
+            <div className="flex flex-wrap items-center justify-between gap-2 py-2 border-b bg-slate-50/80 -mx-5 px-5">
+                <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-600">구분:</span>
+                    <div className="flex items-center gap-1 bg-slate-200/80 p-0.5 rounded-lg">
+                        <button
+                            type="button"
+                            onClick={() => setViewCategory('commute')}
+                            className={cn(
+                                "px-2.5 py-1 text-xs font-bold rounded-md transition-all",
+                                viewCategory === 'commute' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                            )}
+                        >
+                            통학 (등·하교)
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setViewCategory('afterSchool')}
+                            className={cn(
+                                "px-2.5 py-1 text-xs font-bold rounded-md transition-all",
+                                viewCategory === 'afterSchool' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                            )}
+                        >
+                            방과후
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setViewCategory('saturday')}
+                            className={cn(
+                                "px-2.5 py-1 text-xs font-bold rounded-md transition-all",
+                                viewCategory === 'saturday' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                            )}
+                        >
+                            토요 버스
+                        </button>
+                    </div>
+                </div>
+
+                {viewCategory === 'afterSchool' && (
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-600">요일:</span>
+                        <Select value={afterSchoolDay} onValueChange={(val) => setAfterSchoolDay(val as DayOfWeek)}>
+                            <SelectTrigger className="h-8 text-xs font-semibold w-[100px] bg-white">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as DayOfWeek[]).map(d => (
+                                    <SelectItem key={d} value={d} className="text-xs font-medium">
+                                        {t(`day.${d.toLowerCase()}`)}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
+            </div>
+
+            <div className="mt-2 border rounded-xl overflow-y-auto flex-1 min-h-[260px] shadow-xs">
                 {loading ? (
-                    <div className="flex justify-center items-center py-12 text-sm text-muted-foreground">
+                    <div className="flex justify-center items-center py-16 text-xs text-muted-foreground">
                         {t('loading')}...
+                    </div>
+                ) : operationalBuses.length === 0 ? (
+                    <div className="flex justify-center items-center py-16 text-xs text-muted-foreground">
+                        운행 중인 버스가 없습니다.
                     </div>
                 ) : (
                     <Table>
-                        <TableHeader>
+                        <TableHeader className="bg-slate-100 sticky top-0 z-10">
                             <TableRow>
-                                <TableHead>{t('admin.bus_registration.bus_number')}</TableHead>
-                                <TableHead>{t('type')}</TableHead>
-                                <TableHead>{t('admin.teacher_assignment.title')}</TableHead>
+                                <TableHead className="w-[100px] font-bold text-slate-800">{t('admin.bus_registration.bus_number')}</TableHead>
+                                <TableHead className="w-[80px] font-bold text-slate-800">{t('type')}</TableHead>
+                                <TableHead className="font-bold text-slate-800">
+                                    {viewCategory === 'commute' ? '통학버스 담당 교사 (등·하교 공통)' : (viewCategory === 'afterSchool' ? '방과후 담당 교사' : '토요 담당 교사')}
+                                </TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {sortBuses([...buses]).map((b: Bus) => (
-                                <TableRow key={b.id} className={cn(!(b.isActive ?? true) && "opacity-50 bg-muted/20")}>
-                                    <TableCell className="font-medium whitespace-nowrap">{b.name}</TableCell>
-                                    <TableCell className="whitespace-nowrap">{t(`bus_type.${b.type}`)}</TableCell>
-                                    <TableCell>
-                                        <div className="flex flex-wrap gap-1">
-                                            {getNames(b.id).split(', ').map((n: string, i: number) => 
-                                                n === t('unassigned') ? 
-                                                <span key={i} className="text-muted-foreground italic text-xs">{n}</span> : 
-                                                <Badge key={i} variant="secondary" className="font-normal text-xs py-0 h-5 whitespace-nowrap">{n}</Badge>
-                                            )}
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
+                            {operationalBuses.map((b: Bus) => {
+                                const namesList = getAssignedNames(b.id);
+                                const isUnassigned = namesList.length === 0;
+
+                                return (
+                                    <TableRow key={b.id} className="hover:bg-slate-50/80">
+                                        <TableCell className="font-bold whitespace-nowrap text-slate-900">{b.name}</TableCell>
+                                        <TableCell className="whitespace-nowrap text-xs text-slate-600">{t(`bus_type.${b.type}`)}</TableCell>
+                                        <TableCell>
+                                            <div className="flex flex-wrap gap-1.5 items-center">
+                                                {isUnassigned ? (
+                                                    <span className="text-slate-400 italic text-xs">{t('unassigned')}</span>
+                                                ) : (
+                                                    namesList.map((nameStr: string, i: number) => (
+                                                        <Badge key={i} variant="secondary" className="font-bold text-xs bg-indigo-50 text-indigo-700 border-indigo-200 py-0.5 px-2 whitespace-nowrap">
+                                                            {nameStr}
+                                                        </Badge>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                );
+                            })}
                         </TableBody>
                     </Table>
                 )}
@@ -788,6 +980,16 @@ export default function TeacherPage() {
   const [searchResults, setSearchResults] = useState<Student[]>([]);
   const [isManualMode, setIsManualMode] = useState(false);
   const [semesterMode, setSemesterMode] = useState<'regular' | 'vacation'>('regular');
+  const [afterschoolStageStatus, setAfterschoolStageStatus] = useState<string>('CLOSED');
+
+  const isAfterSchoolActive = useMemo(() => {
+    return afterschoolStageStatus === 'CONFIRMED' || afterschoolStageStatus === 'OPERATING';
+  }, [afterschoolStageStatus]);
+
+  const activeAfterSchoolClasses = useMemo(() => {
+    if (!isAfterSchoolActive) return [];
+    return afterSchoolClasses.filter(c => (c.semesterMode || 'regular') === semesterMode);
+  }, [isAfterSchoolActive, afterSchoolClasses, semesterMode]);
   
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrAlertStudent, setQrAlertStudent] = useState<Student | null>(null);
@@ -808,6 +1010,27 @@ export default function TeacherPage() {
   const [teacherNameInput, setTeacherNameInput] = useState('');
   const [loginStep, setLoginStep] = useState<'name' | 'pin'>('name');
   const [isGuest, setIsGuest] = useState(false);
+
+  // Unified logged in teacher document lookup (MUST BE AT TOP LEVEL HOOKS)
+  const loggedInTeacherDoc = useMemo(() => {
+    if (!currentTeacherId) return null;
+    return teachers.find(t => t.id === currentTeacherId) ||
+           afterSchoolTeachers.find(t => t.id === currentTeacherId) ||
+           saturdayTeachers.find(t => t.id === currentTeacherId) || null;
+  }, [teachers, afterSchoolTeachers, saturdayTeachers, currentTeacherId]);
+
+  const teacherBusInfoText = useMemo(() => {
+    if (!loggedInTeacherDoc) return lang === 'ko' ? '담당 버스: 미지정' : 'Bus: Unassigned';
+    const commuteBusName = buses.find(b => b.id === loggedInTeacherDoc.assignedBusId)?.name;
+    const afterSchoolBusName = buses.find(b => b.id === loggedInTeacherDoc.assignedAfterSchoolBusId)?.name;
+
+    const parts: string[] = [];
+    if (commuteBusName) parts.push(`${lang === 'ko' ? '등하교: ' : 'Bus: '}${commuteBusName}`);
+    if (afterSchoolBusName) parts.push(`${lang === 'ko' ? '방과후: ' : 'AS: '}${afterSchoolBusName}`);
+
+    if (parts.length === 0) return lang === 'ko' ? '담당 버스: 미지정' : 'Bus: Unassigned';
+    return parts.join(' | ');
+  }, [loggedInTeacherDoc, buses, lang]);
 
   useEffect(() => {
     const unsubTeachers = onSnapshot(collection(db(), 'teachers'), (snap) => {
@@ -831,12 +1054,26 @@ export default function TeacherPage() {
       }
     });
 
+    const unsubAfterschoolSettings = onTeacherApplySettingsUpdate((settings) => {
+      if (settings?.afterschoolStageStatus) {
+        setAfterschoolStageStatus(settings.afterschoolStageStatus);
+      }
+    });
+
     return () => {
       unsubTeachers();
       unsubPin();
       unsubSettings();
+      unsubAfterschoolSettings();
     };
   }, []);
+
+  // Auto clean-up leftover classes from previous semesters if stage is CLOSED
+  useEffect(() => {
+    if (afterschoolStageStatus === 'CLOSED' && afterSchoolClasses.length > 0) {
+      import('@/lib/kisbus/after-school-classes').then(m => m.clearAllAfterSchoolClasses()).catch(console.error);
+    }
+  }, [afterschoolStageStatus, afterSchoolClasses.length]);
 
   useEffect(() => {
     const checkSession = () => {
@@ -985,10 +1222,10 @@ export default function TeacherPage() {
   }, [isAuthenticated, currentTeacherId, teachers, selectedBusId, subscribeToBusRoutes, subscribeToAllRoutes, unsubscribeAllRoutes]);
 
   useEffect(() => {
-    if (semesterMode === 'vacation' && selectedRouteType === 'AfterSchool') {
-      setSelectedRouteType('Morning');
+    if ((semesterMode === 'vacation' || !isAfterSchoolActive) && selectedRouteType === 'AfterSchool') {
+      setSelectedRouteType('Afternoon');
     }
-  }, [semesterMode, selectedRouteType]);
+  }, [semesterMode, isAfterSchoolActive, selectedRouteType]);
 
   useEffect(() => {
     if (isManualMode || !selectedDate) return;
@@ -1012,12 +1249,12 @@ export default function TeacherPage() {
         else {
             if (vh < 9) setSelectedRouteType('Morning');
             else if (vh < 16) setSelectedRouteType('Afternoon');
-            else setSelectedRouteType(semesterMode === 'vacation' ? 'Afternoon' : 'AfterSchool');
+            else setSelectedRouteType((semesterMode === 'vacation' || !isAfterSchoolActive) ? 'Afternoon' : 'AfterSchool');
         }
     } else {
         setSelectedRouteType('Morning');
     }
-  }, [selectedDate, isManualMode, semesterMode]);
+  }, [selectedDate, isManualMode, semesterMode, isAfterSchoolActive]);
 
   const lastRouteTypeRef = useRef<RouteType | null>(null);
 
@@ -1170,7 +1407,15 @@ export default function TeacherPage() {
 
   useEffect(() => {
     if (currentRoute) {
-        getGroupLeaderRecords(currentRoute.id, currentRoute.busId, currentRoute.type).then(setGroupLeaderRecords).catch(() => setGroupLeaderRecords([]));
+        getGroupLeaderRecords(currentRoute.id, currentRoute.busId, currentRoute.type)
+            .then(recs => {
+                const activeOnly = recs.filter(r => r.endDate === null);
+                setGroupLeaderRecords(activeOnly);
+                if (recs.length !== activeOnly.length) {
+                    saveGroupLeaderRecords(currentRoute.id, activeOnly, currentRoute.busId, currentRoute.type).catch(console.error);
+                }
+            })
+            .catch(() => setGroupLeaderRecords([]));
     } else { setGroupLeaderRecords([]); }
   }, [currentRoute]);
 
@@ -1180,7 +1425,7 @@ export default function TeacherPage() {
     const isCurrentlyLeader = activeLeaders.some(r => r.studentId === selectedStudent.id);
     let newRecords = [...groupLeaderRecords];
     if (isCurrentlyLeader) {
-        newRecords = newRecords.map(r => (r.studentId === selectedStudent.id && r.endDate === null) ? { ...r, endDate: format(new Date(), 'yyyy-MM-dd') } : r);
+        newRecords = newRecords.filter(r => r.studentId !== selectedStudent.id);
         toast({ title: t('teacher_page.demote_leader'), description: `${getStudentName(selectedStudent, i18n.language)} 학생이 조장에서 해제되었습니다.` });
     } else {
         if (activeLeaders.length >= 3) { toast({ title: t('error'), description: "동시에 활동 가능한 조장은 최대 3명입니다.", variant: 'destructive' }); return; }
@@ -1191,7 +1436,7 @@ export default function TeacherPage() {
     if (currentRoute) {
         saveGroupLeaderRecords(currentRoute.id, newRecords, currentRoute.busId, currentRoute.type).catch(console.error);
     }
-  }, [selectedStudent, currentRoute, groupLeaderRecords, t, toast]);
+  }, [selectedStudent, currentRoute, groupLeaderRecords, t, toast, i18n.language]);
 
   const toggleStudentAttendance = useCallback(async (sid: string) => {
     if (!currentRoute) return;
@@ -1650,7 +1895,7 @@ export default function TeacherPage() {
           <User className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
           <span className="whitespace-nowrap truncate">{currentTeacherName}{lang === 'ko' ? ' 선생님' : ' Teacher'}</span>
           <span className="text-[10px] text-slate-400 font-normal border-l pl-1.5 ml-0.5 whitespace-nowrap truncate">
-            {lang === 'ko' ? '등하교: ' : 'Bus: '}{buses.find(b => b.id === (teachers.find(t => t.id === currentTeacherId)?.assignedBusId))?.name || (lang === 'ko' ? '미정' : 'Unassigned')} | {lang === 'ko' ? '방과후: ' : 'AS: '}{buses.find(b => b.id === (teachers.find(t => t.id === currentTeacherId)?.assignedAfterSchoolBusId))?.name || (lang === 'ko' ? '미정' : 'Unassigned')}
+            {teacherBusInfoText}
           </span>
         </div>
       )}
@@ -1673,7 +1918,7 @@ export default function TeacherPage() {
               <span className="whitespace-nowrap">{currentTeacherName}{lang === 'ko' ? ' 선생님' : ' Teacher'}</span>
             </div>
             <span className="text-[10px] text-slate-500 font-normal border-l pl-1.5 ml-0.5 whitespace-nowrap flex-shrink-0">
-              {lang === 'ko' ? '등하교: ' : 'Bus: '}{buses.find(b => b.id === (teachers.find(t => t.id === currentTeacherId)?.assignedBusId))?.name || (lang === 'ko' ? '미지정' : 'Unassigned')} | {lang === 'ko' ? '방과후: ' : 'AS: '}{buses.find(b => b.id === (teachers.find(t => t.id === currentTeacherId)?.assignedAfterSchoolBusId))?.name || (lang === 'ko' ? '미지정' : 'Unassigned')}
+              {teacherBusInfoText}
             </span>
           </div>
         )}
@@ -1701,18 +1946,36 @@ export default function TeacherPage() {
           <DialogTrigger asChild>
             <Button variant="outline" size="sm" className="h-8 flex-shrink-0 whitespace-nowrap">
               <GraduationCap className="mr-2 h-4 w-4 flex-shrink-0" />
-              <span>{t('teacher_page.after_school_list')}</span>
+              <span>{t('teacher_page.after_school_list')}{!isAfterSchoolActive ? (lang === 'ko' ? ' (종료)' : ' (Closed)') : ''}</span>
             </Button>
           </DialogTrigger>
           <AfterSchoolInquiryDialog
-            afterSchoolClasses={afterSchoolClasses}
+            afterSchoolClasses={activeAfterSchoolClasses}
             afterSchoolTeachers={afterSchoolTeachers}
             students={students}
             buses={buses}
             routes={allRoutes}
             destinations={destinations}
+            semesterMode={semesterMode}
+            isAfterSchoolActive={isAfterSchoolActive}
+            afterschoolStageStatus={afterschoolStageStatus}
           />
         </Dialog>
+
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button variant="outline" size="sm" className="h-8 flex-shrink-0 whitespace-nowrap text-amber-700 border-amber-200 hover:bg-amber-50">
+              <Sun className="mr-2 h-4 w-4 flex-shrink-0 text-amber-500" />
+              <span>{lang === 'ko' ? '등교지도 근무표' : 'Gate Duty'}</span>
+            </Button>
+          </DialogTrigger>
+          <MorningGateDutyDialog
+            currentTeacherName={currentTeacherName}
+            semesterMode={semesterMode}
+            lang={lang}
+          />
+        </Dialog>
+
         <Dialog>
           <DialogTrigger asChild>
             <Button variant="outline" size="sm" className="h-8 flex-shrink-0 whitespace-nowrap">
@@ -1727,6 +1990,7 @@ export default function TeacherPage() {
             saturdayTeachers={saturdayTeachers}
             selectedDay={selectedDay} 
             selectedRouteType={selectedRouteType} 
+            semesterMode={semesterMode}
             t={t}
           />
         </Dialog>
@@ -1764,12 +2028,29 @@ export default function TeacherPage() {
             </Button>
           </DialogTrigger>
           <AfterSchoolInquiryDialog
-            afterSchoolClasses={afterSchoolClasses}
+            afterSchoolClasses={activeAfterSchoolClasses}
             afterSchoolTeachers={afterSchoolTeachers}
             students={students}
             buses={buses}
             routes={allRoutes}
             destinations={destinations}
+            semesterMode={semesterMode}
+            isAfterSchoolActive={isAfterSchoolActive}
+            afterschoolStageStatus={afterschoolStageStatus}
+          />
+        </Dialog>
+
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button variant="outline" size="sm" className="h-8 flex-1 flex items-center justify-center p-0 text-amber-600 border-amber-200 hover:bg-amber-50">
+              <Sun className="h-4 w-4" />
+              <span className="sr-only">{lang === 'ko' ? '등교지도 근무표' : 'Gate Duty'}</span>
+            </Button>
+          </DialogTrigger>
+          <MorningGateDutyDialog
+            currentTeacherName={currentTeacherName}
+            semesterMode={semesterMode}
+            lang={lang}
           />
         </Dialog>
 
@@ -1787,6 +2068,7 @@ export default function TeacherPage() {
             saturdayTeachers={saturdayTeachers}
             selectedDay={selectedDay} 
             selectedRouteType={selectedRouteType} 
+            semesterMode={semesterMode}
             t={t}
           />
         </Dialog>
@@ -1813,8 +2095,8 @@ export default function TeacherPage() {
         <div onContextMenu={(e) => { e.preventDefault(); setSwapSourceSeat(null); }} className="min-h-full">
         {selectedBusId === 'all' ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start w-full">
-                <AllStudentsBoardingStatus relevantRoutes={relevantRoutesForDay} students={students} buses={buses} allAttendance={allAttendance} formatStudentName={formatStudentName} t={t}/>
-                <AllGroupLeadersStatus relevantRoutes={relevantRoutesForDay} students={students} buses={buses} formatStudentName={formatStudentName} t={t}/>
+                <AllStudentsBoardingStatus relevantRoutes={relevantRoutesForDay} students={students} buses={filteredBuses} allAttendance={allAttendance} formatStudentName={formatStudentName} t={t}/>
+                <AllGroupLeadersStatus relevantRoutes={relevantRoutesForDay} students={students} buses={filteredBuses} formatStudentName={formatStudentName} t={t}/>
             </div>
         ) : (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1877,10 +2159,10 @@ export default function TeacherPage() {
                                 <TableBody>
                                     {studentsOnCurrentRoute.map(s => {
                                         const classId = s.afterSchoolClassIds?.[selectedDay];
-                                        let afterSchoolClass = afterSchoolClasses.find(c => c.id === classId);
+                                        let afterSchoolClass = activeAfterSchoolClasses.find(c => c.id === classId);
                                         if (!afterSchoolClass && semesterMode === 'vacation') {
                                             const destId = s.afterSchoolDestinations?.[selectedDay];
-                                            afterSchoolClass = afterSchoolClasses.find(c => c.id === destId);
+                                            afterSchoolClass = activeAfterSchoolClasses.find(c => c.id === destId);
                                         }
                                         const classNameShort = afterSchoolClass ? afterSchoolClass.name.slice(0, 3) : '';
                                         const teachers: string[] = [];
@@ -2010,7 +2292,7 @@ export default function TeacherPage() {
                                 {(() => {
                                     const classId = selectedStudent.afterSchoolClassIds?.[selectedDay];
                                     if (classId) {
-                                        const afterSchoolClass = afterSchoolClasses.find(c => c.id === classId);
+                                        const afterSchoolClass = activeAfterSchoolClasses.find(c => c.id === classId);
                                         if (afterSchoolClass) {
                                             return (
                                                 <p className="text-sm text-muted-foreground flex items-center gap-1.5">
@@ -2024,7 +2306,7 @@ export default function TeacherPage() {
                                             );
                                         }
                                     }
-                                    const destBasedClass = afterSchoolClasses.find(
+                                    const destBasedClass = activeAfterSchoolClasses.find(
                                         c => c.id === selectedStudent.afterSchoolDestinations?.[selectedDay] && c.dayOfWeek === selectedDay
                                     );
                                     if (destBasedClass) {

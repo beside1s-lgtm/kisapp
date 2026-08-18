@@ -270,6 +270,9 @@ export const syncAfterschoolBusAssignmentsOnStageChange = async (
         : `✅ [학기 중 방과후 하교 버스 연동 완료]\n\n총 ${affectedCount}명의 버스 신청 학생이 요일별 정규 하교 버스에서 일시 제외되어 [방과후 하교 버스 미배정 명단]으로 전송되었습니다.\n(등교 버스에는 절대 영향을 주지 않습니다.)`
     };
   } else if (stage === 'CLOSED') {
+    const { clearAllAfterSchoolClasses } = await import('./after-school-classes');
+    await clearAllAfterSchoolClasses();
+
     if (isVacation) {
       // 5-A. 방학 중 운영 종료 시: 방학에는 정규 버스가 없으므로 방학 버스 데이터를 말끔히 정리 초기화함 (다음 학기 개학 전까지 버스 운행 중단)
       await clearAllAfterSchoolAssignments('vacation');
@@ -277,7 +280,7 @@ export const syncAfterschoolBusAssignmentsOnStageChange = async (
         success: true,
         count: 0,
         isVacation: true,
-        message: '🏁 [방학 방과후 운영 종료 (버스 미운영)]\n\n방학 방과후학교가 종료되어 방학 버스 배정 정보가 정리 초기화되었습니다.\n(방학 중에는 정규 버스가 운행되지 않으며, 다음 학기 개학 전까지 버스 미운영 상태가 유지됩니다.)'
+        message: '🏁 [방학 방과후 운영 종료 (버스 미운영)]\n\n방학 방과후학교가 종료되어 방학 버스 배정 및 방과후 강좌 정보가 정리 초기화되었습니다.\n(방학 중에는 정규 버스가 운행되지 않으며, 다음 학기 개학 전까지 버스 미운영 상태가 유지됩니다.)'
       };
     } else {
       // 5-B. 학기 중 운영 종료 시: 원래 타고 있던 학기 중 정규 하교 버스로 100% 원상 복구
@@ -286,7 +289,7 @@ export const syncAfterschoolBusAssignmentsOnStageChange = async (
         success: true,
         count: 0,
         isVacation: false,
-        message: '🏁 [학기 중 하교 버스 원상 복구 완료]\n\n방과후학교 운영 종료에 따라 방과후 버스를 탑승하던 수강생들이 원래의 정규 학기 하교 버스로 100% 복구되었습니다.'
+        message: '🏁 [학기 중 하교 버스 원상 복구 완료]\n\n방과후학교 운영 종료에 따라 방과후 버스를 탑승하던 수강생들이 원래의 정규 학기 하교 버스로 100% 복구되었으며, 방과후 강좌 명단이 초기화되었습니다.'
       };
     }
   }

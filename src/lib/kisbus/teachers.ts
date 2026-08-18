@@ -80,6 +80,20 @@ export const addTeachersInBatch = async (teachers: Omit<Teacher, 'id'>[]) => {
 export const deleteTeachersInBatch = async (ids: string[]) => {
     const batch = writeBatch(db());
     ids.forEach(id => batch.delete(doc(db(), 'teachers', id)));
+    try {
+        const routesSnap = await getDocs(collection(db(), 'routes'));
+        routesSnap.docs.forEach(rDoc => {
+            const data = rDoc.data();
+            if (data.teacherIds && Array.isArray(data.teacherIds)) {
+                const remaining = data.teacherIds.filter((tid: string) => !ids.includes(tid));
+                if (remaining.length !== data.teacherIds.length) {
+                    batch.update(rDoc.ref, { teacherIds: remaining });
+                }
+            }
+        });
+    } catch (e) {
+        console.warn('Failed to clean up routes for deleted teachers:', e);
+    }
     await batch.commit().catch(async (serverError) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: '/teachers', operation: 'delete' } satisfies SecurityRuleContext));
         throw serverError;
@@ -117,6 +131,20 @@ export const addSaturdayTeachersInBatch = async (teachers: Omit<Teacher, 'id'>[]
 export const deleteAfterSchoolTeachersInBatch = async (ids: string[]) => {
     const batch = writeBatch(db());
     ids.forEach(id => batch.delete(doc(db(), 'afterSchoolTeachers', id)));
+    try {
+        const routesSnap = await getDocs(collection(db(), 'routes'));
+        routesSnap.docs.forEach(rDoc => {
+            const data = rDoc.data();
+            if (data.teacherIds && Array.isArray(data.teacherIds)) {
+                const remaining = data.teacherIds.filter((tid: string) => !ids.includes(tid));
+                if (remaining.length !== data.teacherIds.length) {
+                    batch.update(rDoc.ref, { teacherIds: remaining });
+                }
+            }
+        });
+    } catch (e) {
+        console.warn('Failed to clean up routes for deleted afterschool teachers:', e);
+    }
     await batch.commit().catch(async (serverError) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: '/afterSchoolTeachers', operation: 'delete' } satisfies SecurityRuleContext));
         throw serverError;
@@ -126,6 +154,20 @@ export const deleteAfterSchoolTeachersInBatch = async (ids: string[]) => {
 export const deleteSaturdayTeachersInBatch = async (ids: string[]) => {
     const batch = writeBatch(db());
     ids.forEach(id => batch.delete(doc(db(), 'saturdayTeachers', id)));
+    try {
+        const routesSnap = await getDocs(collection(db(), 'routes'));
+        routesSnap.docs.forEach(rDoc => {
+            const data = rDoc.data();
+            if (data.teacherIds && Array.isArray(data.teacherIds)) {
+                const remaining = data.teacherIds.filter((tid: string) => !ids.includes(tid));
+                if (remaining.length !== data.teacherIds.length) {
+                    batch.update(rDoc.ref, { teacherIds: remaining });
+                }
+            }
+        });
+    } catch (e) {
+        console.warn('Failed to clean up routes for deleted saturday teachers:', e);
+    }
     await batch.commit().catch(async (serverError) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: '/saturdayTeachers', operation: 'delete' } satisfies SecurityRuleContext));
         throw serverError;

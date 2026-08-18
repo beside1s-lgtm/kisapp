@@ -322,10 +322,7 @@ const TeacherAssignmentDialog = ({ targetBus, allRoutes, teachers, assignmentTyp
 
     const relevantRoutes = useMemo(() => {
         if (assignmentType === 'commute') {
-            if (semesterMode === 'vacation') {
-                return allRoutes.filter(r => r.busId === targetBus.id && weekdays.includes(r.dayOfWeek) && (r.type === 'Morning' || r.type === 'Afternoon'));
-            }
-            return allRoutes.filter(r => r.busId === targetBus.id && weekdays.includes(r.dayOfWeek) && r.type === 'Afternoon');
+            return allRoutes.filter(r => r.busId === targetBus.id && weekdays.includes(r.dayOfWeek) && (r.type === 'Morning' || r.type === 'Afternoon'));
         } else if (assignmentType === 'afterSchool') {
             const afterSchoolRouteType = semesterMode === 'vacation' ? 'Afternoon' : 'AfterSchool';
             return allRoutes.filter(r => r.busId === targetBus.id && r.type === afterSchoolRouteType);
@@ -732,6 +729,45 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
     }, [teacherAssignmentType, filteredTeachers, filteredAfterSchoolTeachers, filteredSaturdayTeachers, afterSchoolPoolDayFilter]);
     const sortedTeachersList = useMemo(() => [...currentTeacherPool].sort((a, b) => a.name.localeCompare(b.name, 'ko')), [currentTeacherPool]);
 
+    // One-time auto-scrub for stale legacy teacher doc assignments to ensure 100% data cleanliness
+    useEffect(() => {
+        if (!routes.length) return;
+        const batch = writeBatch(db());
+        let hasUpdates = false;
+
+        afterSchoolTeachers.forEach(t => {
+            if (t.assignedAfterSchoolBusId) {
+                const isActuallyAssigned = routes.some(r => 
+                    (r.type === 'AfterSchool' || r.type === 'Afternoon') && 
+                    r.busId === t.assignedAfterSchoolBusId && 
+                    (r.teacherIds || []).includes(t.id)
+                );
+                if (!isActuallyAssigned) {
+                    batch.update(doc(db(), 'afterSchoolTeachers', t.id), { assignedAfterSchoolBusId: '' });
+                    hasUpdates = true;
+                }
+            }
+        });
+
+        teachers.forEach(t => {
+            if (t.assignedBusId) {
+                const isActuallyAssigned = routes.some(r => 
+                    (r.type === 'Morning' || r.type === 'Afternoon') && 
+                    r.busId === t.assignedBusId && 
+                    (r.teacherIds || []).includes(t.id)
+                );
+                if (!isActuallyAssigned) {
+                    batch.update(doc(db(), 'teachers', t.id), { assignedBusId: '' });
+                    hasUpdates = true;
+                }
+            }
+        });
+
+        if (hasUpdates) {
+            batch.commit().catch(console.error);
+        }
+    }, [routes.length, teachers.length, afterSchoolTeachers.length]);
+
     // Validation logic for teachers
     const teacherValidation = useMemo(() => {
         const unassigned: Teacher[] = [];
@@ -1015,7 +1051,6 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
         
         if (teacherAssignmentType === 'afterSchool') {
             const days = afterSchoolDaysList;
-            // Check if there is any active route for this bus on any day that has NO teachers assigned
             const hasUnassignedRoute = routes.some(r => 
                 r.busId === busId && 
                 r.type === afterSchoolRouteType && 
@@ -1030,7 +1065,6 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
         }
     };
 
-    // 방과후 전용: 요일별 담당 교사 목록을 반환합니다.
     const getAfterSchoolTeachersPerDay = (busId: string): Record<string, { id: string; name: string }[]> => {
         const days = afterSchoolDaysList;
         const result: Record<string, { id: string; name: string }[]> = {};
@@ -1054,11 +1088,7 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
         let routesToUpdate: Route[] = [];
         const isVac = semesterMode === 'vacation';
         if (teacherAssignmentType === 'commute') {
-            if (isVac) {
-                routesToUpdate = routes.filter(r => r.busId === busId && ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(r.dayOfWeek) && (r.type === 'Morning' || r.type === 'Afternoon'));
-            } else {
-                routesToUpdate = routes.filter(r => r.busId === busId && ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(r.dayOfWeek) && r.type === 'Afternoon');
-            }
+            routesToUpdate = routes.filter(r => r.busId === busId && ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(r.dayOfWeek) && (r.type === 'Morning' || r.type === 'Afternoon'));
         } else if (teacherAssignmentType === 'afterSchool') {
             routesToUpdate = routes.filter(r => r.busId === busId && r.type === afterSchoolRouteType);
         } else {
@@ -1082,7 +1112,6 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
         }
     };
 
-    // 방과후 전용: 특정 요일의 노선에서만 교사를 해제합니다.
     const handleUnassignTeacherForDay = async (busId: string, teacherId: string, day: DayOfWeek) => {
         const route = routes.find(r => r.busId === busId && r.dayOfWeek === day && r.type === afterSchoolRouteType);
         if (!route) return;
@@ -1099,7 +1128,6 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
 
     const getTeachersForBus = (busId: string) => {
         if (teacherAssignmentType === 'afterSchool') {
-            // 방학 중에는 모든 요일 교사가 같으므로 월요일 교사를 대표로 한 번만 출력
             if (semesterMode === 'vacation') {
                 const route = routes.find(r => r.busId === busId && r.dayOfWeek === 'Monday' && r.type === 'Afternoon');
                 if (route && route.teacherIds && route.teacherIds.length > 0) {
@@ -1129,8 +1157,7 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
             return summaryParts.length > 0 ? summaryParts.join(' | ') : t('unassigned');
         } else {
             const dayKey = teacherAssignmentType === 'commute' ? 'Monday' : 'Saturday';
-            const relevantRouteType = teacherAssignmentType === 'commute' ? 'Afternoon' : 'Morning'; // Morning for Sat check is fine, or just filter by day
-            const relevantRoute = routes.find(r => r.busId === busId && r.dayOfWeek === dayKey && (teacherAssignmentType === 'commute' ? r.type === 'Afternoon' : true));
+            const relevantRoute = routes.find(r => r.busId === busId && r.dayOfWeek === dayKey && (teacherAssignmentType === 'commute' ? (r.type === 'Morning' || r.type === 'Afternoon') : true));
             if (!relevantRoute || !relevantRoute.teacherIds) return t('unassigned');
             const names = relevantRoute.teacherIds.map(id => allTeachersPool.find(t => t.id === id)?.name).filter(Boolean);
             return names.length > 0 ? names.join(', ') : t('unassigned');
@@ -1151,11 +1178,10 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
 
         const isVac = semesterMode === 'vacation';
 
-        // Backup current assignments
         routes.filter(r => daysToAssign.includes(r.dayOfWeek) && (
             isVac 
                 ? (r.type === 'Morning' || r.type === 'Afternoon')
-                : (r.type === (teacherAssignmentType === 'commute' ? 'Afternoon' : afterSchoolRouteType))
+                : (teacherAssignmentType === 'commute' ? (r.type === 'Morning' || r.type === 'Afternoon') : r.type === afterSchoolRouteType)
         ))
             .forEach(r => { backup[r.id] = r.teacherIds || []; });
         setPreviousRouteAssignments(backup);
@@ -1167,11 +1193,10 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
                 return;
             }
 
-            // 버스별 실제 탑승 학생 수 계산
             const getBusStudentCount = (busId: string): number => {
                 let busRoutes: Route[] = [];
                 if (teacherAssignmentType === 'commute') {
-                    busRoutes = routes.filter(r => r.busId === busId && ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(r.dayOfWeek) && (isVac ? (r.type === 'Morning' || r.type === 'Afternoon') : r.type === 'Afternoon'));
+                    busRoutes = routes.filter(r => r.busId === busId && ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(r.dayOfWeek) && (r.type === 'Morning' || r.type === 'Afternoon'));
                 } else if (teacherAssignmentType === 'afterSchool') {
                     busRoutes = routes.filter(r => r.busId === busId && r.type === afterSchoolRouteType);
                 } else {
@@ -1187,67 +1212,61 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
                 return studentIds.size;
             };
 
-            const busStudentCounts = new Map<string, number>();
-            targetBuses.forEach(b => busStudentCounts.set(b.id, getBusStudentCount(b.id)));
+            const busStudentCounts = targetBuses.map(bus => ({
+                bus,
+                count: getBusStudentCount(bus.id)
+            }));
 
-            // 탑승 학생 수가 많은 순(내림차순)으로 정렬 (동점 시 인승 큰 순 -> 버스 이름순)
-            const busesSortedByStudents = [...targetBuses].sort((a, b) => {
-                const countA = busStudentCounts.get(a.id) || 0;
-                const countB = busStudentCounts.get(b.id) || 0;
-                if (countB !== countA) return countB - countA; // 학생 수 많은 순 우선
-                if ((b.capacity || 0) !== (a.capacity || 0)) return (b.capacity || 0) - (a.capacity || 0); // 인승 큰 순
-                return a.name.localeCompare(b.name, undefined, { numeric: true });
-            });
+            busStudentCounts.sort((a, b) => b.count - a.count);
 
-            const availableTeachers = [...currentTeacherPool].filter(t => !excludedFromAssignmentIds.has(t.id)).sort(() => Math.random() - 0.5);
+            const availableTeachers = [...currentTeacherPool.filter(t => !excludedFromAssignmentIds.has(t.id))];
+            
+            for (let i = availableTeachers.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [availableTeachers[i], availableTeachers[j]] = [availableTeachers[j], availableTeachers[i]];
+            }
+
             let teacherIndex = 0;
-
             const busAssignedMap = new Map<string, string[]>();
-            targetBuses.forEach(b => busAssignedMap.set(b.id, []));
 
-            // [1단계] 모든 운행 버스에 1명씩 기본 배정 (학생 수 많은 순)
-            for (const bus of busesSortedByStudents) {
+            for (const { bus } of busStudentCounts) {
                 if (teacherIndex < availableTeachers.length) {
-                    busAssignedMap.get(bus.id)!.push(availableTeachers[teacherIndex++].id);
+                    busAssignedMap.set(bus.id, [availableTeachers[teacherIndex++].id]);
+                } else {
+                    busAssignedMap.set(bus.id, []);
                 }
             }
 
-            // [2단계] 남은 여유 교사가 있을 경우, 탑승 학생 수가 많은 순서대로 2번째 교사 우선 배정
             let twoTeacherBusesCount = 0;
-            for (const bus of busesSortedByStudents) {
+            for (const { bus } of busStudentCounts) {
                 if (teacherIndex >= availableTeachers.length) break;
-                if (busAssignedMap.get(bus.id)!.length === 1) {
+                if (busAssignedMap.get(bus.id) && busAssignedMap.get(bus.id)!.length === 1) {
                     busAssignedMap.get(bus.id)!.push(availableTeachers[teacherIndex++].id);
                     twoTeacherBusesCount++;
                 }
             }
 
-            // 각 버스 노선에 업데이트 적용
             for (const bus of targetBuses) {
                 const assignedIds = busAssignedMap.get(bus.id) || [];
                 routes.filter(r => r.busId === bus.id && (
                     isVac 
                         ? daysToAssign.includes(r.dayOfWeek) && (r.type === 'Morning' || r.type === 'Afternoon')
-                        : (teacherAssignmentType === 'commute' ? daysToAssign.includes(r.dayOfWeek) && r.type === 'Afternoon' : r.dayOfWeek === 'Saturday')
+                        : (teacherAssignmentType === 'commute' ? daysToAssign.includes(r.dayOfWeek) && (r.type === 'Morning' || r.type === 'Afternoon') : r.dayOfWeek === 'Saturday')
                 ))
                 .forEach(r => batch.update(doc(db(), 'routes', r.id), { teacherIds: assignedIds }));
             }
         } else {
-            // After-School logic: Day by Day
             for (const day of daysToAssign) {
                 const dayRoutes = routes.filter(r => r.dayOfWeek === day && r.type === afterSchoolRouteType && (r.stops?.length ?? 0) > 0);
                 const dayBuses = sortBuses(buses.filter(b => !b.excludeFromAssignment && (b.isActive ?? true) && dayRoutes.some(r => r.busId === b.id)));
                 
-                // Available teachers for this specific day (excluding manually excluded ones)
                 const dayPool = filteredAfterSchoolTeachers.filter(t => !excludedFromAssignmentIds.has(t.id) && (!t.afterSchoolDays || t.afterSchoolDays.includes(day)));
                 const shuffledTeachers = [...dayPool].sort(() => Math.random() - 0.5);
                 
                 let teacherIndex = 0;
                 for (const bus of dayBuses) {
                     const assignedIds: string[] = [];
-                    // Slot 1 (1-5 weeks)
                     if (teacherIndex < shuffledTeachers.length) assignedIds.push(shuffledTeachers[teacherIndex++].id);
-                    // Slot 2 (6-10 weeks)
                     if (teacherIndex < shuffledTeachers.length) assignedIds.push(shuffledTeachers[teacherIndex++].id);
                     
                     const route = dayRoutes.find(r => r.busId === bus.id);
@@ -1285,19 +1304,43 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
         let routesToClear: Route[] = [];
         const isVac = semesterMode === 'vacation';
         if (teacherAssignmentType === 'commute') {
-            if (isVac) {
-                routesToClear = routes.filter(r => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(r.dayOfWeek) && (r.type === 'Morning' || r.type === 'Afternoon'));
-            } else {
-                routesToClear = routes.filter(r => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(r.dayOfWeek) && r.type === 'Afternoon');
-            }
+            routesToClear = routes.filter(r => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(r.dayOfWeek) && (r.type === 'Morning' || r.type === 'Afternoon'));
         } else if (teacherAssignmentType === 'afterSchool') {
             routesToClear = routes.filter(r => r.type === afterSchoolRouteType);
         } else {
             routesToClear = routes.filter(r => r.dayOfWeek === 'Saturday');
         }
         if (routesToClear.length === 0) return;
+
+        // Save previous assignments for immediate 1-step undo (바로 직전 되돌리기용)
+        const initialAssignments: Record<string, string[]> = {};
+        routesToClear.forEach(r => { initialAssignments[r.id] = r.teacherIds || []; });
+        setPreviousRouteAssignments(initialAssignments);
+
         const batch = writeBatch(db());
         routesToClear.forEach(route => batch.update(doc(db(), 'routes', route.id), { teacherIds: [] }));
+
+        // Clear assignedBusId / assignedAfterSchoolBusId from teacher documents as well
+        if (teacherAssignmentType === 'commute') {
+            teachers.forEach(t => {
+                if (t.assignedBusId) {
+                    batch.update(doc(db(), 'teachers', t.id), { assignedBusId: '' });
+                }
+            });
+        } else if (teacherAssignmentType === 'afterSchool') {
+            filteredAfterSchoolTeachers.forEach(t => {
+                if (t.assignedAfterSchoolBusId || (t as any).assignedBusId) {
+                    batch.update(doc(db(), 'afterSchoolTeachers', t.id), { assignedAfterSchoolBusId: '', assignedBusId: '' });
+                }
+            });
+        } else if (teacherAssignmentType === 'saturday') {
+            saturdayTeachers.forEach(t => {
+                if (t.assignedBusId) {
+                    batch.update(doc(db(), 'saturdayTeachers', t.id), { assignedBusId: '' });
+                }
+            });
+        }
+
         try {
             await batch.commit();
             toast({ title: t('success'), description: t('admin.teacher_assignment.reset.success') });
