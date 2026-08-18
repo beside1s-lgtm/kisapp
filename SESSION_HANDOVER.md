@@ -37,10 +37,16 @@
    - 방과후 진행 상태(`afterschoolStageStatus === 'CLOSED'` 또는 미운영) 시 스쿨버스 교사용 화면에서 이전 학기/방학 방과후 강좌가 검색되지 않도록 차단.
    - [방과후 명단 조회] 팝업 시 "방과후학교 운영이 종료되었습니다" 안내 뷰 및 뱃지 표출.
    - 메인 화면 노선 탭에서 방과후(`AfterSchool`) 탭 자동 숨김 및 정규 하교(`Afternoon`)로 안전하게 자동 전환.
-6. **React Hook 규칙 준수 및 런타임 에러 해결**:
+
+6. **모바일 전용 PWA (Progressive Web App) 설치 기능 구현**:
+   - `manifest.json`, 서비스 워커(`sw.js`), 고해상도 아이콘 연동.
+   - 모바일 접속 시 하단 **[📲 전용 앱 설치하기 (1초)]** 배너 자동 표출 (안드로이드 네이티브/iOS 홈 화면 추가 안내).
+
+7. **React Hook 규칙 준수 및 런타임 에러 해결**:
    - `TeacherPage` 컴포넌트 내 조건부 렌더링/조기 반환(`if (loading)`, `if (!isAuthenticated)`) 하단에 있던 `useMemo` 훅들(`loggedInTeacherDoc`, `teacherBusInfoText`)을 컴포넌트 최상단으로 재배치하여 `Rules of Hooks` 위반 런타임 에러 완전 해결.
-7. **배포 정보 (Deployment Info)**:
-   - 프로덕션 빌드 검증 및 GitHub (`main`) 푸시 배포 완료: 최신 커밋(`0a3758a`)이 원격 저장소(`origin/main`)에 성공적으로 푸시되어 Firebase App Hosting 배포 파이프라인이 정상 트리거되었습니다.
+
+8. **배포 정보 (Deployment Info)**:
+   - 프로덕션 빌드 검증 및 GitHub (`main`) 푸시 배포 완료: 최신 커밋(`f71bd33`)이 원격 저장소(`origin/main`)에 성공적으로 푸시되어 Firebase App Hosting 배포 파이프라인이 정상 트리거되었습니다.
 
 ---
 

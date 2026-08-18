@@ -3,7 +3,7 @@
 import type { FC, ReactNode } from 'react';
 import React from 'react';
 import Link from 'next/link';
-import { Home, LogOut, ArrowLeft } from 'lucide-react';
+import { Home, LogOut, ArrowLeft, Bus } from 'lucide-react';
 import { Button } from '../ui/button';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
@@ -64,24 +64,35 @@ export const MainLayout: FC<MainLayoutProps> = ({
        <AcademicCalendarSyncModal />
        <header className="sticky top-0 z-10 flex flex-col gap-2 border-b bg-card/80 px-3 py-2 backdrop-blur-sm sm:gap-4 sm:px-4 md:px-6">
           <div className="flex w-full flex-col sm:flex-row sm:items-center justify-between gap-3">
-              {/* 상단 라인: 뒤로가기/홈 + 타이틀 또는 모바일 1번 라인 배지 */}
+              {/* 상단 라인: 뒤로가기/홈(로그인 시) 또는 버스 로고(비로그인 시) + 타이틀 또는 모바일 1번 라인 배지 */}
               <div className="flex items-center justify-between w-full sm:w-auto gap-2 min-w-0">
                   <div className="flex items-center gap-2 min-w-0 flex-1">
-                      {/* 뒤로가기 버튼: 메인 홈과 인박스를 제외한 모든 페이지에서 항상 노출 */}
-                      {pathname !== '/' && pathname !== '/inbox' && (
-                        <Button variant="outline" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => router.back()}>
-                          <ArrowLeft className="h-4 w-4" />
-                          <span className="sr-only">Back</span>
-                        </Button>
+                      {/* 로그인된 사용자에게만 뒤로가기 및 홈 버튼 노출 */}
+                      {user ? (
+                        <>
+                          {pathname !== '/' && pathname !== '/inbox' && (
+                            <Button variant="outline" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => router.back()} title="뒤로가기">
+                              <ArrowLeft className="h-4 w-4" />
+                              <span className="sr-only">Back</span>
+                            </Button>
+                          )}
+                          {showHomeButton && (
+                            <Button asChild variant="outline" size="icon" className="h-8 w-8 flex-shrink-0" title="결재 홈">
+                              <Link href="/">
+                                <Home className="h-4 w-4" />
+                                <span className="sr-only">Home</span>
+                              </Link>
+                            </Button>
+                          )}
+                        </>
+                      ) : (
+                        /* 비로그인 사용자: 결재 화면 이탈 방지용 깔끔한 전용 버스 배지 표출 */
+                        <div className="flex items-center gap-1.5 px-2 py-1 bg-indigo-50/90 text-indigo-700 rounded-lg border border-indigo-200/70 text-xs font-bold shrink-0 shadow-xs">
+                          <Bus className="h-4 w-4 text-indigo-600 shrink-0" />
+                          <span className="text-[11px] font-extrabold tracking-tight">KIS BUS</span>
+                        </div>
                       )}
-                      {showHomeButton && (
-                        <Button asChild variant="outline" size="icon" className="h-8 w-8 flex-shrink-0">
-                          <Link href="/">
-                            <Home className="h-4 w-4" />
-                            <span className="sr-only">Home</span>
-                          </Link>
-                        </Button>
-                      )}
+
                       {!hideTitle ? (
                         <h1 className="text-base font-semibold sm:text-lg md:text-xl font-headline truncate">
                             {title || getPageTitle()}
