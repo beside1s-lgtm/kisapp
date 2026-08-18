@@ -958,7 +958,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </p>
                 )}
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
                 <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
                   (teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING'
                     ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
@@ -999,85 +999,85 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
             {/* 5단계 상태 전환 버튼 그룹 (접힘 상태가 아닐 때 표출) */}
             {!isStageControlFolded && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 animate-in fade-in duration-200">
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 animate-in fade-in duration-200">
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('RECRUITING')}
-                  className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
+                  className={`p-2.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
                     ((teacherApplySettings as any)?.afterschoolStageStatus || 'RECRUITING') === 'RECRUITING'
                       ? 'bg-blue-50 border-2 border-blue-600 ring-2 ring-blue-100 text-blue-900 font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span>강사 모집 중</span>
-                    {((teacherApplySettings as any)?.afterschoolStageStatus || 'RECRUITING') === 'RECRUITING' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+                  <div className="flex items-center justify-between text-xs mb-1 min-w-0">
+                    <span className="truncate">강사 모집 중</span>
+                    {((teacherApplySettings as any)?.afterschoolStageStatus || 'RECRUITING') === 'RECRUITING' && <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 ml-1" />}
                   </div>
-                  <p className="text-[11px] text-slate-500">프로그램 개설 및 강사 접수</p>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">프로그램 개설 및 강사 접수</p>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('APPLYING')}
-                  className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
+                  className={`p-2.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING'
                       ? 'bg-amber-50 border-2 border-amber-600 ring-2 ring-amber-100 text-amber-900 font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span>수강 신청 중</span>
-                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING' && <CheckCircle2 className="w-4 h-4 text-amber-600" />}
+                  <div className="flex items-center justify-between text-xs mb-1 min-w-0">
+                    <span className="truncate">수강 신청 중</span>
+                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING' && <CheckCircle2 className="w-4 h-4 text-amber-600 shrink-0 ml-1" />}
                   </div>
-                  <p className="text-[11px] text-slate-500">학생 선착순 수강신청 접수</p>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">학생 선착순 수강신청 접수</p>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('CONFIRMED')}
-                  className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
+                  className={`p-2.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'CONFIRMED'
                       ? 'bg-violet-50 border-2 border-violet-600 ring-2 ring-violet-100 text-violet-900 font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="text-violet-800 font-extrabold">수강신청 완료</span>
-                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'CONFIRMED' && <CheckCircle2 className="w-4 h-4 text-violet-600" />}
+                  <div className="flex items-center justify-between text-xs mb-1 min-w-0">
+                    <span className="text-violet-800 font-extrabold truncate">수강신청 완료</span>
+                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'CONFIRMED' && <CheckCircle2 className="w-4 h-4 text-violet-600 shrink-0 ml-1" />}
                   </div>
-                  <p className="text-[11px] text-violet-600 font-medium">결과 확정 및 학부모 통보</p>
+                  <p className="text-[10px] sm:text-[11px] text-violet-600 font-medium truncate">결과 확정 및 학부모 통보</p>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('OPERATING')}
-                  className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
+                  className={`p-2.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING'
                       ? 'bg-emerald-50 border-2 border-emerald-600 ring-2 ring-emerald-100 text-emerald-900 shadow-sm font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="text-emerald-700 font-extrabold">방과후학교 운영 중</span>
-                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING' && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+                  <div className="flex items-center justify-between text-xs mb-1 min-w-0">
+                    <span className="text-emerald-700 font-extrabold truncate">방과후 운영 중</span>
+                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING' && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 ml-1" />}
                   </div>
-                  <p className="text-[11px] text-emerald-600 font-medium">출석부 및 수업 활성화</p>
+                  <p className="text-[10px] sm:text-[11px] text-emerald-600 font-medium truncate">출석부 및 수업 활성화</p>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('CLOSED')}
-                  className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
+                  className={`p-2.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 col-span-2 sm:col-span-1 xl:col-span-1 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED'
                       ? 'bg-slate-200 border-2 border-slate-600 ring-2 ring-slate-200 text-slate-900 font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span>운영 종료</span>
-                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED' && <CheckCircle2 className="w-4 h-4 text-slate-600" />}
+                  <div className="flex items-center justify-between text-xs mb-1 min-w-0">
+                    <span className="truncate">운영 종료</span>
+                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED' && <CheckCircle2 className="w-4 h-4 text-slate-600 shrink-0 ml-1" />}
                   </div>
-                  <p className="text-[11px] text-slate-500">학기 운영 최종 마감</p>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">학기 운영 최종 마감</p>
                 </button>
               </div>
             )}
@@ -1194,23 +1194,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <div className="space-y-2">
                     {/* 배너 */}
                     {!isBatchReminderOpen && missingCount > 0 && (
-                      <div className="flex items-center justify-between bg-rose-50 border border-rose-200 rounded-xl p-3">
-                        <div className="flex items-center gap-2 text-xs">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-rose-50 border border-rose-200 rounded-xl p-3 gap-2.5">
+                        <div className="flex items-center gap-2 text-xs flex-wrap min-w-0">
                           <Bell className="w-4 h-4 text-rose-600 shrink-0" />
-                          <span className="font-bold text-rose-800">
+                          <span className="font-bold text-rose-800 shrink-0">
                             서류 미제출 강좌 {missingCount}개 감지
                           </span>
-                          <span className="text-rose-600">
+                          <span className="text-rose-600 text-xs">
                             — 출석부·출근부·지출증빙 미제출 강좌의 강사에게 한 번에 독촉 메세지를 보낼 수 있습니다.
                           </span>
                         </div>
                         <button
                           type="button"
                           onClick={handleOpenBatchReminder}
-                          className="shrink-0 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                          className="shrink-0 w-full sm:w-auto bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer whitespace-nowrap"
                         >
                           <Bell className="w-3.5 h-3.5" />
-                          미제출 조회 & 일괄 독촉
+                          <span>미제출 조회 & 일괄 독촉</span>
                         </button>
                       </div>
                     )}
@@ -1353,45 +1353,49 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               {/* 선택 강좌 일괄 액션바 */}
               {selectedCourseIds.length > 0 && (
-                <div className="bg-slate-900 text-white p-3 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg border border-amber-500/30 animate-in fade-in duration-200">
-                  <div className="text-xs font-bold flex items-center gap-2">
-                    <span className="bg-amber-400 text-slate-950 font-black px-2.5 py-0.5 rounded-full text-[11px]">
+                <div className="bg-slate-900 text-white p-3 rounded-xl flex flex-col xl:flex-row items-start xl:items-center justify-between gap-3 shadow-lg border border-amber-500/30 animate-in fade-in duration-200 w-full overflow-hidden">
+                  <div className="text-xs font-bold flex items-center gap-2 flex-wrap min-w-0">
+                    <span className="bg-amber-400 text-slate-950 font-black px-2.5 py-0.5 rounded-full text-[11px] shrink-0">
                       {selectedCourseIds.length}개 선택됨
                     </span>
-                    <span className="text-slate-200">선택한 강좌를 일괄 승인, 대기, 폐강 또는 영구 삭제합니다.</span>
+                    <span className="text-slate-200 text-xs">선택한 강좌를 일괄 승인, 대기, 폐강 또는 영구 삭제합니다.</span>
                   </div>
-                  <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap sm:flex-nowrap">
+                  <div className="flex items-center gap-1.5 w-full xl:w-auto flex-wrap justify-start xl:justify-end shrink-0">
                     <button
                       type="button"
                       onClick={handleBatchApproveCourses}
-                      className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-sm"
+                      className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2.5 sm:px-3.5 py-1.5 rounded-lg flex items-center justify-center gap-1 transition shadow-sm whitespace-nowrap"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      일괄 승인
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>일괄 승인</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleBatchRevertCourses}
-                      className="flex-1 sm:flex-none bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-sm"
+                      className="flex-1 sm:flex-initial bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs px-2.5 sm:px-3.5 py-1.5 rounded-lg flex items-center justify-center gap-1 transition shadow-sm whitespace-nowrap"
+                      title="일괄 승인 취소 (대기)"
                     >
-                      <Clock className="w-3.5 h-3.5" />
-                      일괄 승인 취소 (대기)
+                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                      <span className="hidden 2xl:inline">일괄 승인 취소 (대기)</span>
+                      <span className="2xl:hidden">일괄 대기</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleBatchCancelCourses}
-                      className="flex-1 sm:flex-none bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-sm"
+                      className="flex-1 sm:flex-initial bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-2.5 sm:px-3.5 py-1.5 rounded-lg flex items-center justify-center gap-1 transition shadow-sm whitespace-nowrap"
                     >
-                      <XCircle className="w-3.5 h-3.5" />
-                      일괄 폐강
+                      <XCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>일괄 폐강</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleBatchDeleteCourses}
-                      className="flex-1 sm:flex-none bg-red-700 hover:bg-red-800 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-sm border border-red-500/40"
+                      className="flex-1 sm:flex-initial bg-red-700 hover:bg-red-800 text-white font-bold text-xs px-2.5 sm:px-3.5 py-1.5 rounded-lg flex items-center justify-center gap-1 transition shadow-sm border border-red-500/40 whitespace-nowrap"
+                      title="일괄 영구 삭제"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      일괄 영구 삭제
+                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                      <span className="hidden 2xl:inline">일괄 영구 삭제</span>
+                      <span className="2xl:hidden">영구 삭제</span>
                     </button>
                   </div>
                 </div>
