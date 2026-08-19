@@ -1,7 +1,7 @@
 {
-  "name": "KIS 스쿨버스 & 학교 포털",
-  "short_name": "KIS 스쿨버스",
-  "description": "호치민시한국국제학교 스쿨버스 관리 및 전용 모바일 포털",
+  "name": "KIS 학교 포털 (호치민시한국국제학교)",
+  "short_name": "KIS 포털",
+  "description": "호치민시한국국제학교 통합 포털 (전자결재, 방과후학교, 스쿨버스, 교원복무)",
   "start_url": "/",
   "id": "/",
   "display": "standalone",

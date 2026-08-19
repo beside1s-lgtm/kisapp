@@ -12,7 +12,8 @@ import {
     Smartphone, 
     CheckCircle2, 
     Sparkles,
-    Bus
+    GraduationCap,
+    School
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -36,11 +37,11 @@ export function PwaInstallPrompt() {
         setIsStandalone(isStandaloneMode);
         if (isStandaloneMode) return;
 
-        // 2. Check if dismissed previously within last 24 hours
+        // 2. Check if dismissed previously within last 7 days
         const lastDismissed = localStorage.getItem('kis_pwa_install_dismissed');
         if (lastDismissed) {
             const timeDiff = Date.now() - parseInt(lastDismissed, 10);
-            if (timeDiff < 24 * 60 * 60 * 1000) { // 24 hours
+            if (timeDiff < 7 * 24 * 60 * 60 * 1000) { // 7 days
                 setDismissed(true);
             }
         }
@@ -121,19 +122,19 @@ export function PwaInstallPrompt() {
                     <div className="flex items-start justify-between gap-2.5">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center text-white shadow-md shrink-0 border border-indigo-400/30">
-                                <Bus className="w-5 h-5 text-amber-300" />
+                                <GraduationCap className="w-5 h-5 text-amber-300" />
                             </div>
                             <div className="min-w-0">
                                 <div className="flex items-center gap-1.5">
                                     <h4 className="font-bold text-xs sm:text-sm text-white truncate">
-                                        KIS 스쿨버스 전용 앱
+                                        KIS 학교 포털 전용 앱
                                     </h4>
                                     <Badge className="bg-indigo-500 text-white text-[9px] px-1 py-0 h-4 leading-none font-bold">
                                         홈 화면 추가
                                     </Badge>
                                 </div>
                                 <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">
-                                    브라우저 주소창 없이 앱처럼 빠르고 편리하게 이용하세요!
+                                    전자결재·스쿨버스·방과후 통합 포털을 앱처럼 빠르고 편리하게 이용하세요!
                                 </p>
                             </div>
                         </div>
@@ -142,6 +143,7 @@ export function PwaInstallPrompt() {
                             onClick={handleDismiss} 
                             className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition shrink-0"
                             aria-label="닫기"
+                            title="7일간 보지 않기"
                         >
                             <X className="w-4 h-4" />
                         </button>
@@ -161,8 +163,9 @@ export function PwaInstallPrompt() {
                             size="sm" 
                             onClick={handleDismiss} 
                             className="h-8 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl px-2.5"
+                            title="7일 동안 이 팝업을 표시하지 않습니다"
                         >
-                            다음에
+                            7일간 닫기
                         </Button>
                     </div>
                 </div>
