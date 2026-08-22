@@ -1,15 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { FileEdit, History, Info, AlertCircle, Loader2, Bus as BusIcon, GraduationCap } from 'lucide-react';
+import { FileEdit, History, Info, AlertCircle, Loader2, Bus as BusIcon, GraduationCap, Calendar, UserCheck } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { getSentDocuments, getStudentFieldTripDays, getStudentAbsenceDays } from '@/lib/services/documentService';
-import { getDocConfig, onAfterschoolTimerUpdate } from '@/lib/services/settingsService';
-import { ApprovalDoc, DocConfig } from '@/lib/types';
-import type { GlobalTimerConfig } from '@/lib/afterschool/types';
+import { getDocConfig, onAfterschoolTimerUpdate, onOrgStructureUpdate, onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsUpdate } from '@/lib/services/settingsService';
+import { onUsersDirectoryUpdate } from '@/lib/services/userService';
+import { onBusesUpdate, onStudentsUpdate } from '@/lib/kisbus';
+import type { Bus, Student } from '@/lib/kisbus/types';
+import type { Course, Enrollment, GlobalTimerConfig } from '@/lib/afterschool/types';
+import { ApprovalDoc, DocConfig, OrgStructure, UserProfile } from '@/lib/types';
+import { PwaInstallBanner } from '@/components/pwa-install-banner';
 
 export default function ParentsDashboard() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -19,6 +24,14 @@ export default function ParentsDashboard() {
   const [timerConfig, setTimerConfig] = useState<GlobalTimerConfig | null>(null);
   const [accumulatedFieldTripDays, setAccumulatedFieldTripDays] = useState<number>(0);
   const [accumulatedAbsenceDays, setAccumulatedAbsenceDays] = useState<number>(0);
+
+  // 실시간 연동 상태 (조직도, 교직원, 스쿨버스, 방과후)
+  const [orgStructure, setOrgStructure] = useState<Partial<OrgStructure> | null>(null);
+  const [usersDirectory, setUsersDirectory] = useState<UserProfile[]>([]);
+  const [buses, setBuses] = useState<Bus[]>([]);
+  const [busStudents, setBusStudents] = useState<Student[]>([]);
+  const [afterschoolCourses, setAfterschoolCourses] = useState<Course[]>([]);
+  const [afterschoolEnrollments, setAfterschoolEnrollments] = useState<Enrollment[]>([]);
 
   const isAfterschoolActive = (() => {
     if (!timerConfig) return false;
@@ -40,8 +53,21 @@ export default function ParentsDashboard() {
   useEffect(() => {
     getDocConfig().then(cfg => setConfig(cfg));
     const unsubTimer = onAfterschoolTimerUpdate((cfg) => setTimerConfig(cfg));
+    const unsubOrg = onOrgStructureUpdate((org) => setOrgStructure(org));
+    const unsubUsers = onUsersDirectoryUpdate((users) => setUsersDirectory(users));
+    const unsubBuses = onBusesUpdate((bList) => setBuses(bList || []));
+    const unsubBusStudents = onStudentsUpdate((sList) => setBusStudents(sList || []));
+    const unsubCourses = onAfterschoolCoursesUpdate((cList) => setAfterschoolCourses(cList || []));
+    const unsubEnrollments = onAfterschoolEnrollmentsUpdate((eList) => setAfterschoolEnrollments(eList || []));
+
     return () => {
       unsubTimer();
+      unsubOrg();
+      unsubUsers();
+      unsubBuses();
+      unsubBusStudents();
+      unsubCourses();
+      unsubEnrollments();
     };
   }, []);
 
@@ -89,6 +115,81 @@ export default function ParentsDashboard() {
     }
   }, [user, profile]);
 
+  // 1. 담임 선생님 성명 자동 매칭 (실시간 조직도 & 교직원 DB)
+  const homeroomTeacherName = useMemo(() => {
+    if (!profile?.studentGrade || !profile?.studentClass) return '';
+    const g = String(parseInt(profile.studentGrade, 10) || profile.studentGrade).trim();
+    const c = String(parseInt(profile.studentClass, 10) || profile.studentClass).trim();
+    const gradeClassKey = `${g}-${c}`;
+    
+    const teacherEmail = orgStructure?.homerooms?.[gradeClassKey] || 
+                         orgStructure?.homerooms?.[`${profile.studentGrade}-${profile.studentClass}`] ||
+                         Object.entries(orgStructure?.homerooms || {}).find(([k]) => {
+                           const [kg, kc] = k.split('-').map(s => String(parseInt(s, 10) || s).trim());
+                           return kg === g && kc === c;
+                         })?.[1];
+
+    if (!teacherEmail) return '';
+    const teacherUser = usersDirectory.find(u => u.email?.toLowerCase() === teacherEmail.toLowerCase());
+    return teacherUser?.name || teacherEmail.split('@')[0];
+  }, [profile, orgStructure, usersDirectory]);
+
+  // 2. 스쿨버스 탑승 차량 안내 텍스트 (예: 1호차 / 버스 미탑승)
+  const busInfoText = useMemo(() => {
+    if (!profile?.studentName) return '버스 미탑승';
+    const sName = profile.studentName.trim().toLowerCase();
+    const sGrade = String(parseInt(profile.studentGrade || '', 10) || profile.studentGrade || '').trim();
+    const sClass = String(parseInt(profile.studentClass || '', 10) || profile.studentClass || '').trim();
+
+    const matchedStudent = busStudents.find(s => {
+      const busName = (s.name || '').trim().toLowerCase();
+      const busGrade = String(parseInt(s.grade || '', 10) || s.grade || '').trim();
+      const busClass = String(parseInt(s.class || '', 10) || s.class || '').trim();
+      
+      const isSameName = busName === sName;
+      const isSameClass = (!sGrade || busGrade === sGrade) && (!sClass || busClass === sClass);
+      const isSameEmail = s.studentEmail && user?.email && s.studentEmail.toLowerCase() === user.email.toLowerCase();
+      const isSamePhone = s.contact && profile.parentPhone && s.contact.replace(/\D/g, '') === profile.parentPhone.replace(/\D/g, '');
+
+      return (isSameName && isSameClass) || isSameEmail || (isSameName && isSamePhone);
+    });
+
+    if (matchedStudent?.assignedBusId) {
+      const bus = buses.find(b => b.id === matchedStudent.assignedBusId);
+      if (bus?.name) return bus.name;
+    }
+    return '버스 미탑승';
+  }, [profile, user, busStudents, buses]);
+
+  // 3. 방과후학교 수강 과목 안내 텍스트 (예: 축구교실, 창의로봇 / 미수강)
+  const afterschoolInfoText = useMemo(() => {
+    if (!profile?.studentName) return '미수강';
+    const sName = profile.studentName.trim().toLowerCase();
+    const sGrade = String(parseInt(profile.studentGrade || '', 10) || profile.studentGrade || '').trim();
+    const sClass = String(parseInt(profile.studentClass || '', 10) || profile.studentClass || '').trim();
+
+    const studentEnrollments = afterschoolEnrollments.filter(e => {
+      const eName = (e.studentName || '').trim().toLowerCase();
+      const eGrade = String(parseInt(e.studentGrade || '', 10) || e.studentGrade || '').trim();
+      const eClass = String(parseInt(e.studentClass || '', 10) || e.studentClass || '').trim();
+
+      const isSameName = eName === sName;
+      const isSameClass = (!sGrade || eGrade === sGrade) && (!sClass || eClass === sClass);
+      const isSameEmail = e.studentEmail && user?.email && e.studentEmail.toLowerCase() === user.email.toLowerCase();
+
+      const isEnrolled = e.status === 'enrolled' || e.status === 'confirmed' || e.status === 'approved' || !e.status;
+      return (isSameName || isSameEmail) && isEnrolled;
+    });
+
+    const courseTitles = studentEnrollments.map(e => {
+      const course = afterschoolCourses.find(c => c.id === e.courseId);
+      return course?.title || e.courseTitle || '';
+    }).filter(Boolean);
+
+    const uniqueCourses = Array.from(new Set(courseTitles));
+    return uniqueCourses.length > 0 ? uniqueCourses.join(', ') : '미수강';
+  }, [profile, user, afterschoolEnrollments, afterschoolCourses]);
+
   if (authLoading || docsLoading) {
     return (
       <div className="min-h-[400px] flex items-center justify-center">
@@ -98,10 +199,20 @@ export default function ParentsDashboard() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 font-body">
+      {/* ── 학부모 서비스 대시보드 헤더 ── */}
       <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight font-headline text-foreground">학부모 서비스 대시보드</h1>
-        <p className="text-muted-foreground text-lg">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight font-headline text-foreground">
+            학부모 서비스 대시보드
+          </h1>
+          {profile?.studentGrade && profile?.studentClass && (
+            <Badge variant="outline" className="bg-indigo-50/80 border-indigo-200 text-indigo-800 text-xs sm:text-sm font-semibold px-2.5 sm:px-3 py-1 rounded-full shadow-xs">
+              ( {profile.studentGrade}학년 {profile.studentClass}반 {profile.studentNumber ? `${profile.studentNumber}번` : ''}, 담임: {homeroomTeacherName || '미배정'} )
+            </Badge>
+          )}
+        </div>
+        <p className="text-muted-foreground text-xs sm:text-base">
           KISAPP 학부모 서비스에 오신 것을 환영합니다. 원하시는 메뉴를 선택해주세요.
         </p>
       </div>
@@ -267,11 +378,14 @@ export default function ParentsDashboard() {
           {/* 스쿨버스 카드 */}
           <Card className="hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border-amber-200 bg-gradient-to-br from-amber-500/5 to-background">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl text-amber-600 font-headline">
-                <div className="p-2 bg-amber-500/10 rounded-lg">
+              <CardTitle className="flex items-center gap-2 text-xl text-amber-600 font-headline flex-wrap">
+                <div className="p-2 bg-amber-500/10 rounded-lg shrink-0">
                   <BusIcon className="h-6 w-6" />
                 </div>
-                스쿨버스
+                <span>스쿨버스</span>
+                <Badge variant="outline" className="bg-amber-50 border-amber-200 text-amber-800 text-xs sm:text-sm font-semibold px-2.5 py-0.5 rounded-full">
+                  ( {busInfoText} )
+                </Badge>
               </CardTitle>
               <CardDescription className="text-sm">
                 스쿨버스 탑승 신청 및 자녀의 배정 좌석, 버스 탑승 여부를 확인합니다.
@@ -303,11 +417,14 @@ export default function ParentsDashboard() {
           {/* 방과후학교 카드 */}
           <Card className="hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border-violet-200 bg-gradient-to-br from-violet-500/5 to-background">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl text-violet-600 font-headline">
-                <div className="p-2 bg-violet-500/10 rounded-lg">
+              <CardTitle className="flex items-center gap-2 text-xl text-violet-600 font-headline flex-wrap">
+                <div className="p-2 bg-violet-500/10 rounded-lg shrink-0">
                   <GraduationCap className="h-6 w-6" />
                 </div>
-                방과후학교
+                <span>방과후학교</span>
+                <Badge variant="outline" className="bg-violet-50 border-violet-200 text-violet-800 text-xs sm:text-sm font-semibold px-2.5 py-0.5 rounded-full">
+                  ( {afterschoolInfoText} )
+                </Badge>
               </CardTitle>
               <CardDescription className="text-sm">
                 방과후학교의 수강신청을 하거나 수강 신청된 강좌를 확인 및 취소합니다.
@@ -337,6 +454,44 @@ export default function ParentsDashboard() {
           </Card>
         </div>
       </div>
+
+      {/* 맨 하단: 2026학년도 학사 일정 캘린더 동기화 배너 */}
+      <div className="pt-2">
+        <div 
+          onClick={() => window.dispatchEvent(new CustomEvent('openAcademicCalendarSyncModal'))}
+          className="group cursor-pointer p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-50/90 via-blue-50/70 to-slate-50/90 border border-indigo-200/80 hover:border-indigo-400 hover:shadow-md transition-all duration-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-xs shrink-0 group-hover:scale-105 transition-transform">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-extrabold text-slate-900 text-sm sm:text-base">
+                  2026학년도 학교 학사 일정 캘린더 동기화
+                </span>
+                <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 text-[10px] font-bold border-indigo-200">
+                  학부모 공유
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-600 mt-0.5">
+                학기 및 방학 운영 기간, 재량휴업일, 학교 행사를 내 구글/스마트폰 캘린더에 연동합니다.
+              </p>
+            </div>
+          </div>
+          <Button 
+            type="button" 
+            size="sm" 
+            className="h-9 px-4 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs shrink-0 whitespace-nowrap self-stretch sm:self-auto"
+          >
+            <Calendar className="w-3.5 h-3.5 mr-1.5" />
+            학사일정 캘린더 연동
+          </Button>
+        </div>
+      </div>
+
+      {/* 학부모 대시보드 하단 KIS 전용 앱 설치 배너 */}
+      <PwaInstallBanner className="mt-4 mb-2" />
     </div>
   );
 }

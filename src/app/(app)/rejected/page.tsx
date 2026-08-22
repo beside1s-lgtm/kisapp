@@ -110,7 +110,8 @@ export default function RejectedPage() {
             let failCount = 0;
 
             for (const docId of targets) {
-                const res = await deleteDocument(docId, user.uid);
+                const identifier = profile?.email || user.email || user.uid;
+                const res = await deleteDocument(docId, identifier, !!profile?.isAdmin);
 
                 if (res.success) {
                     successCount++;

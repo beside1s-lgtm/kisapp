@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Course, Classroom, Role, SessionPeriod, MaterialItem, MaterialRequest, ExpenseProof, ExpenseProofItem, SubmissionReminder, SyllabusSession } from '@/lib/afterschool/types';
 import type { UserProfile, DocConfig } from '@/lib/types';
-import { Plus, Lock, Unlock, Calendar, BookOpen, Save, X, Building2, AlertTriangle, UserPlus, Search, AlertCircle, Clock, CheckCircle2, Package, Trash2, FileText, Printer, Image as ImageIcon, Upload, FileCheck, Bell, Square, Download, FileSpreadsheet, Copy } from 'lucide-react';
+import { Plus, Lock, Unlock, Calendar, BookOpen, Save, X, Building2, AlertTriangle, UserPlus, Search, AlertCircle, Clock, CheckCircle2, Package, Trash2, FileText, Printer, Image as ImageIcon, Upload, FileCheck, Bell, Square, Download, FileSpreadsheet, Copy, Users, UserCheck } from 'lucide-react';
 import { defaultSyllabus10, cjwaveTeachers } from '@/lib/afterschool/mock/data';
 import { defaultTeacherApplySettings, onTeacherApplySettingsUpdate, onAfterschoolTimerUpdate, onDocConfigUpdate, updateAfterschoolCourse, submitMaterialRequest, getMaterialBudgetSettings, onMaterialRequestsUpdate, submitExpenseProof, onExpenseProofsUpdate, onTeacherRemindersUpdate, markReminderAsRead } from '@/lib/services/settingsService';
 import { exportSyllabusTemplateExcel, parseSyllabusExcelFile } from '@/lib/afterschool/excel';
@@ -245,8 +245,11 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
   const addSyllabusFileInputRef = useRef<HTMLInputElement>(null);
   const editSyllabusFileInputRef = useRef<HTMLInputElement>(null);
 
-  // 무료 강좌 선택 상태
-  const [isFreeCourse, setIsFreeCourse] = useState(false);
+  // ─── 보조 강사 배정 & 관리 모달 상태 ───────────────────────────────────────────
+  const [assistantModalCourse, setAssistantModalCourse] = useState<Course | null>(null);
+  const [assistantDraftList, setAssistantDraftList] = useState<string[]>([]);
+  const [assistantSearchQuery, setAssistantSearchQuery] = useState('');
+  const [assistantCustomName, setAssistantCustomName] = useState('');
 
   // ─── 학습준비물 신청 & 지출증빙서류 상태 ───────────────────────────────────────────
   const [materialModalCourse, setMaterialModalCourse] = useState<Course | null>(null);
@@ -533,6 +536,68 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
     });
     setEditingSyllabusCourse(null);
     alert('수업계획 및 차시별 날짜가 정상 수정되었습니다.');
+  };
+
+  // ─── 보조 강사 배정 및 관리 핸들러 ───────────────────────────────────────────
+  const handleOpenAssistantModal = (course: Course) => {
+    setAssistantModalCourse(course);
+    const existing = [
+      course.instructor2,
+      course.instructor3,
+      course.instructor4,
+      ...(course.assistantTeachers || [])
+    ].filter(Boolean).map(s => String(s).trim());
+    setAssistantDraftList(Array.from(new Set(existing)));
+    setAssistantSearchQuery('');
+    setAssistantCustomName('');
+  };
+
+  const handleAddAssistantToDraft = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (trimmed === assistantModalCourse?.instructorName) {
+      alert('주강사 본인은 보조강사로 추가할 수 없습니다.');
+      return;
+    }
+    if (assistantDraftList.includes(trimmed)) {
+      alert('이미 배정된 강사입니다.');
+      return;
+    }
+    if (assistantDraftList.length >= 3) {
+      alert('보조강사는 최대 3명(총 강사 4명)까지 배정 가능합니다.');
+      return;
+    }
+    setAssistantDraftList(prev => [...prev, trimmed]);
+    setAssistantSearchQuery('');
+    setAssistantCustomName('');
+  };
+
+  const handleRemoveAssistantFromDraft = (name: string) => {
+    setAssistantDraftList(prev => prev.filter(n => n !== name));
+  };
+
+  const handleSaveAssistants = async () => {
+    if (!assistantModalCourse) return;
+    const updatedData = {
+      instructor2: assistantDraftList[0] || '',
+      instructor3: assistantDraftList[1] || '',
+      instructor4: assistantDraftList[2] || '',
+      assistantTeachers: assistantDraftList,
+    };
+
+    setCourses(prev =>
+      prev.map(c => (c.id === assistantModalCourse.id ? { ...c, ...updatedData } : c))
+    );
+
+    try {
+      await updateAfterschoolCourse(assistantModalCourse.id, updatedData);
+      alert(`[${assistantModalCourse.title}] 강좌의 보조 강사 배정이 정상 저장되었습니다.`);
+    } catch (e: any) {
+      console.error('[CourseManagement] Failed to update assistants:', e);
+      alert(`보조강사 저장 실패: ${e.message}`);
+    }
+
+    setAssistantModalCourse(null);
   };
 
   // 요일 선택 토글 (최대 2일 제한)
@@ -832,9 +897,21 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
           
           const isPendingCancellation = course.status !== 'CANCELLED' && !isBeforeEnrollment && !isSatisfied;
           
-          // 동적 필요 강사 수 계산
-          const requiredTeachers = getRequiredTeachersCount(course.currentStudents);
-          const allocatedAssistants = course.assistantTeachers || [];
+          // 모든 배정 강사 목록 종합 (주강사 + 보조강사들)
+          const allInstructors = [
+            course.instructorName,
+            course.instructor2,
+            course.instructor3,
+            course.instructor4,
+            ...(course.assistantTeachers || [])
+          ].filter(Boolean).map(s => String(s).trim());
+          const uniqueInstructors = Array.from(new Set(allInstructors));
+          const leadInstructor = uniqueInstructors[0] || course.instructorName || '미배정';
+          const assistantList = uniqueInstructors.slice(1);
+
+          // 동적 필요 강사 수 계산 (수강인원 20명 이상 시 2명, 이후 5명당 1명 추가)
+          const requiredTeachers = getRequiredTeachersCount(course.currentStudents || 0);
+          const isAssistantNeeded = uniqueInstructors.length < requiredTeachers;
 
           return (
             <div
@@ -888,17 +965,31 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                   <div>수강인원: <b className="text-slate-900">{course.currentStudents}</b> / {course.maxStudents}명</div>
                   
                   {/* 동적 필요 강사 수 및 배정 강사 목록 */}
-                  <div className="border-t pt-1.5 mt-1 text-[11px] space-y-1 text-slate-500 font-sans">
-                    <div className="flex justify-between">
+                  <div className="border-t pt-1.5 mt-1 text-[11px] space-y-1.5 text-slate-500 font-sans">
+                    <div className="flex justify-between items-center">
                       <span>필요 강사인원:</span>
-                      <span className="font-bold text-slate-800">{requiredTeachers}명</span>
+                      <span className="font-bold text-slate-800">
+                        {requiredTeachers}명
+                        {isAssistantNeeded ? (
+                          <span className="text-rose-600 text-[10px] ml-1 font-semibold">({requiredTeachers - uniqueInstructors.length}명 보조 필요)</span>
+                        ) : (
+                          <span className="text-emerald-600 text-[10px] ml-1 font-semibold">(충족)</span>
+                        )}
+                      </span>
                     </div>
                     <div className="flex flex-wrap gap-1 items-center">
-                      <span>배정 강사:</span>
-                      <span className="bg-indigo-100 text-indigo-700 font-bold px-1 rounded">{course.instructorName || '김강사'}</span>
-                      {allocatedAssistants.map((ast, i) => (
-                        <span key={i} className="bg-slate-200 text-slate-700 font-medium px-1 rounded">+{ast}</span>
+                      <span className="shrink-0">배정 강사:</span>
+                      <span className="bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded text-[11px]">
+                        {leadInstructor}
+                      </span>
+                      {assistantList.map((ast, i) => (
+                        <span key={i} className="bg-emerald-100 text-emerald-800 font-medium px-1.5 py-0.5 rounded text-[11px] border border-emerald-200">
+                          +{ast}
+                        </span>
                       ))}
+                      {uniqueInstructors.length === 0 && (
+                        <span className="text-slate-400 text-[11px]">미배정</span>
+                      )}
                     </div>
                   </div>
 
@@ -920,32 +1011,53 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                 )}
               </div>
 
-              <div className="flex gap-2 pt-2 border-t border-slate-100">
+              {/* 하단 4개 버튼: 가로 세로 비율 동일(aspect-square) 3줄 고정 타일형 배치 (Rule 6 준수) */}
+              <div className="grid grid-cols-4 gap-2 pt-3 border-t border-slate-100">
                 <button
+                  type="button"
                   onClick={() => handleOpenSyllabusEditor(course)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs py-2 rounded-xl transition flex items-center justify-center gap-1"
+                  className="aspect-square bg-slate-50 hover:bg-indigo-50/70 hover:border-indigo-200 border border-slate-200 rounded-xl transition flex flex-col items-center justify-center p-1.5 text-center cursor-pointer shadow-2xs group"
+                  title="수업 계획 / 날짜 수정"
                 >
-                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                  {t('afterschool.teacher.syllabus_edit')}
+                  <Calendar className="w-4 h-4 text-indigo-600 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+                  <span className="text-[11px] font-bold text-slate-800 leading-tight">수업 계획</span>
+                  <span className="text-[10px] text-indigo-600 font-medium leading-tight mt-0.5">날짜 수정</span>
                 </button>
 
                 <button
+                  type="button"
+                  onClick={() => handleOpenAssistantModal(course)}
+                  className="aspect-square bg-emerald-50/70 hover:bg-emerald-100/80 border border-emerald-200 rounded-xl transition flex flex-col items-center justify-center p-1.5 text-center cursor-pointer shadow-2xs group"
+                  title="보조 강사 배정 및 관리"
+                >
+                  <Users className="w-4 h-4 text-emerald-600 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+                  <span className="text-[11px] font-bold text-emerald-900 leading-tight">보조 강사</span>
+                  <span className="text-[10px] text-emerald-700 font-semibold leading-tight mt-0.5">배정 관리</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => onSelectCourseForStudent(course.id)}
-                  className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs px-3 py-2 rounded-xl transition"
+                  className="aspect-square bg-indigo-50/70 hover:bg-indigo-100/80 border border-indigo-200 rounded-xl transition flex flex-col items-center justify-center p-1.5 text-center cursor-pointer shadow-2xs group"
+                  title="수강생 명단 관리"
                 >
-                  {t('afterschool.teacher.view_students')}
+                  <UserCheck className="w-4 h-4 text-indigo-600 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+                  <span className="text-[11px] font-bold text-indigo-900 leading-tight">수강생</span>
+                  <span className="text-[10px] text-indigo-700 font-semibold leading-tight mt-0.5">명단 관리</span>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => {
                     setMaterialModalCourse(course);
                     setMaterialItems([{ name: '', quantity: 1, unitPrice: 0, amount: 0 }]);
                   }}
-                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs px-3 py-2 rounded-xl transition flex items-center gap-1"
-                  title={t('afterschool.teacher.materials')}
+                  className="aspect-square bg-amber-50/70 hover:bg-amber-100/80 border border-amber-200 rounded-xl transition flex flex-col items-center justify-center p-1.5 text-center cursor-pointer shadow-2xs group"
+                  title="학습 준비물 신청 및 관리"
                 >
-                  <Package className="w-3.5 h-3.5" />
-                  {t('afterschool.teacher.materials')}
+                  <Package className="w-4 h-4 text-amber-600 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+                  <span className="text-[11px] font-bold text-amber-900 leading-tight">학습</span>
+                  <span className="text-[10px] text-amber-700 font-semibold leading-tight mt-0.5">준비물</span>
                 </button>
               </div>
             </div>
@@ -2217,6 +2329,221 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
           </div>
         </div>
       )}
+
+      {/* ─── 보조 강사 배정 및 관리 모달 (선생님 페이지 전용) ─── */}
+      {assistantModalCourse && (() => {
+        const c = assistantModalCourse;
+        const requiredCount = getRequiredTeachersCount(c.currentStudents || 0);
+        const enrolledStudents = c.currentStudents || 0;
+        const leadTeacher = c.instructorName || currentUserName || '주강사';
+        
+        // 검색 필터링된 교원 목록
+        const matchedTeachers = assistantSearchQuery.trim()
+          ? schoolTeachers.filter(t => 
+              (t.name && t.name.includes(assistantSearchQuery.trim())) ||
+              (t.dept && t.dept.includes(assistantSearchQuery.trim()))
+            )
+          : schoolTeachers.slice(0, 15);
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[100] flex items-center justify-center p-3 md:p-4 overflow-y-auto animate-in fade-in duration-150">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 flex flex-col my-auto max-h-[90vh]">
+              {/* Header */}
+              <div className="bg-slate-900 px-6 py-4.5 text-white flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                      [{c.title}] 보조 강사 배정
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      수강인원에 따라 보조강사를 지정하고 수업을 공동 관리합니다.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAssistantModalCourse(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 md:p-6 space-y-5 overflow-y-auto flex-1">
+                {/* 동적 필요 강사 안내 카드 */}
+                <div className="p-3.5 rounded-2xl bg-indigo-50/80 border border-indigo-100 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-indigo-950">
+                    <span className="flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 text-indigo-600" />
+                      실시간 필요 강사 기준
+                    </span>
+                    <span className="bg-indigo-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">
+                      총 {requiredCount}명 필요 (주강사 1명 + 보조 {Math.max(0, requiredCount - 1)}명)
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-indigo-800 leading-relaxed font-sans">
+                    현재 수강 학생: <b>{enrolledStudents}명</b> (정원 {c.maxStudents}명)
+                    <br />
+                    <span className="text-indigo-600 font-medium">※ 학생 20명 이상 시 1명, 이후 5명 증가 시 1명씩 보조강사가 추가 필요합니다.</span>
+                  </div>
+                </div>
+
+                {/* 현재 배정 강사 현황 */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    현재 배정된 강사 구성 (주강사 1명 + 보조 {assistantDraftList.length}명)
+                  </label>
+                  <div className="flex flex-wrap gap-2 p-3 bg-slate-50 border border-slate-200 rounded-2xl min-h-[50px] items-center">
+                    {/* 주강사 배지 */}
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white font-bold text-xs shadow-xs">
+                      <span>👑 주강사: {leadTeacher}</span>
+                    </div>
+
+                    {/* 보조강사 배지들 */}
+                    {assistantDraftList.map((name, idx) => (
+                      <div
+                        key={idx}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold text-xs animate-in zoom-in-90 duration-150 shadow-2xs"
+                      >
+                        <span>보조 {idx + 1}: {name}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAssistantFromDraft(name)}
+                          className="text-emerald-700 hover:text-rose-600 hover:bg-emerald-100 p-0.5 rounded-full transition cursor-pointer"
+                          title="배정 해제"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+
+                    {assistantDraftList.length === 0 && (
+                      <span className="text-xs text-slate-400 font-medium">
+                        (아직 배정된 보조 강사가 없습니다. 아래에서 교원을 선택하거나 이름을 입력해 추가하세요.)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 보조 강사 추가 섹션 */}
+                <div className="space-y-3 pt-2 border-t border-slate-100">
+                  <label className="text-xs font-bold text-slate-800 block">
+                    보조 강사 추가하기
+                  </label>
+
+                  {/* 1. 직접 이름 입력 추가 */}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={assistantCustomName}
+                      onChange={(e) => setAssistantCustomName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (assistantCustomName.trim()) {
+                            handleAddAssistantToDraft(assistantCustomName.trim());
+                          }
+                        }
+                      }}
+                      placeholder="강사명 직접 입력 (예: 홍길동)"
+                      className="flex-1 border border-slate-200 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (assistantCustomName.trim()) {
+                          handleAddAssistantToDraft(assistantCustomName.trim());
+                        }
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition shrink-0 flex items-center gap-1 shadow-xs cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      추가
+                    </button>
+                  </div>
+
+                  {/* 2. 원내 교원 빠른 선택 */}
+                  {schoolTeachers && schoolTeachers.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-600">
+                          원내 교원 목록에서 빠른 배정
+                        </span>
+                        <div className="relative w-40">
+                          <input
+                            type="text"
+                            value={assistantSearchQuery}
+                            onChange={(e) => setAssistantSearchQuery(e.target.value)}
+                            placeholder="교원 검색..."
+                            className="w-full pl-7 pr-2 py-1 text-[11px] border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-400"
+                          />
+                          <Search className="w-3 h-3 text-slate-400 absolute left-2 top-2" />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-36 overflow-y-auto p-1.5 bg-slate-50 border border-slate-200 rounded-xl">
+                        {matchedTeachers.map((t, i) => {
+                          const tName = t.name || '';
+                          const isLead = tName === leadTeacher;
+                          const isAlreadyAdded = assistantDraftList.includes(tName);
+                          return (
+                            <button
+                              key={i}
+                              type="button"
+                              disabled={isLead || isAlreadyAdded}
+                              onClick={() => handleAddAssistantToDraft(tName)}
+                              className={`p-2 rounded-lg text-left text-xs transition border flex items-center justify-between ${
+                                isLead
+                                  ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                  : isAlreadyAdded
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 cursor-not-allowed font-bold'
+                                  : 'bg-white hover:bg-emerald-50 hover:border-emerald-300 text-slate-800 border-slate-200 cursor-pointer'
+                              }`}
+                            >
+                              <div className="truncate">
+                                <div className="font-bold truncate">{tName}</div>
+                                <div className="text-[10px] text-slate-400 truncate">{t.dept || '교사'}</div>
+                              </div>
+                              {isAlreadyAdded ? (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              ) : !isLead && (
+                                <Plus className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setAssistantModalCourse(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAssistants}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  저장 및 배정 적용
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

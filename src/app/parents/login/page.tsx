@@ -66,11 +66,11 @@ export default function ParentsLoginPage() {
         <div className="mx-auto w-fit p-4 bg-primary text-primary-foreground rounded-2xl shadow-lg mb-6">
           <FileText className="h-10 w-10" />
         </div>
-        <h1 className="font-headline text-4xl font-bold text-foreground mb-2">
-          KISAPP 학부모 서비스
+        <h1 className="font-headline text-3xl sm:text-4xl font-bold text-foreground mb-2">
+          KIS 통합 포털
         </h1>
-        <p className="text-muted-foreground mb-8">
-          학교 학생 구글 계정으로 로그인해주세요.
+        <p className="text-muted-foreground mb-8 text-sm sm:text-base">
+          학부모 서비스 - 학생 구글 계정으로 로그인해주세요.
         </p>
 
         <Button

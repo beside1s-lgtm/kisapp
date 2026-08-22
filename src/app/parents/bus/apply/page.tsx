@@ -104,7 +104,7 @@ export default function ApplyPage() {
                 getDestinations(),
                 getStudents()
             ]);
-            destinationsData.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+            destinationsData.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
             setDestinations(destinationsData);
             setAllStudents(studentsData);
         };

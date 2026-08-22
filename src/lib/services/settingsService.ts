@@ -24,7 +24,6 @@ const getSettingsCol = () => collection(getDb(), 'settings');
 
 export async function getDocConfig(): Promise<Partial<DocConfig>> {
   try {
-    if (!auth.currentUser) return {};
     const snap = await getDoc(doc(getSettingsCol(), 'docConfig'));
     return snap.exists() ? (snap.data() as DocConfig) : {};
   } catch (e) {
@@ -54,7 +53,6 @@ export async function saveDocConfig(payload: Partial<DocConfig>) {
 
 export async function getOrgStructure(): Promise<Partial<import('@/lib/types').OrgStructure>> {
   try {
-    if (!auth.currentUser) return { afterschoolManagers: ['beside1s@kshcm.net'], busManagers: ['beside1s@kshcm.net', 'bus@kshcm.net'] };
     const snap = await getDoc(doc(getSettingsCol(), 'orgStructure'));
     if (snap.exists()) {
       const data = snap.data() as import('@/lib/types').OrgStructure;
@@ -71,6 +69,21 @@ export async function getOrgStructure(): Promise<Partial<import('@/lib/types').O
   }
 }
 
+export function onOrgStructureUpdate(callback: (org: Partial<import('@/lib/types').OrgStructure>) => void) {
+  return onSnapshot(doc(getSettingsCol(), 'orgStructure'), (snap) => {
+    if (snap.exists()) {
+      const data = snap.data() as import('@/lib/types').OrgStructure;
+      callback({
+        ...data,
+        afterschoolManagers: Array.from(new Set([...(data.afterschoolManagers || []), 'beside1s@kshcm.net'])),
+        busManagers: Array.from(new Set([...(data.busManagers || []), 'beside1s@kshcm.net', 'bus@kshcm.net'])),
+      });
+    } else {
+      callback({ afterschoolManagers: ['beside1s@kshcm.net'], busManagers: ['beside1s@kshcm.net', 'bus@kshcm.net'] });
+    }
+  }, (err) => console.error("onOrgStructureUpdate error:", err));
+}
+
 export async function saveOrgStructure(payload: Partial<import('@/lib/types').OrgStructure>) {
   try {
     const cleaned = cleanUndefined(payload);
@@ -82,14 +95,99 @@ export async function saveOrgStructure(payload: Partial<import('@/lib/types').Or
   }
 }
 
+export const DEFAULT_DELEGATION_RULES: import('@/lib/types').DelegationRule[] = [
+  {
+    id: 'rule-absence',
+    category: '학부모 출결',
+    mainType: '학부모 출결',
+    subType: '결석계',
+    detailType: '일반/질병/인정',
+    intermediateApprover: 'NONE',
+    finalApprover: 'GRADE_HEAD',
+    description: '담임 ➡️ 학년부장 (전결)'
+  },
+  {
+    id: 'rule-fieldtrip',
+    category: '학부모 출결',
+    mainType: '학부모 출결',
+    subType: '체험학습신청서',
+    detailType: '교외체험학습',
+    intermediateApprover: 'GRADE_HEAD',
+    finalApprover: 'VP',
+    description: '담임 ➡️ 학년부장 ➡️ 교감 (전결)'
+  },
+  {
+    id: 'rule-annual-plan',
+    category: '일반 공문',
+    mainType: '일반 공문',
+    subType: '연간계획공문',
+    detailType: '연간 운영계획',
+    intermediateApprover: 'DEPT_HEAD',
+    finalApprover: 'PRINCIPAL',
+    description: '기안자 ➡️ 담당부장 ➡️ 교감 ➡️ 교장 (결재)'
+  },
+  {
+    id: 'rule-detail-plan',
+    category: '일반 공문',
+    mainType: '일반 공문',
+    subType: '세부계획공문',
+    detailType: '세부 실행계획',
+    intermediateApprover: 'DEPT_HEAD',
+    finalApprover: 'VP',
+    description: '기안자 ➡️ 담당부장 ➡️ 교감 (전결)'
+  },
+  {
+    id: 'rule-vacation-major',
+    category: '교원 복무',
+    mainType: '교원 복무',
+    subType: '휴가',
+    detailType: '연가',
+    intermediateApprover: 'DEPT_HEAD',
+    finalApprover: 'PRINCIPAL',
+    description: '기안자 ➡️ 부장 ➡️ 교감 ➡️ 교장 (결재)'
+  },
+  {
+    id: 'rule-vacation-minor',
+    category: '교원 복무',
+    mainType: '교원 복무',
+    subType: '휴가',
+    detailType: '조퇴',
+    intermediateApprover: 'DEPT_HEAD',
+    finalApprover: 'VP',
+    description: '기안자 ➡️ 부장 ➡️ 교감 (전결)'
+  },
+  {
+    id: 'rule-trip-local',
+    category: '교원 복무',
+    mainType: '교원 복무',
+    subType: '출장',
+    detailType: '관내',
+    intermediateApprover: 'DEPT_HEAD',
+    finalApprover: 'VP',
+    description: '기안자 ➡️ 부장 ➡️ 교감 (전결)'
+  },
+  {
+    id: 'rule-trip-outside',
+    category: '교원 복무',
+    mainType: '교원 복무',
+    subType: '출장',
+    detailType: '관외',
+    intermediateApprover: 'DEPT_HEAD',
+    finalApprover: 'PRINCIPAL',
+    description: '기안자 ➡️ 부장 ➡️ 교감 ➡️ 교장 (결재)'
+  },
+];
+
 export async function getDelegationRules(): Promise<import('@/lib/types').DelegationRule[]> {
   try {
-    if (!auth.currentUser) return [];
     const snap = await getDoc(doc(getSettingsCol(), 'delegationRules'));
-    return snap.exists() ? (snap.data().rules as import('@/lib/types').DelegationRule[] || []) : [];
+    if (snap.exists() && Array.isArray(snap.data().rules) && snap.data().rules.length > 0) {
+      return snap.data().rules as import('@/lib/types').DelegationRule[];
+    }
+    return DEFAULT_DELEGATION_RULES;
   } catch (e) {
     console.error("[SettingsService] getDelegationRules error:", e);
-    return [];
+    return DEFAULT_DELEGATION_RULES;
   }
 }
 

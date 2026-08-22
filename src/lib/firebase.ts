@@ -2,8 +2,6 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { 
   getFirestore,
   initializeFirestore, 
-  persistentLocalCache, 
-  persistentMultipleTabManager,
   Firestore
 } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from "firebase/auth";
@@ -19,24 +17,15 @@ const firebaseConfig = {
 };
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-let _db: Firestore | null = null;
-function getDbInstance(): Firestore {
-  if (!_db) {
-    _db = getFirestore(app);
-  }
-  return _db;
-}
 
-const db = new Proxy({} as Firestore, {
-  get(target, prop, receiver) {
-    const realDb = getDbInstance();
-    const value = Reflect.get(realDb, prop);
-    return typeof value === 'function' ? value.bind(realDb) : value;
-  },
-  getPrototypeOf(target) {
-    return Object.getPrototypeOf(getDbInstance());
-  }
-});
+let db: Firestore;
+try {
+  db = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+  });
+} catch {
+  db = getFirestore(app);
+}
 
 const auth = getAuth(app);
 const storage = getStorage(app);
@@ -48,7 +37,7 @@ if (typeof window !== "undefined") {
 }
 
 export function getDb(): Firestore {
-  return getDbInstance();
+  return db;
 }
 
 export { app, db, auth, storage, googleProvider };

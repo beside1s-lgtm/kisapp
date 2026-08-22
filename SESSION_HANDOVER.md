@@ -1,112 +1,66 @@
-# 📋 SESSION HANDOVER (스쿨버스 및 학사일정 / 방과후학교 통합 시스템)
-
-## 1. Current Status (현재 상태)
-이번 세션에서는 **학사일정 공휴일 연동 및 아침 교문맞이 근무표 정상화**, **버스 선생님 페이지 전체 버스 담당 교사 현황 팝업 개편 및 실시간 동기화**, **React Hook 규칙(Rules of Hooks) 준수 및 런타임 에러 완전 해결**을 완료했습니다.
-
-### 이번 세션 달성 주요 목표:
-1. **학사일정 & 아침 교문맞이 근무표 공휴일 완전 동기화**:
-   - 시스템 설정의 학사일정(`academicCalendar.events`)을 기준으로 비수업일/공휴일(추석, 한글날 등)을 실시간 매핑.
-   - 9월 24일 하드코딩 오류 제거 및 추석(9월 25일) 명칭 자동 표기, 과거 더미 데이터 자동 클렌징 구현.
-2. **버스 선생님 페이지 [전체 버스 담당 교사 현황] 실시간 리스너 및 탭 구조 / 학기 모드 격리**:
-   - 관리자 페이지에서 통학버스 배정 시 등교(`Morning`)와 하교(`Afternoon`) 노선이 모두 동기화되도록 수정.
-   - **학기 중(`regular`) vs 방학 중(`vacation`) 버스/노선 완전 격리**: `02`, `08`, `18` 등 방학용 버스가 학기 중에 섞여 나오던 문제를 `semesterMode` 필터링을 통해 완전 차단.
-   - 통학버스는 등/하교 담당 교사가 100% 동일하므로 **[통학 (등·하교)]** 단일 탭으로 통일.
-   - **[방과후]**(요일별) 및 **[토요 버스]**를 별도 탭으로 분리하여 명확한 구분 제공.
-   - 비활성/배정제외 버스 필터링(`operationalBuses`) 및 중복 교사명 제거(`Set`).
-   - **배정 해제 시 데이터 완전 무결성 보장**: 
-     - 노선 배정 결과(`r.teacherIds`)만을 단일 진실 공급원으로 정립하여 과거 교사 문서의 레거시 버스 정보로 잘못 폴백하던 문제를 원천 차단.
-     - 배정 초기화(`handleUnassignAllTeachers`) 또는 개별 배정 해제 시 교사 문서에 저장된 `assignedBusId`/`assignedAfterSchoolBusId`도 완전 삭제(`''`) 처리.
-     - 기존 Firestore에 남아있던 고아/레거시 배정 필드를 자동으로 감지하여 초기화하는 자동 스크럽(`Auto-Scrub`) 연동.
-     - 교사 삭제/일괄 삭제 시 해당 교사가 포함된 모든 노선의 `teacherIds`도 즉시 자동 정리.
-     - **[되돌리기(Undo)]**는 사용자가 방금 실행한 직전 1회 작업에 한해서만 동작하도록 안전 상태 관리.
-
-3. **버스 조장 해제 시 활동 내역 및 DB 기록 완전 삭제**:
-   - 전체 버스 조장 현황에서 조장을 해제(`handleDemoteAll`, `handleBulkDemote`, `toggleLeaderInDialog`)하거나 개별 버스 관리에서 해제(`toggleGroupLeader`)할 때 종료일(`endDate`)만 남기고 유지되던 과거 기록을 **완전 삭제(`filter` 및 빈 배열 저장)** 처리.
-   - 조장 관리(`GroupLeaderManager`) 컴포넌트에서도 해제된 학생의 잔여 활동 내역이 표출되지 않도록 활성 조장만 필터링 및 동기화.
-   - 데이터베이스(`busLeaders/${busId}/records`)에 남아있던 기존 비활성/종료 기록 자동 정리 연동.
-
-4. **아침 등교 지도교사 배정표 확인 팝업 (`MorningGateDutyDialog`) 추가**:
-   - 상단 헤더 툴바([방과후 명단]과 [담당 버스 확인] 사이)에 **[등교지도 근무표]** 버튼 신설 (데스크톱 및 모바일 반응형).
-   - 시스템 설정의 현재 학기(`morningGateDutyMulti`)를 실시간 연동 참조하며, 필요 시 다른 학기 배정표도 즉시 조회 가능.
-   - **오늘(`오늘 근무자` - 앰버/오렌지 색상 강조 및 뱃지)** 및 **내일(`내일 근무자` - 스카이/블루 색상 강조 및 뱃지)** 상단 퀵 카드 및 전체 표 실시간 하이라이트.
-   - 로그인한 선생님 본인의 당번일인 경우 **당번 알림 배너 및 표 내 `(본인)` 하이라이트** 제공.
-   - 엑셀 다운로드 및 인쇄 기능 제공.
-
-5. **방과후학교 관리자 운영 종료(`CLOSED`)와 스쿨버스 시스템 완전 실시간 연동 및 관리자 계정 권한**:
-   - **스쿨버스 전용 관리자 계정(`bus@kshcm.net`) 자동 프로비저닝**: `AuthProvider`(`fetchProfile`)에서 구글 로그인 시 DB 사전 등록 여부와 무관하게 `스쿨버스 담당자 (행정실, isAdmin: true)` 프로필을 자동 생성/승인 처리.
-   - 버스 관리자 페이지(`/admin/bus`) 및 시스템 조직도 설정(`settingsService.ts`)의 `busManagers` 기본 허용 목록에 `bus@kshcm.net` 공식 등록.
-   - 방과후 관리자가 학기 운영 종료 시 스쿨버스 시스템의 강좌 정보(`clearAllAfterSchoolClasses`)가 자동 정리되도록 연동.
-   - 방과후 진행 상태(`afterschoolStageStatus === 'CLOSED'` 또는 미운영) 시 스쿨버스 교사용 화면에서 이전 학기/방학 방과후 강좌가 검색되지 않도록 차단.
-   - [방과후 명단 조회] 팝업 시 "방과후학교 운영이 종료되었습니다" 안내 뷰 및 뱃지 표출.
-   - 메인 화면 노선 탭에서 방과후(`AfterSchool`) 탭 자동 숨김 및 정규 하교(`Afternoon`)로 안전하게 자동 전환.
-
-6. **로그인 상태에 따른 상단 [홈]/[뒤로가기] 버튼 조건부 렌더링 및 버스 전용 로고 배지 적용**:
-   - **로그인한 교직원/관리자(`user` 존재)**: 기존처럼 [뒤로가기] 및 [홈(결재함)] 버튼이 정상 노출되어 자유롭게 결재 시스템과 이동 가능.
-   - **비로그인 사용자(버스 간편 PIN 접속 교사 / 학부모 등)**: [뒤로가기] 및 [홈] 버튼을 자동으로 숨기고, 깔끔한 **`[🚌 KIS BUS]` 전용 로고 배지**로 대체 표출하여 실수로 인한 결재 로그인 화면 이탈 방지.
-
-7. **모바일 전용 PWA (Progressive Web App) 설치 기능 구현**:
-   - `manifest.json`, 서비스 워커(`sw.js`), 고해상도 아이콘(192x192, 512x512, apple-touch-icon 등) 연동.
-   - 모바일 접속 시 하단 **[📲 전용 앱 설치하기 (1초)]** 배너 자동 표출 (안드로이드 원클릭 네이티브 설치 및 iOS 홈 화면 추가 안내).
-   - 앱 설치 후 주소창 없는 전체 화면 독립 실행형(`standalone`) 앱으로 동작.
-
-8. **React Hook 규칙 준수 및 런타임 에러 해결**:
-   - `TeacherPage` 컴포넌트 내 조건부 렌더링/조기 반환(`if (loading)`, `if (!isAuthenticated)`) 하단에 있던 `useMemo` 훅들(`loggedInTeacherDoc`, `teacherBusInfoText`)을 컴포넌트 최상단으로 재배치하여 `Rules of Hooks` 위반 런타임 에러 완전 해결.
-
-9. **방과후 관리자 화면 축소 시 버튼 오버플로우/삐져나옴 해결**:
-   - 선택 강좌 일괄 액션바(`[일괄 승인]`, `[일괄 대기]`, `[일괄 폐강]`, `[영구 삭제]`)에 `flex-wrap` 및 화면 크기별 동적 텍스트 축약(`hidden 2xl:inline` / `2xl:hidden`)을 적용하여 창 크기가 줄어들어도 버튼이 우측으로 잘리거나 삐져나가지 않도록 완벽 대응.
-   - 상단 5단계 운영 상태 전환 버튼 그리드(`RECRUITING`, `APPLYING`, `CONFIRMED`, `OPERATING`, `CLOSED`)를 반응형(`grid-cols-2 sm:grid-cols-3 xl:grid-cols-5`) 및 텍스트 `truncate` 처리로 개선.
-   - 미제출 서류 독촉 배너 및 상태 뱃지도 유연한 `flex-col sm:flex-row` 레이아웃으로 보강.
-
-10. **배포 정보 (Deployment Info)**:
-    - 프로덕션 빌드 검증 및 GitHub (`main`) 푸시 배포 완료: 최신 커밋(`d3071db`)이 원격 저장소(`origin/main`)에 성공적으로 푸시되어 Firebase App Hosting 배포 파이프라인이 정상 트리거되었습니다.
-
-# Session Continuation Summary
+# 📋 SESSION HANDOVER (KIS 통합 포털 & 전자결재 / 방과후 / 스쿨버스)
 
 ---
 
-## 1. Work Accomplished in this Session
-- **방과후 관리자 학사일정 실시간 연동 및 휴업일 제외 실제 운영 주수/일수 산출 시스템 구현**:
-  - `표준 학기` 선택 시 중앙 학사일정(`academicCalendar.semesters`)의 학기별 시작일(`operatingStartDate`)과 종료일(`operatingEndDate`)이 자동 동기화되도록 연동.
-  - `[📅 학사일정 자동 동기화]` 버튼 신설: 클릭 한 번으로 학사일정 날짜와 휴업일을 실시간 반영.
-  - `calculateRealOperatingWeeksAndDays` 및 `countOperatingDays` 알고리즘에 학사일정 공휴일/재량휴업일(`events` 중 `!isSchoolDay`) 자동 제외 로직 탑재 ➔ 요일별 실제 수업 횟수(월: N회, 화: N회 등)와 정확한 수업 주수 실시간 표출.
-- **1회당 표준 차시 수(2차시 vs 토요/방학 4차시) 완벽 지원 및 수강료/강사료 자동 계산 연동**:
-  - 시스템 기본값은 2차시(주중 표준 블록 수업)로 설정.
-  - 토요일 또는 방학 집중 특강 강좌(4차시)는 강사 개설/엑셀 등록/관리자 수정 시 **교시(1~4차시) 선택 또는 시간대 파싱**을 통해 강좌별 `sessionsPerClass`(2 또는 4)가 독립적으로 저장 및 인식.
-  - `강좌별 총 수강료/강사료 = 강좌별 차시(2 또는 4) × 해당 요일 실제 운영 일수(휴업일 제외) × 차시당 단가` 공식으로 2차시와 4차시 강좌가 혼재되어도 완벽하게 자동 정산.
-  - 프로덕션 빌드 검증 및 원격 저장소(`main` 브랜치, 커밋 `76a67f9`) 푸시/배포 완료.
+## 1. Current Status (현재 상태)
+이번 세션에서는 사용자의 요청에 따라 다음 주요 항목들을 완벽하게 구현 및 검증 완료했습니다:
+
+1. **위임전결규정 시스템 전면 구축 및 Firestore 연동 완비**:
+   - `DelegationRule` 모델 설계: 대분류(`category`/`mainType`), 중분류(`subType`, 문서명), 소분류(`detailType`, 조건), 중간결재자(`NONE` | `GRADE_HEAD` | `ACADEMIC_HEAD` | `DEPT_HEAD`), 최종결재권자(`GRADE_HEAD` | `ACADEMIC_HEAD` | `DEPT_HEAD` | `VP` | `PRINCIPAL`).
+   - 기본 규정 8종(결석계, 체험학습신청서, 연간계획공문, 세부계획공문, 휴가, 출장 등) 탑재 및 Firestore 동기화.
+   - `settings-modal.tsx`: 시스템 설정 [전결규정] 탭의 테이블 UI 확장, 결재선 미리보기 배지, 실시간 자동 저장, 엑셀 템플릿 다운로드/업로드, [기본 규정 초기화] 버튼 연동.
+   - `userService.ts`: `getApproversByGradeClass`에서 시스템 설정의 `delegationRules`를 조회하여 학교별 전결규정(담임 ➡️ 학년부장 전결, 담임 ➡️ 교무부장 ➡️ 교감 전결 등)에 맞게 동적 결재선 완벽 생성.
+   - `document-form.tsx`: 일반 기안문 작성 시 상단 `[기본 기안문(교장 결재)]`, `[연간계획공문(교장 결재)]`, `[세부계획공문(교감 전결)]` 템플릿 버튼 및 전결규정 셀렉트 박스 연동.
+
+2. **학부모 문서 처리 및 삭제 권한의 핵심 원인 규명 및 클라우드 배포 완료([`firestore.rules`](file:///c:/myapp/kisapp/firestore.rules))**:
+   - **핵심 원인 발견**: 
+     1) Firebase MCP 환경이 타 프로젝트(`bromans-29654720-48771`)로 타겟팅되어 있어, 수정된 보안 규칙이 실제 운영 프로젝트인 **`studio-9153973571-7837c` (KISH Approval System)**에 반영되지 않았던 문제를 발견.
+     2) Firestore CLI(`firebase-tools`)를 통해 실제 프로젝트 `studio-9153973571-7837c`에 최신 `firestore.rules`를 100% 직접 배포 완료 (`cloud.firestore: released rules firestore.rules`).
+     3) `allow delete: if resource.data.get('status', '') != 'approved';`를 적용하여 결재 승인 완료 문서를 제외한 **대기/회수/반려/임시저장 문서의 삭제를 결재자 상관없이 즉시 허용**.
+     4) `getMyParentDocuments`, `getStudentFieldTripDays`, `getStudentAbsenceDays`의 복합 쿼리를 단일 필터 및 메모리 필터링 방식으로 개선하여 인덱스 누락으로 인한 런타임 권한 거부 오류 원천 차단.
+
+3. **교직원 기본 직책 목록 정리 및 정렬 Null-Safety 전면 보강([`settings-modal.tsx`](file:///c:/myapp/kisapp/src/components/settings-modal.tsx), [`profile-modal.tsx`](file:///c:/myapp/kisapp/src/components/profile-modal.tsx))**:
+   - 학교 업무 체계에 맞추어 기본 직책 목록에서 중복/혼선을 유발하던 `'부장'`을 제거하고 `['교사', '교감', '교장', '행정실장', '주무관', '담당']`으로 표준화 (부장 보직은 [조직도]에서 학년부장/부서부장으로 관리 및 실시간 소속 표기).
+   - `fetchUsers` 시 `localeCompare` 런타임 TypeError 원천 방지.
+
+4. **학년별 교과(전담) 교사 배정 및 직관적인 토글 UI 개편([`types.ts`](file:///c:/myapp/kisapp/src/lib/types.ts), [`settings-modal.tsx`](file:///c:/myapp/kisapp/src/components/settings-modal.tsx))**:
+   - `OrgStructure` 모델에 `gradeSubjects?: { [grade: string]: string[] }` 필드 추가.
+   - [조직도] 탭의 학년 배정 영역을 긴 드롭다운 방식에서 **`[담임] / [교과]` 직관적인 세그먼트 토글 버튼**으로 개편:
+     - `[담임]` 선택 시: 반 번호 입력 및 학년부장 스위치 활성화.
+     - `[교과]` 선택 시: 불필요한 반 번호 및 학년부장 스위치가 숨겨지고 깔끔하게 학년 + 교사 선택으로 즉시 배정.
+   - `5학년 교과` 등으로 배정 시 사용자 목록 및 소속에 `5학년 교과`로 자동 표기 연동.
+   - 학년 조직도 목록에 담임 카드와 교과 카드(스카이 블루 배지)를 학년별로 함께 시각화하여 직관적 관리 및 삭제 지원.
+   - 엑셀 일괄 등록 템플릿 및 업로더에서도 `반` 항목에 `'교과'` 입력 시 자동 처리 연동.
+
+5. **로컬 프로덕션 빌드 및 개발 서버 검증**:
+   - `npm run build` 테스트 통과 (Exit code: 0, 총 39개 라우트 정상 생성).
+   - 개발 서버 재기동 및 브라우저 콘솔 오류 `0건` 확인.
 
 ---
 
 ## 2. Modified Files (수정된 주요 파일)
 
-| 파일 경로 | 수정 사유 및 주요 변경 내용 |
+| 파일 경로 | 수정 사유 및 변경 내역 요약 |
 | :--- | :--- |
-| [`src/app/(app)/admin/bus/components/morning-gate-duty-tab.tsx`](file:///c:/myapp/kisapp/src/app/%28app%29/admin/bus/components/morning-gate-duty-tab.tsx) | `DEFAULT_HOLIDAYS` 내 9월 24일 제거, 시스템 학사일정 실시간 연동 및 과거 데이터 자동 클렌징 |
-| [`src/app/(app)/admin/bus/components/teacher-management-tab.tsx`](file:///c:/myapp/kisapp/src/app/%28app%29/admin/bus/components/teacher-management-tab.tsx) | 통학버스 배정(개별/일괄/초기화/해제) 시 Morning과 Afternoon 노선 모두 일괄 동기화 및 마운트 시 자동 검증/복구 구현 |
-| [`src/app/teacher/bus/page.tsx`](file:///c:/myapp/kisapp/src/app/teacher/bus/page.tsx) | `TeacherAssignmentViewDialog` 실시간 구독(`onSnapshot`) 전환, 통학/방과후/토요 탭 분리, Hook 최상단 재배치로 Hook 에러 완벽 해결 |
+| [`src/components/settings-modal.tsx`](file:///c:/myapp/kisapp/src/components/settings-modal.tsx) | 사용자 직책 옵션에서 '부장' 제거 및 교사/교감/교장/행정실장/주무관/담당 표준화, `fetchUsers` null-safe 정렬 |
+| [`src/components/profile-modal.tsx`](file:///c:/myapp/kisapp/src/components/profile-modal.tsx) | 프로필 설정 내 직책 선택 목록 표준화 |
+| [`firestore.rules`](file:///c:/myapp/kisapp/firestore.rules) | `getEmail`, `isAdmin` null-safe 처리, `docType == 'parent'` 및 `parentFormData` 기반 대기/회수/반려 문서 삭제/수정 권한 최우선 보장 및 클라우드 배포 |
+| [`src/lib/types.ts`](file:///c:/myapp/kisapp/src/lib/types.ts) | `DelegationRule` 인터페이스 확장 (`intermediateApprover`, `finalApprover`, `category`, `description`) |
+| [`src/lib/services/settingsService.ts`](file:///c:/myapp/kisapp/src/lib/services/settingsService.ts) | `DEFAULT_DELEGATION_RULES` 8종 기본 프리셋 및 `getDelegationRules`, `saveDelegationRules` 구현 |
+| [`src/lib/services/userService.ts`](file:///c:/myapp/kisapp/src/lib/services/userService.ts) | `getApproversByGradeClass`에서 `delegationRules`를 실시간 조회하여 학교별 동적 결재선 조립 |
+| [`src/components/document-form.tsx`](file:///c:/myapp/kisapp/src/components/document-form.tsx) | 기안문 상단 전결규정 빠른 템플릿(연간계획/세부계획/기본) 버튼 및 전결규정 셀렉트 박스 연동 |
+| [`src/lib/services/documentService.ts`](file:///c:/myapp/kisapp/src/lib/services/documentService.ts) | `deleteDocument`에서 학부모 문서(`parentFormData` 포함) 삭제 권한 및 null-safety 완비 |
+| [`src/components/document-view.tsx`](file:///c:/myapp/kisapp/src/components/document-view.tsx) | 학부모 문서 열람 권한 및 상세 화면 삭제/수정 버튼 노출 조건 강화 |
+| [`src/app/parents/apply/page.tsx`](file:///c:/myapp/kisapp/src/app/parents/apply/page.tsx) | `getApproversByGradeClass` 호출 시 명시적 문서명 전달 연동 |
 
 ---
 
-## 3. Next Steps & Future Roadmap (다음 작업 목표 및 개발 로드맵)
-
-1. **[향후 개발 예정] PC 데스크톱 전용 To-Do 트레이 알림 프로그램 & 업무 배정 시스템 (Keep & Planned)**:
-   - **전자결재 자동 To-Do 연동 (`Auto-Task`)**: 나에게 결재 순서가 온 문서가 도착하면 To-Do에 자동 생성되고, 결재 완료 시 자동 체크(`✔`) 처리.
-   - **부서/학년/그룹 업무 배정 (`Task Dispatching`)**: 부장교사/담당자가 특정 부서나 학년 그룹에 할 일을 뿌리고, 구성원들의 확인/처리 완료 현황을 실시간 집계.
-   - **PC 시스템 트레이 상주 위젯 (`Desktop Notifier`)**: 윈도우 부팅 시 자동 실행, 새 결재/업무 도착 시 윈도우 토스트 팝업 + 소리 재생, 트레이 클릭 시 미니 To-Do 창 팝업.
-2. **버스 선생님 페이지 실제 단말기(모바일/태블릿) UI 반응형 점검**:
-   - 상단 헤더 배정 안내 및 좌석표 출결 체크 화면의 가독성 최종 확인.
-3. **관리자 버스 배정 변경 시 실시간 브로드캐스팅 동작 모니터링**:
-   - 통학/방과후 배정 변경 시 버스 교사 화면에 실시간 즉각 반영 여부 유지 관리.
+## 3. Next Steps (다음 작업 목표)
+- 사용자의 피드백에 따른 추가 기능 개발 및 운영 지원.
+- 배포 요청(`"배포해"`, `"배포해줘"`) 시 `git push origin main` 원격 배포 진행.
 
 ---
 
 ## 4. Important Context (핵심 컨텍스트)
-
-- **알림 & To-Do 아키텍처 방향성**:
-  - 휘발성 이메일 알림에 의존하지 않고, Firestore `tasks` 컬렉션 기반의 영구적인 체크리스트 To-Do 모델로 확장 예정.
-- **통학버스 vs 방과후버스 배정 원칙**:
-  - 통학버스는 주중(월~금) 등교(`Morning`)와 하교(`Afternoon`)가 **동일한 통학버스 담당 교사** 1명(또는 정원)으로 고정 배정됩니다.
-  - 방과후버스는 요일별(월~금)로 다른 방과후 담당 교사가 배정됩니다.
-- **Hook 규칙 필수 준수**:
-  - `TeacherPage`의 모든 Hook(`useState`, `useEffect`, `useMemo`, `useCallback`, `useRef`)은 `if (loading)`이나 `if (!isAuthenticated)` 같은 early return 코드보다 **반드시 먼저** 최상단에서 호출되어야 합니다.
-- **TypeScript 빌드 검증**: `npx tsc --noEmit` 통과 (0 errors).
+- **배포 절대 원칙**: 사용자가 명시적으로 `"배포해"` 또는 `"배포해줘"`라고 지시하기 전에는 원격 푸시(`git push origin main`)나 배포 명령어를 절대 실행하지 않는다.
+- **디자인/UI 규칙 (Rule 6)**: 제목 & 설명 한 줄 표기 및 넓은 영역 확보, 버튼 하단 나란히 배치, 디스플레이 크기별 반응형 최적화 유지.

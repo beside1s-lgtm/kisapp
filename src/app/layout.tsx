@@ -17,6 +17,7 @@ import { LanguageProvider } from '@/contexts/language-context';
 import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 import { PwaInstallPrompt } from '@/components/pwa-install-prompt';
 import { Toaster } from '@/components/ui/toaster';
+import { AcademicCalendarSyncModal } from '@/components/academic-calendar-sync-modal';
 import './globals.css';
 import { cn } from '@/lib/utils';
 import { Inter, Space_Grotesk, Source_Code_Pro } from 'next/font/google';
@@ -34,13 +35,13 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'KIS 스쿨버스 & 학교 포털',
-  description: '호치민시한국국제학교 스쿨버스 관리 및 전자 결재 통합 포털',
+  title: 'KIS 통합 포털',
+  description: '호치민시한국국제학교 통합 포털 (전자결재, 학사일정, 방과후학교, 스쿨버스, 교원복무)',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'KIS 스쿨버스',
+    title: 'KIS 통합 포털',
   },
   formatDetection: {
     telephone: false,
@@ -68,7 +69,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="KIS 스쿨버스" />
+        <meta name="apple-mobile-web-app-title" content="KIS 통합 포털" />
       </head>
       <body
         className={cn(
@@ -85,6 +86,7 @@ export default function RootLayout({
             <div className="relative flex min-h-screen flex-col">
               {children}
             </div>
+            <AcademicCalendarSyncModal />
             <PwaInstallPrompt />
             <Toaster />
           </AuthProvider>

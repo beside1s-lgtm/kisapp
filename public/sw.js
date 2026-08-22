@@ -1,11 +1,13 @@
-// KIS School Bus & Portal Service Worker
-const CACHE_NAME = 'kisapp-pwa-v1';
+// KIS Integrated Portal Service Worker (v2026.2)
+const CACHE_NAME = 'kis-portal-pwa-v2026-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
-  '/icons/icon-192x192.png',
-  '/icons/icon-512x512.png',
-  '/icons/icon.svg',
+  '/icons/icon-192x192.png?v=2',
+  '/icons/icon-512x512.png?v=2',
+  '/icons/icon-maskable-512x512.png?v=2',
+  '/icons/apple-touch-icon.png?v=2',
+  '/icons/icon.svg?v=2',
   '/favicon.ico'
 ];
 
@@ -26,6 +28,7 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME) {
+            console.log('Clearing legacy PWA cache:', key);
             return caches.delete(key);
           }
         })

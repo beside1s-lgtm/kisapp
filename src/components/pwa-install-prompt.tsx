@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
     Download, 
     Share, 
@@ -23,6 +23,7 @@ export function PwaInstallPrompt() {
     const [isIos, setIsIos] = useState(false);
     const [isStandalone, setIsStandalone] = useState(false);
     const [dismissed, setDismissed] = useState(false);
+    const [neverShowAgain, setNeverShowAgain] = useState(false);
     const [showIosGuide, setShowIosGuide] = useState(false);
     const [isMounted, setIsMounted] = useState(false);
 
@@ -37,7 +38,13 @@ export function PwaInstallPrompt() {
         setIsStandalone(isStandaloneMode);
         if (isStandaloneMode) return;
 
-        // 2. Check if dismissed previously within last 7 days
+        // 2. Check if dismissed permanently or within 7 days
+        const dismissedForever = localStorage.getItem('kis_pwa_install_dismissed_forever');
+        if (dismissedForever === 'true') {
+            setDismissed(true);
+            return;
+        }
+
         const lastDismissed = localStorage.getItem('kis_pwa_install_dismissed');
         if (lastDismissed) {
             const timeDiff = Date.now() - parseInt(lastDismissed, 10);
@@ -65,11 +72,23 @@ export function PwaInstallPrompt() {
         // 5. Listen to beforeinstallprompt event (Android / Chrome)
         const handleBeforeInstallPrompt = (e: Event) => {
             e.preventDefault();
+            (window as any).__deferredPwaPrompt = e;
             setDeferredPrompt(e);
             setIsInstallable(true);
         };
 
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+        // 6. Listen to custom trigger event from dashboard buttons
+        const handleTriggerInstall = () => {
+            const prompt = (window as any).__deferredPwaPrompt || deferredPrompt;
+            if (prompt) {
+                prompt.prompt();
+            } else if (isIosDevice) {
+                setShowIosGuide(true);
+            }
+        };
+        window.addEventListener('trigger-pwa-install', handleTriggerInstall);
 
         // Check display mode changes
         const mediaQuery = window.matchMedia('(display-mode: standalone)');
@@ -80,17 +99,20 @@ export function PwaInstallPrompt() {
 
         return () => {
             window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+            window.removeEventListener('trigger-pwa-install', handleTriggerInstall);
             mediaQuery.removeEventListener('change', handleDisplayModeChange);
         };
-    }, []);
+    }, [deferredPrompt]);
 
     const handleInstallClick = async () => {
-        if (deferredPrompt) {
-            deferredPrompt.prompt();
-            const { outcome } = await deferredPrompt.userChoice;
+        const prompt = (window as any).__deferredPwaPrompt || deferredPrompt;
+        if (prompt) {
+            prompt.prompt();
+            const { outcome } = await prompt.userChoice;
             if (outcome === 'accepted') {
                 setIsInstallable(false);
                 setDeferredPrompt(null);
+                (window as any).__deferredPwaPrompt = null;
             }
         } else if (isIos) {
             setShowIosGuide(true);
@@ -99,7 +121,11 @@ export function PwaInstallPrompt() {
 
     const handleDismiss = () => {
         setDismissed(true);
-        localStorage.setItem('kis_pwa_install_dismissed', Date.now().toString());
+        if (neverShowAgain) {
+            localStorage.setItem('kis_pwa_install_dismissed_forever', 'true');
+        } else {
+            localStorage.setItem('kis_pwa_install_dismissed', Date.now().toString());
+        }
     };
 
     if (!isMounted || isStandalone || dismissed) {
@@ -127,14 +153,14 @@ export function PwaInstallPrompt() {
                             <div className="min-w-0">
                                 <div className="flex items-center gap-1.5">
                                     <h4 className="font-bold text-xs sm:text-sm text-white truncate">
-                                        KIS 학교 포털 전용 앱
+                                        KIS 통합 포털 전용 앱
                                     </h4>
                                     <Badge className="bg-indigo-500 text-white text-[9px] px-1 py-0 h-4 leading-none font-bold">
                                         홈 화면 추가
                                     </Badge>
                                 </div>
                                 <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">
-                                    전자결재·스쿨버스·방과후 통합 포털을 앱처럼 빠르고 편리하게 이용하세요!
+                                    전자결재·학사일정·방과후·스쿨버스 통합 포털을 앱처럼 빠르고 편리하게 이용하세요!
                                 </p>
                             </div>
                         </div>
@@ -143,13 +169,26 @@ export function PwaInstallPrompt() {
                             onClick={handleDismiss} 
                             className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition shrink-0"
                             aria-label="닫기"
-                            title="7일간 보지 않기"
+                            title="닫기"
                         >
                             <X className="w-4 h-4" />
                         </button>
                     </div>
 
-                    <div className="flex items-center gap-2 pt-1">
+                    <div className="flex items-center justify-between pt-1 gap-2">
+                        <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer select-none">
+                            <input 
+                                type="checkbox" 
+                                checked={neverShowAgain} 
+                                onChange={(e) => setNeverShowAgain(e.target.checked)}
+                                className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 bg-slate-800 border-slate-600 accent-indigo-500 cursor-pointer" 
+                            />
+                            <span>다시 띄우지 않기</span>
+                        </label>
+                        <span className="text-[10px] text-slate-400">대시보드 하단에서도 설치 가능</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-0.5">
                         <Button 
                             size="sm" 
                             onClick={handleInstallClick} 
@@ -163,9 +202,8 @@ export function PwaInstallPrompt() {
                             size="sm" 
                             onClick={handleDismiss} 
                             className="h-8 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl px-2.5"
-                            title="7일 동안 이 팝업을 표시하지 않습니다"
                         >
-                            7일간 닫기
+                            {neverShowAgain ? '닫기 (영구)' : '닫기'}
                         </Button>
                     </div>
                 </div>

@@ -534,9 +534,18 @@ export const MorningGateDutyDialog = ({
             <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t bg-slate-50/50 -mx-4 -mb-4 sm:-mx-6 sm:-mb-6 p-4 sm:p-6">
                 <div className="text-[11px] text-slate-500 flex items-center gap-2">
                     <Info className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                    <span>개인 사정 등으로 근무 교체가 필요할 경우 담당자에게 사전 연락 바랍니다.</span>
+                    <span className="hidden sm:inline">개인 사정 등으로 근무 교체가 필요할 경우 담당자에게 사전 연락 바랍니다.</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-8 text-xs font-bold text-indigo-700 border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 gap-1"
+                        onClick={() => window.dispatchEvent(new CustomEvent('openAcademicCalendarSyncModal'))}
+                    >
+                        <CalendarCheck className="h-3.5 w-3.5 text-indigo-600" />
+                        <span>내 캘린더에 일정 동기화</span>
+                    </Button>
                     <Button 
                         variant="outline" 
                         size="sm" 
@@ -545,7 +554,7 @@ export const MorningGateDutyDialog = ({
                         disabled={currentSchedule.length === 0}
                     >
                         <Download className="h-3.5 w-3.5" />
-                        <span>엑셀 다운로드</span>
+                        <span>엑셀</span>
                     </Button>
                     <Button 
                         variant="outline" 

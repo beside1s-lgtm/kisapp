@@ -1,11 +1,11 @@
 'use client';
 
 import { bulkRegisterUsers, getUsersDirectory, saveUserProfile, deleteUser } from '@/lib/services/userService';
-import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules } from '@/lib/services/settingsService';
+import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES } from '@/lib/services/settingsService';
 import { getAuditLogs } from '@/lib/services/documentService';
 import { DocConfig, UserProfile, OrgStructure, DelegationRule, AcademicCalendarConfig, AcademicEvent, AcademicSemesterPeriod } from '@/lib/types';
 import { compressImage, generateAcademicIcsFile } from '@/lib/utils';
-import { ChangeEvent, useEffect, useState, useTransition } from 'react';
+import { ChangeEvent, useEffect, useRef, useState, useTransition } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -30,7 +30,7 @@ import { Button } from './ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Loader2, Image as ImageIcon, Users, Settings as SettingsIcon, FileUp, Download, PlusCircle, Save, XCircle, Trash2, Network, FileText, Pencil, Calendar, Globe, Sparkles } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Users, Settings as SettingsIcon, FileUp, Download, PlusCircle, Save, XCircle, Trash2, Network, FileText, Pencil, Calendar, Globe, Sparkles, RotateCcw } from 'lucide-react';
 import NextImage from 'next/image';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ScrollArea } from './ui/scroll-area';
@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/table"
 import { useAuth } from '@/hooks/use-auth';
 
-const ROLES = ['교사', '부장', '교감', '교장', '행정실장', '주무관', '담당'];
+const ROLES = ['교사', '교감', '교장', '행정실장', '주무관', '담당'];
 
 function getUserDepartmentOrClass(email: string, orgStructure: OrgStructure): string {
   if (!email) return '미배정';
@@ -89,6 +89,14 @@ function getUserDepartmentOrClass(email: string, orgStructure: OrgStructure): st
     for (const [grade, headEmail] of Object.entries(orgStructure.gradeHeads)) {
       if (headEmail?.toLowerCase() === emailLower) {
         roles.push(`${grade}학년 부장`);
+      }
+    }
+  }
+
+  if (orgStructure.gradeSubjects) {
+    for (const [grade, emails] of Object.entries(orgStructure.gradeSubjects)) {
+      if (emails?.some(m => m?.toLowerCase() === emailLower)) {
+        roles.push(`${grade}학년 교과`);
       }
     }
   }
@@ -166,7 +174,7 @@ export function SettingsModal() {
     };
     setAcademicCal(prev => ({
       ...prev,
-      events: [...prev.events.filter(e => e.date !== newEventDate), newEv].sort((a, b) => a.date.localeCompare(b.date))
+      events: [...prev.events.filter(e => e.date !== newEventDate), newEv].sort((a, b) => (a.date || '').localeCompare(b.date || ''))
     }));
     setNewEventDate('');
     setNewEventTitle('');
@@ -225,8 +233,8 @@ export function SettingsModal() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedHomeroomFile, setSelectedHomeroomFile] = useState<File | null>(null);
   const [selectedDeptFile, setSelectedDeptFile] = useState<File | null>(null);
-  const [org, setOrg] = useState<OrgStructure>({ principal: '', vicePrincipal: '', gradeHeads: {}, homerooms: {}, departments: [], afterschoolManager: '', busManager: '', afterschoolManagers: [], busManagers: [], systemManagers: [], healthTeachers: [], specialTeachers: [], librarianTeachers: [], subjectTeacherGroups: [] });
-  const [newHomeroom, setNewHomeroom] = useState({ grade: '1', class: '1', email: '', isGradeHead: false });
+  const [org, setOrg] = useState<OrgStructure>({ principal: '', vicePrincipal: '', gradeHeads: {}, homerooms: {}, gradeSubjects: {}, departments: [], afterschoolManager: '', busManager: '', afterschoolManagers: [], busManagers: [], systemManagers: [], healthTeachers: [], specialTeachers: [], librarianTeachers: [], subjectTeacherGroups: [] });
+  const [newHomeroom, setNewHomeroom] = useState({ grade: '1', class: '1', email: '', isGradeHead: false, roleType: 'homeroom' as 'homeroom' | 'subject' });
   const [newSubjectCategoryName, setNewSubjectCategoryName] = useState('');
   const [newDeptName, setNewDeptName] = useState('');
   // 동명이인 처리용: { grade, class, isHead, candidates: UserProfile[] }
@@ -311,8 +319,8 @@ export function SettingsModal() {
   const fetchUsers = async () => {
     const data = await getUsersDirectory();
     // 이메일 기준으로 중복 제거 (Map 사용)
-    const uniqueUsers = Array.from(new Map(data.map(user => [user.email, user])).values());
-    setUsers(uniqueUsers.sort((a,b) => a.name.localeCompare(b.name)));
+    const uniqueUsers = Array.from(new Map(data.map(user => [user.email || user.uid, user])).values());
+    setUsers(uniqueUsers.sort((a, b) => (a.name || a.parentName || a.email || '').localeCompare(b.name || b.parentName || b.email || '', 'ko')));
   };
 
   useEffect(() => {
@@ -332,6 +340,7 @@ export function SettingsModal() {
           vicePrincipal: data.vicePrincipal || '',
           gradeHeads: data.gradeHeads || {},
           homerooms: data.homerooms || {},
+          gradeSubjects: data.gradeSubjects || {},
           departments: data.departments || [],
           afterschoolManager: data.afterschoolManager || '',
           busManager: data.busManager || '',
@@ -417,24 +426,42 @@ export function SettingsModal() {
     });
   };
 
+  const orgRef = useRef(org);
+  useEffect(() => {
+    orgRef.current = org;
+  }, [org]);
+
+  const updateAndSaveOrg = (updater: (prev: OrgStructure) => OrgStructure, successMessage?: string) => {
+    const next = updater(orgRef.current);
+    orgRef.current = next;
+    setOrg(next);
+    saveOrgStructure(next).then(res => {
+      if (res.success && successMessage) {
+        toast({ title: successMessage });
+      } else if (!res.success) {
+        toast({ variant: 'destructive', title: '저장 실패', description: res.error });
+      }
+    });
+  };
+
   const addDepartment = () => {
     if (!newDeptName.trim()) return;
     const newDept = { id: Date.now().toString(), name: newDeptName.trim(), headEmail: null, memberEmails: [] };
-    setOrg(prev => ({ ...prev, departments: [...(prev.departments || []), newDept] }));
+    updateAndSaveOrg(prev => ({ ...prev, departments: [...(prev.departments || []), newDept] }), '부서가 추가 및 저장되었습니다.');
     setNewDeptName('');
   };
 
   const deleteDepartment = (id: string) => {
-    setOrg(prev => ({ ...prev, departments: (prev.departments || []).filter(d => d.id !== id) }));
+    updateAndSaveOrg(prev => ({ ...prev, departments: (prev.departments || []).filter(d => d.id !== id) }), '부서가 삭제 및 저장되었습니다.');
   };
 
   const updateDeptHead = (deptId: string, email: string) => {
-    setOrg(prev => ({ ...prev, departments: (prev.departments || []).map(d => d.id === deptId ? { ...d, headEmail: email } : d) }));
+    updateAndSaveOrg(prev => ({ ...prev, departments: (prev.departments || []).map(d => d.id === deptId ? { ...d, headEmail: email } : d) }), '부서장이 변경 및 저장되었습니다.');
   };
 
   const addDeptMember = (deptId: string, email: string) => {
     if (!email) return;
-    setOrg(prev => ({
+    updateAndSaveOrg(prev => ({
       ...prev,
       departments: (prev.departments || []).map(d => {
         if (d.id === deptId && !d.memberEmails.includes(email)) {
@@ -442,14 +469,14 @@ export function SettingsModal() {
         }
         return d;
       })
-    }));
+    }), '부서원이 추가 및 저장되었습니다.');
   };
 
   const removeDeptMember = (deptId: string, email: string) => {
-    setOrg(prev => ({
+    updateAndSaveOrg(prev => ({
       ...prev,
       departments: (prev.departments || []).map(d => d.id === deptId ? { ...d, memberEmails: d.memberEmails.filter(e => e !== email) } : d)
-    }));
+    }), '부서원이 삭제 및 저장되었습니다.');
   };
   
   const handleUserUpdate = async (uid: string, email: string, field: 'role' | 'isAdmin' | 'annualLeaveLimit', value: string | boolean | number) => {
@@ -588,10 +615,11 @@ export function SettingsModal() {
     const templateData = [
       { 학년: 1, 반: 1, 교사이름: '홍길동', 학년부장여부: 'N' },
       { 학년: 1, 반: 2, 교사이름: '김철수', 학년부장여부: 'Y' },
+      { 학년: 5, 반: '교과', 교사이름: '이영희', 학년부장여부: 'N' },
     ];
     const worksheet = xlsx.utils.json_to_sheet(templateData);
     const workbook = xlsx.utils.book_new();
-    xlsx.utils.book_append_sheet(workbook, worksheet, '담임 배정');
+    xlsx.utils.book_append_sheet(workbook, worksheet, '담임 및 교과 배정');
     xlsx.writeFile(workbook, 'homeroom_template.xlsx');
   };
 
@@ -613,6 +641,7 @@ export function SettingsModal() {
 
                 const newHomerooms: { [key: string]: string } = {};
                 const newGradeHeads: { [key: string]: string } = { ...org.gradeHeads };
+                const newGradeSubjects: { [grade: string]: string[] } = { ...(org.gradeSubjects || {}) };
                 const duplicates: { grade: string; class: string; isHead: boolean; candidates: UserProfile[] }[] = [];
 
                 json.forEach((row) => {
@@ -625,40 +654,55 @@ export function SettingsModal() {
                     const isHead = (row['학년부장여부'] || row['부장여부'] || '').trim().toUpperCase() === 'Y';
 
                     if (!grade || !clazz) return;
+                    const isSubject = clazz === '교과' || clazz.includes('전담');
 
                     if (teacherName) {
                         // 이름으로 사용자 목록에서 매칭
                         const matched = users.filter(u => u.name === teacherName);
                         if (matched.length === 1) {
-                            const key = `${grade}-${clazz}`;
-                            newHomerooms[key] = matched[0].email;
-                            if (isHead) newGradeHeads[grade] = matched[0].email;
+                            const matchedEmail = matched[0].email;
+                            if (isSubject) {
+                                const currentList = newGradeSubjects[grade] || [];
+                                if (!currentList.includes(matchedEmail)) {
+                                    newGradeSubjects[grade] = [...currentList, matchedEmail];
+                                }
+                            } else {
+                                const key = `${grade}-${clazz}`;
+                                newHomerooms[key] = matchedEmail;
+                                if (isHead) newGradeHeads[grade] = matchedEmail;
+                            }
                         } else if (matched.length > 1) {
                             // 동명이인 → 나중에 수동 선택 필요
                             duplicates.push({ grade, class: clazz, isHead, candidates: matched });
                         } else {
-                            toast({ variant: 'destructive', title: `"${teacherName}" 교사를 찾을 수 없음`, description: `${grade}학년 ${clazz}반에 배정된 "${teacherName}"(이)라는 이름의 교사를 찾을 수 없습니다. 사용자 목록을 확인해주세요.` });
+                            toast({ variant: 'destructive', title: `"${teacherName}" 교사를 찾을 수 없음`, description: `${grade}학년 ${clazz}에 배정된 "${teacherName}"(이)라는 이름의 교사를 찾을 수 없습니다. 사용자 목록을 확인해주세요.` });
                         }
                     } else if (directEmail) {
                         // 레거시: 이메일 직접 지정
-                        const key = `${grade}-${clazz}`;
-                        newHomerooms[key] = directEmail;
-                        if (isHead) newGradeHeads[grade] = directEmail;
+                        if (isSubject) {
+                            const currentList = newGradeSubjects[grade] || [];
+                            if (!currentList.includes(directEmail)) {
+                                newGradeSubjects[grade] = [...currentList, directEmail];
+                            }
+                        } else {
+                            const key = `${grade}-${clazz}`;
+                            newHomerooms[key] = directEmail;
+                            if (isHead) newGradeHeads[grade] = directEmail;
+                        }
                     }
                 });
 
-                setOrg(prev => ({
+                updateAndSaveOrg(prev => ({
                     ...prev,
                     homerooms: { ...prev.homerooms, ...newHomerooms },
-                    gradeHeads: newGradeHeads
-                }));
+                    gradeHeads: newGradeHeads,
+                    gradeSubjects: newGradeSubjects
+                }), duplicates.length === 0 ? `담임 및 교과 배정 일괄 등록 완료` : undefined);
 
                 if (duplicates.length > 0) {
                     setDuplicatePendingRows(duplicates);
                     setDuplicateResolvedEmails({});
                     toast({ title: `동명이인 ${duplicates.length}건 발생`, description: '아래 목록에서 해당 교사를 선택해 주세요.' });
-                } else {
-                    toast({ title: '담임 배정 일괄 등록 성공', description: `${Object.keys(newHomerooms).length}개의 학급 배정이 설정되었습니다.` });
                 }
             } catch (err: any) {
                 toast({ variant: 'destructive', title: '파일 파싱 오류', description: err.message });
@@ -674,27 +718,34 @@ export function SettingsModal() {
   const handleResolveDuplicates = () => {
     const newHomerooms = { ...org.homerooms };
     const newGradeHeads = { ...org.gradeHeads };
+    const newGradeSubjects = { ...(org.gradeSubjects || {}) };
     let resolvedCount = 0;
     let missingCount = 0;
     duplicatePendingRows.forEach(row => {
       const key = `${row.grade}-${row.class}`;
       const selectedEmail = duplicateResolvedEmails[key];
       if (selectedEmail) {
-        newHomerooms[key] = selectedEmail;
-        if (row.isHead) newGradeHeads[row.grade] = selectedEmail;
+        if (row.class === '교과' || row.class.includes('전담')) {
+          const list = newGradeSubjects[row.grade] || [];
+          if (!list.includes(selectedEmail)) {
+            newGradeSubjects[row.grade] = [...list, selectedEmail];
+          }
+        } else {
+          newHomerooms[key] = selectedEmail;
+          if (row.isHead) newGradeHeads[row.grade] = selectedEmail;
+        }
         resolvedCount++;
       } else {
         missingCount++;
       }
     });
     if (missingCount > 0) {
-      toast({ variant: 'destructive', title: '선택 누락', description: `${missingCount}개 반의 교사를 아직 선택하지 않았습니다.` });
+      toast({ variant: 'destructive', title: '선택 누락', description: `${missingCount}건의 교사를 아직 선택하지 않았습니다.` });
       return;
     }
-    setOrg(prev => ({ ...prev, homerooms: newHomerooms, gradeHeads: newGradeHeads }));
+    updateAndSaveOrg(prev => ({ ...prev, homerooms: newHomerooms, gradeHeads: newGradeHeads, gradeSubjects: newGradeSubjects }), `동명이인 처리 완료 (${resolvedCount}건 저장 완료)`);
     setDuplicatePendingRows([]);
     setDuplicateResolvedEmails({});
-    toast({ title: '동명이인 처리 완료', description: `${resolvedCount}개 반의 담임 배정이 완료되었습니다.` });
   };
 
   // 부서 일괄 등록
@@ -791,18 +842,41 @@ export function SettingsModal() {
     }
   };
 
+  const delegationRulesRef = useRef(delegationRules);
+  useEffect(() => {
+    delegationRulesRef.current = delegationRules;
+  }, [delegationRules]);
+
+  const updateAndSaveDelegation = (updater: (prev: DelegationRule[]) => DelegationRule[], successMsg?: string) => {
+    const next = updater(delegationRulesRef.current);
+    delegationRulesRef.current = next;
+    setDelegationRules(next);
+    saveDelegationRules(next).then(res => {
+      if (res.success && successMsg) {
+        toast({ title: successMsg });
+      } else if (!res.success) {
+        toast({ variant: 'destructive', title: '저장 실패', description: res.error });
+      }
+    });
+  };
+
   const handleDownloadDelegationTemplate = () => {
-    const templateData = [
-      { 대분류: '휴가', 중분류: '연가', 소분류: '연가', 최종결재자: 'PRINCIPAL' },
-      { 대분류: '휴가', 중분류: '연가', 소분류: '조퇴', 최종결재자: 'VP' },
-      { 대분류: '휴가', 중분류: '연가', 소분류: '지참', 최종결재자: 'VP' },
-      { 대분류: '출장', 중분류: '관내', 소분류: '', 최종결재자: 'VP' },
-      { 대분류: '출장', 중분류: '관외', 소분류: '', 최종결재자: 'PRINCIPAL' },
-    ];
+    const templateData = DEFAULT_DELEGATION_RULES.map(r => ({
+      '대분류': r.mainType,
+      '중분류(문서명)': r.subType,
+      '소분류(조건)': r.detailType,
+      '중간결재자': r.intermediateApprover === 'GRADE_HEAD' ? '학년부장' :
+                    r.intermediateApprover === 'ACADEMIC_HEAD' ? '교무부장' :
+                    r.intermediateApprover === 'DEPT_HEAD' ? '담당부장' : '없음',
+      '최종결재자': r.finalApprover === 'GRADE_HEAD' ? '학년부장' :
+                    r.finalApprover === 'ACADEMIC_HEAD' ? '교무부장' :
+                    r.finalApprover === 'DEPT_HEAD' ? '담당부장' :
+                    r.finalApprover === 'VP' ? '교감' : '교장',
+    }));
     const worksheet = xlsx.utils.json_to_sheet(templateData);
     const workbook = xlsx.utils.book_new();
     xlsx.utils.book_append_sheet(workbook, worksheet, '위임전결규정');
-    xlsx.writeFile(workbook, 'delegation_template.xlsx');
+    xlsx.writeFile(workbook, '위임전결규정_표준양식.xlsx');
   };
 
   const handleDelegationUpload = () => {
@@ -821,17 +895,36 @@ export function SettingsModal() {
                 const worksheet = workbook.Sheets[firstSheetName];
                 const json: any[] = xlsx.utils.sheet_to_json(worksheet);
 
-                const newRules: DelegationRule[] = json.map((row, index) => ({
-                    id: Date.now().toString() + index,
-                    mainType: row['대분류'] || '',
-                    subType: row['중분류'] || '',
-                    detailType: row['소분류'] || '',
-                    finalApprover: row['최종결재자'] === 'VP' ? 'VP' : 'PRINCIPAL',
-                }));
+                const newRules: DelegationRule[] = json.map((row, index) => {
+                    const rawInter = String(row['중간결재자'] || row['중간결재'] || '').trim();
+                    let intermediateApprover: 'NONE' | 'GRADE_HEAD' | 'ACADEMIC_HEAD' | 'DEPT_HEAD' = 'NONE';
+                    if (rawInter.includes('학년')) intermediateApprover = 'GRADE_HEAD';
+                    else if (rawInter.includes('교무')) intermediateApprover = 'ACADEMIC_HEAD';
+                    else if (rawInter.includes('부장') || rawInter.includes('담당')) intermediateApprover = 'DEPT_HEAD';
+                    else if (['GRADE_HEAD', 'ACADEMIC_HEAD', 'DEPT_HEAD'].includes(rawInter)) intermediateApprover = rawInter as any;
+
+                    const rawFinal = String(row['최종결재자'] || row['최종결재'] || '').trim();
+                    let finalApprover: 'GRADE_HEAD' | 'ACADEMIC_HEAD' | 'DEPT_HEAD' | 'VP' | 'PRINCIPAL' = 'PRINCIPAL';
+                    if (rawFinal.includes('학년')) finalApprover = 'GRADE_HEAD';
+                    else if (rawFinal.includes('교무')) finalApprover = 'ACADEMIC_HEAD';
+                    else if (rawFinal.includes('담당부장')) finalApprover = 'DEPT_HEAD';
+                    else if (rawFinal.includes('교감') || rawFinal === 'VP') finalApprover = 'VP';
+                    else if (rawFinal.includes('교장') || rawFinal === 'PRINCIPAL') finalApprover = 'PRINCIPAL';
+                    else if (['GRADE_HEAD', 'ACADEMIC_HEAD', 'DEPT_HEAD', 'VP', 'PRINCIPAL'].includes(rawFinal)) finalApprover = rawFinal as any;
+
+                    return {
+                        id: Date.now().toString() + index,
+                        mainType: row['대분류'] || '일반 공문',
+                        subType: row['중분류(문서명)'] || row['중분류'] || '',
+                        detailType: row['소분류(조건)'] || row['소분류'] || '',
+                        intermediateApprover,
+                        finalApprover,
+                    };
+                });
 
                 const result = await saveDelegationRules(newRules);
                 if (result.success) {
-                    toast({ title: '전결규정 등록 성공', description: `${newRules.length}개의 규정이 등록되었습니다.` });
+                    toast({ title: '전결규정 등록 성공', description: `${newRules.length}개의 규정이 등록 및 자동 저장되었습니다.` });
                     setDelegationRules(newRules);
                 } else {
                     toast({ variant: 'destructive', title: '등록 실패', description: result.error });
@@ -848,20 +941,57 @@ export function SettingsModal() {
   };
 
   const handleDelegationUpdate = (index: number, field: keyof DelegationRule, value: string) => {
-    const newRules = [...delegationRules];
-    newRules[index] = { ...newRules[index], [field]: value };
-    setDelegationRules(newRules);
+    updateAndSaveDelegation(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
   };
 
   const addDelegationRule = () => {
-    setDelegationRules([
-      ...delegationRules, 
-      { id: Date.now().toString(), mainType: '휴가', subType: '', detailType: '', finalApprover: 'PRINCIPAL' }
-    ]);
+    updateAndSaveDelegation(prev => [
+      ...prev, 
+      { id: Date.now().toString(), mainType: '학부모 출결', subType: '결석계', detailType: '', intermediateApprover: 'NONE', finalApprover: 'GRADE_HEAD' }
+    ], '새 전결규정이 추가되었습니다.');
   };
 
   const deleteDelegationRule = (index: number) => {
-    setDelegationRules(delegationRules.filter((_, i) => i !== index));
+    updateAndSaveDelegation(prev => prev.filter((_, i) => i !== index), '전결규정이 삭제되었습니다.');
+  };
+
+  const handleResetDefaultDelegation = () => {
+    if (!window.confirm("기본 전결규정 8종(결석계, 체험학습, 연간계획, 세부계획, 복무 등)으로 초기화하시겠습니까?")) return;
+    updateAndSaveDelegation(() => DEFAULT_DELEGATION_RULES, '기본 전결규정 8종이 성공적으로 복원 및 저장되었습니다.');
+  };
+
+  const renderApprovalLinePreview = (rule: DelegationRule) => {
+    const isParent = rule.mainType?.includes('학부모') || rule.subType === '결석계' || rule.subType === '체험학습신청서';
+    const firstRole = isParent ? '담임' : '기안자';
+    
+    const interMap: Record<string, string> = {
+      GRADE_HEAD: '학년부장',
+      ACADEMIC_HEAD: '교무부장',
+      DEPT_HEAD: '담당부장',
+      NONE: ''
+    };
+    const finalMap: Record<string, string> = {
+      GRADE_HEAD: '학년부장(전결)',
+      ACADEMIC_HEAD: '교무부장(전결)',
+      DEPT_HEAD: '담당부장(전결)',
+      VP: '교감(전결)',
+      PRINCIPAL: '교장(결재)'
+    };
+
+    const steps = [firstRole];
+    if (rule.intermediateApprover && rule.intermediateApprover !== 'NONE' && rule.intermediateApprover !== rule.finalApprover) {
+      steps.push(interMap[rule.intermediateApprover] || rule.intermediateApprover);
+    }
+    if (rule.finalApprover === 'PRINCIPAL' && !isParent && !steps.includes('교감')) {
+      steps.push('교감');
+    }
+    steps.push(finalMap[rule.finalApprover] || rule.finalApprover);
+
+    return steps.join(' ➡️ ');
   };
 
   const handleDelegationSave = () => {
@@ -1334,7 +1464,7 @@ export function SettingsModal() {
                   <div className="grid grid-cols-2 gap-4 max-w-md">
                     <div className="space-y-2">
                       <Label>학교장 (교장)</Label>
-                      <Select value={org.principal} onValueChange={(val) => setOrg({ ...org, principal: val })}>
+                      <Select value={org.principal} onValueChange={(val) => updateAndSaveOrg(p => ({ ...p, principal: val }), '학교장(교장) 설정이 저장되었습니다.')}>
                         <SelectTrigger><SelectValue placeholder="선택 안됨" /></SelectTrigger>
                         <SelectContent>
                           {users.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
@@ -1343,7 +1473,7 @@ export function SettingsModal() {
                     </div>
                     <div className="space-y-2">
                       <Label>교감</Label>
-                      <Select value={org.vicePrincipal} onValueChange={(val) => setOrg({ ...org, vicePrincipal: val })}>
+                      <Select value={org.vicePrincipal} onValueChange={(val) => updateAndSaveOrg(p => ({ ...p, vicePrincipal: val }), '교감 설정이 저장되었습니다.')}>
                         <SelectTrigger><SelectValue placeholder="선택 안됨" /></SelectTrigger>
                         <SelectContent>
                           {users.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
@@ -1368,7 +1498,7 @@ export function SettingsModal() {
                                 {u ? u.name : email}
                                 <button 
                                   type="button" 
-                                  onClick={() => setOrg(p => ({ ...p, afterschoolManagers: (p.afterschoolManagers || []).filter(x => x !== email) }))}
+                                  onClick={() => updateAndSaveOrg(p => ({ ...p, afterschoolManagers: (p.afterschoolManagers || []).filter(x => x !== email) }), '방과후 담당자가 삭제되었습니다.')}
                                   className="text-violet-500 hover:text-violet-700 font-bold ml-1"
                                 >
                                   ×
@@ -1382,7 +1512,7 @@ export function SettingsModal() {
                         value="" 
                         onValueChange={(val) => {
                           if (val && !(org.afterschoolManagers || []).includes(val)) {
-                            setOrg(p => ({ ...p, afterschoolManagers: [...(p.afterschoolManagers || []), val] }));
+                            updateAndSaveOrg(p => ({ ...p, afterschoolManagers: [...(p.afterschoolManagers || []), val] }), '방과후 담당자가 추가되었습니다.');
                           }
                         }}
                       >
@@ -1407,7 +1537,7 @@ export function SettingsModal() {
                                 {u ? u.name : email}
                                 <button 
                                   type="button" 
-                                  onClick={() => setOrg(p => ({ ...p, busManagers: (p.busManagers || []).filter(x => x !== email) }))}
+                                  onClick={() => updateAndSaveOrg(p => ({ ...p, busManagers: (p.busManagers || []).filter(x => x !== email) }), '스쿨버스 담당자가 삭제되었습니다.')}
                                   className="text-amber-500 hover:text-amber-700 font-bold ml-1"
                                 >
                                   ×
@@ -1421,7 +1551,7 @@ export function SettingsModal() {
                         value="" 
                         onValueChange={(val) => {
                           if (val && !(org.busManagers || []).includes(val)) {
-                            setOrg(p => ({ ...p, busManagers: [...(p.busManagers || []), val] }));
+                            updateAndSaveOrg(p => ({ ...p, busManagers: [...(p.busManagers || []), val] }), '스쿨버스 담당자가 추가되었습니다.');
                           }
                         }}
                       >
@@ -1446,7 +1576,7 @@ export function SettingsModal() {
                                 {u ? u.name : email}
                                 <button 
                                   type="button" 
-                                  onClick={() => setOrg(p => ({ ...p, systemManagers: (p.systemManagers || []).filter(x => x !== email) }))}
+                                  onClick={() => updateAndSaveOrg(p => ({ ...p, systemManagers: (p.systemManagers || []).filter(x => x !== email) }), '시스템 설정 담당자가 삭제되었습니다.')}
                                   className="text-sky-500 hover:text-sky-700 font-bold ml-1"
                                 >
                                   ×
@@ -1460,7 +1590,7 @@ export function SettingsModal() {
                         value="" 
                         onValueChange={(val) => {
                           if (val && !(org.systemManagers || []).includes(val)) {
-                            setOrg(p => ({ ...p, systemManagers: [...(p.systemManagers || []), val] }));
+                            updateAndSaveOrg(p => ({ ...p, systemManagers: [...(p.systemManagers || []), val] }), '시스템 설정 담당자가 추가되었습니다.');
                           }
                         }}
                       >
@@ -1488,7 +1618,7 @@ export function SettingsModal() {
                                 {u ? u.name : email}
                                 <button 
                                   type="button" 
-                                  onClick={() => setOrg(p => ({ ...p, healthTeachers: (p.healthTeachers || []).filter(x => x !== email) }))}
+                                  onClick={() => updateAndSaveOrg(p => ({ ...p, healthTeachers: (p.healthTeachers || []).filter(x => x !== email) }), '보건교사가 삭제되었습니다.')}
                                   className="text-emerald-600 hover:text-emerald-800 font-bold ml-1"
                                 >
                                   ×
@@ -1502,7 +1632,7 @@ export function SettingsModal() {
                         value="" 
                         onValueChange={(val) => {
                           if (val && !(org.healthTeachers || []).includes(val)) {
-                            setOrg(p => ({ ...p, healthTeachers: [...(p.healthTeachers || []), val] }));
+                            updateAndSaveOrg(p => ({ ...p, healthTeachers: [...(p.healthTeachers || []), val] }), '보건교사가 추가되었습니다.');
                           }
                         }}
                       >
@@ -1527,7 +1657,7 @@ export function SettingsModal() {
                                 {u ? u.name : email}
                                 <button 
                                   type="button" 
-                                  onClick={() => setOrg(p => ({ ...p, specialTeachers: (p.specialTeachers || []).filter(x => x !== email) }))}
+                                  onClick={() => updateAndSaveOrg(p => ({ ...p, specialTeachers: (p.specialTeachers || []).filter(x => x !== email) }), '특수교사가 삭제되었습니다.')}
                                   className="text-teal-600 hover:text-teal-800 font-bold ml-1"
                                 >
                                   ×
@@ -1541,7 +1671,7 @@ export function SettingsModal() {
                         value="" 
                         onValueChange={(val) => {
                           if (val && !(org.specialTeachers || []).includes(val)) {
-                            setOrg(p => ({ ...p, specialTeachers: [...(p.specialTeachers || []), val] }));
+                            updateAndSaveOrg(p => ({ ...p, specialTeachers: [...(p.specialTeachers || []), val] }), '특수교사가 추가되었습니다.');
                           }
                         }}
                       >
@@ -1566,7 +1696,7 @@ export function SettingsModal() {
                                 {u ? u.name : email}
                                 <button 
                                   type="button" 
-                                  onClick={() => setOrg(p => ({ ...p, librarianTeachers: (p.librarianTeachers || []).filter(x => x !== email) }))}
+                                  onClick={() => updateAndSaveOrg(p => ({ ...p, librarianTeachers: (p.librarianTeachers || []).filter(x => x !== email) }), '사서교사가 삭제되었습니다.')}
                                   className="text-indigo-600 hover:text-indigo-800 font-bold ml-1"
                                 >
                                   ×
@@ -1580,7 +1710,7 @@ export function SettingsModal() {
                         value="" 
                         onValueChange={(val) => {
                           if (val && !(org.librarianTeachers || []).includes(val)) {
-                            setOrg(p => ({ ...p, librarianTeachers: [...(p.librarianTeachers || []), val] }));
+                            updateAndSaveOrg(p => ({ ...p, librarianTeachers: [...(p.librarianTeachers || []), val] }), '사서교사가 추가되었습니다.');
                           }
                         }}
                       >
@@ -1716,14 +1846,17 @@ export function SettingsModal() {
                 </div>
 
                 <div className="space-y-4">
-                  <h4 className="font-semibold text-lg border-b pb-2">학급 담임 배정</h4>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-2 gap-2">
+                    <h4 className="font-semibold text-lg text-gray-900">학년별 담임 및 교과(전담) 교사 배정</h4>
+                    <span className="text-xs text-muted-foreground">각 학년의 학년부장, 학급 담임교사 및 학년 소속 교과 교사를 배정합니다.</span>
+                  </div>
                   
-                  {/* 담임 배정 일괄 등록 카드 */}
+                  {/* 담임 및 교과 배정 일괄 등록 카드 */}
                   <Card className="border shadow-sm bg-muted/20">
                       <CardHeader className="p-4 pb-2">
-                          <CardTitle className="text-sm font-bold">담임 배정 일괄 등록</CardTitle>
+                          <CardTitle className="text-sm font-bold">담임 및 학년 교과 일괄 등록</CardTitle>
                           <CardDescription className="text-xs">
-                              엑셀 파일(.xlsx)로 여러 반의 담임 및 학년부장 여부를 일괄 등록합니다.
+                              엑셀 파일(.xlsx)로 여러 반의 담임 및 학년 교과(반 컬럼에 '교과' 입력) 교사를 일괄 등록합니다.
                           </CardDescription>
                       </CardHeader>
                       <CardContent className="p-4 pt-0 flex flex-col sm:flex-row items-center gap-2">
@@ -1741,31 +1874,88 @@ export function SettingsModal() {
                       </CardContent>
                   </Card>
                   
-                  <div className="flex flex-col md:flex-row gap-3 items-end bg-muted/30 p-4 rounded-lg border border-border/50 space-y-3 md:space-y-0">
-                    <div className="grid grid-cols-3 gap-2 w-full md:w-auto">
+                  <div className="flex flex-col lg:flex-row gap-3 items-end bg-muted/30 p-4 rounded-lg border border-border/50 space-y-3 lg:space-y-0">
+                    <div className="flex flex-wrap items-end gap-2.5 w-full lg:w-auto">
+                      {/* 학년 선택 */}
+                      <div className="space-y-1.5 w-24">
+                        <Label className="text-xs font-bold text-slate-700">학년</Label>
+                        <Select value={newHomeroom.grade} onValueChange={val => setNewHomeroom({ ...newHomeroom, grade: val })}>
+                          <SelectTrigger className="h-9 bg-white font-medium"><SelectValue placeholder="학년" /></SelectTrigger>
+                          <SelectContent>
+                            {[1, 2, 3, 4, 5, 6].map(g => (
+                              <SelectItem key={g} value={String(g)}>{g}학년</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* 구분: 담임 / 교과 토글 버튼 */}
                       <div className="space-y-1.5">
-                        <Label className="text-xs">학년</Label>
-                        <Input type="number" min="1" max="6" value={newHomeroom.grade} onChange={e => setNewHomeroom({...newHomeroom, grade: e.target.value})} className="h-9" />
+                        <Label className="text-xs font-bold text-slate-700">구분</Label>
+                        <div className="flex bg-slate-200/80 p-0.5 rounded-lg border border-slate-300/60 h-9">
+                          <button
+                            type="button"
+                            onClick={() => setNewHomeroom(prev => ({ ...prev, roleType: 'homeroom' }))}
+                            className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1 ${
+                              newHomeroom.roleType !== 'subject'
+                                ? 'bg-white text-primary shadow-sm'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            담임
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewHomeroom(prev => ({ ...prev, roleType: 'subject' }))}
+                            className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1 ${
+                              newHomeroom.roleType === 'subject'
+                                ? 'bg-sky-600 text-white shadow-sm'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            교과
+                          </button>
+                        </div>
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">반</Label>
-                        <Input type="number" min="1" max="20" value={newHomeroom.class} onChange={e => setNewHomeroom({...newHomeroom, class: e.target.value})} className="h-9" />
-                      </div>
-                      <div className="space-y-1.5 flex items-center justify-center pt-5">
-                        <Label className="text-xs flex items-center gap-1.5 cursor-pointer">
-                          <Switch 
-                            checked={newHomeroom.isGradeHead}
-                            onCheckedChange={(checked) => setNewHomeroom({ ...newHomeroom, isGradeHead: checked })}
-                          />
-                          <span className="font-semibold text-xs">학년부장</span>
-                        </Label>
-                      </div>
+
+                      {/* 담임일 때만 반 입력 및 학년부장 스위치 표시 */}
+                      {newHomeroom.roleType !== 'subject' ? (
+                        <>
+                          <div className="space-y-1.5 w-20">
+                            <Label className="text-xs font-bold text-slate-700">반</Label>
+                            <Input 
+                              type="number" 
+                              min="1" 
+                              max="20" 
+                              placeholder="1" 
+                              value={newHomeroom.class} 
+                              onChange={e => setNewHomeroom({ ...newHomeroom, class: e.target.value })} 
+                              className="h-9 bg-white text-center font-bold" 
+                            />
+                          </div>
+                          <div className="space-y-1.5 flex items-center justify-center pb-2 px-1">
+                            <Label className="text-xs flex items-center gap-1.5 cursor-pointer">
+                              <Switch 
+                                checked={newHomeroom.isGradeHead}
+                                onCheckedChange={(checked) => setNewHomeroom({ ...newHomeroom, isGradeHead: checked })}
+                              />
+                              <span className="font-semibold text-xs text-slate-700">학년부장</span>
+                            </Label>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex items-center pb-2 px-2">
+                          <span className="text-xs font-semibold text-sky-700 bg-sky-100/70 border border-sky-200 px-2.5 py-1 rounded-md">
+                            {newHomeroom.grade}학년 교과 배정
+                          </span>
+                        </div>
+                      )}
                     </div>
                     
                     <div className="space-y-1.5 flex-1 w-full">
-                      <Label className="text-xs">담당 교사</Label>
+                      <Label className="text-xs font-bold text-slate-700">담당 교사</Label>
                       <Select value={newHomeroom.email} onValueChange={(val) => setNewHomeroom({ ...newHomeroom, email: val })}>
-                        <SelectTrigger className="h-9"><SelectValue placeholder="교사 선택" /></SelectTrigger>
+                        <SelectTrigger className="h-9 bg-white"><SelectValue placeholder="교사 선택" /></SelectTrigger>
                         <SelectContent>
                           {users.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
                         </SelectContent>
@@ -1773,44 +1963,128 @@ export function SettingsModal() {
                     </div>
                     <Button onClick={() => {
                       if (!newHomeroom.email) return toast({ variant: 'destructive', description: '교사를 선택해주세요.'});
-                      const key = `${newHomeroom.grade}-${newHomeroom.class}`;
-                      const newHomerooms = { ...org.homerooms, [key]: newHomeroom.email };
-                      const newGradeHeads = { ...org.gradeHeads };
-                      if (newHomeroom.isGradeHead) {
-                        newGradeHeads[newHomeroom.grade] = newHomeroom.email;
+                      const grade = newHomeroom.grade;
+                      if (newHomeroom.roleType === 'subject') {
+                        updateAndSaveOrg(prev => {
+                          const prevList = prev.gradeSubjects?.[grade] || [];
+                          const updatedList = Array.from(new Set([...prevList, newHomeroom.email]));
+                          const newGradeSubjects = { ...(prev.gradeSubjects || {}), [grade]: updatedList };
+                          return { ...prev, gradeSubjects: newGradeSubjects };
+                        }, `${grade}학년 교과 교사 배정이 즉시 저장되었습니다.`);
+                        setNewHomeroom(prev => ({ ...prev, email: '', isGradeHead: false }));
+                      } else {
+                        const clazz = (newHomeroom.class || '1').trim();
+                        if (!clazz) return toast({ variant: 'destructive', description: '반 번호를 입력해주세요.' });
+                        const key = `${grade}-${clazz}`;
+                        updateAndSaveOrg(prev => {
+                          const newHomerooms = { ...prev.homerooms, [key]: newHomeroom.email };
+                          const newGradeHeads = { ...prev.gradeHeads };
+                          if (newHomeroom.isGradeHead) {
+                            newGradeHeads[grade] = newHomeroom.email;
+                          }
+                          return { ...prev, homerooms: newHomerooms, gradeHeads: newGradeHeads };
+                        }, `${grade}학년 ${clazz}반 담임 배정이 즉시 저장되었습니다.`);
+                        setNewHomeroom(prev => ({ ...prev, email: '', isGradeHead: false }));
                       }
-                      setOrg({ ...org, homerooms: newHomerooms, gradeHeads: newGradeHeads });
-                      setNewHomeroom({ grade: '1', class: '1', email: '', isGradeHead: false });
-                    }} className="h-9 w-full md:w-auto font-bold bg-primary hover:bg-primary/90 text-white">추가/변경</Button>
+                    }} className="h-9 w-full lg:w-auto font-bold bg-primary hover:bg-primary/90 text-white">추가/변경</Button>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mt-4">
-                    {Object.entries(org.homerooms || {})
-                      .sort(([a], [b]) => {
-                        const [gA, cA] = a.split('-').map(Number);
-                        const [gB, cB] = b.split('-').map(Number);
-                        return gA === gB ? cA - cB : gA - gB;
-                      })
-                      .map(([gradeClass, email]) => {
-                        const user = users.find(u => u.email === email);
+                    {(() => {
+                      // 1. Homeroom items
+                      const homeroomItems = Object.entries(org.homerooms || {}).map(([gradeClass, email]) => {
                         const [grade, clazz] = gradeClass.split('-');
-                        const isGradeHead = org.gradeHeads[grade] === email;
+                        return {
+                          type: 'homeroom' as const,
+                          grade: parseInt(grade, 10) || 0,
+                          gradeStr: grade,
+                          classNum: parseInt(clazz, 10) || 999,
+                          classStr: clazz,
+                          email,
+                          key: `hr-${gradeClass}`
+                        };
+                      });
+
+                      // 2. Grade Subject items
+                      const subjectItems: any[] = [];
+                      Object.entries(org.gradeSubjects || {}).forEach(([grade, emails]) => {
+                        (emails || []).forEach((email, idx) => {
+                          subjectItems.push({
+                            type: 'subject' as const,
+                            grade: parseInt(grade, 10) || 0,
+                            gradeStr: grade,
+                            classNum: 1000 + idx,
+                            classStr: '교과',
+                            email,
+                            key: `subj-${grade}-${email}`
+                          });
+                        });
+                      });
+
+                      // 3. Combined & sorted by grade, then by classNum
+                      const allGradeItems = [...homeroomItems, ...subjectItems].sort((a, b) => {
+                        if (a.grade !== b.grade) return a.grade - b.grade;
+                        return a.classNum - b.classNum;
+                      });
+
+                      if (allGradeItems.length === 0) {
+                        return (
+                          <div className="col-span-full py-8 text-center text-sm text-muted-foreground bg-muted/20 rounded-lg border border-dashed">
+                            배정된 학년 담임 및 교과 교사가 없습니다. 위에서 추가하거나 엑셀로 일괄 등록하세요.
+                          </div>
+                        );
+                      }
+
+                      return allGradeItems.map((item) => {
+                        const user = users.find(u => u.email?.toLowerCase() === item.email?.toLowerCase());
+                        const isGradeHead = item.type === 'homeroom' && org.gradeHeads[item.gradeStr] === item.email;
+
+                        if (item.type === 'subject') {
+                          return (
+                            <div key={item.key} className="flex flex-col bg-sky-50/40 border border-sky-200/80 p-3 rounded-lg shadow-sm space-y-3 justify-between">
+                              <div className="flex justify-between items-start">
+                                <div className="flex flex-col overflow-hidden">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-sm text-sky-950">{item.gradeStr}학년 교과</span>
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-sky-100/70 text-sky-700 border-sky-300">교과</Badge>
+                                  </div>
+                                  <span className="text-xs text-muted-foreground truncate">{user ? user.name : item.email}</span>
+                                </div>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0 hover:bg-red-50 hover:text-red-600 rounded" onClick={() => {
+                                  updateAndSaveOrg(prev => {
+                                    const prevList = prev.gradeSubjects?.[item.gradeStr] || [];
+                                    const updatedList = prevList.filter(e => e.toLowerCase() !== item.email.toLowerCase());
+                                    const newGradeSubjects = { ...(prev.gradeSubjects || {}), [item.gradeStr]: updatedList };
+                                    return { ...prev, gradeSubjects: newGradeSubjects };
+                                  }, `${item.gradeStr}학년 교과 배정이 삭제되었습니다.`);
+                                }}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                              <div className="flex items-center justify-between border-t border-sky-200/50 pt-2 mt-1">
+                                <span className="text-[11px] text-sky-700 font-medium">{item.gradeStr}학년 소속 교과 교사</span>
+                              </div>
+                            </div>
+                          );
+                        }
 
                         return (
-                          <div key={gradeClass} className="flex flex-col bg-card border p-3 rounded-lg shadow-sm space-y-3 justify-between">
+                          <div key={item.key} className="flex flex-col bg-card border p-3 rounded-lg shadow-sm space-y-3 justify-between">
                             <div className="flex justify-between items-start">
                               <div className="flex flex-col overflow-hidden">
-                                <span className="font-bold text-sm text-gray-900">{grade}학년 {clazz}반</span>
-                                <span className="text-xs text-muted-foreground truncate">{user ? user.name : email}</span>
+                                <span className="font-bold text-sm text-gray-900">{item.gradeStr}학년 {item.classStr}반</span>
+                                <span className="text-xs text-muted-foreground truncate">{user ? user.name : item.email}</span>
                               </div>
                               <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0 hover:bg-red-50 hover:text-red-600 rounded" onClick={() => {
-                                const newHomerooms = { ...org.homerooms };
-                                delete newHomerooms[gradeClass];
-                                const newGradeHeads = { ...org.gradeHeads };
-                                if (newGradeHeads[grade] === email) {
-                                  delete newGradeHeads[grade];
-                                }
-                                setOrg({ ...org, homerooms: newHomerooms, gradeHeads: newGradeHeads });
+                                updateAndSaveOrg(prev => {
+                                  const newHomerooms = { ...prev.homerooms };
+                                  delete newHomerooms[`${item.gradeStr}-${item.classStr}`];
+                                  const newGradeHeads = { ...prev.gradeHeads };
+                                  if (newGradeHeads[item.gradeStr] === item.email) {
+                                    delete newGradeHeads[item.gradeStr];
+                                  }
+                                  return { ...prev, homerooms: newHomerooms, gradeHeads: newGradeHeads };
+                                }, `${item.gradeStr}학년 ${item.classStr}반 담임 배정이 삭제되었습니다.`);
                               }}>
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
@@ -1820,13 +2094,15 @@ export function SettingsModal() {
                                 <Switch 
                                   checked={isGradeHead}
                                   onCheckedChange={(checked) => {
-                                    const newGradeHeads = { ...org.gradeHeads };
-                                    if (checked) {
-                                      newGradeHeads[grade] = email;
-                                    } else if (newGradeHeads[grade] === email) {
-                                      delete newGradeHeads[grade];
-                                    }
-                                    setOrg({ ...org, gradeHeads: newGradeHeads });
+                                    updateAndSaveOrg(prev => {
+                                      const newGradeHeads = { ...prev.gradeHeads };
+                                      if (checked) {
+                                        newGradeHeads[item.gradeStr] = item.email;
+                                      } else if (newGradeHeads[item.gradeStr] === item.email) {
+                                        delete newGradeHeads[item.gradeStr];
+                                      }
+                                      return { ...prev, gradeHeads: newGradeHeads };
+                                    }, `${item.gradeStr}학년 학년부장 설정이 저장되었습니다.`);
                                   }}
                                 />
                                 <span className={`text-[11px] font-bold transition-colors ${isGradeHead ? 'text-primary' : 'text-muted-foreground'}`}>학년부장</span>
@@ -1834,7 +2110,8 @@ export function SettingsModal() {
                             </div>
                           </div>
                         );
-                    })}
+                      });
+                    })()}
                   </div>
                 </div>
 
@@ -1988,11 +2265,14 @@ export function SettingsModal() {
 
           <TabsContent value="delegation" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
             <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-4">
-            <Card>
+            <Card className="border-slate-200 shadow-2xs">
                 <CardHeader className="pb-3">
-                    <CardTitle className="text-lg">위임전결규정 일괄 등록</CardTitle>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-indigo-600" />
+                      위임전결규정 일괄 등록 및 양식
+                    </CardTitle>
                     <CardDescription>
-                        엑셀 파일로 결재선(전결규정)을 등록합니다. (VP: 교감, PRINCIPAL: 교장)
+                        결석계, 체험학습신청서, 연간계획공문, 세부계획공문, 복무 등의 학교별 전결규정을 등록 및 관리합니다.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col sm:flex-row items-center gap-4">
@@ -2000,55 +2280,85 @@ export function SettingsModal() {
                     <div className="flex gap-2 w-full sm:w-auto">
                         <Button onClick={handleDownloadDelegationTemplate} variant="outline" size="sm">
                             <Download className="mr-2 h-4 w-4"/>
-                            양식
+                            표준 양식 다운로드
                         </Button>
                         <Button onClick={handleDelegationUpload} disabled={isUploading || !selectedDelegationFile} size="sm">
                             {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileUp className="mr-2 h-4 w-4"/>}
-                            업로드
+                            엑셀 업로드
                         </Button>
                     </div>
                 </CardContent>
             </Card>
 
-            <div className="flex justify-between items-center px-1">
-                <h3 className="text-lg font-semibold">전결규정 목록 ({delegationRules.length})</h3>
-                <Button variant="outline" size="sm" onClick={addDelegationRule}>
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    추가
-                </Button>
+            <div className="flex flex-wrap justify-between items-center px-1 gap-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold">전결규정 목록 ({delegationRules.length})</h3>
+                  <Badge variant="outline" className="text-xs text-muted-foreground">변경 시 실시간 자동 저장</Badge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={handleResetDefaultDelegation}>
+                      <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                      기본 규정 초기화 (8종)
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={addDelegationRule} className="bg-primary/5 hover:bg-primary/10 text-primary border-primary/20">
+                      <PlusCircle className="mr-1.5 h-3.5 w-3.5" />
+                      새 규정 추가
+                  </Button>
+                </div>
             </div>
 
             <div className="border rounded-md flex-1 overflow-y-auto">
               <Table>
-                  <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableHeader className="sticky top-0 bg-slate-50 z-10">
                   <TableRow>
-                      <TableHead>대분류</TableHead>
-                      <TableHead>중분류</TableHead>
-                      <TableHead>소분류</TableHead>
-                      <TableHead>최종결재</TableHead>
-                      <TableHead className="text-right">관리</TableHead>
+                      <TableHead className="w-[120px]">대분류</TableHead>
+                      <TableHead className="w-[150px]">문서명(중분류)</TableHead>
+                      <TableHead className="w-[130px]">소분류/조건</TableHead>
+                      <TableHead className="w-[150px]">중간 결재자</TableHead>
+                      <TableHead className="w-[160px]">최종 결재권자 (전결)</TableHead>
+                      <TableHead className="min-w-[220px]">결재선 미리보기</TableHead>
+                      <TableHead className="w-[60px] text-right">삭제</TableHead>
                   </TableRow>
                   </TableHeader>
                   <TableBody>
                   {delegationRules.map((rule, index) => (
-                  <TableRow key={rule.id}>
+                  <TableRow key={rule.id || index}>
                       <TableCell>
-                        <Input value={rule.mainType} onChange={e => handleDelegationUpdate(index, 'mainType', e.target.value)} className="h-8" />
+                        <Input value={rule.mainType} onChange={e => handleDelegationUpdate(index, 'mainType', e.target.value)} className="h-8 text-xs font-medium" placeholder="대분류" />
                       </TableCell>
                       <TableCell>
-                        <Input value={rule.subType} onChange={e => handleDelegationUpdate(index, 'subType', e.target.value)} className="h-8" />
+                        <Input value={rule.subType} onChange={e => handleDelegationUpdate(index, 'subType', e.target.value)} className="h-8 text-xs font-bold text-slate-800" placeholder="결석계, 연간계획 등" />
                       </TableCell>
                       <TableCell>
-                        <Input value={rule.detailType} onChange={e => handleDelegationUpdate(index, 'detailType', e.target.value)} className="h-8" />
+                        <Input value={rule.detailType} onChange={e => handleDelegationUpdate(index, 'detailType', e.target.value)} className="h-8 text-xs" placeholder="조건/세부구분" />
+                      </TableCell>
+                      <TableCell>
+                        <Select value={rule.intermediateApprover || 'NONE'} onValueChange={(val) => handleDelegationUpdate(index, 'intermediateApprover', val)}>
+                            <SelectTrigger className="h-8 text-xs bg-white"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="NONE">없음 (바로 최종결재)</SelectItem>
+                                <SelectItem value="GRADE_HEAD">학년부장</SelectItem>
+                                <SelectItem value="ACADEMIC_HEAD">교무부장</SelectItem>
+                                <SelectItem value="DEPT_HEAD">담당부장</SelectItem>
+                            </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell>
                         <Select value={rule.finalApprover} onValueChange={(val) => handleDelegationUpdate(index, 'finalApprover', val)}>
-                            <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                            <SelectTrigger className="h-8 text-xs bg-white font-semibold text-primary"><SelectValue /></SelectTrigger>
                             <SelectContent>
+                                <SelectItem value="GRADE_HEAD">학년부장 (전결)</SelectItem>
+                                <SelectItem value="ACADEMIC_HEAD">교무부장 (전결)</SelectItem>
+                                <SelectItem value="DEPT_HEAD">담당부장 (전결)</SelectItem>
                                 <SelectItem value="VP">교감 (전결)</SelectItem>
                                 <SelectItem value="PRINCIPAL">교장 (결재)</SelectItem>
                             </SelectContent>
                         </Select>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="font-sans text-[11px] bg-slate-100 text-slate-700 border border-slate-200 py-1 px-2">
+                          {renderApprovalLinePreview(rule)}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-right">
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive/90" onClick={() => deleteDelegationRule(index)}>
@@ -2182,7 +2492,7 @@ export function SettingsModal() {
                                   <SelectValue placeholder="직책" />
                               </SelectTrigger>
                               <SelectContent>
-                                  {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                                  {Array.from(new Set([...ROLES, ...(user.role ? [user.role] : [])])).map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
                               </SelectContent>
                               </Select>
                           </TableCell>

@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { FileClock, Inbox, ListFilter, Plus, Send, Undo2, Users, CalendarOff, Backpack, Briefcase, Clock, UserPlus, CalendarCheck, BookOpen, Bus, FileText, XCircle } from 'lucide-react';
+import { FileClock, Inbox, ListFilter, Plus, Send, Undo2, Users, CalendarOff, Backpack, Briefcase, Clock, UserPlus, CalendarCheck, BookOpen, Bus, FileText, XCircle, Eye } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
@@ -87,6 +87,7 @@ export default function AppSidebar() {
             <NavItem href="/inbox" label="미결재함" icon={<Inbox size={18} />} count={inboxCount} />
             <NavItem href="/sent" label="상신함" icon={<Send size={18} />} />
             <NavItem href="/pending" label="진행 문서함" icon={<FileClock size={18} />} />
+            <NavItem href="/circular" label="공람 문서함" icon={<Eye size={18} />} />
             <NavItem href="/recalled" label="회수 문서함" icon={<Undo2 size={18} />} />
             <NavItem href="/rejected" label="반려 문서함" icon={<XCircle size={18} className="text-red-500" />} />
             <div className="h-px bg-border my-1 mx-2"></div>

@@ -287,16 +287,16 @@ const sortBuses = (buses: Bus[], isOperationalFn?: (id: string) => boolean): Bus
         }
 
         const numA = parseInt(a.name.replace(/\D/g, ''), 10);
-        const numB = parseInt(b.name.replace(/\D/g, ''), 10);
+        const numB = parseInt((b.name || '').replace(/\D/g, ''), 10);
         if (!isNaN(numA) && !isNaN(numB)) {
             return numA - numB;
         }
-        return a.name.localeCompare(b.name, 'ko');
+        return (a.name || '').localeCompare(b.name || '', 'ko');
     });
 };
 
 const sortTeachers = (teachers: Teacher[]): Teacher[] => {
-    return [...teachers].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    return [...teachers].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
 };
 
 interface TeacherAssignmentDialogProps {

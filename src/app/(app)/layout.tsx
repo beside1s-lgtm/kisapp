@@ -40,7 +40,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       router.push(redirectUrl);
     } else if (!loading && user && isParent) {
       if (!pathname.startsWith('/parents')) {
-        router.push('/parents/apply');
+        router.push('/parents');
       }
     }
   }, [user, loading, isParent, router, pathname]);

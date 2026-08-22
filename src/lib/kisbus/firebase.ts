@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getDb } from '@/lib/firebase';
 
 const kisbusConfig = {
@@ -18,10 +18,16 @@ const kisbusApp = getApps().find(app => app.name === 'kisbus')
 
 let kisbusDb: any;
 try {
-  kisbusDb = getFirestore(kisbusApp);
-} catch (e) {
-  console.error("Failed to initialize kisbusDb, falling back to default db:", e);
-  kisbusDb = getDb();
+  kisbusDb = initializeFirestore(kisbusApp, {
+    experimentalForceLongPolling: true,
+  });
+} catch {
+  try {
+    kisbusDb = getFirestore(kisbusApp);
+  } catch (e) {
+    console.error("Failed to initialize kisbusDb, falling back to default db:", e);
+    kisbusDb = getDb();
+  }
 }
 
 export function getKisbusDb() {

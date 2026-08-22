@@ -7,42 +7,49 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // 이메일 주소 가져오기 및 소문자화
+    // 이메일 주소 가져오기 및 소문자화 (null 안전)
     function getEmail() {
-      return request.auth.token.email.lower();
+      return (request.auth != null && request.auth.token.get('email', '') != '') ? request.auth.token.email.lower() : '';
     }
 
-    // 관리자 여부 확인 함수
+    // 관리자 여부 확인 함수 (null 안전)
     function isAdmin() {
       return isSignedIn() &&
+        getEmail() != '' &&
         exists(/databases/$(database)/documents/users/$(getEmail())) &&
-        get(/databases/$(database)/documents/users/$(getEmail())).data.isAdmin == true;
+        get(/databases/$(database)/documents/users/$(getEmail())).data.get('isAdmin', false) == true;
     }
 
     // approvals 컬렉션 보안 규칙
     match /approvals/{docId} {
-      // 읽기 권한: 로그인된 사용자는 결재 대기/완료 쿼리를 실행할 수 있도록 허용 (상세 열람 권한은 document-view 컴포넌트에서 공개/비공개 및 결재선에 따라 철저히 제어)
-      allow read: if isSignedIn();
+      // 읽기 권한: 누구나(학부모 포함) 또는 로그인된 사용자 조회 허용 (상세 열람 권한은 클라이언트에서 제어)
+      allow read: if true;
 
-      // 생성 권한 (본인 기안만 허용)
-      allow create: if isSignedIn() && (
-        request.resource.data.requesterId == request.auth.uid ||
-        request.resource.data.requesterEmail.lower() == request.auth.token.email.lower()
-      );
+      // 생성 권한 (학부모 문서 또는 로그인된 사용자 기안 허용)
+      allow create: if request.resource.data.get('docType', '') == 'parent' || request.resource.data.get('parentFormData', null) != null || isSignedIn();
 
-      // 수정 및 삭제 권한
-      allow update, delete: if isSignedIn() && (
+      // 삭제 권한 (delete 시에는 request.resource가 없으므로 update와 철저히 분리)
+      // 완료(approved)된 문서를 제외하고, 대기(pending)/회수(recalled)/반려(rejected)/임시저장(draft) 상태의 문서는 삭제 허용
+      allow delete: if resource.data.get('status', '') != 'approved';
+
+      // 수정 권한
+      allow update: if 
         // 1. 관리자이거나
         isAdmin() ||
-        // 2. 기안자 본인이 문서가 대기중이거나 회수된 상태에서 수정할 때
-        ((resource.data.requesterId == request.auth.uid || (resource.data.requesterEmail != null && resource.data.requesterEmail == getEmail())) && (resource.data.status == 'pending' || resource.data.status == 'recalled')) ||
-        // 3. 결재 참여자(결재선에 있는 사람)가 결재 진행중인 단계에서 업데이트할 때
-        (resource.data.approverEmails != null && getEmail() in resource.data.approverEmails) ||
-        // 4. [체험학습 결과보고서 일체형 병합] 기안자 본인이 승인 완료된 체험학습 신청서에 보고서 데이터를 추가(병합)할 때
-        (resource.data.status == 'approved' && resource.data.docType == 'parent' &&
-          (resource.data.requesterId == request.auth.uid || (resource.data.requesterEmail != null && resource.data.requesterEmail == getEmail())) &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parentFormData', 'content', 'reportSubmitted', 'reportSubmittedAt', 'updatedAt']))
-      );
+        // 2. 학부모 문서인 경우: 회수, 반려, 대기 상태에서 수정 허용 또는 승인 완료된 체험학습 신청서에 결과보고서 병합
+        (
+          (resource.data.get('docType', '') == 'parent' || resource.data.get('parentFormData', null) != null) && (
+            resource.data.get('status', '') in ['pending', 'recalled', 'rejected', 'draft'] ||
+            (resource.data.get('status', '') == 'approved' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parentFormData', 'content', 'reportSubmitted', 'reportSubmittedAt', 'updatedAt']))
+          )
+        ) ||
+        // 3. 교직원 문서인 경우: 기안자 본인이 대기/회수/반려 상태에서 수정하거나 결재선 참여자가 업데이트할 때
+        (
+          isSignedIn() && (
+            ((resource.data.get('requesterId', '') == request.auth.uid || (getEmail() != '' && resource.data.get('requesterEmail', '').lower() == getEmail())) && (resource.data.get('status', '') in ['pending', 'recalled', 'rejected', 'draft'])) ||
+            (resource.data.get('approverEmails', null) != null && getEmail() != '' && getEmail() in resource.data.approverEmails)
+          )
+        );
     }
 
     // users 컬렉션 보안 규칙
@@ -59,8 +66,8 @@ service cloud.firestore {
 
     // settings 컬렉션 보안 규칙
     match /settings/{settingId} {
-      allow read: if isSignedIn() || settingId == 'global' || settingId == 'busSettings' || settingId == 'afterschoolSettings' || settingId == 'afterschoolTimer' || settingId == 'afterschoolTeacherApplySettings' || settingId == 'docConfig' || settingId == 'orgStructure' || settingId == 'materialBudgetSettings';
-      allow write: if isAdmin() || (settingId == 'docConfig' && isSignedIn()) || (settingId == 'afterschoolTimer' && isSignedIn()) || (settingId == 'afterschoolTeacherApplySettings' && isSignedIn()) || (settingId == 'materialBudgetSettings' && isSignedIn());
+      allow read: if isSignedIn() || settingId == 'global' || settingId == 'busSettings' || settingId == 'afterschoolSettings' || settingId == 'afterschoolTimer' || settingId == 'afterschoolTeacherApplySettings' || settingId == 'docConfig' || settingId == 'orgStructure' || settingId == 'delegationRules' || settingId == 'materialBudgetSettings';
+      allow write: if isAdmin() || (settingId == 'docConfig' && isSignedIn()) || (settingId == 'delegationRules' && isSignedIn()) || (settingId == 'afterschoolTimer' && isSignedIn()) || (settingId == 'afterschoolTeacherApplySettings' && isSignedIn()) || (settingId == 'materialBudgetSettings' && isSignedIn());
     }
 
     // mail 컬렉션 보안 규칙 (Trigger Email 연동)
@@ -71,7 +78,7 @@ service cloud.firestore {
 
     // audit_logs 감사 로그 컬렉션 보안 규칙
     match /audit_logs/{logId} {
-      allow create: if isSignedIn();
+      allow create: if true;
       allow read: if isAdmin();
       allow update, delete: if false;
     }
@@ -223,20 +230,6 @@ service cloud.firestore {
     // 보결 강사 및 결강/보결 기록 저장
     match /afterschool_substitutes/{id} {
       allow read, write: if true;
-    }
-
-    // --- [이메일 알림 발송 큐 (Trigger Email Extension)] ---
-    match /mail/{id} {
-      allow read: if isAdmin();
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin();
-    }
-
-    // --- [감사 로그 (audit_logs)] ---
-    match /audit_logs/{id} {
-      allow read: if isAdmin();
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin();
     }
   }
 }

@@ -57,17 +57,17 @@ const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday
 
 const sortBuses = (buses: Bus[]): Bus[] => {
   return [...buses].sort((a, b) => {
-    const numA = parseInt(a.name.replace(/\D/g, ''), 10);
-    const numB = parseInt(b.name.replace(/\D/g, ''), 10);
+    const numA = parseInt((a.name || '').replace(/\D/g, ''), 10);
+    const numB = parseInt((b.name || '').replace(/\D/g, ''), 10);
     if (!isNaN(numA) && !isNaN(numB)) {
       return numA - numB;
     }
-    return a.name.localeCompare(b.name, 'ko');
+    return (a.name || '').localeCompare(b.name || '', 'ko');
   });
 };
 
 const sortDestinations = (destinations: Destination[]): Destination[] => {
-    return destinations.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    return destinations.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
 };
 
 import { AfterSchoolManagementTab } from './components/after-school-management-tab';

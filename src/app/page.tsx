@@ -18,7 +18,7 @@ function RootRedirect() {
         if (redirectTarget && redirectTarget.startsWith('/')) {
           router.replace(redirectTarget);
         } else if (isParent) {
-          router.replace('/parents/apply');
+          router.replace('/parents');
         } else {
           router.replace('/inbox');
         }

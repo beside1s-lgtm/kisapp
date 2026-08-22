@@ -5,6 +5,7 @@ import {
   getDocs,
   setDoc,
   writeBatch,
+  onSnapshot,
   deleteDoc as firestoreDeleteDoc,
 } from 'firebase/firestore';
 import { getDb } from '@/lib/firebase';
@@ -39,6 +40,7 @@ export async function getUserProfileByEmail(email: string, throwOnError: boolean
       studentClass: data?.studentClass ?? null,
       studentNumber: data?.studentNumber ?? null,
       linkedStudents: data?.linkedStudents || [],
+      lastAckAcademicCalVersion: data?.lastAckAcademicCalVersion ?? null,
     };
   } catch (error) {
     console.error(`[UserService] getUserProfileByEmail error:`, error);
@@ -46,6 +48,16 @@ export async function getUserProfileByEmail(email: string, throwOnError: boolean
       throw error;
     }
     return null;
+  }
+}
+
+export async function updateUserCalendarAck(email: string, version: number) {
+  if (!email || !version) return;
+  try {
+    const userProfileRef = doc(getUsersCol(), email.toLowerCase());
+    await setDoc(userProfileRef, { lastAckAcademicCalVersion: version }, { merge: true });
+  } catch (error) {
+    console.warn('[UserService] updateUserCalendarAck error:', error);
   }
 }
 
@@ -122,6 +134,33 @@ export async function getUsersDirectory(): Promise<UserProfile[]> {
   }
 }
 
+export function onUsersDirectoryUpdate(callback: (users: UserProfile[]) => void) {
+  return onSnapshot(getUsersCol(), (snapshot) => {
+    const list = snapshot.docs.map((d: any) => {
+      const data = d.data();
+      return {
+        email: d.id,
+        uid: data.uid,
+        name: data.name,
+        role: data.role,
+        signature: data.signature,
+        isAdmin: data.isAdmin,
+        parentPhone: data.parentPhone,
+        parentSignature: data.parentSignature,
+        hashedPin: data.hashedPin,
+        parentName: data.parentName ?? null,
+        studentName: data.studentName ?? null,
+        studentGrade: data.studentGrade ?? null,
+        studentClass: data.studentClass ?? null,
+        studentNumber: data.studentNumber ?? null,
+        annualLeaveLimit: data.annualLeaveLimit ?? null,
+        dept: data.dept ?? null,
+      } as UserProfile;
+    });
+    callback(list);
+  }, (err) => console.error("onUsersDirectoryUpdate error:", err));
+}
+
 export async function bulkRegisterUsers(fileData: string) {
   try {
     const base64Data = fileData.split(',')[1];
@@ -183,18 +222,33 @@ export async function resetParentAuth(email: string) {
   }
 }
 
-export async function getApproversByGradeClass(grade: string, studentClass: string, isFieldTrip: boolean = false): Promise<Approver[]> {
-  const org = await getOrgStructure();
+export async function getApproversByGradeClass(
+  grade: string, 
+  studentClass: string, 
+  docTypeOrIsFieldTrip: boolean | string = false
+): Promise<Approver[]> {
+  const [org, delegationRules] = await Promise.all([
+    getOrgStructure(),
+    getDelegationRules()
+  ]);
   const approvers: Approver[] = [];
   
-  const gradeClassKey = `${grade}-${studentClass}`;
+  const g = String(parseInt(grade, 10) || grade).trim();
+  const c = String(parseInt(studentClass, 10) || studentClass).trim();
+  const gradeClassKey = `${g}-${c}`;
   
-  // 1차 결재: 담임 선생님
-  const homeroomEmail = org.homerooms?.[gradeClassKey];
+  // 1차 결재: 담임 선생님 (정규화된 키 및 원본 키 모두 매칭)
+  const homeroomEmail = org.homerooms?.[gradeClassKey] || 
+                        org.homerooms?.[`${grade}-${studentClass}`] ||
+                        Object.entries(org.homerooms || {}).find(([k]) => {
+                          const [kg, kc] = k.split('-').map(s => String(parseInt(s, 10) || s).trim());
+                          return kg === g && kc === c;
+                        })?.[1];
+
   if (!homeroomEmail) {
     throw new Error(`선택하신 학년/반(${grade}학년 ${studentClass}반)의 담당 교사가 아직 배정되지 않았습니다. 학교 관리자에게 문의해 주세요.`);
   }
-  const homeroomUser = await getUserProfileByEmail(homeroomEmail);
+  const homeroomUser = await getUserProfileByEmail(homeroomEmail.trim().toLowerCase());
   if (!homeroomUser) {
     throw new Error(`배정된 담임 교사(${homeroomEmail})의 계정을 찾을 수 없습니다. 학교 관리자에게 문의해 주세요.`);
   }
@@ -206,24 +260,137 @@ export async function getApproversByGradeClass(grade: string, studentClass: stri
     type: 'normal',
     status: 'pending',
   });
-  
-  // 2차 결재: 부장 선생님 (전결)
-  const headEmail = org.gradeHeads?.[grade];
-  if (!headEmail) {
-    throw new Error(`${grade}학년 부장 교사가 아직 배정되지 않았습니다. 학교 관리자에게 문의해 주세요.`);
-  }
-  const headUser = await getUserProfileByEmail(headEmail);
-  if (!headUser) {
-    throw new Error(`배정된 학년 부장 교사(${headEmail})의 계정을 찾을 수 없습니다. 학교 관리자에게 문의해 주세요.`);
+
+  // 전결규정 대상 문서명 판별 (결석계 vs 체험학습신청서)
+  let targetDocName = '결석계';
+  if (typeof docTypeOrIsFieldTrip === 'boolean') {
+    targetDocName = docTypeOrIsFieldTrip ? '체험학습신청서' : '결석계';
+  } else if (typeof docTypeOrIsFieldTrip === 'string') {
+    if (docTypeOrIsFieldTrip.includes('field-trip') || docTypeOrIsFieldTrip.includes('체험')) {
+      targetDocName = '체험학습신청서';
+    } else {
+      targetDocName = '결석계';
+    }
   }
 
-  approvers.push({
-    name: headUser.name,
-    email: headUser.email,
-    role: '부장',
-    type: 'final',
-    status: 'pending',
-  });
-  
+  // 매칭되는 전결규정 탐색
+  const matchedRule = delegationRules.find(r => 
+    r.subType?.trim() === targetDocName || 
+    r.mainType?.trim() === targetDocName ||
+    r.detailType?.trim() === targetDocName
+  );
+
+  const intermediate = matchedRule?.intermediateApprover || (targetDocName === '체험학습신청서' ? 'GRADE_HEAD' : 'NONE');
+  const finalApproverType = matchedRule?.finalApprover || (targetDocName === '체험학습신청서' ? 'VP' : 'GRADE_HEAD');
+
+  // 교무부장 탐색 헬퍼
+  const getAcademicHeadEmail = () => {
+    const academicDept = org.departments?.find(d => 
+      d.name?.includes('교무') || d.name?.includes('기획') || d.name?.includes('학적')
+    );
+    return academicDept?.headEmail || null;
+  };
+
+  const gradeHeadEmail = org.gradeHeads?.[g] || org.gradeHeads?.[grade];
+
+  // 중간 결재자 추가 (최종 결재자와 다를 경우)
+  if (intermediate === 'GRADE_HEAD' && finalApproverType !== 'GRADE_HEAD') {
+    if (gradeHeadEmail) {
+      const headUser = await getUserProfileByEmail(gradeHeadEmail.trim().toLowerCase());
+      if (headUser) {
+        approvers.push({
+          name: headUser.name,
+          email: headUser.email,
+          role: '학년부장',
+          type: 'normal',
+          status: 'pending',
+        });
+      }
+    }
+  } else if (intermediate === 'ACADEMIC_HEAD' && finalApproverType !== 'ACADEMIC_HEAD') {
+    const academicEmail = getAcademicHeadEmail();
+    if (academicEmail) {
+      const acadUser = await getUserProfileByEmail(academicEmail.trim().toLowerCase());
+      if (acadUser) {
+        approvers.push({
+          name: acadUser.name,
+          email: acadUser.email,
+          role: '교무부장',
+          type: 'normal',
+          status: 'pending',
+        });
+      }
+    }
+  }
+
+  // 최종 결재자 추가
+  if (finalApproverType === 'GRADE_HEAD') {
+    if (!gradeHeadEmail) {
+      throw new Error(`${grade}학년 부장 교사가 아직 배정되지 않았습니다. 학교 관리자에게 문의해 주세요.`);
+    }
+    const headUser = await getUserProfileByEmail(gradeHeadEmail.trim().toLowerCase());
+    if (!headUser) {
+      throw new Error(`배정된 학년 부장 교사(${gradeHeadEmail})의 계정을 찾을 수 없습니다. 학교 관리자에게 문의해 주세요.`);
+    }
+    approvers.push({
+      name: headUser.name,
+      email: headUser.email,
+      role: '부장',
+      type: 'final',
+      status: 'pending',
+    });
+  } else if (finalApproverType === 'ACADEMIC_HEAD') {
+    const academicEmail = getAcademicHeadEmail();
+    if (!academicEmail) {
+      throw new Error(`교무부장 교사가 아직 배정되지 않았습니다. 시스템 설정의 조직도에서 교무부 부장을 지정해 주세요.`);
+    }
+    const acadUser = await getUserProfileByEmail(academicEmail.trim().toLowerCase());
+    if (!acadUser) {
+      throw new Error(`교무부장 교사(${academicEmail})의 계정을 찾을 수 없습니다. 학교 관리자에게 문의해 주세요.`);
+    }
+    approvers.push({
+      name: acadUser.name,
+      email: acadUser.email,
+      role: '교무부장',
+      type: 'final',
+      status: 'pending',
+    });
+  } else if (finalApproverType === 'VP') {
+    if (!org.vicePrincipal) {
+      throw new Error(`교감 선생님이 배정되지 않았습니다. 시스템 설정의 조직도에서 교감을 지정해 주세요.`);
+    }
+    const vpUser = await getUserProfileByEmail(org.vicePrincipal.trim().toLowerCase());
+    approvers.push({
+      name: vpUser?.name || '교감',
+      email: vpUser?.email || org.vicePrincipal,
+      role: '교감',
+      type: 'final',
+      status: 'pending',
+    });
+  } else if (finalApproverType === 'PRINCIPAL') {
+    const hasVp = approvers.some(a => a.role === '교감');
+    if (!hasVp && org.vicePrincipal) {
+      const vpUser = await getUserProfileByEmail(org.vicePrincipal.trim().toLowerCase());
+      approvers.push({
+        name: vpUser?.name || '교감',
+        email: vpUser?.email || org.vicePrincipal,
+        role: '교감',
+        type: 'normal',
+        status: 'pending',
+      });
+    }
+    if (!org.principal) {
+      throw new Error(`교장 선생님이 배정되지 않았습니다. 시스템 설정의 조직도에서 교장을 지정해 주세요.`);
+    }
+    const pUser = await getUserProfileByEmail(org.principal.trim().toLowerCase());
+    approvers.push({
+      name: pUser?.name || '교장',
+      email: pUser?.email || org.principal,
+      role: '교장',
+      type: 'final',
+      status: 'pending',
+    });
+  }
+
   return approvers;
 }

@@ -2,17 +2,18 @@
 
 import { generateContentAction } from '@/app/ai-actions';
 import { useAuth } from '@/hooks/use-auth';
-import { ApprovalDoc, ApprovalDocPayload, Approver, DocConfig, UserProfile } from '@/lib/types';
+import { ApprovalDoc, ApprovalDocPayload, Approver, DocConfig, UserProfile, DelegationRule } from '@/lib/types';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
-import { File as FileIcon, Loader2, Plus, Sparkles, User as UserIcon, X, Paperclip, Trash2, Settings2, FolderOpen, Lock } from 'lucide-react';
-import { getTeacherApplySettings, defaultTeacherApplySettings, getOrgStructure } from '@/lib/services/settingsService';
+import { File as FileIcon, Loader2, Plus, Sparkles, User as UserIcon, X, Paperclip, Trash2, Settings2, FolderOpen, Lock, FileText, CheckCircle2 } from 'lucide-react';
+import { getTeacherApplySettings, defaultTeacherApplySettings, getOrgStructure, getDelegationRules } from '@/lib/services/settingsService';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
+import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -286,6 +287,10 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
   const [selectedSemester, setSelectedSemester] = useState<string>('1학기');
   const [selectedTermType, setSelectedTermType] = useState<string>('학기중');
 
+  // 전결규정 연동 상태
+  const [delegationRules, setDelegationRules] = useState<DelegationRule[]>([]);
+  const [selectedDelegationId, setSelectedDelegationId] = useState<string>('');
+
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -294,6 +299,70 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
       circulars: [], attachments: [], publishStatus: '공개', docType: 'internal',
     },
   });
+
+  const handleApplyDelegationRule = (rule: DelegationRule) => {
+    const currentApprovers = form.getValues('approvers') || [];
+    const isVpFinal = rule.finalApprover === 'VP' || rule.finalApprover === 'GRADE_HEAD' || rule.finalApprover === 'ACADEMIC_HEAD' || rule.finalApprover === 'DEPT_HEAD';
+    
+    const updated = currentApprovers.map((ap: any) => {
+      if (ap.role === '교장') {
+        return { ...ap, active: !isVpFinal, type: 'final' };
+      }
+      if (ap.role === '교감') {
+        return { ...ap, active: true, type: isVpFinal ? 'final' : 'normal' };
+      }
+      if (ap.role === '부장') {
+        return { ...ap, active: true, type: 'normal' };
+      }
+      return ap;
+    });
+
+    form.setValue('approvers', updated, { shouldDirty: true, shouldValidate: true });
+    replaceApprovers(updated);
+    setSelectedDelegationId(rule.id);
+    toast({ 
+      title: "전결규정 적용 완료", 
+      description: `[${rule.subType || rule.mainType}] 전결규정(${rule.finalApprover === 'VP' ? '교감 전결' : '교장 결재'})에 따라 결재선이 설정되었습니다.` 
+    });
+  };
+
+  const handleQuickTemplate = (type: 'annual' | 'detail' | 'general') => {
+    let targetRuleName = '연간계획공문';
+    let defaultTitlePrefix = '[연간계획] ';
+    if (type === 'detail') {
+      targetRuleName = '세부계획공문';
+      defaultTitlePrefix = '[세부계획] ';
+    } else if (type === 'general') {
+      targetRuleName = '기본 기안문';
+      defaultTitlePrefix = '';
+    }
+
+    const curTitle = form.getValues('title') || '';
+    const cleanTitle = curTitle.replace(/^\[(연간계획|세부계획|기안)\]\s*/, '');
+    if (defaultTitlePrefix) {
+      form.setValue('title', defaultTitlePrefix + cleanTitle, { shouldDirty: true, shouldValidate: true });
+    }
+
+    const matchedRule = delegationRules.find(r => r.subType === targetRuleName || r.mainType === targetRuleName);
+    if (matchedRule) {
+      handleApplyDelegationRule(matchedRule);
+    } else {
+      const isVp = type === 'detail';
+      const currentApprovers = form.getValues('approvers') || [];
+      const updated = currentApprovers.map((ap: any) => {
+        if (ap.role === '교장') return { ...ap, active: !isVp, type: 'final' };
+        if (ap.role === '교감') return { ...ap, active: true, type: isVp ? 'final' : 'normal' };
+        if (ap.role === '부장') return { ...ap, active: true, type: 'normal' };
+        return ap;
+      });
+      form.setValue('approvers', updated, { shouldDirty: true, shouldValidate: true });
+      replaceApprovers(updated);
+      toast({
+        title: "템플릿 결재선 적용",
+        description: type === 'detail' ? '세부계획공문 (교감 전결) 결재선이 설정되었습니다.' : '연간계획공문 (교장 결재) 결재선이 설정되었습니다.'
+      });
+    }
+  };
 
   useEffect(() => {
     const fetchBasics = async () => {
@@ -306,6 +375,9 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
             if (configSnap.exists()) {
                 setDocConfig(configSnap.data() as DocConfig);
             }
+
+            // 위임전결규정 불러오기
+            getDelegationRules().then(rules => setDelegationRules(rules || []));
 
             // 관련 공문 매핑용 기안 목록 조회 (안전한 쿼리 처리)
             try {
@@ -1132,6 +1204,43 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
           </Card>
         )}
         
+        {/* 전결규정 빠른 템플릿 선택 바 */}
+        <div className="flex flex-wrap items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+          <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 shrink-0">
+            <FileText className="w-3.5 h-3.5 text-indigo-600" />
+            전결규정 템플릿:
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleQuickTemplate('general')}
+              className="h-7 text-xs px-2.5 bg-white hover:bg-slate-100"
+            >
+              기본 기안문 (교장 결재)
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleQuickTemplate('annual')}
+              className="h-7 text-xs px-2.5 bg-white hover:bg-slate-100 border-indigo-200 text-indigo-900"
+            >
+              연간계획공문 (교장 결재)
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleQuickTemplate('detail')}
+              className="h-7 text-xs px-2.5 bg-white hover:bg-slate-100 border-emerald-200 text-emerald-900 font-semibold"
+            >
+              세부계획공문 (교감 전결)
+            </Button>
+          </div>
+        </div>
+
         <FormField
           control={form.control}
           name="title"
@@ -1153,6 +1262,30 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
               <CardTitle>결재선 지정</CardTitle>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {/* 위임전결규정 선택 셀렉트 */}
+              {delegationRules.length > 0 && (
+                <div className="w-[180px]">
+                  <Select 
+                    value={selectedDelegationId} 
+                    onValueChange={(id) => {
+                      const r = delegationRules.find(x => x.id === id);
+                      if (r) handleApplyDelegationRule(r);
+                    }}
+                  >
+                    <SelectTrigger className="h-9 bg-background text-xs">
+                      <SelectValue placeholder="전결규정 선택..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {delegationRules.map(rule => (
+                        <SelectItem key={rule.id} value={rule.id} className="text-xs">
+                          {rule.subType || rule.mainType} ({rule.finalApprover === 'VP' ? '교감전결' : rule.finalApprover === 'PRINCIPAL' ? '교장결재' : rule.finalApprover === 'GRADE_HEAD' ? '부장전결' : '전결'})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               {/* 프리셋 선택 셀렉트 */}
               <div className="w-[200px]">
                 <Select value={selectedPresetId} onValueChange={handleApplyPreset}>

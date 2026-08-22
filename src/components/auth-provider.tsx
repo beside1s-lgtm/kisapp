@@ -299,7 +299,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
               } catch (e) {}
 
-              if (isTeacher && !isAlreadyVerified) {
+              const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+              const isExemptMfaRoute = currentPath.startsWith('/teacher/bus') || currentPath.startsWith('/parents');
+
+              if (isTeacher && !isAlreadyVerified && !isExemptMfaRoute) {
                 setPendingMfaUser(firebaseUser);
                 setPendingMfaProfile(fetchedProfile);
                 setUser(null);
@@ -408,9 +411,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: 'parent_test@kshcm.net',
         role: '학부모',
         name: '김부모',
+        parentName: '김부모',
+        studentName: '김학생',
+        studentGrade: '4',
+        studentClass: '4',
+        studentNumber: '2',
+        parentPhone: '010-1234-5678',
+        parentPinHash: '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4',
+        hashedPin: '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4',
         uid: 'dev_bypass_parent_uid',
         isAdmin: false,
         signature: dummySignature,
+        parentSignature: dummySignature,
         ...(existingProfile || {})
       };
       setUser(dummyUser);
@@ -488,11 +500,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+  const isExemptMfaRoute = currentPath.startsWith('/teacher/bus') || currentPath.startsWith('/parents');
+
   return (
     <AuthContext.Provider value={value}>
       {children}
 
-      <Dialog open={!!pendingMfaUser} onOpenChange={(open) => { if (!open) handleCancelMfa(); }}>
+      <Dialog open={!!pendingMfaUser && !isExemptMfaRoute} onOpenChange={(open) => { if (!open) handleCancelMfa(); }}>
         <DialogContent className="max-w-md p-6 rounded-2xl border-amber-200 bg-white">
           <DialogHeader className="text-center space-y-3">
             <div className="mx-auto bg-amber-100 text-amber-800 p-3 rounded-full w-fit">

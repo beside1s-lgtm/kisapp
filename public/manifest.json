@@ -1,54 +1,69 @@
 {
-  "name": "KIS 학교 포털 (호치민시한국국제학교)",
-  "short_name": "KIS 포털",
-  "description": "호치민시한국국제학교 통합 포털 (전자결재, 방과후학교, 스쿨버스, 교원복무)",
-  "start_url": "/",
-  "id": "/",
+  "name": "KIS 통합 포털 (호치민시한국국제학교)",
+  "short_name": "KIS 통합 포털",
+  "description": "호치민시한국국제학교 통합 포털 (전자결재, 학사일정, 방과후학교, 스쿨버스, 교원복무)",
+  "start_url": "/?source=pwa",
+  "id": "/?source=pwa_v2",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "background_color": "#ffffff",
   "theme_color": "#4f46e5",
   "orientation": "any",
   "categories": ["education", "productivity"],
   "icons": [
     {
-      "src": "/icons/icon-192x192.png",
+      "src": "/icons/icon-192x192.png?v=2",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-512x512.png",
+      "src": "/icons/icon-512x512.png?v=2",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-maskable-512x512.png",
+      "src": "/icons/icon-maskable-512x512.png?v=2",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/icons/icon.svg",
+      "src": "/icons/apple-touch-icon.png?v=2",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon.svg?v=2",
       "sizes": "512x512",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ],
   "shortcuts": [
+    {
+      "name": "전자 결재 대시보드",
+      "short_name": "결재 대시보드",
+      "description": "전자결재 대기 및 수신함",
+      "url": "/inbox",
+      "icons": [{ "src": "/icons/icon-192x192.png?v=2", "sizes": "192x192" }]
+    },
     {
       "name": "버스 탑승 확인 (교사용)",
       "short_name": "스쿨버스",
       "description": "스쿨버스 탑승 및 노선 관리",
       "url": "/teacher/bus",
-      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/icons/icon-192x192.png?v=2", "sizes": "192x192" }]
     },
     {
-      "name": "전자 결재",
-      "short_name": "결재함",
-      "description": "전자결재 대기 및 수신함",
-      "url": "/inbox",
-      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+      "name": "방과후학교 콘솔",
+      "short_name": "방과후학교",
+      "description": "방과후학교 강좌 및 출결 관리",
+      "url": "/teacher/afterschool",
+      "icons": [{ "src": "/icons/icon-192x192.png?v=2", "sizes": "192x192" }]
     }
   ]
 }

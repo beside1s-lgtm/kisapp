@@ -1,56 +1,120 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
+    <!-- Background Gradient -->
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4f46e5" />
-      <stop offset="50%" stop-color="#4338ca" />
-      <stop offset="100%" stop-color="#312e81" />
+      <stop offset="0%" stop-color="#1e1b4b" />
+      <stop offset="40%" stop-color="#312e81" />
+      <stop offset="80%" stop-color="#4338ca" />
+      <stop offset="100%" stop-color="#4f46e5" />
     </linearGradient>
-    <linearGradient id="busGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#fbbf24" />
-      <stop offset="100%" stop-color="#f59e0b" />
+
+    <!-- Accent Gold Gradient -->
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="50%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#d97706" />
     </linearGradient>
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.3" />
+
+    <!-- Shield / Portal Inner Gradient -->
+    <linearGradient id="portalGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.04" />
+    </linearGradient>
+
+    <!-- Drop Shadows -->
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000000" flood-opacity="0.45" />
     </filter>
   </defs>
-  
-  <!-- Background Rounded Rect -->
+
+  <!-- Base Rounded Rectangle Icon Canvas (Standard 112px radius for 512x512) -->
   <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
-  
-  <!-- School Bus Body -->
-  <g filter="url(#shadow)" transform="translate(64, 88)">
-    <!-- Main Chassis -->
-    <rect x="24" y="32" width="336" height="230" rx="36" fill="url(#busGrad)" />
-    
-    <!-- Top Sign Board (KIS SCHOOL BUS) -->
-    <rect x="100" y="48" width="184" height="32" rx="8" fill="#1e1b4b" />
-    <text x="192" y="70" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="900" font-size="16" fill="#fbbf24" text-anchor="middle" letter-spacing="2">KIS BUS</text>
-    
-    <!-- Windshield -->
-    <rect x="52" y="92" width="280" height="96" rx="16" fill="#e0f2fe" stroke="#1e1b4b" stroke-width="6" />
-    <!-- Center divider -->
-    <line x1="192" y1="92" x2="192" y2="188" stroke="#1e1b4b" stroke-width="6" />
-    
-    <!-- Headlights -->
-    <circle cx="72" cy="224" r="20" fill="#ffffff" stroke="#d97706" stroke-width="6" />
-    <circle cx="72" cy="224" r="12" fill="#fef08a" />
-    
-    <circle cx="312" cy="224" r="20" fill="#ffffff" stroke="#d97706" stroke-width="6" />
-    <circle cx="312" cy="224" r="12" fill="#fef08a" />
-    
-    <!-- Front Grill -->
-    <rect x="128" y="206" width="128" height="38" rx="8" fill="#1e1b4b" />
-    <line x1="144" y1="218" x2="240" y2="218" stroke="#fbbf24" stroke-width="4" stroke-linecap="round" />
-    <line x1="144" y1="230" x2="240" y2="230" stroke="#fbbf24" stroke-width="4" stroke-linecap="round" />
-    
-    <!-- Bumper -->
-    <rect x="16" y="254" width="352" height="32" rx="12" fill="#334155" />
-    
-    <!-- Left & Right Wheels -->
-    <rect x="44" y="278" width="56" height="36" rx="10" fill="#0f172a" />
-    <rect x="284" y="278" width="56" height="36" rx="10" fill="#0f172a" />
+
+  <!-- Ambient Decorative Rings / Glow -->
+  <circle cx="256" cy="205" r="175" fill="none" stroke="url(#goldGrad)" stroke-width="1.5" opacity="0.3" stroke-dasharray="8 6" />
+  <circle cx="256" cy="205" r="145" fill="none" stroke="#ffffff" stroke-width="1" opacity="0.2" />
+
+  <!-- Central Shield / Portal Emblem -->
+  <g filter="url(#shadow)">
+    <!-- Outer Shield Frame -->
+    <path d="M 256 65 
+             C 340 65, 388 95, 388 175 
+             C 388 275, 256 340, 256 340 
+             C 256 340, 124 275, 124 175 
+             C 124 95, 172 65, 256 65 Z" 
+          fill="url(#portalGrad)" 
+          stroke="url(#goldGrad)" 
+          stroke-width="7" 
+          stroke-linejoin="round" />
+
+    <!-- Inner Golden Crest Accent -->
+    <path d="M 256 88 
+             C 322 88, 360 112, 360 176 
+             C 360 256, 256 312, 256 312 
+             C 256 312, 152 256, 152 176 
+             C 152 112, 190 88, 256 88 Z" 
+          fill="#1e1b4b" 
+          fill-opacity="0.7" 
+          stroke="#818cf8" 
+          stroke-width="2" 
+          stroke-opacity="0.4" />
+
+    <!-- Graduation Cap / Scholar Motif -->
+    <!-- Cap Diamond Top -->
+    <polygon points="256,114 334,146 256,178 178,146" fill="url(#goldGrad)" stroke="#ffffff" stroke-width="2" />
+    <!-- Cap Base Arc -->
+    <path d="M 204 157 L 204 180 C 204 198, 308 198, 308 180 L 308 157 Z" fill="#ffffff" fill-opacity="0.95" />
+    <!-- Tassel -->
+    <path d="M 326 150 Q 346 172 344 206" fill="none" stroke="#fef08a" stroke-width="4" stroke-linecap="round" />
+    <circle cx="344" cy="210" r="5" fill="#f59e0b" />
+
+    <!-- Open Book / Portal Pages Motif -->
+    <path d="M 256 236 
+             C 285 218, 328 220, 350 228 
+             L 350 280 
+             C 328 272, 285 270, 256 286 
+             C 227 270, 184 272, 162 280 
+             L 162 228 
+             C 184 220, 227 218, 256 236 Z" 
+          fill="#ffffff" 
+          stroke="#4f46e5" 
+          stroke-width="3" />
+    <line x1="256" y1="236" x2="256" y2="286" stroke="#4f46e5" stroke-width="3" />
+    <!-- Book Lines -->
+    <line x1="180" y1="242" x2="238" y2="250" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="180" y1="256" x2="238" y2="264" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="274" y1="250" x2="332" y2="242" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="274" y1="264" x2="332" y2="256" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" />
   </g>
+
+  <!-- Star Sparkles -->
+  <polygon points="256,48 260,58 270,62 260,66 256,76 252,66 242,62 252,58" fill="url(#goldGrad)" />
+  <polygon points="120,115 123,122 130,125 123,128 120,135 117,128 110,125 117,122" fill="url(#goldGrad)" opacity="0.8" />
+  <polygon points="392,115 395,122 402,125 395,128 392,135 389,128 382,125 389,122" fill="url(#goldGrad)" opacity="0.8" />
+
+  <!-- Text Header & Subtitle -->
+  <!-- KIS Main Title -->
+  <text x="256" y="408" 
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans KR', sans-serif" 
+        font-weight="900" 
+        font-size="44" 
+        fill="#ffffff" 
+        text-anchor="middle" 
+        letter-spacing="4">
+    KIS
+  </text>
   
-  <!-- Text Badge -->
-  <text x="256" y="448" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="900" font-size="34" fill="#ffffff" text-anchor="middle" letter-spacing="1">KIS 스쿨버스</text>
+  <!-- 통합 포털 Badge / Subtitle -->
+  <g transform="translate(146, 428)">
+    <rect x="0" y="0" width="220" height="38" rx="19" fill="#1e1b4b" fill-opacity="0.85" stroke="url(#goldGrad)" stroke-width="2" />
+    <text x="110" y="24" 
+          font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans KR', sans-serif" 
+          font-weight="800" 
+          font-size="17" 
+          fill="#fef08a" 
+          text-anchor="middle" 
+          letter-spacing="2">
+      통합 포털
+    </text>
+  </g>
 </svg>

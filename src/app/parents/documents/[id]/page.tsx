@@ -38,7 +38,10 @@ export default function ParentDocumentDetailPage() {
         }
 
         // 권한 확인: 작성자가 본인이 맞는지
-        if (docRes.requesterEmail !== user?.email?.toLowerCase()) {
+        const isOwner = 
+          (docRes.requesterEmail && user?.email && docRes.requesterEmail.toLowerCase() === user.email.toLowerCase()) ||
+          (docRes.requesterId && user?.uid && docRes.requesterId === user.uid);
+        if (!isOwner) {
           setError('열람 권한이 없습니다.');
           return;
         }

@@ -31,14 +31,39 @@ import type { UserProfile } from '@/lib/types';
 
 // 기본 교실 목록
 const initialClassrooms: Classroom[] = [
-  { id: 'rm1', name: '1-1반 교실', capacity: 30, maxSimultaneousCourses: 1 },
-  { id: 'rm2', name: '1-2반 교실', capacity: 30, maxSimultaneousCourses: 1 },
-  { id: 'rm3', name: '2-1반 교실', capacity: 30, maxSimultaneousCourses: 1 },
-  { id: 'rm4', name: '3-1반 교실', capacity: 30, maxSimultaneousCourses: 1 },
-  { id: 'rm5', name: '음악실', capacity: 25, maxSimultaneousCourses: 1 },
-  { id: 'rm6', name: '미술실', capacity: 25, maxSimultaneousCourses: 1 },
-  { id: 'rm7', name: '체육관', capacity: 100, maxSimultaneousCourses: 2 },
-  { id: 'rm8', name: '컴퓨터실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_1_1', name: '1-1반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_1_2', name: '1-2반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_1_3', name: '1-3반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_1_4', name: '1-4반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_2_1', name: '2-1반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_2_2', name: '2-2반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_2_3', name: '2-3반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_2_4', name: '2-4반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_3_1', name: '3-1반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_3_2', name: '3-2반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_3_3', name: '3-3반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_3_4', name: '3-4반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_4_1', name: '4-1반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_4_2', name: '4-2반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_4_3', name: '4-3반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_4_4', name: '4-4반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_5_1', name: '5-1반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_5_2', name: '5-2반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_5_3', name: '5-3반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_5_4', name: '5-4반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_6_1', name: '6-1반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_6_2', name: '6-2반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_6_3', name: '6-3반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_6_4', name: '6-4반 교실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_music', name: '음악실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_art', name: '미술실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_gym', name: '체육관', capacity: 100, maxSimultaneousCourses: 2 },
+  { id: 'rm_com', name: '컴퓨터실', capacity: 35, maxSimultaneousCourses: 1 },
+  { id: 'rm_av', name: '시청각실', capacity: 80, maxSimultaneousCourses: 1 },
+  { id: 'rm_lib', name: '도서관', capacity: 50, maxSimultaneousCourses: 1 },
+  { id: 'rm_dance', name: '무용실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_sci', name: '과학실', capacity: 30, maxSimultaneousCourses: 1 },
+  { id: 'rm_eng', name: '영어전용실', capacity: 30, maxSimultaneousCourses: 1 },
 ];
 
 function AfterschoolConsole() {
@@ -140,11 +165,18 @@ function AfterschoolConsole() {
     setActiveTab('student');
   };
 
-  const myName = profile?.name || user?.displayName || '';
-  const myCourses = courses.filter(c => 
-    c.instructorName === myName || 
-    c.assistantTeachers?.includes(myName)
-  );
+  const myName = (profile?.name || user?.displayName || '').trim();
+  const myCourses = courses.filter(c => {
+    if (!myName) return true;
+    const instructors = [
+      c.instructorName,
+      c.instructor2,
+      c.instructor3,
+      c.instructor4,
+      ...(c.assistantTeachers || [])
+    ].filter(Boolean).map(s => String(s).trim());
+    return instructors.includes(myName);
+  });
 
   // 교사 본인 강좌 ID 목록
   const myCourseIds = useMemo(() => myCourses.map(c => c.id), [myCourses]);

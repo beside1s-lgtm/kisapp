@@ -6,11 +6,12 @@ import { useToast } from '@/hooks/use-toast';
 import { approveDocument, rejectDocument, recallDocument, deleteDocument } from '@/lib/services/documentService';
 import { getUserProfileByEmail } from '@/lib/services/userService';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Printer, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, Paperclip, Trash2, Lock } from 'lucide-react';
+import { CheckCircle2, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, Paperclip, Trash2, Lock, Download, FileCheck } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition, useEffect } from 'react';
 import Link from 'next/link'; 
 import { useRouter } from 'next/navigation'; 
+import { exportA4PagesToPdf } from '@/lib/pdf-export'; 
 import {
     AlertDialog,
     AlertDialogAction,
@@ -23,13 +24,11 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Textarea } from './ui/textarea';
 import { ParentFormView } from './parent-form-view';
+import { ParentNotificationModal } from './parent-notification-modal';
 import { TeacherDutyView } from './teacher-duty-view';
 import { TeacherOvertimeView } from './teacher-overtime-view';
 import { AfterschoolFormView } from './afterschool-form-view';
-import { useReactToPrint } from 'react-to-print';
-import { OfficialDocumentPrint } from './official-document-print';
 import { formatOfficialDocumentHtml } from '@/lib/documentFormatter';
 import { useRef } from 'react';
 type DocumentViewProps = {
@@ -61,6 +60,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     confirmDate: initialDoc.parentFormData?.teacherConfirmDate || format(new Date(), 'yyyy-MM-dd')
   });
 
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [approverSignatures, setApproverSignatures] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -337,8 +337,10 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const userName = profile.name?.trim();
 
   const isRequester = Boolean(
-    initialDoc.requesterId === user.uid || 
-    (normalizedProfileEmail && initialDoc.requesterEmail?.trim().toLowerCase() === normalizedProfileEmail)
+    initialDoc.requesterId === user?.uid || 
+    (normalizedUserEmail && initialDoc.requesterEmail?.trim().toLowerCase() === normalizedUserEmail) ||
+    (normalizedProfileEmail && initialDoc.requesterEmail?.trim().toLowerCase() === normalizedProfileEmail) ||
+    (initialDoc.docType === 'parent' && (profile.role === '학부모' || !profile.role || profile.isAdmin))
   );
   
   const isApprover = initialDoc.approvers?.some(ap => {
@@ -358,6 +360,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
   let hasViewPermission = false;
   if (profile.isAdmin) hasViewPermission = true;
+  else if (initialDoc.docType === 'parent') hasViewPermission = true;
   else if (initialDoc.status === 'recalled') hasViewPermission = isRequester;
   else if (initialDoc.status === 'approved') {
       if (initialDoc.publishStatus === '공개' || initialDoc.publishStatus === '부분공개') hasViewPermission = true;
@@ -466,10 +469,15 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
   const handleRecall = () => {
     startRecallTransition(async () => {
-        const result = await recallDocument(initialDoc.id, user.uid);
+        const identifier = user.email || user.uid;
+        const result = await recallDocument(initialDoc.id, identifier);
         if (result.success) { 
           toast({ title: '회수 완료' }); 
-          router.push('/recalled');
+          if (initialDoc.docType === 'parent' || profile?.role === '학부모') {
+            router.push('/parents/history');
+          } else {
+            router.push('/recalled');
+          }
           router.refresh();
         } else { 
           toast({ variant: 'destructive', title: '회수 실패', description: result.error }); 
@@ -480,10 +488,15 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const handleDelete = () => {
     if (!window.confirm("문서를 완전히 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
     startDeleteTransition(async () => {
-        const result = await deleteDocument(initialDoc.id, user.uid);
+        const identifier = profile?.email || user?.email || user?.uid || '';
+        const result = await deleteDocument(initialDoc.id, identifier, !!profile?.isAdmin);
         if (result.success) { 
           toast({ title: '삭제 완료' }); 
-          router.push('/recalled');
+          if (initialDoc.docType === 'parent' || profile?.role === '학부모') {
+            router.push('/parents/history');
+          } else {
+            router.push('/recalled');
+          }
           router.refresh();
         } else { 
           toast({ variant: 'destructive', title: '삭제 실패', description: result.error }); 
@@ -584,12 +597,44 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     });
   };
 
-  const printRef = useRef<HTMLDivElement>(null);
+  const [isPdfGenerating, setIsPdfGenerating] = useState(false);
+  const [pdfStatusText, setPdfStatusText] = useState('');
 
-  const handleReactPrint = useReactToPrint({
-    contentRef: printRef,
-    documentTitle: initialDoc.title || '공문서',
-  });
+  const handlePdfDownload = async () => {
+    try {
+      setIsPdfGenerating(true);
+      setPdfStatusText('PDF 변환 준비 중...');
+      
+      const docTypeTitle = initialDoc.title || (initialDoc.docType === 'parent' ? (initialDoc.parentFormData?.type === 'absence' ? '결석계' : '교외체험학습 신청서') : '공문서');
+      const studentName = initialDoc.parentFormData?.studentName ? `_${initialDoc.parentFormData.studentName}` : '';
+      const fileName = `${docTypeTitle}${studentName}_${format(new Date(), 'yyyyMMdd')}.pdf`;
+
+      // 1. 화면에 렌더링된 학부모 서식 A4 시트들 (.a4-print-sheet)
+      const sheets = Array.from(document.querySelectorAll<HTMLElement>('.parent-form-view-wrapper .a4-print-sheet'));
+
+      if (sheets.length > 0) {
+        await exportA4PagesToPdf(sheets, fileName, (msg) => setPdfStatusText(msg));
+        toast({ title: 'PDF 다운로드 완료', description: `${fileName} 파일이 성공적으로 다운로드되었습니다.` });
+        return;
+      }
+
+      // 2. 일반 공문서 또는 교원 결재 서식
+      const targetElement = document.getElementById('a4-document-paper') || document.querySelector<HTMLElement>('.printable-area');
+      if (targetElement) {
+        await exportA4PagesToPdf([targetElement], fileName, (msg) => setPdfStatusText(msg));
+        toast({ title: 'PDF 다운로드 완료', description: `${fileName} 파일이 성공적으로 다운로드되었습니다.` });
+        return;
+      }
+
+      toast({ variant: 'destructive', title: 'PDF 생성 불가', description: '화면에서 인쇄할 문서 요소를 찾지 못했습니다.' });
+    } catch (err: any) {
+      console.error('PDF generation error:', err);
+      toast({ variant: 'destructive', title: 'PDF 생성 오류', description: err.message || 'PDF 생성 중 문제가 발생했습니다.' });
+    } finally {
+      setIsPdfGenerating(false);
+      setPdfStatusText('');
+    }
+  };
 
 
 
@@ -632,7 +677,17 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             {(isRecalled || isRejected) && isRequester && (
                 <>
                 <Button asChild variant="default" className="shadow-sm cursor-pointer bg-primary hover:bg-primary/90 text-primary-foreground font-bold">
-                    <Link href={`/edit/${initialDoc.id}`}>
+                    <Link href={
+                      initialDoc.docType === 'parent' 
+                        ? `/parents/apply?type=${initialDoc.parentFormData?.type || 'field-trip'}&cloneId=${initialDoc.id}`
+                        : initialDoc.docType === 'teacher-duty'
+                        ? `/teacher/duty?cloneId=${initialDoc.id}`
+                        : initialDoc.docType === 'teacher-overtime'
+                        ? `/teacher/overtime?cloneId=${initialDoc.id}`
+                        : initialDoc.docType === 'teacher-afterschool'
+                        ? `/teacher/afterschool/new?cloneId=${initialDoc.id}`
+                        : `/edit/${initialDoc.id}`
+                    }>
                         <Edit className="mr-2 h-4 w-4" />
                         수정 및 재기안
                     </Link>
@@ -644,9 +699,19 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                 </>
             )}
 
-            {isApproved && (
+            {isApproved && isRequester && (
                 <Button asChild variant="default" className="shadow-sm cursor-pointer">
-                    <Link href={`/new?cloneId=${initialDoc.id}`}>
+                    <Link href={
+                      initialDoc.docType === 'parent' 
+                        ? `/parents/apply?type=${initialDoc.parentFormData?.type || 'field-trip'}&cloneId=${initialDoc.id}`
+                        : initialDoc.docType === 'teacher-duty'
+                        ? `/teacher/duty?cloneId=${initialDoc.id}`
+                        : initialDoc.docType === 'teacher-overtime'
+                        ? `/teacher/overtime?cloneId=${initialDoc.id}`
+                        : initialDoc.docType === 'teacher-afterschool'
+                        ? `/teacher/afterschool/new?cloneId=${initialDoc.id}`
+                        : `/new?cloneId=${initialDoc.id}`
+                    }>
                         <CopyPlus className="mr-2 h-4 w-4" />
                         재기안 (복사 작성)
                     </Link>
@@ -655,20 +720,45 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
             {isMyTurn && (
                 <Button asChild variant="outline" className="shadow-sm bg-white hover:bg-gray-100 cursor-pointer">
-                    <Link href={`/edit/${initialDoc.id}`}>
+                    <Link href={
+                      initialDoc.docType === 'parent' 
+                        ? `/parents/apply?type=${initialDoc.parentFormData?.type || 'field-trip'}&cloneId=${initialDoc.id}`
+                        : initialDoc.docType === 'teacher-duty'
+                        ? `/teacher/duty?cloneId=${initialDoc.id}`
+                        : initialDoc.docType === 'teacher-overtime'
+                        ? `/teacher/overtime?cloneId=${initialDoc.id}`
+                        : initialDoc.docType === 'teacher-afterschool'
+                        ? `/teacher/afterschool/new?cloneId=${initialDoc.id}`
+                        : `/edit/${initialDoc.id}`
+                    }>
                         <Edit className="mr-2 h-4 w-4" />
                         내용 수정
                     </Link>
                 </Button>
             )}
 
+            {/* 체험학습 승인 완료시 통보서 받기 버튼 */}
+            {initialDoc.docType === 'parent' && initialDoc.parentFormData?.type === 'field-trip' && initialDoc.status === 'approved' && (
+                <Button 
+                    variant="outline" 
+                    type="button" 
+                    onClick={() => setShowNotificationModal(true)}
+                    className="cursor-pointer shadow-sm bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border-indigo-200"
+                >
+                    <FileCheck className="mr-2 h-4 w-4 text-indigo-600" />
+                    통보서 받기
+                </Button>
+            )}
+
             <Button 
-                variant="outline" 
+                variant="default" 
                 type="button" 
-                onClick={() => handleReactPrint()} 
-                className="cursor-pointer shadow-sm bg-white hover:bg-gray-100 font-bold border-slate-300"
+                onClick={handlePdfDownload}
+                disabled={isPdfGenerating}
+                className="cursor-pointer shadow-sm bg-blue-600 hover:bg-blue-700 text-white font-bold"
             >
-                <Printer className="mr-2 h-4 w-4" /> 인쇄 / PDF 저장
+                {isPdfGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                {isPdfGenerating ? (pdfStatusText || 'PDF 생성 중...') : 'PDF 다운로드'}
             </Button>
         </div>
 
@@ -739,6 +829,16 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             <div className={`w-full ${containerMaxWidth} mx-auto px-4`}>
                 <AfterschoolFormView doc={initialDoc} approverSignatures={approverSignatures} />
             </div>
+        ) : initialDoc.docType === 'parent' ? (
+            <div className={`w-full ${containerMaxWidth} mx-auto px-4 print:p-0 print:w-[210mm] print:mx-auto`}>
+                <ParentFormView 
+                  doc={initialDoc} 
+                  teacherMode={isTeacherTurn} 
+                  teacherData={teacherConfirmData}
+                  onTeacherDataChange={setTeacherConfirmData}
+                  approverSignatures={approverSignatures}
+                />
+            </div>
         ) : (
         <div 
             id="a4-document-paper" 
@@ -754,103 +854,91 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             }}
             className="printable-area mx-auto shadow-2xl border border-slate-300 rounded-sm print:shadow-none print:border-none print:m-0"
         >
-            {initialDoc.docType === 'parent' ? (
-                <ParentFormView 
-                  doc={initialDoc} 
-                  teacherMode={isTeacherTurn} 
-                  teacherData={teacherConfirmData}
-                  onTeacherDataChange={setTeacherConfirmData}
-                  approverSignatures={approverSignatures}
-                />
-            ) : (
-                <>
-                    <div className="doc-content-wrapper flex-1 flex flex-col justify-start">
-                        <header className="text-center mb-4 shrink-0">
-                            <p className="text-sm font-medium text-gray-500 mb-4 tracking-tight">{initialConfig.slogan || '글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교'}</p>
-                            {isFamily ? (
-                                    <h1 className="text-3xl md:text-5xl font-extrabold tracking-[0.3em] text-gray-900 mb-6 border-2 border-black inline-block px-8 py-2">가 정 통 신 문</h1>
-                            ) : (
-                                initialDoc.headerImage ? <img src={initialDoc.headerImage} alt="Header" className="h-16 md:h-20 mx-auto mb-2 object-contain" /> : <h1 className="text-3xl font-extrabold mb-2">호치민시한국국제학교</h1>
-                            )}
-                        </header>
+            <div className="doc-content-wrapper flex-1 flex flex-col justify-start">
+                <header className="text-center mb-4 shrink-0">
+                    <p className="text-sm font-medium text-gray-500 mb-4 tracking-tight">{initialConfig.slogan || '글로네이컬(GloNaCal) 미래 인재를 키우는 행복한 학교'}</p>
+                    {isFamily ? (
+                            <h1 className="text-3xl md:text-5xl font-extrabold tracking-[0.3em] text-gray-900 mb-6 border-2 border-black inline-block px-8 py-2">가 정 통 신 문</h1>
+                    ) : (
+                        initialDoc.headerImage ? <img src={initialDoc.headerImage} alt="Header" className="h-16 md:h-20 mx-auto mb-2 object-contain" /> : <h1 className="text-3xl font-extrabold mb-2">호치민시한국국제학교</h1>
+                    )}
+                </header>
 
-                        <div className="doc-body flex-1">
-                            {!isFamily && (
-                                <div className="mb-4">
-                                    <div className="space-y-1 mb-2">
-                                        <p className="text-[12pt]"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
-                                        <p className="text-[12pt]">(경유)</p>
-                                        <div className="flex items-start text-[12pt]"><span className="font-bold shrink-0">제목</span><span className="ml-2 font-medium">{initialDoc.title}</span></div>
-                                    </div>
-                                    <div className="h-0.5 bg-black w-full" />
-                                </div>
-                            )}
-                            
-                            <div className="text-[12pt] leading-loose font-serif text-gray-800 tracking-normal" dangerouslySetInnerHTML={{ __html: formatOfficialDocumentHtml(initialDoc.content) }} />
+                <div className="doc-body flex-1">
+                    {!isFamily && (
+                        <div className="mb-4">
+                            <div className="space-y-1 mb-2">
+                                <p className="text-[12pt]"><span className="font-bold">수신</span> <span className="ml-2 font-medium">{initialDoc.docType === 'external' ? initialDoc.receiverInfo?.name : '내부결재'}</span></p>
+                                <p className="text-[12pt]">(경유)</p>
+                                <div className="flex items-start text-[12pt]"><span className="font-bold shrink-0">제목</span><span className="ml-2 font-medium">{initialDoc.title}</span></div>
+                            </div>
+                            <div className="h-0.5 bg-black w-full" />
                         </div>
-                    </div>
+                    )}
                     
-                    <footer className="doc-footer shrink-0 pt-2 mt-auto">
-                        {initialDoc.docType === 'external' && (
-                            <div className="text-center mb-6 h-[40px] flex items-center justify-center">
-                                <h2 className="text-3xl md:text-4xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>
-                            </div>
-                        )}
-                        <div className="border-t-2 border-black pt-4 pb-2">
-                            <div className="flex items-center justify-between text-sm w-full">
-                                <div className="flex items-center gap-1 md:gap-2">
-                                    <span className="font-bold">{initialDoc.requesterRole}</span>
-                                    <div className="flex items-center gap-1">
-                                        <span className="font-semibold">{initialDoc.requesterName}</span>
-                                        <div className="relative inline-flex items-center justify-center w-12 h-12">
-                                            <span className="text-sm text-gray-800 absolute font-serif">(인)</span>
-                                            {initialDoc.requesterSignature && (
-                                                <img src={initialDoc.requesterSignature} className="absolute inset-0 w-full h-full object-contain mix-blend-multiply" alt="sig" />
-                                            )}
-                                        </div>
-                                    </div>
+                    <div className="text-[12pt] leading-loose font-serif text-gray-800 tracking-normal" dangerouslySetInnerHTML={{ __html: formatOfficialDocumentHtml(initialDoc.content) }} />
+                </div>
+            </div>
+            
+            <footer className="doc-footer shrink-0 pt-2 mt-auto">
+                {initialDoc.docType === 'external' && (
+                    <div className="text-center mb-6 h-[40px] flex items-center justify-center">
+                        <h2 className="text-3xl md:text-4xl font-black tracking-[0.4em] text-gray-900 pl-2">호치민시한국국제학교장</h2>
+                    </div>
+                )}
+                <div className="border-t-2 border-black pt-4 pb-2">
+                    <div className="flex items-center justify-between text-sm w-full">
+                        <div className="flex items-center gap-1 md:gap-2">
+                            <span className="font-bold">{initialDoc.requesterRole}</span>
+                            <div className="flex items-center gap-1">
+                                <span className="font-semibold">{initialDoc.requesterName}</span>
+                                <div className="relative inline-flex items-center justify-center w-12 h-12">
+                                    <span className="text-sm text-gray-800 absolute font-serif">(인)</span>
+                                    {initialDoc.requesterSignature && (
+                                        <img src={initialDoc.requesterSignature} className="absolute inset-0 w-full h-full object-contain mix-blend-multiply" alt="sig" />
+                                    )}
                                 </div>
-                                {mainApprovers.map((ap, idx) => (
-                                    <div key={idx} className="flex items-center gap-1 md:gap-2">
-                                        <div className="flex flex-col items-start leading-tight">
-                                            <span className="font-bold">{ap.role}</span>
-                                            {ap.type !== 'normal' && <span className="text-xs text-primary font-bold">{getTypeText(ap.type)}</span>}
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <span className="font-semibold">{ap.approverName || ap.name}</span>
-                                            {ap.status === 'approved' && ap.signature && <div className="w-10 h-10 flex items-center justify-center"><img src={ap.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
-                                            {ap.status === 'rejected' && <span className="text-destructive font-bold text-xs">반려</span>}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                            {assistant && (
-                                <div className="flex items-center gap-2 text-sm pt-2 mt-2 border-t border-dashed">
-                                     <span className="font-bold">{assistant.role}</span>
-                                     <span className="font-semibold">{assistant.approverName || assistant.name}</span>
-                                     {assistant.status === 'approved' && assistant.signature && <div className="w-10 h-10 flex items-center justify-center"><img src={assistant.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
-                                </div>
-                            )}
-                        </div>
-                        {initialDoc.status === 'rejected' && (
-                            <div className="mt-4 p-3 bg-destructive/10 border border-destructive/50 rounded-lg print:hidden">
-                                <p className="text-base font-bold text-destructive">반려 사유: <span className="font-normal text-destructive-foreground">{initialDoc.approvers.find(ap => ap.status === 'rejected')?.comment}</span></p>
-                            </div>
-                        )}
-                        <div className="mt-4 text-[10pt] font-medium text-gray-700 space-y-1 border-t border-gray-200 pt-4">
-                             <div className="flex gap-6">
-                                <span><strong>시행</strong> {initialDoc.docNo} ({format(approvalDate, 'yyyy. MM. dd.')})</span>
-                                {!isFamily && <span><strong>접수</strong> ( )</span>}
-                            </div>
-                            <p><strong>우</strong> {initialConfig.address}</p>
-                            <div className="flex flex-col md:flex-row justify-between">
-                                <p><strong>전화</strong> {initialConfig.phone} / <strong>전송</strong> {initialConfig.fax} / {initialConfig.email}</p>
-                                <p>{initialConfig.homepage} / <strong>{initialDoc.publishStatus}</strong></p>
                             </div>
                         </div>
-                    </footer>
-                </>
-            )}
+                        {mainApprovers.map((ap, idx) => (
+                            <div key={idx} className="flex items-center gap-1 md:gap-2">
+                                <div className="flex flex-col items-start leading-tight">
+                                    <span className="font-bold">{ap.role}</span>
+                                    {ap.type !== 'normal' && <span className="text-xs text-primary font-bold">{getTypeText(ap.type)}</span>}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <span className="font-semibold">{ap.approverName || ap.name}</span>
+                                    {ap.status === 'approved' && ap.signature && <div className="w-10 h-10 flex items-center justify-center"><img src={ap.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
+                                    {ap.status === 'rejected' && <span className="text-destructive font-bold text-xs">반려</span>}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {assistant && (
+                        <div className="flex items-center gap-2 text-sm pt-2 mt-2 border-t border-dashed">
+                             <span className="font-bold">{assistant.role}</span>
+                             <span className="font-semibold">{assistant.approverName || assistant.name}</span>
+                             {assistant.status === 'approved' && assistant.signature && <div className="w-10 h-10 flex items-center justify-center"><img src={assistant.signature} className="max-h-full max-w-full object-contain" alt="sig" /></div>}
+                        </div>
+                    )}
+                </div>
+                {initialDoc.status === 'rejected' && (
+                    <div className="mt-4 p-3 bg-destructive/10 border border-destructive/50 rounded-lg print:hidden">
+                        <p className="text-base font-bold text-destructive">반려 사유: <span className="font-normal text-destructive-foreground">{initialDoc.approvers.find(ap => ap.status === 'rejected')?.comment}</span></p>
+                    </div>
+                )}
+                <div className="mt-4 text-[10pt] font-medium text-gray-700 space-y-1 border-t border-gray-200 pt-4">
+                     <div className="flex gap-6">
+                        <span><strong>시행</strong> {initialDoc.docNo} ({format(approvalDate, 'yyyy. MM. dd.')})</span>
+                        {!isFamily && <span><strong>접수</strong> ( )</span>}
+                    </div>
+                    <p><strong>우</strong> {initialConfig.address}</p>
+                    <div className="flex flex-col md:flex-row justify-between">
+                        <p><strong>전화</strong> {initialConfig.phone} / <strong>전송</strong> {initialConfig.fax} / {initialConfig.email}</p>
+                        <p>{initialConfig.homepage} / <strong>{initialDoc.publishStatus}</strong></p>
+                    </div>
+                </div>
+            </footer>
         </div>
         )}
         
@@ -873,15 +961,11 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
              </div>
         )}
 
-        {/* react-to-print 전용 격리 렌더링 영역 */}
-        <div className="hidden">
-            <OfficialDocumentPrint 
-                ref={printRef} 
-                doc={initialDoc} 
-                config={initialConfig} 
-                approverSignatures={approverSignatures} 
-            />
-        </div>
+        <ParentNotificationModal
+            doc={initialDoc}
+            open={showNotificationModal}
+            onOpenChange={setShowNotificationModal}
+        />
     </div>
   );
 }

@@ -2,20 +2,44 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/use-auth';
-import { getMyParentDocuments } from '@/lib/services/documentService';
+import { getMyParentDocuments, deleteDocument } from '@/lib/services/documentService';
 import { ApprovalDoc } from '@/lib/types';
 import { format } from 'date-fns';
-import { History, FileText, ChevronRight, Loader2, Edit3, ArrowLeft, Home } from 'lucide-react';
+import { History, FileText, ChevronRight, Loader2, Edit3, ArrowLeft, Home, FileCheck, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
+import { ParentNotificationModal } from '@/components/parent-notification-modal';
 
 export default function ParentHistoryPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const { toast } = useToast();
   const router = useRouter();
   const [documents, setDocuments] = useState<ApprovalDoc[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+  const [selectedDocForNotification, setSelectedDocForNotification] = useState<ApprovalDoc | null>(null);
+
+  const handleDeleteDoc = async (docId: string) => {
+    if (!window.confirm("이 문서를 완전히 삭제하시겠습니까? 삭제된 문서는 복구할 수 없습니다.")) return;
+    setDeletingDocId(docId);
+    try {
+      const identifier = profile?.email || user?.email || user?.uid || '';
+      const res = await deleteDocument(docId, identifier, !!profile?.isAdmin);
+      if (res.success) {
+        toast({ title: '문서가 삭제되었습니다.' });
+        setDocuments(prev => prev.filter(d => d.id !== docId));
+      } else {
+        toast({ variant: 'destructive', title: '삭제 실패', description: res.error });
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: '삭제 오류', description: err.message });
+    } finally {
+      setDeletingDocId(null);
+    }
+  };
 
   useEffect(() => {
     if (user?.email) {
@@ -97,11 +121,47 @@ export default function ParentHistoryPage() {
                         {doc.createdAt ? format(new Date(doc.createdAt), 'yyyy.MM.dd') : ''}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {doc.status === 'pending' && <Badge variant="outline" className="bg-blue-50 text-blue-600 border-blue-200">결재 대기 중</Badge>}
-                      {doc.status === 'approved' && <Badge variant="outline" className="bg-green-50 text-green-600 border-green-200">승인 완료</Badge>}
+                      {doc.status === 'approved' && <Badge variant="outline" className="bg-green-50 text-green-600 border-green-200 font-bold">승인 완료</Badge>}
+                      
+                      {/* 체험학습 승인 완료시 통보서 받기 버튼 노출 */}
+                      {isFieldTrip && doc.status === 'approved' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 font-bold flex items-center gap-1 shadow-sm h-6 px-2.5 text-xs cursor-pointer"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setSelectedDocForNotification(doc);
+                          }}
+                        >
+                          <FileCheck className="w-3.5 h-3.5 text-indigo-600" />
+                          통보서 받기
+                        </Button>
+                      )}
+
                       {doc.status === 'recalled' && <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200">회수됨</Badge>}
                       {doc.status === 'rejected' && <Badge variant="outline" className="bg-red-50 text-red-600 border-red-200">반려됨</Badge>}
+
+                      {/* 회수/반려된 문서는 학부모가 직접 삭제 가능 */}
+                      {(doc.status === 'recalled' || doc.status === 'rejected') && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 font-bold flex items-center gap-1 cursor-pointer"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDeleteDoc(doc.id);
+                          }}
+                          disabled={deletingDocId === doc.id}
+                        >
+                          {deletingDocId === doc.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                          삭제
+                        </Button>
+                      )}
                       
                       {needsReport && (
                         <Badge className="bg-amber-500 hover:bg-amber-600 text-white border-none font-bold text-[10px]">
@@ -148,6 +208,15 @@ export default function ParentHistoryPage() {
           })}
         </div>
       )}
+
+      {/* 통보서 미리보기 및 PDF 다운로드 모달 */}
+      <ParentNotificationModal
+        doc={selectedDocForNotification}
+        open={!!selectedDocForNotification}
+        onOpenChange={(open) => {
+          if (!open) setSelectedDocForNotification(null);
+        }}
+      />
     </div>
   );
 }

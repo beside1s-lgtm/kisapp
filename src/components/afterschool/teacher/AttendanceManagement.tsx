@@ -1054,7 +1054,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
                   <div className="text-xs mt-1 space-y-0.5 font-sans">
                     <div>기간: {currentCourse.period || '2026/03/30-06/20'}</div>
                     <div className="flex items-center gap-1.5">
-                      강사: <span className="font-bold text-slate-900">{currentCourse.instructorName || '강사'}</span>
+                      강사: <span className="font-bold text-slate-900">{[currentCourse.instructorName, currentCourse.instructor2, currentCourse.instructor3, currentCourse.instructor4, ...(currentCourse.assistantTeachers || [])].filter(Boolean).join(' · ') || '강사'}</span>
                       <OfficialSeal
                         name={currentCourse.instructorName || '강사'}
                         signatureUrl={instructorSignature}

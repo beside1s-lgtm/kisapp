@@ -99,7 +99,7 @@ const DEFAULT_SEMESTERS: Record<string, SemesterPeriodInfo> = {
         startDate: '2026-07-20',
         endDate: '2026-08-21',
         isVacationFixedMode: true,
-        vacationFixedTeacherName: '강지욱',
+        vacationFixedTeacherName: '',
         startFromLastSemesterContinuity: false
     },
     '2026_2': {
@@ -118,7 +118,7 @@ const DEFAULT_SEMESTERS: Record<string, SemesterPeriodInfo> = {
         startDate: '2027-01-04',
         endDate: '2027-02-19',
         isVacationFixedMode: true,
-        vacationFixedTeacherName: '강지욱',
+        vacationFixedTeacherName: '',
         startFromLastSemesterContinuity: false
     }
 };
@@ -211,7 +211,7 @@ export function MorningGateDutyTab({ teachers, semesterMode = 'regular' }: Morni
                             startDate: cal.semesters?.vacationSummer?.startDate || '2026-07-18',
                             endDate: cal.semesters?.vacationSummer?.endDate || '2026-08-23',
                             isVacationFixedMode: true,
-                            vacationFixedTeacherName: '강지욱'
+                            vacationFixedTeacherName: ''
                         },
                         '2026_2': {
                             id: '2026_2',
@@ -228,7 +228,7 @@ export function MorningGateDutyTab({ teachers, semesterMode = 'regular' }: Morni
                             startDate: cal.semesters?.vacationWinter?.startDate || '2027-01-01',
                             endDate: cal.semesters?.vacationWinter?.endDate || '2027-02-28',
                             isVacationFixedMode: true,
-                            vacationFixedTeacherName: '강지욱'
+                            vacationFixedTeacherName: ''
                         }
                     };
 
@@ -385,7 +385,7 @@ export function MorningGateDutyTab({ teachers, semesterMode = 'regular' }: Morni
 
                     if (semInfo.type === 'vacation' && semInfo.isVacationFixedMode) {
                         // 방학 1인 고정 근무 처리
-                        assignedName = semInfo.vacationFixedTeacherName || '강지욱';
+                        assignedName = semInfo.vacationFixedTeacherName || '';
                     } else {
                         // 순환 연속 근무 처리 - 해당 학기의 첫 근무자를 기준점(1회차)으로 카운트
                         if (isFirstWorkingDayOfSemester) {

@@ -244,6 +244,38 @@ export async function getSentDocuments(userId: string, userEmail: string) {
   }
 }
 
+/**
+ * 내가 공람자로 지정된 결재 완료(approved) 문서 조회
+ */
+export async function getCircularDocuments(userEmail: string, userName?: string): Promise<any[]> {
+  if (!userEmail) return [];
+  const normalizedEmail = userEmail.trim().toLowerCase();
+  const trimmedName = userName?.trim();
+
+  try {
+    const q = query(
+      getApprovalsCol(),
+      and(
+        where('circularEmails', 'array-contains', normalizedEmail),
+        where('status', '==', 'approved')
+      ),
+      limit(200)
+    );
+
+    const snapshot = await getDocs(q);
+    const docs = serializeDocs(snapshot.docs, 'completedAt');
+
+    return docs.sort((a, b) => {
+      const dateA = a.completedAt ? new Date(a.completedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+      const dateB = b.completedAt ? new Date(b.completedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+      return dateB - dateA;
+    });
+  } catch (error) {
+    console.error("[DocService] getCircularDocuments Error:", error);
+    return [];
+  }
+}
+
 export async function getPendingDocuments(userId: string, userEmail: string, userName?: string) {
   if (!userId && !userEmail) return [];
   if (!auth.currentUser || userId?.startsWith('test_') || userEmail?.includes('test')) return [];
@@ -994,13 +1026,25 @@ export async function rejectDocument(docId: string, userProfile: UserProfile, re
   }
 }
 
-export async function recallDocument(docId: string, userId: string) {
+export async function recallDocument(docId: string, userIdOrEmail: string) {
   const docRef = doc(getApprovalsCol(), docId);
   try {
     const docSnap = await getDoc(docRef);
-    if (!docSnap.exists()) return { success: false, error: "문서 없음" };
+    if (!docSnap.exists()) return { success: false, error: "문서를 찾을 수 없습니다." };
     const docData = docSnap.data() as ApprovalDoc;
-    if (docData.requesterId !== userId || docData.status !== 'pending') return { success: false, error: "회수 불가" };
+
+    const target = (userIdOrEmail || '').trim().toLowerCase();
+    const reqId = (docData.requesterId || '').trim().toLowerCase();
+    const reqEmail = (docData.requesterEmail || '').trim().toLowerCase();
+
+    const isRequester = Boolean(
+      (target && reqId && reqId === target) ||
+      (target && reqEmail && reqEmail === target)
+    );
+
+    if (!isRequester || docData.status !== 'pending') {
+      return { success: false, error: "회수할 권한이 없거나 진행 중인 문서가 아닙니다." };
+    }
     await firestoreUpdateDoc(docRef, { status: 'recalled' });
 
     // 회수 감사 로그 기록
@@ -1023,33 +1067,59 @@ export async function recallDocument(docId: string, userId: string) {
   }
 }
 
-export async function deleteDocument(docId: string, userId: string) {
+export async function deleteDocument(docId: string, userIdOrEmail: string, isAdmin: boolean = false) {
   const docRef = doc(getApprovalsCol(), docId);
   try {
     const docSnap = await getDoc(docRef);
-    if (!docSnap.exists()) return { success: false, error: "문서 없음" };
+    if (!docSnap.exists()) return { success: false, error: "문서를 찾을 수 없습니다." };
     const docData = docSnap.data() as ApprovalDoc;
-    if (docData.requesterId !== userId || (docData.status !== 'recalled' && docData.status !== 'rejected')) {
-      return { success: false, error: "삭제할 권한이 없거나 삭제할 수 없는 문서 상태입니다." };
+
+    const target = (userIdOrEmail || '').trim().toLowerCase();
+    const reqId = (docData.requesterId || '').trim().toLowerCase();
+    const reqEmail = (docData.requesterEmail || '').trim().toLowerCase();
+    const isParentDoc = docData.docType === 'parent' || Boolean(docData.parentFormData);
+
+    const isRequester = Boolean(
+      (target && reqId && reqId === target) ||
+      (target && reqEmail && reqEmail === target) ||
+      isParentDoc
+    );
+
+    // 회수(recalled), 반려(rejected), 대기(pending), 임시저장(draft) 상태인 경우 기안자 또는 관리자(학부모 포함)가 삭제 가능
+    const status = (docData.status || '').toLowerCase();
+    const isAllowedStatus = status === 'recalled' || status === 'rejected' || status === 'draft' || (isParentDoc && status === 'pending');
+
+    if (!isAllowedStatus || status === 'approved') {
+      return { success: false, error: "회수 또는 반려된 문서만 삭제할 수 있습니다 (승인 완료된 문서는 삭제 불가)." };
     }
+
+    if (!isRequester && !isAdmin) {
+      return { success: false, error: "문서 삭제 권한이 없습니다 (기안자 본인 또는 관리자만 삭제 가능)." };
+    }
+
     await firestoreDeleteDoc(docRef);
 
-    // 삭제 감사 로그 기록
-    createAuditLog(
-      docId,
-      docData.docNo || '',
-      docData.title,
-      'delete',
-      {
-        uid: docData.requesterId,
-        name: docData.requesterName,
-        email: docData.requesterEmail,
-        role: docData.requesterRole,
-      }
-    );
+    // 삭제 감사 로그 기록 (비차단)
+    try {
+      createAuditLog(
+        docId,
+        docData.docNo || '',
+        docData.title,
+        'delete',
+        {
+          uid: docData.requesterId || '',
+          name: docData.requesterName || '',
+          email: docData.requesterEmail || '',
+          role: docData.requesterRole || '',
+        }
+      );
+    } catch (auditErr) {
+      console.warn("[DocService] audit log failed during delete:", auditErr);
+    }
 
     return { success: true };
   } catch (error: any) {
+    console.error("[DocService] deleteDocument error:", error);
     return { success: false, error: error.message };
   }
 }
@@ -1071,14 +1141,15 @@ export async function getParentDocuments(category: 'absence' | 'field-trip') {
 
 export async function getMyParentDocuments(email: string) {
   if (!email) return [];
-  const q = query(
-    getApprovalsCol(),
-    where('docType', '==', 'parent'),
-    where('requesterEmail', '==', email.toLowerCase())
-  );
+  const normalized = email.trim().toLowerCase();
   try {
+    const q = query(
+      getApprovalsCol(),
+      where('docType', '==', 'parent')
+    );
     const snapshot = await getDocs(q);
-    return serializeDocs(snapshot.docs, 'createdAt');
+    const allDocs = serializeDocs(snapshot.docs, 'createdAt');
+    return allDocs.filter(d => (d.requesterEmail || '').trim().toLowerCase() === normalized);
   } catch (error) {
     console.error("[DocService] getMyParentDocuments Error:", error);
     return [];
@@ -1144,18 +1215,17 @@ export async function getTeacherOvertimeHoursByMonth(userEmail: string, yearMont
 
 export async function getStudentFieldTripDays(studentName: string, gradeClassNumber: string, year: string) {
   if (!studentName || !gradeClassNumber || !year) return 0;
-  const q = query(
-    getApprovalsCol(),
-    where('docType', '==', 'parent'),
-    where('parentFormData.studentName', '==', studentName),
-    where('parentFormData.gradeClassNumber', '==', gradeClassNumber)
-  );
   try {
+    const q = query(
+      getApprovalsCol(),
+      where('docType', '==', 'parent')
+    );
     const snapshot = await getDocs(q);
     const docs = serializeDocs(snapshot.docs);
     const filtered = docs.filter(doc => {
       const formData = doc.parentFormData;
       if (!formData || formData.type !== 'field-trip') return false;
+      if (formData.studentName !== studentName || formData.gradeClassNumber !== gradeClassNumber) return false;
       const startDate = formData.tripPeriod?.startDate; // YYYY-MM-DD
       if (!startDate) return false;
       return startDate.startsWith(year) && doc.status !== 'rejected' && doc.status !== 'recalled';
@@ -1172,18 +1242,17 @@ export async function getStudentFieldTripDays(studentName: string, gradeClassNum
 
 export async function getStudentAbsenceDays(studentName: string, gradeClassNumber: string, year: string) {
   if (!studentName || !gradeClassNumber || !year) return 0;
-  const q = query(
-    getApprovalsCol(),
-    where('docType', '==', 'parent'),
-    where('parentFormData.studentName', '==', studentName),
-    where('parentFormData.gradeClassNumber', '==', gradeClassNumber)
-  );
   try {
+    const q = query(
+      getApprovalsCol(),
+      where('docType', '==', 'parent')
+    );
     const snapshot = await getDocs(q);
     const docs = serializeDocs(snapshot.docs);
     const filtered = docs.filter(doc => {
       const formData = doc.parentFormData;
       if (!formData || formData.type !== 'absence') return false;
+      if (formData.studentName !== studentName || formData.gradeClassNumber !== gradeClassNumber) return false;
       if (formData.absenceType === '출석인정') return false;
       const startDate = formData.absencePeriod?.startDate; // YYYY-MM-DD
       if (!startDate) return false;
@@ -1215,22 +1284,32 @@ export async function getMyTeacherDocuments(userEmail: string) {
   }
 }
 
-export async function getParentServiceDocuments(userEmail: string, isAdmin: boolean) {
-  if (!userEmail) return [];
+export async function getParentServiceDocuments(userEmail: string, userName?: string) {
+  if (!userEmail && !userName) return [];
   const q = query(
     getApprovalsCol(),
-    where('docType', '==', 'parent')
+    where('docType', '==', 'parent'),
+    where('status', '==', 'pending')
   );
   try {
     const snapshot = await getDocs(q);
     const docs = serializeDocs(snapshot.docs, 'createdAt');
-    if (isAdmin) return docs;
-    
-    const normalizedEmail = userEmail.toLowerCase();
+    const normalizedEmail = userEmail?.trim().toLowerCase();
+    const normalizedName = userName?.trim();
+
+    // 오직 현재 로그인 사용자의 결재 차례(currentStep)인 학부모 출결 문서만 반환
     return docs.filter(doc => {
-      const isRequester = doc.requesterEmail?.toLowerCase() === normalizedEmail;
-      const isApprover = doc.approvers?.some((a: any) => a.email?.toLowerCase() === normalizedEmail);
-      return isRequester || isApprover;
+      if (doc.status !== 'pending') return false;
+      if (doc.currentStep >= 0 && doc.currentStep < (doc.approvers?.length || 0)) {
+        const currentApprover = doc.approvers[doc.currentStep];
+        const approverEmail = currentApprover?.email?.trim().toLowerCase();
+        const approverName = currentApprover?.name?.trim();
+
+        const emailMatch = normalizedEmail && approverEmail && approverEmail === normalizedEmail;
+        const nameMatch = normalizedName && approverName && approverName === normalizedName;
+        return emailMatch || nameMatch;
+      }
+      return false;
     });
   } catch (error) {
     console.error("[DocService] getParentServiceDocuments Error:", error);

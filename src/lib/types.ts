@@ -28,6 +28,7 @@ export type UserProfile = {
   }[];
   hasUnreadInboxNotification?: boolean;
   dept?: string; // 소속 (학년/부서)
+  lastAckAcademicCalVersion?: number; // 캘린더 공유 팝업 확인 완료 버전 (계정당 1회 팝업 보장)
 };
 
 export type AbsenceType = '병결' | '미인정' | '기타' | '출석인정';
@@ -159,6 +160,7 @@ export type OrgStructure = {
   vicePrincipal: string; // email
   gradeHeads: { [grade: string]: string }; // "1" -> email
   homerooms: { [gradeClass: string]: string }; // "1-1" -> email
+  gradeSubjects?: { [grade: string]: string[] }; // "1" -> [email1, email2] (학년별 교과 담당 교사)
   departments?: Department[]; // 행정 부서
   afterschoolManager?: string; // 구버전 이메일 (호환성용)
   busManager?: string; // 구버전 이메일 (호환성용)
@@ -173,10 +175,13 @@ export type OrgStructure = {
 
 export interface DelegationRule {
   id: string;
-  mainType: string; // 복무 대분류 (예: 휴가, 41조 연수, 출장)
-  subType: string; // 중분류 (예: 연가, 공가, 병가, 관내, 관외)
-  detailType: string; // 소분류 (예: 조퇴, 지참, 육아시간 등)
-  finalApprover: 'VP' | 'PRINCIPAL'; // 최종 결재권자 (교감, 교장)
+  category?: string; // 대분류 (예: '학부모 출결', '일반 공문', '교원 복무')
+  mainType: string; // 대분류 / 업무 구분
+  subType: string; // 중분류 / 문서명 (예: '결석계', '체험학습신청서', '연간계획공문', '세부계획공문', '휴가', '출장')
+  detailType: string; // 소분류 / 상세조건 (예: '일반/질병/인정', '교외체험', '조퇴', '관내', '관외' 등)
+  intermediateApprover?: 'NONE' | 'GRADE_HEAD' | 'ACADEMIC_HEAD' | 'DEPT_HEAD'; // 중간 결재자 (없음, 학년부장, 교무부장, 담당부장)
+  finalApprover: 'GRADE_HEAD' | 'ACADEMIC_HEAD' | 'DEPT_HEAD' | 'VP' | 'PRINCIPAL'; // 최종 결재권자 (학년부장 전결, 교무부장 전결, 담당부장 전결, 교감 전결, 교장 결재)
+  description?: string; // 결재선 요약 또는 설명
 }
 
 export type StudyAbroadSchedule = {
@@ -301,3 +306,37 @@ export type ApprovalDoc = ApprovalDocPayload & {
   completedAt?: any;
   updatedAt?: any;
 };
+
+// ─── 부서 및 학년 그룹 업무 할당 및 제출 관리 타입 ───────────────────────────
+export type TargetGroupType = 'dept' | 'grade' | 'all' | 'custom';
+export type TaskType = 'file_submission' | 'acknowledgment' | 'form';
+
+export interface TaskSubmission {
+  submitterEmail: string;
+  submitterName: string;
+  submittedAt: string;
+  status: 'submitted' | 'approved' | 'rejected';
+  fileName?: string;
+  fileUrl?: string;
+  note?: string;
+}
+
+export interface DepartmentTask {
+  id: string;
+  title: string;
+  description: string;
+  creatorEmail: string;
+  creatorName: string;
+  creatorDept?: string;
+  targetType: TargetGroupType;
+  targetDept?: string;
+  targetGrade?: string;
+  targetEmails: string[];
+  targetNames?: { [email: string]: string };
+  taskType: TaskType;
+  deadline: string;
+  status: 'active' | 'completed' | 'closed';
+  submissions: { [email: string]: TaskSubmission };
+  createdAt: string;
+  updatedAt: string;
+}

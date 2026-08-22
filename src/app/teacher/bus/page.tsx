@@ -48,6 +48,7 @@ import { AfterSchoolInquiryDialog } from '@/components/bus/after-school-inquiry-
 import { MorningGateDutyDialog } from '@/components/bus/morning-gate-duty-dialog';
 import { onTeacherApplySettingsUpdate } from '@/lib/services/settingsService';
 import { useTranslation } from '@/hooks/use-translation';
+import { useAuth } from '@/hooks/use-auth';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
 import { cn, normalizeString, getStudentName } from '@/lib/kisbus/utils';
@@ -56,10 +57,10 @@ const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday
 
 const sortBuses = (buses: Bus[]): Bus[] => {
   return [...buses].sort((a, b) => {
-    const numA = parseInt(a.name.replace(/\D/g, ''), 10);
-    const numB = parseInt(b.name.replace(/\D/g, ''), 10);
+    const numA = parseInt((a.name || '').replace(/\D/g, ''), 10);
+    const numB = parseInt((b.name || '').replace(/\D/g, ''), 10);
     if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-    return a.name.localeCompare(b.name, 'ko');
+    return (a.name || '').localeCompare(b.name || '', 'ko');
   });
 };
 
@@ -999,6 +1000,7 @@ export default function TeacherPage() {
   const [qrScanSuccessStudentName, setQrScanSuccessStudentName] = useState<string | null>(null);
   const [qrScanSuccessStatus, setQrScanSuccessStatus] = useState<'boarded' | 'disembarked' | null>(null);
 
+  const { user, profile, logout } = useAuth();
   const { toast } = useToast();
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -1013,24 +1015,87 @@ export default function TeacherPage() {
 
   // Unified logged in teacher document lookup (MUST BE AT TOP LEVEL HOOKS)
   const loggedInTeacherDoc = useMemo(() => {
-    if (!currentTeacherId) return null;
-    return teachers.find(t => t.id === currentTeacherId) ||
-           afterSchoolTeachers.find(t => t.id === currentTeacherId) ||
-           saturdayTeachers.find(t => t.id === currentTeacherId) || null;
-  }, [teachers, afterSchoolTeachers, saturdayTeachers, currentTeacherId]);
+    if (currentTeacherId) {
+      const found = teachers.find(t => t.id === currentTeacherId) ||
+                    afterSchoolTeachers.find(t => t.id === currentTeacherId) ||
+                    saturdayTeachers.find(t => t.id === currentTeacherId);
+      if (found) return found;
+    }
+    if (currentTeacherName) {
+      const trimmed = currentTeacherName.trim();
+      const found = teachers.find(t => t.name && t.name.trim() === trimmed) ||
+                    afterSchoolTeachers.find(t => t.name && t.name.trim() === trimmed) ||
+                    saturdayTeachers.find(t => t.name && t.name.trim() === trimmed);
+      if (found) return found;
+    }
+    if (profile?.email) {
+      const emailLower = profile.email.toLowerCase().trim();
+      const found = teachers.find(t => t.email && t.email.toLowerCase().trim() === emailLower) ||
+                    afterSchoolTeachers.find(t => t.email && t.email.toLowerCase().trim() === emailLower) ||
+                    saturdayTeachers.find(t => t.email && t.email.toLowerCase().trim() === emailLower);
+      if (found) return found;
+    }
+    return null;
+  }, [teachers, afterSchoolTeachers, saturdayTeachers, currentTeacherId, currentTeacherName, profile]);
+
+  // 실시간 노선(routes) 데이터 기반 담당 버스 자동 조회
+  const teacherAssignedBuses = useMemo(() => {
+    const tId = loggedInTeacherDoc?.id || currentTeacherId;
+    const tName = (currentTeacherName || loggedInTeacherDoc?.name || profile?.name || '').trim();
+    if (!tId && !tName) return { commuteBusId: '', afterSchoolBusId: '', saturdayBusId: '' };
+
+    const targetRoutes = (allStaticRoutes && allStaticRoutes.length > 0 ? allStaticRoutes : allRoutes);
+
+    const isMatchingTeacher = (r: Route) => {
+      if (tId && (r.teacherIds?.includes(tId) || (r as any).teacherId === tId)) return true;
+      if (tName) {
+        if (r.teacherIds?.some(id => {
+          const matchT = teachers.find(t => t.id === id) || afterSchoolTeachers.find(t => t.id === id) || saturdayTeachers.find(t => t.id === id);
+          return matchT?.name && matchT.name.trim() === tName;
+        })) return true;
+      }
+      return false;
+    };
+
+    const commuteRoute = targetRoutes.find(r => 
+      (r.type === 'Morning' || r.type === 'Afternoon') && 
+      (r.semesterMode || 'regular') === semesterMode && 
+      isMatchingTeacher(r)
+    );
+
+    const afterSchoolRoute = targetRoutes.find(r => 
+      r.type === 'AfterSchool' && 
+      (r.semesterMode || 'regular') === semesterMode && 
+      isMatchingTeacher(r)
+    );
+
+    const saturdayRoute = targetRoutes.find(r => 
+      r.type === 'Saturday' && 
+      isMatchingTeacher(r)
+    );
+
+    const commuteBusId = commuteRoute?.busId || loggedInTeacherDoc?.assignedBusId || '';
+    const afterSchoolBusId = afterSchoolRoute?.busId || loggedInTeacherDoc?.assignedAfterSchoolBusId || '';
+    const saturdayBusId = saturdayRoute?.busId || '';
+
+    return { commuteBusId, afterSchoolBusId, saturdayBusId };
+  }, [loggedInTeacherDoc, currentTeacherId, currentTeacherName, profile?.name, allStaticRoutes, allRoutes, semesterMode, teachers, afterSchoolTeachers, saturdayTeachers]);
 
   const teacherBusInfoText = useMemo(() => {
-    if (!loggedInTeacherDoc) return lang === 'ko' ? '담당 버스: 미지정' : 'Bus: Unassigned';
-    const commuteBusName = buses.find(b => b.id === loggedInTeacherDoc.assignedBusId)?.name;
-    const afterSchoolBusName = buses.find(b => b.id === loggedInTeacherDoc.assignedAfterSchoolBusId)?.name;
+    if (!loggedInTeacherDoc && !currentTeacherName) return lang === 'ko' ? '담당 버스: 미지정' : 'Bus: Unassigned';
+    
+    const commuteBusName = buses.find(b => b.id === teacherAssignedBuses.commuteBusId)?.name;
+    const afterSchoolBusName = buses.find(b => b.id === teacherAssignedBuses.afterSchoolBusId)?.name;
+    const saturdayBusName = buses.find(b => b.id === teacherAssignedBuses.saturdayBusId)?.name;
 
     const parts: string[] = [];
     if (commuteBusName) parts.push(`${lang === 'ko' ? '등하교: ' : 'Bus: '}${commuteBusName}`);
     if (afterSchoolBusName) parts.push(`${lang === 'ko' ? '방과후: ' : 'AS: '}${afterSchoolBusName}`);
+    if (saturdayBusName) parts.push(`${lang === 'ko' ? '토요: ' : 'Sat: '}${saturdayBusName}`);
 
     if (parts.length === 0) return lang === 'ko' ? '담당 버스: 미지정' : 'Bus: Unassigned';
     return parts.join(' | ');
-  }, [loggedInTeacherDoc, buses, lang]);
+  }, [loggedInTeacherDoc, currentTeacherName, buses, teacherAssignedBuses, lang]);
 
   useEffect(() => {
     const unsubTeachers = onSnapshot(collection(db(), 'teachers'), (snap) => {
@@ -1060,11 +1125,19 @@ export default function TeacherPage() {
       }
     });
 
+    // Initial allStaticRoutes snapshot listener so routes are always available
+    const unsubRoutes = onSnapshot(collection(db(), 'routes'), (snap) => {
+      setAllStaticRoutes(snap.docs.map(d => ({ id: d.id, ...d.data() } as Route)));
+    }, (err) => {
+      console.warn("Routes snapshot listener error:", err);
+    });
+
     return () => {
       unsubTeachers();
       unsubPin();
       unsubSettings();
       unsubAfterschoolSettings();
+      unsubRoutes();
     };
   }, []);
 
@@ -1076,26 +1149,57 @@ export default function TeacherPage() {
   }, [afterschoolStageStatus, afterSchoolClasses.length]);
 
   useEffect(() => {
-    const checkSession = () => {
-      try {
-        const session = localStorage.getItem('teacherSession');
-        if (session) {
-          const { id, name, guest } = JSON.parse(session);
-          setCurrentTeacherId(id);
-          setCurrentTeacherName(name || '');
-          setIsGuest(!!guest);
-          setIsAuthenticated(true);
-        } else {
-          setIsAuthenticated(false);
-        }
-      } catch (e) {
-        console.error('Failed to load session:', e);
-      } finally {
+    // 1. Google Workspace 로그인된 교직원 계정 자동 인식
+    if (user && profile) {
+      const emailLower = (profile.email || user.email || '').toLowerCase().trim();
+      const pName = (profile.name || user.displayName || '').trim();
+
+      const matched = teachers.find(t => 
+        (emailLower && t.email && t.email.toLowerCase().trim() === emailLower) ||
+        (pName && t.name && t.name.trim() === pName)
+      ) || afterSchoolTeachers.find(t => 
+        (emailLower && t.email && t.email.toLowerCase().trim() === emailLower) ||
+        (pName && t.name && t.name.trim() === pName)
+      ) || saturdayTeachers.find(t => 
+        (emailLower && t.email && t.email.toLowerCase().trim() === emailLower) ||
+        (pName && t.name && t.name.trim() === pName)
+      );
+
+      if (matched) {
+        setCurrentTeacherId(matched.id);
+        setCurrentTeacherName(matched.name);
+        setIsAuthenticated(true);
+        setIsGuest(false);
         setLoading(false);
+        return;
+      } else if (pName) {
+        setCurrentTeacherId('user_' + user.uid);
+        setCurrentTeacherName(pName);
+        setIsAuthenticated(true);
+        setIsGuest(false);
+        setLoading(false);
+        return;
       }
-    };
-    checkSession();
-  }, []);
+    }
+
+    // 2. 비로그인 시 로컬스토리지 PIN 세션 확인
+    try {
+      const session = localStorage.getItem('teacherSession');
+      if (session) {
+        const { id, name, guest } = JSON.parse(session);
+        setCurrentTeacherId(id);
+        setCurrentTeacherName(name || '');
+        setIsGuest(!!guest);
+        setIsAuthenticated(true);
+      } else {
+        setIsAuthenticated(false);
+      }
+    } catch (e) {
+      console.error('Failed to load session:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, profile, teachers, afterSchoolTeachers, saturdayTeachers]);
 
   const subscribeToBusRoutes = useCallback((busId: string) => {
     if (!busId || busId === 'all') return;
@@ -1207,8 +1311,8 @@ export default function TeacherPage() {
     }
 
     const loggedInTeacher = currentTeacherId ? teachers.find(t => t.id === currentTeacherId) : null;
-    const assignedBusId = loggedInTeacher?.assignedBusId || '';
-    const assignedAfterSchoolBusId = loggedInTeacher?.assignedAfterSchoolBusId || '';
+    const assignedBusId = teacherAssignedBuses.commuteBusId || loggedInTeacher?.assignedBusId || '';
+    const assignedAfterSchoolBusId = teacherAssignedBuses.afterSchoolBusId || loggedInTeacher?.assignedAfterSchoolBusId || '';
     const defaultBuses = [assignedBusId, assignedAfterSchoolBusId].filter(Boolean);
 
     if (selectedBusId === 'all') {
@@ -1219,7 +1323,7 @@ export default function TeacherPage() {
         subscribeToBusRoutes(selectedBusId);
       }
     }
-  }, [isAuthenticated, currentTeacherId, teachers, selectedBusId, subscribeToBusRoutes, subscribeToAllRoutes, unsubscribeAllRoutes]);
+  }, [isAuthenticated, currentTeacherId, teachers, teacherAssignedBuses, selectedBusId, subscribeToBusRoutes, subscribeToAllRoutes, unsubscribeAllRoutes]);
 
   useEffect(() => {
     if ((semesterMode === 'vacation' || !isAfterSchoolActive) && selectedRouteType === 'AfterSchool') {
@@ -1259,14 +1363,12 @@ export default function TeacherPage() {
   const lastRouteTypeRef = useRef<RouteType | null>(null);
 
   useEffect(() => {
-    if (!isAuthenticated || !currentTeacherId || teachers.length === 0) return;
+    if (!isAuthenticated) return;
     
-    const loggedInTeacher = teachers.find(t => t.id === currentTeacherId);
-    if (!loggedInTeacher) return;
-
+    const loggedInTeacher = currentTeacherId ? teachers.find(t => t.id === currentTeacherId) : null;
     const defaultBusId = selectedRouteType === 'AfterSchool'
-      ? loggedInTeacher.assignedAfterSchoolBusId
-      : loggedInTeacher.assignedBusId;
+      ? (teacherAssignedBuses.afterSchoolBusId || loggedInTeacher?.assignedAfterSchoolBusId)
+      : (teacherAssignedBuses.commuteBusId || loggedInTeacher?.assignedBusId);
 
     const isTypeChanged = lastRouteTypeRef.current !== null && 
       ((lastRouteTypeRef.current === 'AfterSchool' && selectedRouteType !== 'AfterSchool') ||
@@ -1277,7 +1379,7 @@ export default function TeacherPage() {
     }
 
     lastRouteTypeRef.current = selectedRouteType;
-  }, [isAuthenticated, currentTeacherId, teachers, selectedRouteType, selectedBusId]);
+  }, [isAuthenticated, currentTeacherId, teachers, teacherAssignedBuses, selectedRouteType, selectedBusId]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -1792,7 +1894,7 @@ export default function TeacherPage() {
     setAuthError(false);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem('teacherSession');
     setIsAuthenticated(false);
     setAuthPin('');
@@ -1801,11 +1903,18 @@ export default function TeacherPage() {
     setCurrentTeacherId(null);
     setCurrentTeacherName('');
     setIsGuest(false);
+    if (user) {
+      try {
+        await logout();
+      } catch (e) {
+        console.error('Logout error:', e);
+      }
+    }
   };
 
   if (loading) {
     return (
-      <MainLayout headerContent={headerContent}>
+      <MainLayout title={t('page.title.teacher') || '선생님 페이지'} headerContent={headerContent}>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 flex flex-col gap-6">
             <Card>
@@ -1866,6 +1975,7 @@ export default function TeacherPage() {
         setLoginStep={setLoginStep}
         nameInput={teacherNameInput}
         setNameInput={setTeacherNameInput}
+        teachers={teachers}
       />
     );
   }
@@ -1909,187 +2019,103 @@ export default function TeacherPage() {
   );
 
   const titleActions = (
-    <div className="w-full sm:w-auto">
-      <div className="hidden sm:flex sm:flex-row sm:items-center sm:gap-2 no-print">
-        {currentTeacherName && (
-          <div className="flex flex-row items-center gap-1.5 px-3 py-1 bg-slate-100 border rounded-lg text-xs font-semibold text-slate-600 font-sans flex-shrink-0 whitespace-nowrap">
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <User className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-              <span className="whitespace-nowrap">{currentTeacherName}{lang === 'ko' ? ' 선생님' : ' Teacher'}</span>
-            </div>
-            <span className="text-[10px] text-slate-500 font-normal border-l pl-1.5 ml-0.5 whitespace-nowrap flex-shrink-0">
-              {teacherBusInfoText}
-            </span>
-          </div>
-        )}
-        <Badge 
-          variant={semesterMode === 'vacation' ? 'destructive' : 'secondary'}
-          className="text-xs font-bold px-2.5 py-1 flex-shrink-0"
-        >
-          {semesterMode === 'vacation' ? (lang === 'ko' ? '방학 중' : 'Vacation') : (lang === 'ko' ? '학기 중' : 'Regular')}
-        </Badge>
-
-        {selectedBusId !== 'all' && currentRoute && (
-          <div className="flex-shrink-0">
-            <WebCopySeatPlanDialog 
-              sourceRoute={currentRoute}
-              sourceDay={selectedDay}
-              routes={allStaticRoutes}
-              students={students}
-              t={t}
-              lang={lang}
-            />
-          </div>
-        )}
-
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 flex-shrink-0 whitespace-nowrap">
-              <GraduationCap className="mr-2 h-4 w-4 flex-shrink-0" />
-              <span>{t('teacher_page.after_school_list')}{!isAfterSchoolActive ? (lang === 'ko' ? ' (종료)' : ' (Closed)') : ''}</span>
-            </Button>
-          </DialogTrigger>
-          <AfterSchoolInquiryDialog
-            afterSchoolClasses={activeAfterSchoolClasses}
-            afterSchoolTeachers={afterSchoolTeachers}
-            students={students}
-            buses={buses}
-            routes={allRoutes}
-            destinations={destinations}
-            semesterMode={semesterMode}
-            isAfterSchoolActive={isAfterSchoolActive}
-            afterschoolStageStatus={afterschoolStageStatus}
-          />
-        </Dialog>
-
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 flex-shrink-0 whitespace-nowrap text-amber-700 border-amber-200 hover:bg-amber-50">
-              <Sun className="mr-2 h-4 w-4 flex-shrink-0 text-amber-500" />
-              <span>{lang === 'ko' ? '등교지도 근무표' : 'Gate Duty'}</span>
-            </Button>
-          </DialogTrigger>
-          <MorningGateDutyDialog
-            currentTeacherName={currentTeacherName}
-            semesterMode={semesterMode}
-            lang={lang}
-          />
-        </Dialog>
-
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 flex-shrink-0 whitespace-nowrap">
-              <Users className="mr-2 h-4 w-4 flex-shrink-0" />
-              <span>{t('teacher_page.check_assignments_button')}</span>
-            </Button>
-          </DialogTrigger>
-          <TeacherAssignmentViewDialog 
-            buses={buses} 
-            teachers={teachers} 
-            afterSchoolTeachers={afterSchoolTeachers} 
-            saturdayTeachers={saturdayTeachers}
-            selectedDay={selectedDay} 
-            selectedRouteType={selectedRouteType} 
-            semesterMode={semesterMode}
-            t={t}
-          />
-        </Dialog>
-
-        <Button variant="outline" size="sm" className="h-8 text-rose-500 border-rose-200 hover:bg-rose-50 flex-shrink-0 whitespace-nowrap" onClick={handleLogout}>
-          <LogOut className="mr-2 h-4 w-4 flex-shrink-0" />
-          <span>{lang === 'ko' ? '로그아웃' : 'Log Out'}</span>
-        </Button>
-      </div>
-
-      <div className="flex sm:hidden flex-row justify-between items-center gap-1.5 w-full no-print">
-        {selectedBusId !== 'all' && currentRoute ? (
-          <div className="flex-1">
-            <WebCopySeatPlanDialog 
-              sourceRoute={currentRoute}
-              sourceDay={selectedDay}
-              routes={allStaticRoutes}
-              students={students}
-              t={t}
-              lang={lang}
-              iconOnly={true}
-            />
-          </div>
-        ) : (
-          <Button variant="outline" size="sm" className="h-8 flex-1 opacity-30 cursor-not-allowed flex items-center justify-center p-0" disabled>
-            <Save className="h-4 w-4" />
-          </Button>
-        )}
-
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 flex-1 flex items-center justify-center p-0">
-              <GraduationCap className="h-4 w-4" />
-              <span className="sr-only">{t('teacher_page.after_school_list')}</span>
-            </Button>
-          </DialogTrigger>
-          <AfterSchoolInquiryDialog
-            afterSchoolClasses={activeAfterSchoolClasses}
-            afterSchoolTeachers={afterSchoolTeachers}
-            students={students}
-            buses={buses}
-            routes={allRoutes}
-            destinations={destinations}
-            semesterMode={semesterMode}
-            isAfterSchoolActive={isAfterSchoolActive}
-            afterschoolStageStatus={afterschoolStageStatus}
-          />
-        </Dialog>
-
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 flex-1 flex items-center justify-center p-0 text-amber-600 border-amber-200 hover:bg-amber-50">
-              <Sun className="h-4 w-4" />
-              <span className="sr-only">{lang === 'ko' ? '등교지도 근무표' : 'Gate Duty'}</span>
-            </Button>
-          </DialogTrigger>
-          <MorningGateDutyDialog
-            currentTeacherName={currentTeacherName}
-            semesterMode={semesterMode}
-            lang={lang}
-          />
-        </Dialog>
-
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 flex-1 flex items-center justify-center p-0">
-              <Users className="h-4 w-4" />
-              <span className="sr-only">{t('teacher_page.check_assignments_button')}</span>
-            </Button>
-          </DialogTrigger>
-          <TeacherAssignmentViewDialog 
-            buses={buses} 
-            teachers={teachers} 
-            afterSchoolTeachers={afterSchoolTeachers} 
-            saturdayTeachers={saturdayTeachers}
-            selectedDay={selectedDay} 
-            selectedRouteType={selectedRouteType} 
-            semesterMode={semesterMode}
-            t={t}
-          />
-        </Dialog>
-
-        <Button variant="outline" size="sm" className="h-8 text-rose-500 border-rose-200 hover:bg-rose-50 flex-1 flex items-center justify-center p-0" onClick={handleLogout}>
-          <LogOut className="h-4 w-4" />
-          <span className="sr-only">{lang === 'ko' ? '로그아웃' : 'Log Out'}</span>
-        </Button>
-
-        <div className="flex-1">
-          <MobileLanguageSwitcher />
+    <div className="flex items-center gap-1 sm:gap-1.5 flex-nowrap min-w-0 no-print">
+      {currentTeacherName && (
+        <div className="flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 bg-slate-100/90 border border-slate-200 rounded-lg text-[11px] sm:text-xs font-semibold text-slate-700 font-sans shrink-0 max-w-[130px] sm:max-w-[240px] truncate shadow-2xs">
+          <User className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+          <span className="truncate">{currentTeacherName}</span>
+          <span className="text-[10px] text-slate-500 font-normal border-l border-slate-300 pl-1 ml-0.5 shrink-0 hidden sm:inline truncate">
+            {teacherBusInfoText}
+          </span>
         </div>
-      </div>
+      )}
+      
+      <Badge 
+        variant={semesterMode === 'vacation' ? 'destructive' : 'secondary'}
+        className="text-[10px] sm:text-xs font-bold px-1.5 sm:px-2 py-0.5 shrink-0 whitespace-nowrap"
+      >
+        {semesterMode === 'vacation' ? (lang === 'ko' ? '방학' : 'Vac') : (lang === 'ko' ? '학기' : 'Reg')}
+      </Badge>
+
+      {selectedBusId !== 'all' && currentRoute && (
+        <div className="shrink-0">
+          <WebCopySeatPlanDialog 
+            sourceRoute={currentRoute}
+            sourceDay={selectedDay}
+            routes={allStaticRoutes}
+            students={students}
+            t={t}
+            lang={lang}
+          />
+        </div>
+      )}
+
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm" className="h-7 sm:h-8 px-1.5 sm:px-2.5 shrink-0 text-xs" title={t('teacher_page.after_school_list')}>
+            <GraduationCap className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+            <span className="hidden 2xl:inline ml-1.5">{t('teacher_page.after_school_list')}{!isAfterSchoolActive ? (lang === 'ko' ? ' (종료)' : ' (Closed)') : ''}</span>
+          </Button>
+        </DialogTrigger>
+        <AfterSchoolInquiryDialog
+          afterSchoolClasses={activeAfterSchoolClasses}
+          afterSchoolTeachers={afterSchoolTeachers}
+          students={students}
+          buses={buses}
+          routes={allRoutes}
+          destinations={destinations}
+          semesterMode={semesterMode}
+          isAfterSchoolActive={isAfterSchoolActive}
+          afterschoolStageStatus={afterschoolStageStatus}
+        />
+      </Dialog>
+
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm" className="h-7 sm:h-8 px-1.5 sm:px-2.5 shrink-0 text-xs text-amber-700 border-amber-200 hover:bg-amber-50" title={lang === 'ko' ? '등교지도 근무표' : 'Gate Duty'}>
+            <Sun className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 text-amber-500" />
+            <span className="hidden 2xl:inline ml-1.5">{lang === 'ko' ? '등교지도' : 'Duty'}</span>
+          </Button>
+        </DialogTrigger>
+        <MorningGateDutyDialog
+          currentTeacherName={currentTeacherName}
+          semesterMode={semesterMode}
+          lang={lang}
+        />
+      </Dialog>
+
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm" className="h-7 sm:h-8 px-1.5 sm:px-2.5 shrink-0 text-xs" title={t('teacher_page.check_assignments_button')}>
+            <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+            <span className="hidden 2xl:inline ml-1.5">{t('teacher_page.check_assignments_button')}</span>
+          </Button>
+        </DialogTrigger>
+        <TeacherAssignmentViewDialog 
+          buses={buses} 
+          teachers={teachers} 
+          afterSchoolTeachers={afterSchoolTeachers} 
+          saturdayTeachers={saturdayTeachers}
+          selectedDay={selectedDay} 
+          selectedRouteType={selectedRouteType} 
+          semesterMode={semesterMode}
+          t={t}
+        />
+      </Dialog>
+
+      <Button variant="outline" size="sm" className="h-7 sm:h-8 px-1.5 sm:px-2.5 text-rose-500 border-rose-200 hover:bg-rose-50 shrink-0 text-xs" onClick={handleLogout} title={lang === 'ko' ? '로그아웃' : 'Log Out'}>
+        <LogOut className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+        <span className="hidden 2xl:inline ml-1.5">{lang === 'ko' ? '로그아웃' : 'Log Out'}</span>
+      </Button>
     </div>
   );
 
   return (
     <MainLayout 
+      title={t('page.title.teacher') || '선생님 페이지'}
       headerContent={headerContent} 
       titleActions={titleActions}
-      hideTitle={true}
+      hideTitle={false}
       mobileHeaderRow1={mobileHeaderRow1}
     >
         <div onContextMenu={(e) => { e.preventDefault(); setSwapSourceSeat(null); }} className="min-h-full">
@@ -2491,8 +2517,12 @@ export default function TeacherPage() {
 
 function TeacherLoginScreen({ 
   pin, onPinPress, onBackspace, error, lang, validPin, 
-  loginStep, setLoginStep, nameInput, setNameInput 
+  loginStep, setLoginStep, nameInput, setNameInput, teachers = []
 }: any) {
+  const sortedTeachers = useMemo(() => {
+    return [...teachers].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '', 'ko'));
+  }, [teachers]);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 font-sans p-4">
       <Card className="w-full max-w-[400px] shadow-lg border-none bg-white">
@@ -2508,17 +2538,44 @@ function TeacherLoginScreen({
         <CardContent className="space-y-4">
           {loginStep === 'name' ? (
             <div className="space-y-3">
-              <Label className="text-slate-600 font-semibold">{lang === 'ko' ? '성함을 입력해주세요 (선택)' : 'Enter your name (Optional)'}</Label>
+              <Label className="text-slate-600 font-semibold text-xs">{lang === 'ko' ? '선생님 성함을 선택하거나 입력해주세요' : 'Select or enter your name'}</Label>
+              
+              {sortedTeachers.length > 0 && (
+                <Select 
+                  value={nameInput} 
+                  onValueChange={(val) => {
+                    setNameInput(val);
+                    setLoginStep('pin');
+                  }}
+                >
+                  <SelectTrigger className="h-10 font-medium bg-slate-50">
+                    <SelectValue placeholder={lang === 'ko' ? '교직원 명단에서 선택' : 'Select from faculty list'} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    {sortedTeachers.map((t: any) => (
+                      <SelectItem key={t.id || t.email || t.name} value={t.name}>
+                        {t.name} {t.role ? `(${t.role})` : ''} {t.dept ? `- ${t.dept}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              <div className="relative flex py-0.5 items-center">
+                <div className="flex-grow border-t border-slate-200"></div>
+                <span className="flex-shrink mx-2 text-[10px] text-slate-400 font-bold">또는 직접 입력</span>
+                <div className="flex-grow border-t border-slate-200"></div>
+              </div>
+
               <Input 
-                placeholder={lang === 'ko' ? '이름' : 'Name'} 
+                placeholder={lang === 'ko' ? '이름 직접 입력' : 'Name'} 
                 value={nameInput} 
                 onChange={(e) => setNameInput(e.target.value)} 
                 className="h-10"
-                autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && setLoginStep('pin')}
               />
               <Button className="w-full h-10 font-bold" onClick={() => setLoginStep('pin')}>
-                {lang === 'ko' ? '다음' : 'Next'}
+                {lang === 'ko' ? '다음 (인증번호 입력)' : 'Next'}
               </Button>
             </div>
           ) : (
@@ -2811,17 +2868,10 @@ function WebCopySeatPlanDialog({ sourceRoute, sourceDay, routes, students, t, la
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        {iconOnly ? (
-          <Button variant="outline" size="sm" className="h-8 w-full flex-1 flex items-center justify-center p-0 border-blue-200 text-blue-600 hover:bg-blue-50">
-            <Save className="h-4 w-4" />
-            <span className="sr-only">{lang === 'ko' ? '좌석 복사' : 'Copy Seating'}</span>
-          </Button>
-        ) : (
-          <Button variant="outline" size="sm" className="h-8 border-blue-200 text-blue-600 hover:bg-blue-50 w-full sm:w-auto">
-            <Save className="mr-2 h-4 w-4" />
-            <span>{lang === 'ko' ? '좌석 복사' : 'Copy Seating'}</span>
-          </Button>
-        )}
+        <Button variant="outline" size="sm" className="h-7 sm:h-8 px-1.5 sm:px-2.5 border-blue-200 text-blue-600 hover:bg-blue-50 shrink-0 text-xs" title={lang === 'ko' ? '좌석 복사' : 'Copy Seating'}>
+          <Save className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+          <span className="hidden 2xl:inline ml-1.5">{lang === 'ko' ? '좌석 복사' : 'Copy Seating'}</span>
+        </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>

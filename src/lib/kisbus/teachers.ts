@@ -1,13 +1,113 @@
 import { getKisbusDb as db } from './firebase';
-import { doc, deleteDoc, writeBatch, collection, getDocs, updateDoc } from 'firebase/firestore';
+import { doc, deleteDoc, writeBatch, collection, getDocs, updateDoc, onSnapshot } from 'firebase/firestore';
 import type { Teacher, NewTeacher } from './types';
 import { fetchCollection, onCollectionUpdate, addDocument } from './core';
 import { sanitizeDataForSystem } from './utils';
 import { errorEmitter } from '@/lib/error-emitter';
 import { FirestorePermissionError, type SecurityRuleContext } from '@/lib/errors';
 
-export const getTeachers = () => fetchCollection<Teacher>('teachers');
-export const onTeachersUpdate = (callback: (teachers: Teacher[]) => void) => onCollectionUpdate<Teacher>('teachers', callback);
+const isStudentPattern = (email: string | null) => {
+    if (!email) return false;
+    return /^\d{4}[a-zA-Z0-9._-]+@kshcm.net$/.test(email);
+};
+
+export const getTeachers = async (): Promise<Teacher[]> => {
+    try {
+        const [busTeachers, usersSnap] = await Promise.all([
+            fetchCollection<Teacher>('teachers'),
+            getDocs(collection(db(), 'users')).catch(() => ({ docs: [] } as any))
+        ]);
+
+        const centralUsers: Teacher[] = (usersSnap.docs || [])
+            .map((d: any) => {
+                const data = d.data();
+                const email = (data.email || d.id || '').toLowerCase().trim();
+                const name = data.name || '';
+                if (!name || isStudentPattern(email) || data.studentName) return null;
+                return {
+                    id: email,
+                    name: name,
+                    email: email,
+                    role: data.role || '교사',
+                    dept: data.dept || '',
+                    semesterMode: 'regular',
+                } as Teacher;
+            })
+            .filter((t: any): t is Teacher => Boolean(t));
+
+        const teacherMap = new Map<string, Teacher>();
+        centralUsers.forEach(u => {
+            teacherMap.set(u.id, u);
+            if (u.name) teacherMap.set(`name_${u.name.trim()}`, u);
+        });
+        busTeachers.forEach(bt => {
+            const key = bt.email ? bt.email.toLowerCase() : bt.id;
+            teacherMap.set(key, bt);
+            if (bt.name) teacherMap.set(`name_${bt.name.trim()}`, bt);
+        });
+
+        const unique = Array.from(new Set(Array.from(teacherMap.values())));
+        unique.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+        return unique;
+    } catch (e) {
+        return fetchCollection<Teacher>('teachers');
+    }
+};
+
+export const onTeachersUpdate = (callback: (teachers: Teacher[]) => void) => {
+    let busTeachers: Teacher[] = [];
+    let centralUsers: Teacher[] = [];
+
+    const emitMerged = () => {
+        const teacherMap = new Map<string, Teacher>();
+        centralUsers.forEach(u => {
+            teacherMap.set(u.id, u);
+            if (u.name) teacherMap.set(`name_${u.name.trim()}`, u);
+        });
+        busTeachers.forEach(bt => {
+            const key = bt.email ? bt.email.toLowerCase() : bt.id;
+            teacherMap.set(key, bt);
+            if (bt.name) teacherMap.set(`name_${bt.name.trim()}`, bt);
+        });
+
+        const unique = Array.from(new Set(Array.from(teacherMap.values())));
+        unique.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+        callback(unique);
+    };
+
+    const unsubBusTeachers = onCollectionUpdate<Teacher>('teachers', (list) => {
+        busTeachers = list;
+        emitMerged();
+    });
+
+    const unsubUsers = onSnapshot(collection(db(), 'users'), (snap) => {
+        centralUsers = snap.docs
+            .map(d => {
+                const data = d.data();
+                const email = (data.email || d.id || '').toLowerCase().trim();
+                const name = data.name || '';
+                if (!name || isStudentPattern(email) || data.studentName) return null;
+                return {
+                    id: email,
+                    name: name,
+                    email: email,
+                    role: data.role || '교사',
+                    dept: data.dept || '',
+                    semesterMode: 'regular',
+                } as Teacher;
+            })
+            .filter((t): t is Teacher => Boolean(t));
+        emitMerged();
+    }, (err) => {
+        console.warn("Silent fetch users error:", err);
+    });
+
+    return () => {
+        unsubBusTeachers();
+        unsubUsers();
+    };
+};
+
 export const addTeacher = (teacher: NewTeacher) => addDocument<Teacher>('teachers', { ...teacher, name: sanitizeDataForSystem(teacher.name) });
 
 export const getAfterSchoolTeachers = () => fetchCollection<Teacher>('afterSchoolTeachers');

@@ -311,9 +311,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         };
       });
 
-      // 신규 교실이 있으면 교실 목록에 추가
+      // 신규 교실이 있으면 교실 목록에 추가 및 Firestore 영구 저장
       if (newClassrooms.length > 0) {
         setClassrooms(prev => [...prev, ...newClassrooms]);
+        saveAfterschoolClassroomsBatch(newClassrooms).catch(err => {
+          console.warn("[AdminPanel] Failed to persist new batch classrooms:", err);
+        });
       }
 
       setBatchTemplate('excel');
