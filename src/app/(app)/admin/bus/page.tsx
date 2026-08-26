@@ -52,6 +52,7 @@ import { BusConfigurationTab } from './components/bus-configuration-tab';
 import { StudentManagementTab } from './components/student-management-tab';
 import { AdminPageFilter } from './components/admin-page-filter';
 import { NotificationManagementTab } from './components/notification-management-tab';
+import { BusFareManagementTab } from './components/bus-fare-tab';
 
 const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -402,7 +403,10 @@ const AdminPageContent: React.FC<{
                         <span className="hidden sm:inline">방과후 하교 버스 조회</span>
                         <span className="inline sm:hidden">방과후 조회</span>
                     </TabsTrigger>
-                    <TabsTrigger value="notification-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.notifications')}</TabsTrigger>
+                    <TabsTrigger value="fare-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">
+                        <span className="hidden sm:inline">요금 관리</span>
+                        <span className="inline sm:hidden">요금</span>
+                    </TabsTrigger>
                 </TabsList>
                 <TabsContent value="bus-registration" className="mt-6">
                     <BusRegistrationTab buses={filteredBuses} routes={filteredRoutes} destinations={destinations} semesterMode={semesterMode} />
@@ -481,8 +485,12 @@ const AdminPageContent: React.FC<{
                         semesterMode={semesterMode}
                     />
                 </TabsContent>
-                <TabsContent value="notification-management" className="mt-6">
-                    <NotificationManagementTab teachers={teachers} />
+                <TabsContent value="fare-management" className="mt-6">
+                    <BusFareManagementTab
+                        students={students}
+                        destinations={destinations}
+                        academicCalendar={docConfig?.academicCalendar}
+                    />
                 </TabsContent>
             </Tabs>
         </>
@@ -2474,8 +2482,40 @@ ${leaderRowsHtml}
         toast({ title: '봉사활동 시간 인정 기안문 생성', description: `수정된 명단(${editableLeaders.length}명)으로 기안 작성이 구동됩니다.` });
     };
 
+    const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
+
     const titleActions = (
         <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap shrink-0">
+            {/* 0. 푸시 알림 관리 팝업 버튼 */}
+            <Dialog open={isNotificationsModalOpen} onOpenChange={setIsNotificationsModalOpen}>
+                <DialogTrigger asChild>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-8 px-2 sm:px-2.5 bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200/90 text-slate-700 font-bold text-xs rounded-lg shadow-none flex items-center gap-1 cursor-pointer transition whitespace-nowrap"
+                        title="푸시 알림 관리 및 템플릿 설정"
+                    >
+                        <Bell className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                        <span className="hidden sm:inline">알림 관리</span>
+                        <span className="inline sm:hidden text-[11px]">알림</span>
+                    </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
+                    <DialogHeader className="p-5 pb-3 border-b bg-slate-50/80 shrink-0">
+                        <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <Bell className="w-5 h-5 text-indigo-600" />
+                            스쿨버스 푸시 알림 관리 및 템플릿 설정
+                        </DialogTitle>
+                        <DialogDescription className="text-xs text-slate-500 mt-0.5">
+                            방학/휴일 모드 및 학부모·교사용 승하차 푸시 알림 발송 조건을 설정합니다.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="p-5 overflow-y-auto flex-1">
+                        <NotificationManagementTab teachers={teachers} />
+                    </div>
+                </DialogContent>
+            </Dialog>
+
             {/* 1. 스쿨버스 관련 공문서 작성 버튼 */}
             <Button
                 type="button"

@@ -159,6 +159,7 @@ export type SubjectTeacherGroup = {
 export type OrgStructure = {
   principal: string; // email
   vicePrincipal: string; // email
+  academicHead?: string; // 교무부장 email
   gradeHeads: { [grade: string]: string }; // "1" -> email
   homerooms: { [gradeClass: string]: string }; // "1-1" -> email
   gradeSubjects?: { [grade: string]: string[] }; // "1" -> [email1, email2] (학년별 교과 담당 교사)

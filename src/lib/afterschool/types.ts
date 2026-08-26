@@ -263,8 +263,6 @@ export interface ExpenseProof {
   submittedAt: string;
 }
 
-// ─── 제출 독촉 알림 ─────────────────────────────────────────────────────────────
-
 export interface SubmissionReminder {
   id: string;
   courseId: string;
@@ -275,5 +273,72 @@ export interface SubmissionReminder {
   createdAt: string;
   isRead?: boolean;
 }
+
+// ─── 방과후학교 수강료 및 버스비 청구서 관련 타입 ──────────────────────────────────
+
+export interface AfterschoolBillCourseItem {
+  courseId: string;
+  courseTitle: string;
+  classDays?: string[];
+  instructorName?: string;
+  classroom?: string; // 수업 장소 (예: "음악실", "3-2반 교실")
+  classTime?: string; // 수업 시간 (예: "15:30 ~ 16:50")
+  isFree?: boolean; // 무료 강좌 여부
+  tuition: number; // 강좌 수강료
+  textbookFee: number; // 교재비
+  materialFee: number; // 재료비
+  courseSubtotal: number; // tuition + textbookFee + materialFee
+}
+
+
+export interface StudentAfterschoolAdjustment {
+  customTotalFare?: number | null; // 최종 수강료 직접 오버라이드
+  adjustmentAmount?: number; // 가감액 (+ / -)
+  adjustmentReason?: string; // 감면/조정 사유 (예: 기초수급자 전액 감면, 교직원자녀 20% 감면 등)
+  customBusFee?: number | null; // 버스요금 수동 지정
+}
+
+export interface AfterschoolFareBill {
+  id: string; // e.g. "sem2026_1_홍길동_3_2"
+  semesterId: string;
+  semesterName: string;
+  studentId?: string;
+  studentName: string;
+  grade: string | number;
+  classNum: string | number;
+  studentNum?: string | number;
+  contact?: string;
+  parentPhone?: string;
+
+  // 신청 강좌 목록 및 수강료
+  courses: AfterschoolBillCourseItem[];
+  tuitionSubtotal: number; // 수강료 합계
+  textbookSubtotal: number; // 교재비 합계
+  materialSubtotal: number; // 재료비 합계
+  coursesTotalFee: number; // 강좌 관련 총액 (tuition + textbook + material)
+
+  // 방과후/토요 스쿨버스 탑승 및 요금 정보
+  isBusRiding: boolean; // 방과후 버스 탑승 여부
+  busNo?: string; // 예: "5호차"
+  destinationName?: string; // 예: "푸미흥 미드타운"
+  zone?: string; // 예: "Zone A (근거리)"
+  busFare: number; // 스쿨버스 관리자에서 산출된 방과후 버스요금 (미탑승자는 0원)
+
+  // 관리자 개별 수정/조정
+  isAdjusted?: boolean;
+  adjustmentAmount?: number;
+  adjustmentReason?: string;
+  customTotalFare?: number | null;
+
+  // 최종 청구 금액 (강좌 총액 + 버스비 + 조정액)
+  finalTotalFare: number;
+  currency: string;
+
+  // 발행 및 학부모 확인 상태
+  issuedAt: string;
+  isConfirmed?: boolean;
+  confirmedAt?: string;
+}
+
 
 

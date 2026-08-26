@@ -62,7 +62,8 @@ export type NewBus = Omit<Bus, 'id'>;
 export type Destination = {
   id: string;
   name:string;
-  zone?: string;
+  zone?: string;         // 📅 평일 요금 그룹 (월~금)
+  saturdayZone?: string; // 🚌 토요일 요금 그룹 (토요 방과후)
 };
 export type NewDestination = Omit<Destination, 'id'>;
 
@@ -150,3 +151,70 @@ export type NotificationSettings = {
   bodyTemplate: string;
   lastModified: string;
 };
+
+export type StudentFareAdjustment = {
+  customFare?: number | null; // 최종 금액 직접 지정 (오버라이드)
+  adjustmentAmount?: number; // +/- 가감 금액
+  adjustmentReason?: string; // 조정 사유 (예: 5월 10일 전학으로 일할 계산, 장기 입원 감면 등)
+  customDays?: number | null; // 학생 개별 등교일수 오버라이드
+  customDiscountRate?: number | null; // 형제할인율 개별 변경 (%)
+  forceSiblingDiscount?: boolean | null; // 형제 할인 강제 적용 여부
+};
+
+export type BusQuarterSetting = {
+  id: string;
+  name: string; // 예: "1분기", "2분기", "3분기", "4분기"
+  startDate: string; // "2026-03-02"
+  endDate: string; // "2026-05-29"
+  manualDays?: number | null; // 수동 지정 일수 (null/undefined인 경우 학사일정 자동 산출)
+  gradeExceptions?: Record<string, number>; // 특정 학년 등교일수 제외(차감) 일수 (예: { "6": 3 } -> 6학년 3일 제외)
+  gradeExceptionReasons?: Record<string, string>; // 제외 사유 (예: { "6": "수학여행" })
+  studentAdjustments?: Record<string, StudentFareAdjustment>; // 학생별 개별 수정/조정 내역
+};
+
+export type BusFareConfig = {
+  busFareSettings?: Record<string, number>;
+  saturdayBusFareSettings?: Record<string, number>;
+  busFareCurrency?: 'VND' | 'KRW' | 'USD';
+  quarters?: BusQuarterSetting[];
+  activeQuarterId?: string;
+  under3Surcharge?: number; // 목적지 탑승 인원 3명 이하 시 일일 추가요금
+  siblingDiscountRate?: number; // 형제 복수 탑승 시 둘째 이하 할인율 (%)
+};
+
+export type BusFareBill = {
+  id: string; // `${quarterId}_${studentId}`
+  quarterId: string;
+  quarterName: string;
+  quarterPeriod: string; // "2026-03-02 ~ 2026-05-29"
+  studentId: string;
+  studentName: string;
+  grade: string;
+  studentClass: string;
+  contact: string;
+  destinationName: string;
+  zone: string;
+  isRiding: boolean;
+  baseQuarterDays: number;
+  excludedDays: number;
+  gradeExceptionReason?: string;
+  finalQuarterDays: number;
+  baseDailyFare: number;
+  destinationRiderCount: number;
+  isSmallGroup: boolean;
+  smallGroupSurcharge: number;
+  totalDailyFare: number;
+  subtotalFare: number;
+  isSiblingDiscounted: boolean;
+  discountRate: number;
+  discountAmount: number;
+  isAdjusted?: boolean;
+  adjustmentAmount: number;
+  adjustmentReason?: string;
+  finalQuarterFare: number;
+  currency: 'VND' | 'KRW' | 'USD';
+  issuedAt: string; // ISO String
+  isConfirmed?: boolean;
+  confirmedAt?: string;
+};
+

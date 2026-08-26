@@ -23,6 +23,8 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Send, ArrowLeft, AlertTriangle, Home } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { useTranslation } from '@/hooks/use-translation';
+
 import {
   Dialog,
   DialogContent,
@@ -139,6 +141,8 @@ function ApplyForm() {
 
   const [tabType, setTabType] = useState<'absence' | 'field-trip' | 'field-trip-report'>(defaultType);
   const currentType = tabType;
+  const { t } = useTranslation();
+
 
   useEffect(() => {
     if (defaultType && defaultType !== tabType) {
@@ -584,11 +588,11 @@ function ApplyForm() {
         <div className="flex items-center gap-1.5 sm:gap-2">
           <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.back()}>
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            뒤로가기
+            {t('back') || '뒤로가기'}
           </Button>
           <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.push('/parents')}>
             <Home className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            홈
+            {t('page.title.home') || '홈'}
           </Button>
         </div>
         <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
@@ -603,7 +607,7 @@ function ApplyForm() {
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                결석계
+                {t('parents.absence') || '결석계'}
               </button>
               <button
                 type="button"
@@ -614,15 +618,16 @@ function ApplyForm() {
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                체험학습 신청서
+                {t('parents.field_trip') || '체험학습 신청서'}
               </button>
             </div>
           ) : (
             <div className="bg-amber-100 border border-amber-200 text-amber-800 text-xs sm:text-sm font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg w-full sm:w-auto text-center">
-              체험학습 결과보고서 작성 모드
+              {t('parents.field_trip_report_mode') || '체험학습 결과보고서 작성 모드'}
             </div>
           )}
         </div>
+
       </div>
 
       <div className="w-full max-w-[210mm] min-h-0 sm:min-h-[297mm] mx-auto bg-white shadow-md sm:shadow-2xl border border-slate-200/80 rounded-xl sm:rounded-sm print:shadow-none print:border-none print:w-[170mm] print:mx-auto print:min-h-0">

@@ -17,7 +17,10 @@ import {
   RotateCcw,
   RefreshCw,
   X,
+  Receipt,
 } from 'lucide-react';
+import { AfterschoolBillingModal } from './AfterschoolBillingModal';
+
 import {
   exportEnrollmentsToExcel,
   downloadSampleExcel,
@@ -264,7 +267,9 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   const [isFeeEditMode, setIsFeeEditMode] = useState(false);
   const [isAddCancelModalOpen, setIsAddCancelModalOpen] = useState(false);
   const [isSchoolBankingModalOpen, setIsSchoolBankingModalOpen] = useState(false);
+  const [isAfterschoolBillingModalOpen, setIsAfterschoolBillingModalOpen] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
 
   // 방과후 버스 배정 모달 state
   const [busTransferModalEnrollmentId, setBusTransferModalEnrollmentId] = useState<string | null>(null);
@@ -989,6 +994,19 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 
           {/* 주요 수강생 일괄 등록 & 명단/양식 다운로드 액션 버튼 바 */}
           <div className="flex flex-wrap sm:flex-nowrap items-center gap-1 sm:gap-1.5 w-full sm:w-auto shrink-0">
+            {/* 수강 확정 및 수강료 알림 관리 & 학부모 발송 버튼 */}
+            <button
+              type="button"
+              onClick={() => setIsAfterschoolBillingModalOpen(true)}
+              disabled={enrollments.length === 0}
+              className="bg-purple-600 hover:bg-purple-700 text-white px-2.5 sm:px-3 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm truncate disabled:opacity-50 cursor-pointer"
+              title="수강 확정생들의 수업 정보(장소, 시간, 강사명) 및 수강료/버스비를 확인하고 학부모 서비스로 수강 확정 알림을 발송합니다."
+            >
+              <Receipt className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">📋 수강 확정 & 수강료 알림</span>
+            </button>
+
+
             <button
               type="button"
               onClick={handleSyncBusAndPhoneInfo}
@@ -999,6 +1017,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
               <RefreshCw className={`w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-600 shrink-0 ${isSyncingBusInfo ? 'animate-spin' : ''}`} />
               <span className="truncate">{isSyncingBusInfo ? '동기화 중...' : '스쿨버스 연동'}</span>
             </button>
+
 
             <button
               type="button"
@@ -2172,6 +2191,21 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
           </div>
         );
       })()}
+
+      {/* 📋 방과후 수강료 & 버스비 청구서 모달 */}
+      <AfterschoolBillingModal
+        isOpen={isAfterschoolBillingModalOpen}
+        onClose={() => setIsAfterschoolBillingModalOpen(false)}
+        enrollments={enrollments}
+        courses={courses}
+        studentsList={studentsList}
+        destinations={destinations}
+        saturdayBusFareSettings={saturdayBusFareSettings}
+        busFareSettings={busFareSettings}
+        busFareCurrency={busFareCurrency}
+        teacherApplySettings={teacherApplySettings}
+      />
     </div>
   );
 };
+

@@ -8,6 +8,7 @@ import { CalendarCheck, Search, ArrowLeft, Home } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { getDocConfig } from '@/lib/services/settingsService';
 import { DocConfig } from '@/lib/types';
+import { ParentBusFareModal } from '@/components/bus/parent-bus-fare-modal';
 
 export default function ParentsBusIndexPage() {
   const router = useRouter();
@@ -86,6 +87,10 @@ export default function ParentsBusIndexPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 스쿨버스 분기 요금 청구서 팝업 */}
+      <ParentBusFareModal />
     </div>
   );
 }
+

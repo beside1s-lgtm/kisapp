@@ -87,6 +87,15 @@ export const updateDestinationZone = async (id: string, zone: string) => {
     });
 };
 
+export const updateDestinationSaturdayZone = async (id: string, saturdayZone: string) => {
+    const docRef = doc(db(), 'destinations', id);
+    await updateDoc(docRef, { saturdayZone }).catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({ path: `/destinations/${id}`, operation: 'update' } satisfies SecurityRuleContext);
+        errorEmitter.emit('permission-error', permissionError);
+        throw serverError;
+    });
+};
+
 export const updateDestinationsZoneBatch = async (ids: string[], zone: string) => {
     if (!ids || ids.length === 0) return;
     const batch = writeBatch(db());
@@ -100,3 +109,88 @@ export const updateDestinationsZoneBatch = async (ids: string[], zone: string) =
         throw serverError;
     });
 };
+
+export const updateDestinationsSaturdayZoneBatch = async (ids: string[], saturdayZone: string) => {
+    if (!ids || ids.length === 0) return;
+    const batch = writeBatch(db());
+    ids.forEach(id => {
+        const docRef = doc(db(), 'destinations', id);
+        batch.update(docRef, { saturdayZone });
+    });
+    await batch.commit().catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({ path: `/destinations`, operation: 'update' } satisfies SecurityRuleContext);
+        errorEmitter.emit('permission-error', permissionError);
+        throw serverError;
+    });
+};
+
+export interface DestinationExcelSyncItem {
+  name: string;
+  zone?: string;
+  saturdayZone?: string;
+  mode: 'weekday' | 'saturday' | 'both';
+}
+
+export const syncDestinationsFromExcelBatch = async (
+  items: DestinationExcelSyncItem[],
+  existingDestinations: Destination[]
+): Promise<{ addedCount: number; updatedCount: number }> => {
+  if (!items || items.length === 0) return { addedCount: 0, updatedCount: 0 };
+
+  const normMap = new Map<string, Destination>();
+  existingDestinations.forEach(d => {
+    normMap.set(normalizeString(d.name), d);
+  });
+
+  const batch = writeBatch(db());
+  let addedCount = 0;
+  let updatedCount = 0;
+
+  for (const item of items) {
+    const normName = normalizeString(item.name);
+    if (!normName) continue;
+
+    const existing = normMap.get(normName);
+    if (existing) {
+      const updateData: Record<string, any> = {};
+      if (item.mode === 'weekday') {
+        if (item.zone !== undefined) updateData.zone = item.zone;
+      } else if (item.mode === 'saturday') {
+        if (item.saturdayZone !== undefined) updateData.saturdayZone = item.saturdayZone;
+      } else {
+        if (item.zone !== undefined) updateData.zone = item.zone;
+        if (item.saturdayZone !== undefined) updateData.saturdayZone = item.saturdayZone;
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        const docRef = doc(db(), 'destinations', existing.id);
+        batch.update(docRef, updateData);
+        updatedCount++;
+      }
+    } else {
+      const newDocRef = doc(collection(db(), 'destinations'));
+      const newData: Record<string, any> = {
+        name: item.name,
+      };
+      if (item.mode === 'weekday') {
+        newData.zone = item.zone || '미지정';
+      } else if (item.mode === 'saturday') {
+        newData.saturdayZone = item.saturdayZone || '미지정';
+      } else {
+        newData.zone = item.zone || '미지정';
+        newData.saturdayZone = item.saturdayZone || '미지정';
+      }
+      batch.set(newDocRef, newData);
+      addedCount++;
+    }
+  }
+
+  await batch.commit().catch(async (serverError) => {
+    const permissionError = new FirestorePermissionError({ path: `/destinations`, operation: 'write' } satisfies SecurityRuleContext);
+    errorEmitter.emit('permission-error', permissionError);
+    throw serverError;
+  });
+
+  return { addedCount, updatedCount };
+};
+

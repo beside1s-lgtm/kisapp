@@ -3,16 +3,19 @@
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
-import { Loader2, LogOut, FileText } from 'lucide-react';
+import { Loader2, LogOut, FileText, Globe } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ParentSettingsDialog } from '@/components/parent-settings-dialog';
+import { LanguageSwitcher } from '@/components/layout/language-switcher';
+import { useTranslation } from '@/hooks/use-translation';
 
 export default function ParentsLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, profile, profileLoading, logout, isParent } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!loading && !user && pathname !== '/parents/login') {
@@ -36,7 +39,9 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
-          <p className="text-muted-foreground font-bold animate-pulse">시스템 로딩 중...</p>
+          <p className="text-muted-foreground font-bold animate-pulse">
+            {t('loading.data') || '시스템 로딩 중...'}
+          </p>
         </div>
       </div>
     );
@@ -55,32 +60,32 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
             <div className="bg-primary p-1 sm:p-1.5 rounded-md text-primary-foreground shrink-0">
               <FileText className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
             </div>
-            <span className="truncate">KISAPP 학부모 서비스</span>
+            <span className="truncate">{t('parents.title') || 'KISAPP 학부모 서비스'}</span>
           </Link>
           <nav className="hidden lg:flex items-center gap-2">
             <Button 
               variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
               asChild
             >
-              <Link href="/parents/apply">신청서 제출</Link>
+              <Link href="/parents/apply">{t('nav.apply') || '신청서 제출'}</Link>
             </Button>
             <Button 
               variant={pathname === '/parents/history' ? 'default' : 'ghost'} 
               asChild
             >
-              <Link href="/parents/history">제출 내역</Link>
+              <Link href="/parents/history">{t('nav.history') || '제출 내역'}</Link>
             </Button>
             <Button 
               variant={pathname.startsWith('/parents/bus') ? 'default' : 'ghost'} 
               asChild
             >
-              <Link href="/parents/bus">스쿨버스</Link>
+              <Link href="/parents/bus">{t('nav.bus') || '스쿨버스'}</Link>
             </Button>
             <Button 
               variant={pathname.startsWith('/parents/afterschool') ? 'default' : 'ghost'} 
               asChild
             >
-              <Link href="/parents/afterschool">방과후학교</Link>
+              <Link href="/parents/afterschool">{t('nav.afterschool') || '방과후학교'}</Link>
             </Button>
           </nav>
           <nav className="hidden md:flex lg:hidden items-center gap-1">
@@ -89,37 +94,40 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
               className="text-xs px-2"
               asChild
             >
-              <Link href="/parents/apply">신청서</Link>
+              <Link href="/parents/apply">{t('nav.apply_short') || '신청서'}</Link>
             </Button>
             <Button 
               variant={pathname === '/parents/history' ? 'default' : 'ghost'} 
               className="text-xs px-2"
               asChild
             >
-              <Link href="/parents/history">내역</Link>
+              <Link href="/parents/history">{t('nav.history_short') || '내역'}</Link>
             </Button>
             <Button 
               variant={pathname.startsWith('/parents/bus') ? 'default' : 'ghost'} 
               className="text-xs px-2"
               asChild
             >
-              <Link href="/parents/bus/apply">스쿨버스</Link>
+              <Link href="/parents/bus">{t('nav.bus_short') || '스쿨버스'}</Link>
             </Button>
             <Button 
               variant={pathname.startsWith('/parents/afterschool') ? 'default' : 'ghost'} 
               className="text-xs px-2"
               asChild
             >
-              <Link href="/parents/afterschool">방과후</Link>
+              <Link href="/parents/afterschool">{t('nav.afterschool_short') || '방과후'}</Link>
             </Button>
           </nav>
         </div>
         
-        <div className="flex items-center gap-1.5 sm:gap-2 md:gap-4 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 shrink-0">
+          {/* 다국어 언어 변경 스위처 */}
+          <LanguageSwitcher />
+
           <ParentSettingsDialog />
-          <Button variant="ghost" size="sm" onClick={logout} className="h-8 px-2 text-muted-foreground hover:text-foreground" title="로그아웃">
+          <Button variant="ghost" size="sm" onClick={logout} className="h-8 px-2 text-muted-foreground hover:text-foreground" title={t('logout.button') || '로그아웃'}>
             <LogOut className="h-4 w-4 sm:mr-1.5" />
-            <span className="hidden sm:inline">로그아웃</span>
+            <span className="hidden sm:inline">{t('logout.button') || '로그아웃'}</span>
           </Button>
         </div>
       </header>
@@ -132,7 +140,7 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
           className="text-xs h-8 px-0.5 font-semibold"
           asChild
         >
-          <Link href="/parents/apply">신청서</Link>
+          <Link href="/parents/apply">{t('nav.apply_short') || '신청서'}</Link>
         </Button>
         <Button 
           variant={pathname === '/parents/history' ? 'default' : 'ghost'} 
@@ -140,7 +148,7 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
           className="text-xs h-8 px-0.5 font-semibold"
           asChild
         >
-          <Link href="/parents/history">내역</Link>
+          <Link href="/parents/history">{t('nav.history_short') || '내역'}</Link>
         </Button>
         <Button 
           variant={pathname.startsWith('/parents/bus') ? 'default' : 'ghost'} 
@@ -148,7 +156,7 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
           className="text-xs h-8 px-0.5 font-semibold"
           asChild
         >
-          <Link href="/parents/bus/apply">스쿨버스</Link>
+          <Link href="/parents/bus">{t('nav.bus_short') || '스쿨버스'}</Link>
         </Button>
         <Button 
           variant={pathname.startsWith('/parents/afterschool') ? 'default' : 'ghost'} 
@@ -156,7 +164,7 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
           className="text-xs h-8 px-0.5 font-semibold"
           asChild
         >
-          <Link href="/parents/afterschool">방과후</Link>
+          <Link href="/parents/afterschool">{t('nav.afterschool_short') || '방과후'}</Link>
         </Button>
       </div>
 
@@ -166,10 +174,17 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
       </>
       )}
       {isAuthPage && (
-        <main className="flex-1 w-full h-full">
+        <div className="flex-1 w-full h-full flex flex-col">
+          {/* 로그인 / 설정 페이지 상단 언어 선택 바 */}
+          <div className="w-full flex justify-end p-3 sm:p-4 border-b bg-card/60">
+            <LanguageSwitcher />
+          </div>
+          <main className="flex-1 w-full h-full">
             {children}
-        </main>
+          </main>
+        </div>
       )}
     </div>
   );
 }
+

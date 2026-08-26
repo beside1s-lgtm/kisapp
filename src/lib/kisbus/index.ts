@@ -11,3 +11,6 @@ export * from './assignments';
 export * from './after-school-classes';
 export * from './notifications';
 export * from './settings';
+export * from './fareCalculator';
+export * from './fareBills';
+

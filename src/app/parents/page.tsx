@@ -15,6 +15,12 @@ import type { Bus, Student } from '@/lib/kisbus/types';
 import type { Course, Enrollment, GlobalTimerConfig } from '@/lib/afterschool/types';
 import { ApprovalDoc, DocConfig, OrgStructure, UserProfile } from '@/lib/types';
 import { PwaInstallBanner } from '@/components/pwa-install-banner';
+import { ParentBusFareModal } from '@/components/bus/parent-bus-fare-modal';
+import { ParentAfterschoolFareModal } from '@/components/afterschool/parent-afterschool-fare-modal';
+import { useTranslation } from '@/hooks/use-translation';
+
+
+
 
 export default function ParentsDashboard() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -24,6 +30,8 @@ export default function ParentsDashboard() {
   const [timerConfig, setTimerConfig] = useState<GlobalTimerConfig | null>(null);
   const [accumulatedFieldTripDays, setAccumulatedFieldTripDays] = useState<number>(0);
   const [accumulatedAbsenceDays, setAccumulatedAbsenceDays] = useState<number>(0);
+  const { t } = useTranslation();
+
 
   // 실시간 연동 상태 (조직도, 교직원, 스쿨버스, 방과후)
   const [orgStructure, setOrgStructure] = useState<Partial<OrgStructure> | null>(null);
@@ -204,7 +212,7 @@ export default function ParentsDashboard() {
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight font-headline text-foreground">
-            학부모 서비스 대시보드
+            {t('parents.dashboard') || '학부모 서비스 대시보드'}
           </h1>
           {profile?.studentGrade && profile?.studentClass && (
             <Badge variant="outline" className="bg-indigo-50/80 border-indigo-200 text-indigo-800 text-xs sm:text-sm font-semibold px-2.5 sm:px-3 py-1 rounded-full shadow-xs">
@@ -213,9 +221,10 @@ export default function ParentsDashboard() {
           )}
         </div>
         <p className="text-muted-foreground text-xs sm:text-base">
-          KISAPP 학부모 서비스에 오신 것을 환영합니다. 원하시는 메뉴를 선택해주세요.
+          {t('parents.welcome_desc') || 'KISAPP 학부모 서비스에 오신 것을 환영합니다. 원하시는 메뉴를 선택해주세요.'}
         </p>
       </div>
+
 
       {/* 미제출 보고서 알림 배너 */}
       {pendingReports.length > 0 && (
@@ -312,15 +321,15 @@ export default function ParentsDashboard() {
               <div className="p-1.5 sm:p-2 bg-primary/10 rounded-lg shrink-0">
                 <FileEdit className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              신청서 제출
+              {t('parents.apply_title') || '신청서 제출'}
             </CardTitle>
             <CardDescription className="text-xs sm:text-sm mt-1">
-              학교에 제출할 각종 신청서 및 동의서를 간편하게 작성하고 제출합니다.
+              {t('parents.apply_desc') || '학교에 제출할 각종 신청서 및 동의서를 간편하게 작성하고 제출합니다.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="p-3.5 sm:p-6 pt-0 sm:pt-0">
             <Button className="w-full font-bold shadow-xs sm:shadow-md hover:shadow-lg transition-all h-9 sm:h-10 text-xs sm:text-sm" asChild>
-              <Link href="/parents/apply">바로가기</Link>
+              <Link href="/parents/apply">{t('parents.go_btn') || '바로가기'}</Link>
             </Button>
           </CardContent>
         </Card>
@@ -336,15 +345,15 @@ export default function ParentsDashboard() {
               <div className="p-1.5 sm:p-2 bg-blue-500/10 text-blue-500 rounded-lg shrink-0">
                 <History className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              제출 내역
+              {t('parents.history_title') || '제출 내역'}
             </CardTitle>
             <CardDescription className="text-xs sm:text-sm mt-1">
-              이전에 제출하신 문서들의 상세 내용과 실시간 처리 상태를 확인합니다.
+              {t('parents.history_desc') || '이전에 제출하신 문서들의 상세 내용과 실시간 처리 상태를 확인합니다.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="p-3.5 sm:p-6 pt-0 sm:pt-0">
             <Button variant="outline" className="w-full font-bold hover:bg-blue-500/5 hover:text-blue-600 transition-colors h-9 sm:h-10 text-xs sm:text-sm" asChild>
-              <Link href="/parents/history">내역 보기</Link>
+              <Link href="/parents/history">{t('parents.go_btn') || '내역 보기'}</Link>
             </Button>
           </CardContent>
         </Card>
@@ -355,15 +364,15 @@ export default function ParentsDashboard() {
               <div className="p-1.5 sm:p-2 bg-green-500/10 text-green-500 rounded-lg shrink-0">
                 <Info className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              학교 공지사항
+              {t('parents.notices') || '학교 공지사항'}
             </CardTitle>
             <CardDescription className="text-xs sm:text-sm mt-1">
-              학교에서 안내하는 주요 공지사항과 가정통신문을 확인합니다.
+              {t('parents.notices_desc') || '학교에서 안내하는 주요 공지사항과 가정통신문을 확인합니다.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="p-3.5 sm:p-6 pt-0 sm:pt-0">
             <Button variant="secondary" className="w-full font-bold text-muted-foreground h-9 sm:h-10 text-xs sm:text-sm" disabled>
-              준비 중입니다
+              {t('parents.coming_soon') || '준비 중입니다'}
             </Button>
           </CardContent>
         </Card>
@@ -372,7 +381,7 @@ export default function ParentsDashboard() {
       {/* 프리미엄 연계 서비스 섹션 */}
       <div className="space-y-3 sm:space-y-4 pt-3 sm:pt-4 border-t">
         <h3 className="text-xl font-bold text-foreground font-headline flex items-center gap-2">
-          연계 교육 서비스
+          {t('parents.connected_services') || '연계 교육 서비스'}
         </h3>
         <div className="grid gap-6 md:grid-cols-2">
           {/* 스쿨버스 카드 */}
@@ -382,33 +391,33 @@ export default function ParentsDashboard() {
                 <div className="p-1.5 sm:p-2 bg-amber-500/10 rounded-lg shrink-0">
                   <BusIcon className="h-5 w-5 sm:h-6 sm:w-6" />
                 </div>
-                <span>스쿨버스</span>
+                <span>{t('parents.bus_title') || '스쿨버스'}</span>
                 <Badge variant="outline" className="bg-amber-50 border-amber-200 text-amber-800 text-[10px] sm:text-xs font-semibold px-2 py-0.5 rounded-full">
                   {busInfoText}
                 </Badge>
               </CardTitle>
               <CardDescription className="text-xs sm:text-sm mt-1">
-                스쿨버스 탑승 신청 및 자녀의 배정 좌석, 버스 탑승 여부를 확인합니다.
+                {t('parents.bus_desc') || '스쿨버스 탑승 신청 및 자녀의 배정 좌석, 버스 탑승 여부를 확인합니다.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-3.5 sm:p-6 pt-0 sm:pt-0 flex flex-col gap-2.5 sm:gap-3">
               <div className="flex gap-2">
                 {config?.isBusApplyActive ? (
                   <Button className="flex-1 font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs sm:shadow-md transition-all h-9 sm:h-10 text-xs sm:text-sm" asChild>
-                    <Link href="/parents/bus/apply">탑승 신청</Link>
+                    <Link href="/parents/bus/apply">{t('parents.bus_apply_btn') || '탑승 신청'}</Link>
                   </Button>
                 ) : (
                   <Button className="flex-1 font-bold text-muted-foreground bg-slate-100 hover:bg-slate-100 cursor-not-allowed h-9 sm:h-10 text-xs sm:text-sm" variant="secondary" disabled>
-                    탑승 신청 (기간 종료)
+                    {t('parents.bus_apply_closed') || '탑승 신청 (기간 종료)'}
                   </Button>
                 )}
                 <Button variant="outline" className="flex-1 font-bold border-amber-200 text-amber-700 hover:bg-amber-50 h-9 sm:h-10 text-xs sm:text-sm" asChild>
-                  <Link href="/parents/bus/student">자녀 탑승 조회</Link>
+                  <Link href="/parents/bus/student">{t('parents.bus_status_btn') || '자녀 탑승 조회'}</Link>
                 </Button>
               </div>
               {!config?.isBusApplyActive && (
                 <p className="text-[11px] sm:text-xs text-amber-600 text-center font-medium bg-amber-50 border border-amber-200/50 py-1.5 rounded-lg">
-                  ※ 현재는 스쿨버스 탑승 신청 기간이 아닙니다.
+                  ※ {t('parents.bus_not_period') || '현재는 스쿨버스 탑승 신청 기간이 아닙니다.'}
                 </p>
               )}
             </CardContent>
@@ -421,39 +430,40 @@ export default function ParentsDashboard() {
                 <div className="p-1.5 sm:p-2 bg-violet-500/10 rounded-lg shrink-0">
                   <GraduationCap className="h-5 w-5 sm:h-6 sm:w-6" />
                 </div>
-                <span>방과후학교</span>
+                <span>{t('parents.afterschool_title') || '방과후학교'}</span>
                 <Badge variant="outline" className="bg-violet-50 border-violet-200 text-violet-800 text-[10px] sm:text-xs font-semibold px-2 py-0.5 rounded-full">
                   {afterschoolInfoText}
                 </Badge>
               </CardTitle>
               <CardDescription className="text-xs sm:text-sm mt-1">
-                방과후학교의 수강신청을 하거나 수강 신청된 강좌를 확인 및 취소합니다.
+                {t('parents.afterschool_desc') || '방과후학교의 수강신청을 하거나 수강 신청된 강좌를 확인 및 취소합니다.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-3.5 sm:p-6 pt-0 sm:pt-0 flex flex-col gap-2.5 sm:gap-3">
               <div className="flex gap-2">
                 {isAfterschoolActive ? (
                   <Button className="flex-1 font-bold bg-violet-600 hover:bg-violet-700 text-white shadow-xs sm:shadow-md transition-all h-9 sm:h-10 text-xs sm:text-sm" asChild>
-                    <Link href="/parents/afterschool?tab=apply">수강 신청</Link>
+                    <Link href="/parents/afterschool?tab=apply">{t('parents.afterschool_apply_btn') || '수강 신청'}</Link>
                   </Button>
                 ) : (
                   <Button className="flex-1 font-bold text-muted-foreground bg-slate-100 hover:bg-slate-100 cursor-not-allowed h-9 sm:h-10 text-xs sm:text-sm" variant="secondary" disabled>
-                    수강 신청 (기간 종료)
+                    {t('parents.afterschool_apply_closed') || '수강 신청 (기간 종료)'}
                   </Button>
                 )}
                 <Button variant="outline" className="flex-1 font-bold border-violet-200 text-violet-700 hover:bg-violet-50" asChild>
-                  <Link href="/parents/afterschool?tab=my">신청 확인 및 취소</Link>
+                  <Link href="/parents/afterschool?tab=my">{t('parents.afterschool_status_btn') || '신청 확인 및 취소'}</Link>
                 </Button>
               </div>
               {!isAfterschoolActive && (
                 <p className="text-xs text-violet-600 text-center font-medium bg-violet-50 border border-violet-200/50 py-1.5 rounded-lg">
-                  ※ 현재는 방과후학교 수강신청 기간이 아닙니다.
+                  ※ {t('parents.afterschool_not_period') || '현재는 방과후학교 수강신청 기간이 아닙니다.'}
                 </p>
               )}
             </CardContent>
           </Card>
         </div>
       </div>
+
 
       {/* 맨 하단: 2026학년도 학사 일정 캘린더 동기화 배너 */}
       <div className="pt-2">
@@ -492,6 +502,14 @@ export default function ParentsDashboard() {
 
       {/* 학부모 대시보드 하단 KIS 전용 앱 설치 배너 */}
       <PwaInstallBanner className="mt-4 mb-2" />
+
+      {/* 스쿨버스 분기 청구서 전달 팝업 */}
+      <ParentBusFareModal />
+
+      {/* 방과후 수강료 & 버스비 청구서 전달 팝업 */}
+      <ParentAfterschoolFareModal />
     </div>
   );
 }
+
+

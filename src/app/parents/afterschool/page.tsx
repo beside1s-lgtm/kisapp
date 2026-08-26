@@ -16,7 +16,9 @@ import {
 } from '@/lib/afterschool/mock/data';
 
 import { PrivacyConsentModal, DECREE13_CONSENT_STORAGE_KEY } from '@/components/afterschool/PrivacyConsentModal';
+import { ParentAfterschoolFareModal } from '@/components/afterschool/parent-afterschool-fare-modal';
 import { ShieldCheck } from 'lucide-react';
+
 
 function AfterschoolEnrollment() {
   const router = useRouter();
@@ -27,6 +29,7 @@ function AfterschoolEnrollment() {
   const [timerConfig, setTimerConfig] = useState<GlobalTimerConfig>(initialTimerConfig);
   const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
   const [hasConsented, setHasConsented] = useState<boolean | null>(null);
+  const { t } = useTranslation();
 
   useEffect(() => {
     const unsubTimer = onAfterschoolTimerUpdate((cfg) => setTimerConfig(cfg));
@@ -72,11 +75,11 @@ function AfterschoolEnrollment() {
         <div className="flex items-center gap-1.5 sm:gap-2">
           <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.back()}>
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            뒤로가기
+            {t('back') || '뒤로가기'}
           </Button>
           <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.push('/parents')}>
             <Home className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            홈
+            {t('page.title.home') || '홈'}
           </Button>
         </div>
 
@@ -87,17 +90,20 @@ function AfterschoolEnrollment() {
           onClick={() => setIsConsentModalOpen(true)}
         >
           <ShieldCheck className="h-3.5 w-3.5 text-indigo-500" />
-          <span>개인정보 동의서 (Decree 13)</span>
-          {hasConsented && <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.2 rounded">동의완료</span>}
+          <span>{t('parents.privacy_consent') || '개인정보 동의서 (Decree 13)'}</span>
+          {hasConsented && <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.2 rounded">{t('parents.consent_granted') || '동의완료'}</span>}
         </Button>
       </div>
 
       <div className="bg-white p-3.5 sm:p-6 rounded-xl sm:rounded-2xl border shadow-xs sm:shadow-sm mb-3 sm:mb-6">
-        <h1 className="text-lg sm:text-2xl font-bold font-headline text-slate-800">방과후학교 학생 수강신청</h1>
+        <h1 className="text-lg sm:text-2xl font-bold font-headline text-slate-800">
+          {t('parents.afterschool_title') || '방과후학교 학생 수강신청'}
+        </h1>
         <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 sm:mt-1">
-          개설된 방과후학교 강좌 목록을 확인하고, 실시간으로 수강신청 및 대기신청을 진행할 수 있습니다.
+          {t('parents.afterschool_desc') || '개설된 방과후학교 강좌 목록을 확인하고, 실시간으로 수강신청 및 대기신청을 진행할 수 있습니다.'}
         </p>
       </div>
+
 
       <Card className="border-slate-200/80 shadow-xs sm:shadow-md bg-white">
         <CardContent className="p-3 sm:p-6">
@@ -118,9 +124,13 @@ function AfterschoolEnrollment() {
         onConsentGranted={handleConsentGranted}
         onCancel={hasConsented ? () => setIsConsentModalOpen(false) : undefined}
       />
+
+      {/* 방과후 수강료 & 버스비 합산 청구서 팝업 */}
+      <ParentAfterschoolFareModal />
     </div>
   );
 }
+
 
 export default function AfterschoolEnrollmentPage() {
   return (

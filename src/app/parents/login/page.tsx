@@ -17,11 +17,14 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 
+import { useTranslation } from '@/hooks/use-translation';
+
 export default function ParentsLoginPage() {
   const { user, loading, googleSignIn, isParent, bypassLogin } = useAuth();
   const { toast } = useToast();
   const [isSigningIn, setIsSigningIn] = useState(false);
   const router = useRouter();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!loading && user) {
@@ -67,24 +70,24 @@ export default function ParentsLoginPage() {
           <FileText className="h-10 w-10" />
         </div>
         <h1 className="font-headline text-3xl sm:text-4xl font-bold text-foreground mb-2">
-          KIS 통합 포털
+          {t('parents.portal_title') || 'KIS 통합 포털'}
         </h1>
         <p className="text-muted-foreground mb-8 text-sm sm:text-base">
-          학부모 서비스 - 학생 구글 계정으로 로그인해주세요.
+          {t('parents.login_desc') || '학부모 서비스 - 학생 구글 계정으로 로그인해주세요.'}
         </p>
 
         <Button
           onClick={handleSignIn}
           disabled={isSigningIn}
           size="lg"
-          className="w-full text-lg h-14 rounded-xl shadow-lg transition-all transform hover:scale-105"
+          className="w-full text-lg h-14 rounded-xl shadow-lg transition-all transform hover:scale-105 cursor-pointer"
         >
           {isSigningIn ? (
             <Loader2 className="mr-2 h-5 w-5 animate-spin" />
           ) : (
             <GoogleIcon className="mr-3 h-6 w-6" />
           )}
-          학생 계정으로 계속하기
+          {t('parents.google_signin') || '학생 계정으로 계속하기'}
         </Button>
 
         {process.env.NODE_ENV === 'development' && (
@@ -104,9 +107,10 @@ export default function ParentsLoginPage() {
         )}
 
          <p className="text-xs text-muted-foreground mt-8">
-          지정된 학생 계정 도메인 사용자만 이 서비스에 접근할 수 있습니다.
+          {t('parents.login_domain_notice') || '지정된 학생 계정 도메인 사용자만 이 서비스에 접근할 수 있습니다.'}
         </p>
       </main>
     </div>
   );
 }
+

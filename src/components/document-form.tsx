@@ -1346,6 +1346,9 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
             {approverFields.map((field, index) => {
               const targetRole = field.role;
               const filteredUsers = users.filter(u => {
+                  // 학생/학부모 계정 원천 제외 (교직원만 결재선 지정 가능)
+                  if (u.email !== 'beside1s@kshcm.net' && (u.studentName || u.studentGrade || u.role === '학부모' || u.role === 'student' || u.role === 'parent')) return false;
+                  if (/^\d{4}[a-zA-Z]+@kshcm\.net$/i.test(u.email)) return false;
                   if (targetRole === '협조') return true;
                   return u.role === targetRole;
               });

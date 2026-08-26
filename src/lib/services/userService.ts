@@ -15,6 +15,17 @@ import { getOrgStructure } from '@/lib/services/settingsService';
 
 const getUsersCol = () => collection(getDb(), 'users');
 
+// ─── 사용자 목록 메모리 캐시 (TTL: 5분) ────────────────────────────────────────
+let _usersCache: UserProfile[] | null = null;
+let _usersCacheTime: number = 0;
+const USERS_CACHE_TTL = 5 * 60 * 1000; // 5분
+
+export function invalidateUsersCache() {
+  _usersCache = null;
+  _usersCacheTime = 0;
+}
+// ────────────────────────────────────────────────────────────────────────────────
+
 export async function getUserProfileByEmail(email: string, throwOnError: boolean = false): Promise<UserProfile | null> {
   if (!email) return null;
   const userDocRef = doc(getUsersCol(), email.toLowerCase());
@@ -101,21 +112,25 @@ export async function saveUserProfile(userId: string, email: string, profileData
   }
 }
 
-export async function getUsersDirectory(): Promise<UserProfile[]> {
+export async function getUsersDirectory(forceRefresh = false): Promise<UserProfile[]> {
+  // 캐시 유효 시 즉시 반환 (네트워크 통신 없음)
+  const now = Date.now();
+  if (!forceRefresh && _usersCache && (now - _usersCacheTime) < USERS_CACHE_TTL) {
+    return _usersCache;
+  }
   try {
     const snapshot = await getDocs(getUsersCol());
     if (snapshot.empty) return [];
-    return snapshot.docs.map((d: any) => {
+    const result = snapshot.docs.map((d: any) => {
       const data = d.data();
       return {
         email: d.id,
         uid: data.uid,
         name: data.name,
         role: data.role,
-        signature: data.signature,
+        // signature, parentSignature는 목록에서 불필요 → 제외로 데이터 60~80% 경량화
         isAdmin: data.isAdmin,
         parentPhone: data.parentPhone,
-        parentSignature: data.parentSignature,
         hashedPin: data.hashedPin,
         // 학부모/학생 정보
         parentName: data.parentName ?? null,
@@ -128,6 +143,10 @@ export async function getUsersDirectory(): Promise<UserProfile[]> {
         dept: data.dept ?? null,
       } as UserProfile;
     });
+    // 캐시 갱신
+    _usersCache = result;
+    _usersCacheTime = now;
+    return result;
   } catch (error) {
     console.error("[UserService] getUsersDirectory failed:", error);
     return [];
@@ -372,44 +391,42 @@ export async function getApproversByGradeClass(
     }
   }
 
-  // 매칭되는 전결규정 탐색
-  const matchedRule = delegationRules.find(r => 
-    r.subType?.trim() === targetDocName || 
-    r.mainType?.trim() === targetDocName ||
-    r.detailType?.trim() === targetDocName
-  );
+  // 매칭되는 전결규정 탐색 (ID 일치, 완전 일치, 부분 일치, 키워드 포함 모두 지원)
+  const isFieldTrip = targetDocName === '체험학습신청서';
+  const matchedRule = delegationRules.find(r => {
+    if (isFieldTrip && (r.id === 'rule-fieldtrip' || r.subType?.includes('체험') || r.mainType?.includes('체험') || r.detailType?.includes('체험'))) {
+      return true;
+    }
+    if (!isFieldTrip && (r.id === 'rule-absence' || r.subType?.includes('결석') || r.mainType?.includes('결석') || r.detailType?.includes('결석'))) {
+      return true;
+    }
+    return (
+      r.subType?.trim() === targetDocName || 
+      r.mainType?.trim() === targetDocName ||
+      r.detailType?.trim() === targetDocName
+    );
+  });
 
-  const intermediate = matchedRule?.intermediateApprover || (targetDocName === '체험학습신청서' ? 'GRADE_HEAD' : 'NONE');
-  const finalApproverType = matchedRule?.finalApprover || (targetDocName === '체험학습신청서' ? 'VP' : 'GRADE_HEAD');
+  const intermediate = matchedRule?.intermediateApprover || (isFieldTrip ? 'ACADEMIC_HEAD' : 'NONE');
+  const finalApproverType = matchedRule?.finalApprover || (isFieldTrip ? 'VP' : 'GRADE_HEAD');
 
-  // 교무부장 탐색 헬퍼
+  // 교무부장 탐색 헬퍼 (1순위: org.academicHead, 2순위: departments 중 교무/기획 부서 부장)
   const getAcademicHeadEmail = () => {
+    if (org.academicHead?.trim()) return org.academicHead.trim();
     const academicDept = org.departments?.find(d => 
       d.name?.includes('교무') || d.name?.includes('기획') || d.name?.includes('학적')
     );
-    return academicDept?.headEmail || null;
+    return academicDept?.headEmail?.trim() || null;
   };
 
   const gradeHeadEmail = org.gradeHeads?.[g] || org.gradeHeads?.[grade];
+  const academicHeadEmail = getAcademicHeadEmail();
 
   // 중간 결재자 추가 (최종 결재자와 다를 경우)
-  if (intermediate === 'GRADE_HEAD' && finalApproverType !== 'GRADE_HEAD') {
-    if (gradeHeadEmail) {
-      const headUser = await getUserProfileByEmail(gradeHeadEmail.trim().toLowerCase());
-      if (headUser) {
-        approvers.push({
-          name: headUser.name,
-          email: headUser.email,
-          role: '학년부장',
-          type: 'normal',
-          status: 'pending',
-        });
-      }
-    }
-  } else if (intermediate === 'ACADEMIC_HEAD' && finalApproverType !== 'ACADEMIC_HEAD') {
-    const academicEmail = getAcademicHeadEmail();
-    if (academicEmail) {
-      const acadUser = await getUserProfileByEmail(academicEmail.trim().toLowerCase());
+  if (intermediate === 'ACADEMIC_HEAD' && finalApproverType !== 'ACADEMIC_HEAD') {
+    const targetEmail = academicHeadEmail || gradeHeadEmail;
+    if (targetEmail) {
+      const acadUser = await getUserProfileByEmail(targetEmail.trim().toLowerCase());
       if (acadUser) {
         approvers.push({
           name: acadUser.name,
@@ -420,16 +437,31 @@ export async function getApproversByGradeClass(
         });
       }
     }
+  } else if (intermediate === 'GRADE_HEAD' && finalApproverType !== 'GRADE_HEAD') {
+    const targetEmail = gradeHeadEmail || academicHeadEmail;
+    if (targetEmail) {
+      const headUser = await getUserProfileByEmail(targetEmail.trim().toLowerCase());
+      if (headUser) {
+        approvers.push({
+          name: headUser.name,
+          email: headUser.email,
+          role: academicHeadEmail && targetEmail === academicHeadEmail ? '교무부장' : '학년부장',
+          type: 'normal',
+          status: 'pending',
+        });
+      }
+    }
   }
 
   // 최종 결재자 추가
   if (finalApproverType === 'GRADE_HEAD') {
-    if (!gradeHeadEmail) {
-      throw new Error(`${grade}학년 부장 교사가 아직 배정되지 않았습니다. 학교 관리자에게 문의해 주세요.`);
+    const targetEmail = gradeHeadEmail || academicHeadEmail;
+    if (!targetEmail) {
+      throw new Error(`${grade}학년 부장 또는 교무부장 교사가 아직 배정되지 않았습니다. 학교 관리자에게 문의해 주세요.`);
     }
-    const headUser = await getUserProfileByEmail(gradeHeadEmail.trim().toLowerCase());
+    const headUser = await getUserProfileByEmail(targetEmail.trim().toLowerCase());
     if (!headUser) {
-      throw new Error(`배정된 학년 부장 교사(${gradeHeadEmail})의 계정을 찾을 수 없습니다. 학교 관리자에게 문의해 주세요.`);
+      throw new Error(`배정된 부장 교사(${targetEmail})의 계정을 찾을 수 없습니다. 학교 관리자에게 문의해 주세요.`);
     }
     approvers.push({
       name: headUser.name,
@@ -439,13 +471,13 @@ export async function getApproversByGradeClass(
       status: 'pending',
     });
   } else if (finalApproverType === 'ACADEMIC_HEAD') {
-    const academicEmail = getAcademicHeadEmail();
-    if (!academicEmail) {
-      throw new Error(`교무부장 교사가 아직 배정되지 않았습니다. 시스템 설정의 조직도에서 교무부 부장을 지정해 주세요.`);
+    const targetEmail = academicHeadEmail || gradeHeadEmail;
+    if (!targetEmail) {
+      throw new Error(`교무부장 교사가 아직 배정되지 않았습니다. 시스템 설정의 조직도에서 교무부장을 지정해 주세요.`);
     }
-    const acadUser = await getUserProfileByEmail(academicEmail.trim().toLowerCase());
+    const acadUser = await getUserProfileByEmail(targetEmail.trim().toLowerCase());
     if (!acadUser) {
-      throw new Error(`교무부장 교사(${academicEmail})의 계정을 찾을 수 없습니다. 학교 관리자에게 문의해 주세요.`);
+      throw new Error(`교무부장 교사(${targetEmail})의 계정을 찾을 수 없습니다. 학교 관리자에게 문의해 주세요.`);
     }
     approvers.push({
       name: acadUser.name,

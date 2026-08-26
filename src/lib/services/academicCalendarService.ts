@@ -252,3 +252,55 @@ export function useAcademicCalendar() {
         checkDateHoliday: (d: Date | string) => checkIsSchoolHoliday(d, calendarConfig)
     };
 }
+
+/**
+ * 특정 시작일~종료일 사이의 평일(월~금) 중 학사일정 상 휴업일을 제외한 순수 등교일수 계산
+ */
+export function calculateSchoolDays(
+    startDate: string,
+    endDate: string,
+    calConfig?: AcademicCalendarConfig
+): {
+    totalDays: number;
+    schoolDays: number;
+    weekdays: number;
+    holidays: { date: string; reason?: string }[];
+} {
+    if (!startDate || !endDate || startDate > endDate) {
+        return { totalDays: 0, schoolDays: 0, weekdays: 0, holidays: [] };
+    }
+
+    const cal = calConfig || DEFAULT_ACADEMIC_CALENDAR_CONFIG;
+    let schoolDays = 0;
+    let weekdays = 0;
+    let totalDays = 0;
+    const holidays: { date: string; reason?: string }[] = [];
+
+    const curr = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+
+    while (curr <= end) {
+        totalDays++;
+        const day = curr.getDay();
+        const dateStr = formatToDateStr(curr);
+
+        if (day !== 0 && day !== 6) { // 월~금 평일
+            weekdays++;
+            const holidayCheck = checkIsSchoolHoliday(dateStr, cal);
+            if (holidayCheck.isHoliday) {
+                holidays.push({ date: dateStr, reason: holidayCheck.reason });
+            } else {
+                schoolDays++;
+            }
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+
+    return {
+        totalDays,
+        schoolDays,
+        weekdays,
+        holidays
+    };
+}
+

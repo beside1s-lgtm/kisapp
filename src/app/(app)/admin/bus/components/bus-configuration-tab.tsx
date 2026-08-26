@@ -4,14 +4,23 @@ import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import { 
     addDestination, deleteDestination, approveSuggestedDestination, addDestinationsInBatch,
     updateRouteStops, clearAllSuggestedDestinations, clearDestinations,
-    deleteSuggestedDestination, updateRoute, updateDestinationZone, updateDestinationsZoneBatch
+    deleteSuggestedDestination, updateRoute, updateDestinationZone, updateDestinationsZoneBatch,
+    updateDestinationSaturdayZone, updateDestinationsSaturdayZoneBatch,
+    syncDestinationsFromExcelBatch
 } from '@/lib/kisbus';
 import { getGlobalSettings, updateGlobalSettings } from '@/lib/kisbus/settings';
-import type { Bus, Route, Destination, DayOfWeek, RouteType, NewDestination } from '@/lib/kisbus/types';
+import type { Bus, Route, Destination, DayOfWeek, RouteType, NewDestination, Student, BusQuarterSetting } from '@/lib/kisbus/types';
+import type { AcademicCalendarConfig } from '@/lib/types';
+import { calculateSchoolDays } from '@/lib/services/academicCalendarService';
+import { getDefaultQuarters, calculateAllStudentsBusFare, downloadBusFareExcel, StudentBusFareDetail } from '@/lib/kisbus/fareCalculator';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
-import { Upload, Trash2, PlusCircle, Download, X, Search, Copy, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Bus as BusIcon, Check } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { 
+    Upload, Trash2, PlusCircle, Download, X, Search, Copy, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, 
+    Bus as BusIcon, Check, Calendar, DollarSign, Users, FileSpreadsheet, Eye, Info, Sparkles, CheckCircle2, ChevronRight, Edit3,
+    GraduationCap
+} from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
@@ -31,6 +40,8 @@ interface BusConfigurationTabProps {
   selectedDay: DayOfWeek;
   selectedRouteType: RouteType;
   selectedBusId: string | null;
+  students?: Student[];
+  academicCalendar?: AcademicCalendarConfig;
 }
 
 export const BusConfigurationTab = ({
@@ -41,6 +52,8 @@ export const BusConfigurationTab = ({
   selectedDay,
   selectedRouteType,
   selectedBusId,
+  students = [],
+  academicCalendar,
 }: BusConfigurationTabProps) => {
   const [newDestinationName, setNewDestinationName] = useState('');
   const [destinationSearchQuery, setDestinationSearchQuery] = useState('');
@@ -51,9 +64,13 @@ export const BusConfigurationTab = ({
 
   const [selectedRouteStopIds, setSelectedRouteStopIds] = useState<string[]>([]);
   const [selectedAllDestIds, setSelectedAllDestIds] = useState<string[]>([]);
+  // 그룹 이동 탭: 평일/토요일
+  const [batchZoneTab, setBatchZoneTab] = useState<'weekday' | 'saturday'>('weekday');
   const [selectedBatchZone, setSelectedBatchZone] = useState<string>('미지정');
+  const [selectedSaturdayBatchZone, setSelectedSaturdayBatchZone] = useState<string>('미지정');
   const [isBatchUpdatingZone, setIsBatchUpdatingZone] = useState<boolean>(false);
   
+  // 요금제 설정 상태
   const [busFareTab, setBusFareTab] = useState<'weekday' | 'saturday'>('weekday');
   const [busFareSettings, setBusFareSettings] = useState<Record<string, number>>({
       'Zone A (근거리)': 50000,
@@ -68,6 +85,25 @@ export const BusConfigurationTab = ({
   const [isFareSaving, setIsFareSaving] = useState(false);
   const [busFareCurrency, setBusFareCurrency] = useState<'VND' | 'KRW' | 'USD'>('VND');
 
+  // 📅 분기(Quarter) 설정 및 추가 요금 옵션
+  const [quarters, setQuarters] = useState<BusQuarterSetting[]>(getDefaultQuarters);
+  const [activeQuarterId, setActiveQuarterId] = useState<string>('q1');
+  const [under3Surcharge, setUnder3Surcharge] = useState<number>(20000); // 3명 이하 목적지 일일 추가요금 (기본 20,000 VND)
+  const [siblingDiscountRate, setSiblingDiscountRate] = useState<number>(10); // 형제 복수탑승 둘째 이하 할인율 (기본 10%)
+  
+  // 📋 분기별 학생 요금 청구서 모달 상태
+  const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [billingSearchQuery, setBillingSearchQuery] = useState('');
+  const [billingGradeFilter, setBillingGradeFilter] = useState('all');
+  const [billingRidingFilter, setBillingRidingFilter] = useState<'all' | 'riding'>('riding');
+
+  // 신규 분기 추가 모달 상태
+  const [isAddQuarterDialogOpen, setIsAddQuarterDialogOpen] = useState(false);
+  const [newQuarterName, setNewQuarterName] = useState('');
+  const [newQuarterStartDate, setNewQuarterStartDate] = useState('');
+  const [newQuarterEndDate, setNewQuarterEndDate] = useState('');
+
   useEffect(() => {
       getGlobalSettings().then(cfg => {
           if (cfg?.busFareSettings) {
@@ -79,16 +115,41 @@ export const BusConfigurationTab = ({
           if (cfg?.busFareCurrency) {
               setBusFareCurrency(cfg.busFareCurrency as any);
           }
+          if (cfg?.quarters && Array.isArray(cfg.quarters) && cfg.quarters.length > 0) {
+              setQuarters(cfg.quarters);
+          }
+          if (cfg?.activeQuarterId) {
+              setActiveQuarterId(cfg.activeQuarterId);
+          }
+          if (cfg?.under3Surcharge !== undefined) {
+              setUnder3Surcharge(cfg.under3Surcharge);
+          }
+          if (cfg?.siblingDiscountRate !== undefined) {
+              setSiblingDiscountRate(cfg.siblingDiscountRate);
+          }
       });
   }, []);
+
+  // 학년별 제외일수 입력 폼 상태
+  const [selectedExceptionGrade, setSelectedExceptionGrade] = useState<string>('6');
+  const [exceptionDaysInput, setExceptionDaysInput] = useState<number>(3);
+  const [exceptionReasonInput, setExceptionReasonInput] = useState<string>('수학여행');
 
   const handleSaveFareSettings = async () => {
       setIsFareSaving(true);
       try {
-          await updateGlobalSettings({ busFareSettings, saturdayBusFareSettings, busFareCurrency });
+          await updateGlobalSettings({ 
+              busFareSettings, 
+              saturdayBusFareSettings, 
+              busFareCurrency,
+              quarters,
+              activeQuarterId,
+              under3Surcharge,
+              siblingDiscountRate
+          });
           toast({
-              title: "요금 및 통화 설정 저장 완료",
-              description: `[평일/토요일] 목적지 그룹별 버스 요금 및 화폐 단위(${busFareCurrency})가 성공적으로 저장되었습니다.`
+              title: "요금제 및 분기 설정 저장 완료",
+              description: `[평일/토요일] 요금제, 분기 기간, 학년별 제외일수, 3명 이하 추가금 및 형제할인율이 성공적으로 저장되었습니다.`
           });
       } catch (err) {
           toast({
@@ -100,6 +161,99 @@ export const BusConfigurationTab = ({
           setIsFareSaving(false);
       }
   };
+
+  // 현재 선택된 활성 분기 객체
+  const currentQuarter = useMemo(() => {
+      return quarters.find(q => q.id === activeQuarterId) || quarters[0] || getDefaultQuarters()[0];
+  }, [quarters, activeQuarterId]);
+
+  // 특정 학년 제외일수 추가
+  const handleAddGradeException = () => {
+      if (!selectedExceptionGrade || exceptionDaysInput <= 0) {
+          toast({ variant: "destructive", title: "입력 오류", description: "학년과 1일 이상의 제외 일수를 입력해주세요." });
+          return;
+      }
+
+      setQuarters(prev => prev.map(q => {
+          if (q.id !== currentQuarter.id) return q;
+          const currentExceptions = { ...(q.gradeExceptions || {}) };
+          const currentReasons = { ...(q.gradeExceptionReasons || {}) };
+          currentExceptions[selectedExceptionGrade] = exceptionDaysInput;
+          if (exceptionReasonInput.trim()) {
+              currentReasons[selectedExceptionGrade] = exceptionReasonInput.trim();
+          } else {
+              delete currentReasons[selectedExceptionGrade];
+          }
+          return {
+              ...q,
+              gradeExceptions: currentExceptions,
+              gradeExceptionReasons: currentReasons
+          };
+      }));
+
+      toast({
+          title: "학년별 제외일수 반영",
+          description: `${selectedExceptionGrade}학년 등교일수 -${exceptionDaysInput}일 (${exceptionReasonInput || '특정 활동'}) 제외가 적용되었습니다.`
+      });
+  };
+
+  // 특정 학년 제외일수 삭제
+  const handleRemoveGradeException = (grade: string) => {
+      setQuarters(prev => prev.map(q => {
+          if (q.id !== currentQuarter.id) return q;
+          const currentExceptions = { ...(q.gradeExceptions || {}) };
+          const currentReasons = { ...(q.gradeExceptionReasons || {}) };
+          delete currentExceptions[grade];
+          delete currentReasons[grade];
+          return {
+              ...q,
+              gradeExceptions: currentExceptions,
+              gradeExceptionReasons: currentReasons
+          };
+      }));
+      toast({
+          title: "제외일수 삭제",
+          description: `${grade}학년 제외일수 설정이 해제되었습니다.`
+      });
+  };
+
+
+  // 현재 활성 분기의 학사일정 연동 평일 등교일수
+  const currentQuarterDaysInfo = useMemo(() => {
+      return calculateSchoolDays(currentQuarter.startDate, currentQuarter.endDate, academicCalendar);
+  }, [currentQuarter.startDate, currentQuarter.endDate, academicCalendar]);
+
+  // 목적지별 탑승 학생 수 카운트 Map (3명 이하 목적지 배지 표시용)
+  const destinationRiderCounts = useMemo(() => {
+      const counts = new Map<string, number>();
+      students.forEach(s => {
+          const destId = s.morningDestinationId || s.afternoonDestinationId;
+          if (destId) {
+              counts.set(destId, (counts.get(destId) || 0) + 1);
+          }
+      });
+      return counts;
+  }, [students]);
+
+  // 전체 학생 분기별 요금 계산 결과
+  const fareCalculationResult = useMemo(() => {
+      return calculateAllStudentsBusFare({
+          students,
+          destinations,
+          fareConfig: {
+              busFareSettings,
+              saturdayBusFareSettings,
+              busFareCurrency,
+              quarters,
+              activeQuarterId,
+              under3Surcharge,
+              siblingDiscountRate
+          },
+          selectedQuarter: currentQuarter,
+          academicCalendar
+      });
+  }, [students, destinations, busFareSettings, saturdayBusFareSettings, busFareCurrency, quarters, activeQuarterId, under3Surcharge, siblingDiscountRate, currentQuarter, academicCalendar]);
+
   
   const [isCopyRouteDialogOpen, setCopyRouteDialogOpen] = useState(false);
   const allDays: DayOfWeek[] = useMemo(() => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], []);
@@ -108,6 +262,9 @@ export const BusConfigurationTab = ({
   );
   const [routeTypesToCopyRouteTo, setRouteTypesToCopyRouteTo] = useState<Partial<Record<'Morning' | 'Afternoon', boolean>>>({ Morning: true, Afternoon: true });
 
+
+  // 목적지 그룹 필터링 상태 (all, 미지정, Zone 이름)
+  const [destinationZoneFilter, setDestinationZoneFilter] = useState<string>('all');
 
   const selectedBus = useMemo(() => {
     if (!selectedBusId) return null;
@@ -130,13 +287,32 @@ export const BusConfigurationTab = ({
 
 
   const filteredDestinations = useMemo(() => {
-    if (!destinationSearchQuery) {
-        return destinations;
-    }
-    return destinations.filter(dest => 
-        normalizeString(dest.name).includes(normalizeString(destinationSearchQuery))
-    );
-  }, [destinations, destinationSearchQuery]);
+    return destinations.filter(dest => {
+      // 1. 검색어 필터
+      if (destinationSearchQuery) {
+        const normQuery = normalizeString(destinationSearchQuery);
+        const normName = normalizeString(dest.name);
+        if (!normName.includes(normQuery)) return false;
+      }
+
+      // 2. 그룹(Zone) 필터
+      if (destinationZoneFilter !== 'all') {
+        const isSaturday = batchZoneTab === 'saturday';
+        const currentDestZone = isSaturday 
+          ? (dest.saturdayZone && Object.keys(saturdayBusFareSettings).includes(dest.saturdayZone) ? dest.saturdayZone : '미지정')
+          : (dest.zone && Object.keys(busFareSettings).includes(dest.zone) ? dest.zone : '미지정');
+
+        if (destinationZoneFilter === '미지정') {
+          if (currentDestZone !== '미지정') return false;
+        } else {
+          if (currentDestZone !== destinationZoneFilter) return false;
+        }
+      }
+
+      return true;
+    });
+  }, [destinations, destinationSearchQuery, destinationZoneFilter, batchZoneTab, busFareSettings, saturdayBusFareSettings]);
+
 
   const busesUsingDestination = useMemo(() => {
     const targetDestId = selectedAllDestIds.length === 1 ? selectedAllDestIds[0] : null;
@@ -199,8 +375,13 @@ export const BusConfigurationTab = ({
   
   const handleDownloadDestinationTemplate = () => {
     import('xlsx').then(XLSX => {
-        const headers = ["목적지 이름", "목적지그룹(선택)"];
-        const examples = [["경남 랜드마크", "Zone A (근거리)"], ["서호 호수공원", "Zone B (중거리)"]];
+        const isSaturday = batchZoneTab === 'saturday';
+        const headers = ["목적지 이름", "평일 목적지그룹", "토요일 목적지그룹"];
+        const examples = [
+            ["경남 랜드마크", "Zone A (근거리)", "Zone A (근거리)"],
+            ["서호 호수공원", "Zone B (중거리)", "Zone B (중거리)"],
+            ["타오디엔 펄", "미지정", "미지정"]
+        ];
         const wsData = [headers, ...examples];
         const ws = XLSX.utils.aoa_to_sheet(wsData);
         const wb = XLSX.utils.book_new();
@@ -218,10 +399,14 @@ export const BusConfigurationTab = ({
             return;
         }
         import('xlsx').then(XLSX => {
-            const headers = ["목적지 이름", "목적지그룹"];
+            const headers = ["목적지 이름", "평일 목적지그룹", "토요일 목적지그룹"];
             const wsData = [
                 headers,
-                ...destinations.map(d => [d.name, d.zone || '미지정'])
+                ...destinations.map(d => [
+                    d.name, 
+                    d.zone || '미지정',
+                    d.saturdayZone || '미지정'
+                ])
             ];
             const ws = XLSX.utils.aoa_to_sheet(wsData);
             const wb = XLSX.utils.book_new();
@@ -237,6 +422,7 @@ export const BusConfigurationTab = ({
     const file = event.target.files?.[0];
     if (!file) return;
 
+    const currentMode = batchZoneTab; // 'weekday' | 'saturday'
     const reader = new FileReader();
     reader.onload = async (e) => {
         try {
@@ -247,27 +433,69 @@ export const BusConfigurationTab = ({
             const worksheet = workbook.Sheets[firstSheetName];
             const results: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
 
-            const normalizedExisting = new Set(destinations.map(d => normalizeString(d.name)));
-            const newDestinationsData: any[] = results.map((row: any) => ({
-                name: (row['목적지 이름'] || row['name'] || '').toString().trim(),
-                zone: (row['목적지그룹(선택)'] || row['목적지그룹'] || row['zone'] || '').toString().trim() || '미지정'
-            })).filter(dest => {
-                const normName = normalizeString(dest.name);
-                return normName && !normalizedExisting.has(normName);
-            });
-
-            if (newDestinationsData.length === 0) {
-                toast({ title: t('notice'), description: t('admin.bus_config.dest.batch.no_new'), variant: "default" });
+            if (!results || results.length === 0) {
+                toast({ title: t('notice'), description: "엑셀 파일에 데이터가 비어있습니다.", variant: "default" });
                 return;
             }
-            const { dismiss } = toast({ title: t('processing'), description: t('admin.bus_config.dest.batch.processing') });
+
+            const syncItems = results.map((row: any) => {
+                const name = (row['목적지 이름'] || row['목적지명'] || row['name'] || '').toString().trim();
+                
+                // 평일 그룹 추출
+                const weekdayZone = (
+                    row['평일 목적지그룹'] || 
+                    row['평일목적지그룹'] || 
+                    row['평일그룹'] || 
+                    row['목적지그룹(평일)'] || 
+                    (currentMode === 'weekday' ? (row['목적지그룹(선택)'] || row['목적지그룹'] || row['zone']) : undefined) ||
+                    ''
+                ).toString().trim();
+
+                // 토요일 그룹 추출
+                const satZone = (
+                    row['토요일 목적지그룹'] || 
+                    row['토요일목적지그룹'] || 
+                    row['토요 목적지그룹'] || 
+                    row['토요그룹'] || 
+                    row['목적지그룹(토요일)'] || 
+                    (currentMode === 'saturday' ? (row['목적지그룹(선택)'] || row['목적지그룹'] || row['saturdayZone']) : undefined) ||
+                    ''
+                ).toString().trim();
+
+                // 평일/토요일 모두 컬럼이 있는 경우 'both', 아니면 현재 탭 기준
+                let mode: 'weekday' | 'saturday' | 'both' = currentMode;
+                if ((row['평일 목적지그룹'] || row['평일그룹']) && (row['토요일 목적지그룹'] || row['토요그룹'])) {
+                    mode = 'both';
+                }
+
+                return {
+                    name,
+                    zone: weekdayZone || undefined,
+                    saturdayZone: satZone || undefined,
+                    mode
+                };
+            }).filter(item => !!item.name);
+
+            if (syncItems.length === 0) {
+                toast({ title: t('notice'), description: "유효한 목적지 이름이 포함된 행을 찾을 수 없습니다.", variant: "default" });
+                return;
+            }
+
+            const { dismiss } = toast({ 
+                title: t('processing'), 
+                description: `목적지 ${syncItems.length}건을 [${currentMode === 'weekday' ? '평일' : '토요일'} 요금제] 기준으로 동기화 중입니다...` 
+            });
+
             try {
-                await addDestinationsInBatch(newDestinationsData);
+                const res = await syncDestinationsFromExcelBatch(syncItems, destinations);
                 dismiss();
-                toast({ title: t('success'), description: t('admin.bus_config.dest.batch.success', {count: newDestinationsData.length}) });
+                toast({ 
+                    title: "목적지 및 그룹 일괄 반영 완료", 
+                    description: `기존 목적지 ${res.updatedCount}건의 그룹이 업데이트되었고, 신규 목적지 ${res.addedCount}건이 등록되었습니다.` 
+                });
             } catch (error) {
                 dismiss();
-                toast({ title: t('error'), description: t('admin.bus_config.dest.batch.error'), variant: "destructive" });
+                toast({ title: t('error'), description: "목적지 저장 중 오류가 발생했습니다.", variant: "destructive" });
             }
         } catch (err: any) {
             toast({ title: t('admin.file_parse_error'), description: err.message, variant: "destructive" });
@@ -279,6 +507,7 @@ export const BusConfigurationTab = ({
         fileInputRef.current.value = "";
     }
   };
+
   
   const handleApproveSuggestion = async (suggestion: Destination) => {
     const normName = normalizeString(suggestion.name);
@@ -322,12 +551,14 @@ export const BusConfigurationTab = ({
 
   const handleBatchUpdateDestinationZone = async (targetZone: string) => {
     if (selectedAllDestIds.length === 0) return;
+    const movedCount = selectedAllDestIds.length;
     setIsBatchUpdatingZone(true);
     try {
       await updateDestinationsZoneBatch(selectedAllDestIds, targetZone);
+      setSelectedAllDestIds([]); // 이동 완료 후 선택 항목 자동 초기화!
       toast({
-        title: "목적지 그룹 일괄 변경 완료",
-        description: `선택한 ${selectedAllDestIds.length}개 목적지가 [${targetZone === '미지정' ? '미지정' : targetZone}] 그룹으로 일괄 변경되었습니다.`,
+        title: "📅 평일 그룹 일괄 변경 완료",
+        description: `선택한 ${movedCount}개 목적지가 평일 [${targetZone === '미지정' ? '미지정' : targetZone}] 그룹으로 이동되었습니다.`,
       });
     } catch (err) {
       toast({
@@ -340,6 +571,29 @@ export const BusConfigurationTab = ({
     }
   };
 
+  const handleBatchUpdateSaturdayZone = async (targetZone: string) => {
+    if (selectedAllDestIds.length === 0) return;
+    const movedCount = selectedAllDestIds.length;
+    setIsBatchUpdatingZone(true);
+    try {
+      await updateDestinationsSaturdayZoneBatch(selectedAllDestIds, targetZone);
+      setSelectedAllDestIds([]); // 이동 완료 후 선택 항목 자동 초기화!
+      toast({
+        title: "🚌 토요일 그룹 일괄 변경 완료",
+        description: `선택한 ${movedCount}개 목적지가 토요일 [${targetZone === '미지정' ? '미지정' : targetZone}] 그룹으로 이동되었습니다.`,
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "일괄 변경 실패",
+        description: "토요일 목적지 그룹 변경 중 오류가 발생했습니다.",
+      });
+    } finally {
+      setIsBatchUpdatingZone(false);
+    }
+  };
+
+
     const handleSelectRouteStop = (e: React.MouseEvent, stopId: string) => {
         if (e.ctrlKey || e.metaKey) {
             setSelectedRouteStopIds(prev => prev.includes(stopId) ? prev.filter(id => id !== stopId) : [...prev, stopId]);
@@ -350,13 +604,10 @@ export const BusConfigurationTab = ({
     };
 
     const handleSelectAllDest = (e: React.MouseEvent, destId: string) => {
-        if (e.ctrlKey || e.metaKey) {
-             setSelectedAllDestIds(prev => prev.includes(destId) ? prev.filter(id => id !== destId) : [...prev, destId]);
-        } else {
-             setSelectedAllDestIds(prev => (prev.length === 1 && prev[0] === destId) ? [] : [destId]);
-        }
+        setSelectedAllDestIds(prev => prev.includes(destId) ? prev.filter(id => id !== destId) : [...prev, destId]);
         setSelectedRouteStopIds([]);
     };
+
 
   const handleMoveStop = useCallback(async (direction: 'up' | 'down') => {
       if (!currentRoute || selectedRouteStopIds.length !== 1) return;
@@ -574,16 +825,39 @@ export const BusConfigurationTab = ({
                             </AlertDialogContent>
                         </AlertDialog>
                     </div>
-                    <div className="relative mb-4">
-                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input 
-                            type="search"
-                            placeholder={t('admin.bus_config.dest.search_placeholder')}
-                            className="pl-8 w-full"
-                            value={destinationSearchQuery}
-                            onChange={(e) => setDestinationSearchQuery(e.target.value)}
-                        />
+                    {/* 검색 및 그룹(Zone) 필터 바 */}
+                    <div className="flex flex-col sm:flex-row gap-2 mb-3">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input 
+                                type="search"
+                                placeholder={t('admin.bus_config.dest.search_placeholder')}
+                                className="pl-8 w-full h-9 text-xs font-medium"
+                                value={destinationSearchQuery}
+                                onChange={(e) => setDestinationSearchQuery(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            <select
+                                value={destinationZoneFilter}
+                                onChange={(e) => {
+                                    setDestinationZoneFilter(e.target.value);
+                                    setSelectedAllDestIds([]); // 필터 변경 시 선택 초기화
+                                }}
+                                className="h-9 text-xs border border-indigo-200 rounded-md px-2.5 font-bold text-slate-800 bg-white shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
+                                title="목적지 그룹(Zone)별 필터링"
+                            >
+                                <option value="all">🔍 전체 그룹 보기 ({destinations.length}개)</option>
+                                <option value="미지정">⚠️ 미지정 (요금 없음)만 보기</option>
+                                {Object.keys(batchZoneTab === 'weekday' ? busFareSettings : saturdayBusFareSettings).map((zoneName) => (
+                                    <option key={zoneName} value={zoneName}>
+                                        🏷️ {zoneName}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
+
 
                     {selectedAllDestIds.length === 1 && (
                         <div className="mb-4 p-3 bg-primary/5 border border-primary/20 rounded-md animate-in fade-in slide-in-from-top-1">
@@ -645,31 +919,86 @@ export const BusConfigurationTab = ({
                             )}
                         </div>
 
-                        {/* 일괄 그룹 설정 컨트롤 (가로 넘침 없이 2단 레이아웃) */}
-                        <div className="pt-2 border-t border-indigo-200/60 space-y-1.5">
-                            <div className="text-[11px] font-bold text-indigo-900 flex items-center gap-1">
+                        {/* 🏷️ 그룹 이동: 평일 / 토요일 탭 */}
+                        <div className="pt-2 border-t border-indigo-200/60 space-y-2">
+                            <div className="text-[11px] font-bold text-indigo-900 flex items-center gap-1 mb-1">
                                 <span>🏷️ 선택 목적지 그룹 이동:</span>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                                <select
-                                    value={selectedBatchZone}
-                                    onChange={(e) => setSelectedBatchZone(e.target.value)}
-                                    className="text-xs border border-indigo-200 rounded-lg px-2.5 py-1.5 font-bold text-slate-800 bg-white shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 flex-1 min-w-0"
+                            {/* 탭 버튼 */}
+                            <div className="flex gap-1 p-0.5 bg-indigo-100/70 rounded-lg w-fit">
+                                <button
+                                    type="button"
+                                    onClick={() => setBatchZoneTab('weekday')}
+                                    className={cn(
+                                        "text-[11px] font-bold px-3 py-1 rounded-md transition",
+                                        batchZoneTab === 'weekday'
+                                            ? "bg-blue-600 text-white shadow-sm"
+                                            : "text-indigo-700 hover:bg-indigo-200/60"
+                                    )}
                                 >
-                                    <option value="미지정">미지정 (요금 없음)</option>
-                                    {Object.keys(busFareSettings).map((g) => (
-                                        <option key={g} value={g}>{g}</option>
-                                    ))}
-                                </select>
-                                <Button
-                                    size="sm"
-                                    onClick={() => handleBatchUpdateDestinationZone(selectedBatchZone)}
-                                    disabled={selectedAllDestIds.length === 0 || isBatchUpdatingZone}
-                                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1.5 h-8 shrink-0 shadow-xs cursor-pointer disabled:opacity-50 transition rounded-lg"
+                                    📅 평일 요금제
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setBatchZoneTab('saturday')}
+                                    className={cn(
+                                        "text-[11px] font-bold px-3 py-1 rounded-md transition",
+                                        batchZoneTab === 'saturday'
+                                            ? "bg-orange-500 text-white shadow-sm"
+                                            : "text-indigo-700 hover:bg-indigo-200/60"
+                                    )}
                                 >
-                                    {isBatchUpdatingZone ? '적용 중...' : `${selectedAllDestIds.length}개 이동`}
-                                </Button>
+                                    🚌 토요일 요금제
+                                </button>
                             </div>
+
+                            {/* 평일 탭 */}
+                            {batchZoneTab === 'weekday' && (
+                                <div className="flex items-center gap-1.5">
+                                    <select
+                                        value={selectedBatchZone}
+                                        onChange={(e) => setSelectedBatchZone(e.target.value)}
+                                        className="text-xs border border-blue-200 rounded-lg px-2.5 py-1.5 font-bold text-slate-800 bg-white shadow-xs focus:outline-none focus:ring-2 focus:ring-blue-400 flex-1 min-w-0"
+                                    >
+                                        <option value="미지정">미지정 (요금 없음)</option>
+                                        {Object.keys(busFareSettings).map((g) => (
+                                            <option key={g} value={g}>{g}</option>
+                                        ))}
+                                    </select>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => handleBatchUpdateDestinationZone(selectedBatchZone)}
+                                        disabled={selectedAllDestIds.length === 0 || isBatchUpdatingZone}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3 py-1.5 h-8 shrink-0 shadow-xs cursor-pointer disabled:opacity-50 transition rounded-lg"
+                                    >
+                                        {isBatchUpdatingZone ? '적용 중...' : `📅 ${selectedAllDestIds.length}개 이동`}
+                                    </Button>
+                                </div>
+                            )}
+
+                            {/* 토요일 탭 */}
+                            {batchZoneTab === 'saturday' && (
+                                <div className="flex items-center gap-1.5">
+                                    <select
+                                        value={selectedSaturdayBatchZone}
+                                        onChange={(e) => setSelectedSaturdayBatchZone(e.target.value)}
+                                        className="text-xs border border-orange-200 rounded-lg px-2.5 py-1.5 font-bold text-slate-800 bg-white shadow-xs focus:outline-none focus:ring-2 focus:ring-orange-400 flex-1 min-w-0"
+                                    >
+                                        <option value="미지정">미지정 (요금 없음)</option>
+                                        {Object.keys(saturdayBusFareSettings).map((g) => (
+                                            <option key={g} value={g}>{g}</option>
+                                        ))}
+                                    </select>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => handleBatchUpdateSaturdayZone(selectedSaturdayBatchZone)}
+                                        disabled={selectedAllDestIds.length === 0 || isBatchUpdatingZone}
+                                        className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs px-3 py-1.5 h-8 shrink-0 shadow-xs cursor-pointer disabled:opacity-50 transition rounded-lg"
+                                    >
+                                        {isBatchUpdatingZone ? '적용 중...' : `🚌 ${selectedAllDestIds.length}개 이동`}
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -694,38 +1023,87 @@ export const BusConfigurationTab = ({
                                             }
                                         }}
                                     />
-                                    <span 
-                                        className="flex-1 text-sm font-bold text-slate-800 cursor-pointer select-none"
-                                        onClick={(e) => handleSelectAllDest(e, dest.id)}
-                                    >
-                                        {dest.name}
-                                    </span>
-                                    <select
-                                        value={dest.zone && Object.keys(busFareSettings).includes(dest.zone) ? dest.zone : '미지정'}
-                                        onChange={async (e) => {
-                                            const newZone = e.target.value;
-                                            try {
-                                                await updateDestinationZone(dest.id, newZone);
-                                                toast({
-                                                    title: "목적지 그룹 변경 완료",
-                                                    description: `"${dest.name}" 목적지가 ${newZone === '미지정' ? '미지정' : newZone}으로 설정되었습니다.`,
-                                                });
-                                            } catch (err) {
-                                                toast({
-                                                    variant: "destructive",
-                                                    title: "변경 실패",
-                                                    description: "목적지 그룹을 변경하는 중 오류가 발생했습니다."
-                                                });
-                                            }
-                                        }}
-                                        className="text-xs border rounded-md p-1.5 font-bold text-slate-700 bg-white mr-1 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                                        onClick={(e) => e.stopPropagation()}
-                                    >
-                                        <option value="미지정">미지정 (요금 없음)</option>
-                                        {Object.keys(busFareSettings).map((g) => (
-                                            <option key={g} value={g}>{g}</option>
-                                        ))}
-                                    </select>
+                                    {(() => {
+                                        const riderCount = destinationRiderCounts.get(dest.id) || 0;
+                                        const isSmall = riderCount >= 1 && riderCount <= 3;
+                                        return (
+                                            <div className="flex-1 flex flex-col min-w-0 pr-2">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span 
+                                                        className="text-sm font-bold text-slate-800 cursor-pointer select-none truncate hover:text-indigo-600"
+                                                        onClick={(e) => handleSelectAllDest(e, dest.id)}
+                                                    >
+                                                        {dest.name}
+                                                    </span>
+                                                    {riderCount > 0 ? (
+                                                        <span className={cn(
+                                                            "text-[10px] px-1.5 py-0.5 rounded font-bold border shrink-0",
+                                                            isSmall 
+                                                                ? "bg-rose-50 text-rose-700 border-rose-200" 
+                                                                : "bg-slate-100 text-slate-700 border-slate-200"
+                                                        )}>
+                                                            👥 {riderCount}명 {isSmall && under3Surcharge > 0 ? `(3명이하 소수탑승 +${under3Surcharge.toLocaleString()} ${busFareCurrency})` : ''}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[10px] text-slate-400 font-medium shrink-0">0명</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+                                    {/* 평일 zone 셀렉트 */}
+                                    <div className="flex flex-col gap-0.5 items-end">
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-[10px] text-blue-500 font-semibold shrink-0">📅</span>
+                                            <select
+                                                value={dest.zone && Object.keys(busFareSettings).includes(dest.zone) ? dest.zone : '미지정'}
+                                                onChange={async (e) => {
+                                                    const newZone = e.target.value;
+                                                    try {
+                                                        await updateDestinationZone(dest.id, newZone);
+                                                        toast({
+                                                            title: "📅 평일 그룹 변경",
+                                                            description: `\"${dest.name}\" → 평일 ${newZone === '미지정' ? '미지정' : newZone}`,
+                                                        });
+                                                    } catch (err) {
+                                                        toast({ variant: "destructive", title: "변경 실패", description: "평일 그룹을 변경하는 중 오류가 발생했습니다." });
+                                                    }
+                                                }}
+                                                className="text-[11px] border border-blue-200 rounded-md px-1.5 py-1 font-bold text-slate-700 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <option value="미지정">미지정</option>
+                                                {Object.keys(busFareSettings).map((g) => (
+                                                    <option key={g} value={g}>{g}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-[10px] text-orange-500 font-semibold shrink-0">🚌</span>
+                                            <select
+                                                value={dest.saturdayZone && Object.keys(saturdayBusFareSettings).includes(dest.saturdayZone) ? dest.saturdayZone : '미지정'}
+                                                onChange={async (e) => {
+                                                    const newZone = e.target.value;
+                                                    try {
+                                                        await updateDestinationSaturdayZone(dest.id, newZone);
+                                                        toast({
+                                                            title: "🚌 토요일 그룹 변경",
+                                                            description: `\"${dest.name}\" → 토요일 ${newZone === '미지정' ? '미지정' : newZone}`,
+                                                        });
+                                                    } catch (err) {
+                                                        toast({ variant: "destructive", title: "변경 실패", description: "토요일 그룹을 변경하는 중 오류가 발생했습니다." });
+                                                    }
+                                                }}
+                                                className="text-[11px] border border-orange-200 rounded-md px-1.5 py-1 font-bold text-slate-700 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-orange-300"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <option value="미지정">미지정</option>
+                                                {Object.keys(saturdayBusFareSettings).map((g) => (
+                                                    <option key={g} value={g}>{g}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
                                     <AlertDialog onOpenChange={(open) => open && setSelectedAllDestIds([])}>
                                         <AlertDialogTrigger asChild>
                                             <Button variant="ghost" size="icon" className="h-6 w-6">
@@ -915,176 +1293,9 @@ export const BusConfigurationTab = ({
                     )}
                 </CardContent>
             </Card>
-            {/* 목적지 그룹(Zone)별 버스 요금 설정 카드 */}
-            <Card className="col-span-full border-t-4 border-indigo-500 shadow-md mt-6">
-                <CardHeader>
-                    <CardTitle className="text-slate-900 font-bold flex items-center gap-2">
-                        목적지 그룹 및 요금제 커스텀 설정
-                    </CardTitle>
-                    <CardDescription>
-                        지역 및 학구에 맞추어 스쿨버스 목적지 그룹(Zone)을 추가하고, 그룹별 기본 징수 요금을 설정할 수 있습니다.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    {/* 화폐 통화 설정 드롭다운 */}
-                    {/* 평일 / 토요일 요금제 선택 서브 탭 */}
-                    <div className="flex gap-2 border-b border-slate-200 pb-3 mb-4">
-                        <button
-                            type="button"
-                            onClick={() => setBusFareTab('weekday')}
-                            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                                busFareTab === 'weekday'
-                                    ? 'bg-indigo-600 text-white shadow-sm'
-                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
-                        >
-                            <span>📅 평일 요금제 (월~금 정규/등하교)</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setBusFareTab('saturday')}
-                            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                                busFareTab === 'saturday'
-                                    ? 'bg-amber-600 text-white shadow-sm'
-                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
-                        >
-                            <span>🚌 토요일 요금제 (토요 방과후 전용)</span>
-                        </button>
-                    </div>
-
-                    <div className="flex flex-wrap gap-4 items-center justify-between bg-indigo-50/30 p-3.5 rounded-xl border border-indigo-100/30 mb-4">
-                        <div className="flex-1 min-w-[200px] space-y-1">
-                            <Label className="text-xs font-bold text-indigo-700">기본 화폐 단위 설정</Label>
-                            <select
-                                value={busFareCurrency}
-                                onChange={(e) => setBusFareCurrency(e.target.value as any)}
-                                className="w-full border rounded p-1.5 font-bold text-xs text-slate-800 bg-white focus:outline-none focus-visible:ring-indigo-500 cursor-pointer"
-                            >
-                                <option value="VND">VND (베트남 동)</option>
-                                <option value="KRW">KRW (대한민국 원)</option>
-                                <option value="USD">USD (미국 달러)</option>
-                            </select>
-                        </div>
-                        <div className="text-xs text-slate-500 font-medium">
-                            {busFareTab === 'weekday' ? (
-                                <span className="text-indigo-700 font-bold">ℹ️ 평일 등하교 버스 Zone별 기본 징수 요금을 설정합니다.</span>
-                            ) : (
-                                <span className="text-amber-700 font-bold">ℹ️ 토요 방과후학교 신청자에게 적용될 토요일 전용 거리별 요금을 설정합니다.</span>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* 그룹 추가 폼 */}
-                    <div className="flex gap-2 items-end bg-indigo-50/50 p-4 rounded-xl border border-indigo-100/50 mb-4 max-w-xl">
-                        <div className="flex-1 space-y-1">
-                            <Label className="text-xs font-bold text-indigo-700">
-                                {busFareTab === 'weekday' ? '새 평일 목적지 그룹(Zone) 추가' : '새 토요일 목적지 그룹(Zone) 추가'}
-                            </Label>
-                            <Input
-                                placeholder="예: 푸미흥 (근거리), 안푸 (중거리)"
-                                value={newGroupName}
-                                onChange={(e) => setNewGroupName(e.target.value)}
-                                className="bg-white focus-visible:ring-indigo-500 text-xs font-bold"
-                            />
-                        </div>
-                        <Button
-                            onClick={() => {
-                                const name = newGroupName.trim();
-                                if (!name) return;
-                                const currentSettings = busFareTab === 'weekday' ? busFareSettings : saturdayBusFareSettings;
-                                if (currentSettings[name] !== undefined) {
-                                    toast({
-                                        variant: "destructive",
-                                        title: "추가 불가",
-                                        description: "이미 존재하는 그룹 이름입니다."
-                                    });
-                                    return;
-                                }
-                                if (busFareTab === 'weekday') {
-                                    setBusFareSettings(prev => ({ ...prev, [name]: 0 }));
-                                } else {
-                                    setSaturdayBusFareSettings(prev => ({ ...prev, [name]: 0 }));
-                                }
-                                setNewGroupName('');
-                                toast({
-                                    title: "그룹 추가 완료",
-                                    description: `"${name}" 그룹이 [${busFareTab === 'weekday' ? '평일' : '토요일'}] 목록에 추가되었습니다. 적용 저장 버튼을 눌러 확정해 주세요.`,
-                                });
-                            }}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold"
-                        >
-                            그룹 추가
-                        </Button>
-                    </div>
-
-                    {/* 요금 입력 리스트 */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {Object.keys(busFareTab === 'weekday' ? busFareSettings : saturdayBusFareSettings).map((zoneName) => {
-                            const currentVal = (busFareTab === 'weekday' ? busFareSettings : saturdayBusFareSettings)[zoneName] || 0;
-                            return (
-                                <div key={zoneName} className="space-y-1.5 p-4 rounded-xl bg-slate-50 border border-slate-100 flex flex-col justify-between">
-                                    <div className="flex justify-between items-center gap-1 border-b pb-1.5 mb-1">
-                                        <Label className="text-xs font-bold text-slate-700 truncate" title={zoneName}>{zoneName}</Label>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-6 w-6 text-destructive hover:bg-destructive/10 rounded-full"
-                                            onClick={() => {
-                                                if (confirm(`"${zoneName}" 목적지 그룹을 [${busFareTab === 'weekday' ? '평일' : '토요일'}] 목록에서 삭제하시겠습니까?`)) {
-                                                    if (busFareTab === 'weekday') {
-                                                        setBusFareSettings(prev => {
-                                                            const next = { ...prev };
-                                                            delete next[zoneName];
-                                                            return next;
-                                                        });
-                                                    } else {
-                                                        setSaturdayBusFareSettings(prev => {
-                                                            const next = { ...prev };
-                                                            delete next[zoneName];
-                                                            return next;
-                                                        });
-                                                    }
-                                                }
-                                            }}
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                        </Button>
-                                    </div>
-                                    <div className="relative mt-1">
-                                        <Input
-                                            type="number"
-                                            value={currentVal}
-                                            onChange={(e) => {
-                                                const val = parseInt(e.target.value, 10) || 0;
-                                                if (busFareTab === 'weekday') {
-                                                    setBusFareSettings(prev => ({ ...prev, [zoneName]: val }));
-                                                } else {
-                                                    setSaturdayBusFareSettings(prev => ({ ...prev, [zoneName]: val }));
-                                                }
-                                            }}
-                                            className="pr-8 text-right font-bold text-slate-800 focus-visible:ring-indigo-500 text-xs"
-                                        />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
-                                            {busFareCurrency === 'KRW' ? '원' : busFareCurrency === 'USD' ? '$' : 'VND'}
-                                        </span>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </CardContent>
-                <CardFooter className="flex justify-end border-t bg-slate-50/50 px-6 py-3">
-                    <Button 
-                        onClick={handleSaveFareSettings}
-                        disabled={isFareSaving}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
-                    >
-                        {isFareSaving ? "저장 중..." : "요금 설정 적용 저장"}
-                    </Button>
-                </CardFooter>
-            </Card>
         </div>
     </div>
   );
 };
+
+
