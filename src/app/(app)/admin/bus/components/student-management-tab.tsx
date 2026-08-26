@@ -1236,40 +1236,6 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                         <CardContent className="space-y-4">
                             {/* 버튼 하단 통합 툴바 */}
                             <div className="flex flex-wrap gap-2 items-center justify-start bg-slate-50/90 p-2.5 rounded-xl border border-slate-200/80">
-                                <Dialog open={isAfterSchoolDialogOpen} onOpenChange={setIsAfterSchoolDialogOpen}>
-                                    <DialogTrigger asChild>
-                                        <Button variant="outline" size="sm">
-                                            <Clock className="mr-2 h-4 w-4" /> {t('route_type.after_school')} 관리
-                                        </Button>
-                                    </DialogTrigger>
-                                    <DialogContent>
-                                        <DialogHeader>
-                                            <DialogTitle>{t('admin.student_management.after_school_batch.title')}</DialogTitle>
-                                            <DialogDescription>
-                                                방과후 수업 요일을 관리합니다. 'O' 표시된 요일에는 자동으로 하교 버스 명단에서 제외되고 방과후 버스 미배정 명단으로 이동합니다.
-                                            </DialogDescription>
-                                        </DialogHeader>
-                                        <div className="space-y-4 py-4">
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <Button variant="outline" onClick={handleDownloadAfterSchoolTemplate}>
-                                                    <Download className="mr-2 h-4 w-4" /> 템플릿 다운로드
-                                                </Button>
-                                                <Button onClick={() => afterSchoolFileRef.current?.click()}>
-                                                    <Upload className="mr-2 h-4 w-4" /> 일괄 업로드
-                                                </Button>
-                                            </div>
-                                            
-                                            <div className="pt-2 border-t">
-                                                <Button variant="destructive" onClick={handleFinishAfterSchool} className="w-full">
-                                                    <RotateCcw className="mr-2 h-4 w-4" /> 방과후 종료 (하교 노선으로 복귀)
-                                                </Button>
-                                            </div>
-                                            
-                                            <input type="file" ref={afterSchoolFileRef} onChange={handleAfterSchoolFileUpload} accept=".xlsx" className="hidden" />
-                                        </div>
-                                    </DialogContent>
-                                </Dialog>
-
                                 <Dialog open={isAddStudentDialogOpen} onOpenChange={setIsAddStudentDialogOpen}>
                                     <DialogTrigger asChild>
                                         <Button variant="outline" size="sm">

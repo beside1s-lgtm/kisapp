@@ -168,30 +168,129 @@ export async function bulkRegisterUsers(fileData: string) {
     const workbook = xlsx.read(buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    const users = xlsx.utils.sheet_to_json(worksheet) as { email: string; name: string; role: string }[];
+    const rows = xlsx.utils.sheet_to_json(worksheet) as any[];
     
-    if (!users.length) return { success: false, error: '엑셀 파일에 데이터가 없습니다.' };
+    if (!rows.length) return { success: false, error: '엑셀 파일에 데이터가 없습니다.' };
 
     const batch = writeBatch(getDb());
     let count = 0;
 
-    for (const user of users) {
-      if (user.email && user.name && user.role) {
-        const userRef = doc(getDb(), "users", user.email.toLowerCase());
-        batch.set(userRef, {
-          name: user.name,
-          role: user.role,
-          email: user.email.toLowerCase(),
-          isAdmin: false,
-          signature: '',
-        }, { merge: true });
-        count++;
+    for (const row of rows) {
+      // 학생 계정 양식인 경우 (학년, 학생이름 또는 studentName 필드 감지 시)
+      const isStudentRow = row['학생이름'] || row['학생 이름'] || row['studentName'] || (row['학년'] && row['반']);
+      if (isStudentRow) {
+        const studentName = String(row['학생이름'] || row['학생 이름'] || row['이름'] || row['studentName'] || row['name'] || '').trim();
+        const email = String(row['학생 계정 이메일'] || row['학생계정이메일'] || row['학생이메일'] || row['이메일'] || row['email'] || '').trim().toLowerCase();
+        const grade = String(row['학년'] || row['studentGrade'] || row['grade'] || '').replace(/\D/g, '').trim();
+        const classNum = String(row['반'] || row['studentClass'] || row['class'] || '').replace(/\D/g, '').trim();
+        const studentNum = String(row['번호'] || row['studentNumber'] || row['number'] || '').replace(/\D/g, '').trim();
+        const parentName = String(row['보호자 이름'] || row['보호자이름'] || row['학부모이름'] || row['학부모 이름'] || row['parentName'] || '').trim();
+        const parentPhone = String(row['보호자 연락처'] || row['보호자연락처'] || row['학부모연락처'] || row['학부모 연락처'] || row['연락처'] || row['parentPhone'] || row['phone'] || '').trim();
+
+        if (email && studentName && grade && classNum && studentNum) {
+          const userRef = doc(getDb(), "users", email);
+          batch.set(userRef, {
+            name: studentName,
+            studentName: studentName,
+            studentGrade: grade,
+            studentClass: classNum,
+            studentNumber: studentNum,
+            parentName: parentName || '',
+            parentPhone: parentPhone || '',
+            role: 'student',
+            email: email,
+            isAdmin: false,
+            signature: '',
+          }, { merge: true });
+          count++;
+        }
+      } else {
+        // 교직원 계정
+        const email = String(row['email'] || row['이메일'] || '').trim().toLowerCase();
+        const name = String(row['name'] || row['이름'] || '').trim();
+        const role = String(row['role'] || row['직책'] || '교사').trim();
+        const dept = String(row['dept'] || row['소속'] || '').trim();
+
+        if (email && name) {
+          const userRef = doc(getDb(), "users", email);
+          batch.set(userRef, {
+            name: name,
+            role: role,
+            dept: dept,
+            email: email,
+            isAdmin: false,
+            signature: '',
+          }, { merge: true });
+          count++;
+        }
       }
     }
     await batch.commit();
-    return { success: true, summary: `${count}명의 사용자가 등록/업데이트되었습니다.` };
+    return { success: true, summary: `${count}명의 사용자(학생/교직원) 계정이 등록/업데이트되었습니다.` };
   } catch (error: any) {
     return { success: false, error: `일괄 등록 실패: ${error.message}` };
+  }
+}
+
+export async function bulkRegisterStudents(fileData: string) {
+  try {
+    const base64Data = fileData.split(',')[1];
+    const buffer = Buffer.from(base64Data, 'base64');
+    const workbook = xlsx.read(buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const rows = xlsx.utils.sheet_to_json(worksheet) as any[];
+    
+    if (!rows.length) return { success: false, error: '엑셀 파일에 데이터가 없습니다.' };
+
+    const batch = writeBatch(getDb());
+    let count = 0;
+    let skippedCount = 0;
+
+    for (const row of rows) {
+      const studentName = String(row['학생이름'] || row['학생 이름'] || row['이름'] || row['studentName'] || row['name'] || '').trim();
+      const email = String(row['학생 계정 이메일'] || row['학생계정이메일'] || row['학생이메일'] || row['이메일'] || row['email'] || '').trim().toLowerCase();
+      const grade = String(row['학년'] || row['studentGrade'] || row['grade'] || '').replace(/\D/g, '').trim();
+      const classNum = String(row['반'] || row['studentClass'] || row['class'] || '').replace(/\D/g, '').trim();
+      const studentNum = String(row['번호'] || row['studentNumber'] || row['number'] || '').replace(/\D/g, '').trim();
+      const parentName = String(row['보호자 이름'] || row['보호자이름'] || row['학부모이름'] || row['학부모 이름'] || row['parentName'] || '').trim();
+      const parentPhone = String(row['보호자 연락처'] || row['보호자연락처'] || row['학부모연락처'] || row['학부모 연락처'] || row['연락처'] || row['parentPhone'] || row['phone'] || '').trim();
+
+      // 필수 입력 검증: 학년, 반, 번호, 학생이름, 학생 계정 이메일
+      if (!email || !studentName || !grade || !classNum || !studentNum) {
+        skippedCount++;
+        continue;
+      }
+
+      const userRef = doc(getDb(), "users", email);
+      batch.set(userRef, {
+        name: studentName,
+        studentName: studentName,
+        studentGrade: grade,
+        studentClass: classNum,
+        studentNumber: studentNum,
+        parentName: parentName || '',
+        parentPhone: parentPhone || '',
+        role: 'student',
+        email: email,
+        isAdmin: false,
+        signature: '',
+      }, { merge: true });
+      count++;
+    }
+
+    if (count === 0 && skippedCount > 0) {
+      return { 
+        success: false, 
+        error: `필수 입력 항목(학년, 반, 번호, 학생이름, 학생 계정 이메일)이 누락되어 등록되지 못했습니다. (누락: ${skippedCount}건)` 
+      };
+    }
+
+    await batch.commit();
+    const skippedMsg = skippedCount > 0 ? ` (필수항목 누락 ${skippedCount}건 제외)` : '';
+    return { success: true, summary: `총 ${count}명의 학생 계정이 성공적으로 일괄 등록되었습니다.${skippedMsg}` };
+  } catch (error: any) {
+    return { success: false, error: `학생 계정 일괄 등록 실패: ${error.message}` };
   }
 }
 

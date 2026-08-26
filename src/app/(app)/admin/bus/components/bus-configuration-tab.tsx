@@ -54,10 +54,16 @@ export const BusConfigurationTab = ({
   const [selectedBatchZone, setSelectedBatchZone] = useState<string>('미지정');
   const [isBatchUpdatingZone, setIsBatchUpdatingZone] = useState<boolean>(false);
   
+  const [busFareTab, setBusFareTab] = useState<'weekday' | 'saturday'>('weekday');
   const [busFareSettings, setBusFareSettings] = useState<Record<string, number>>({
       'Zone A (근거리)': 50000,
       'Zone B (중거리)': 80000,
       'Zone C (원거리)': 100000
+  });
+  const [saturdayBusFareSettings, setSaturdayBusFareSettings] = useState<Record<string, number>>({
+      'Zone A (근거리)': 30000,
+      'Zone B (중거리)': 50000,
+      'Zone C (원거리)': 70000
   });
   const [isFareSaving, setIsFareSaving] = useState(false);
   const [busFareCurrency, setBusFareCurrency] = useState<'VND' | 'KRW' | 'USD'>('VND');
@@ -66,6 +72,9 @@ export const BusConfigurationTab = ({
       getGlobalSettings().then(cfg => {
           if (cfg?.busFareSettings) {
               setBusFareSettings(cfg.busFareSettings);
+          }
+          if (cfg?.saturdayBusFareSettings) {
+              setSaturdayBusFareSettings(cfg.saturdayBusFareSettings);
           }
           if (cfg?.busFareCurrency) {
               setBusFareCurrency(cfg.busFareCurrency as any);
@@ -76,10 +85,10 @@ export const BusConfigurationTab = ({
   const handleSaveFareSettings = async () => {
       setIsFareSaving(true);
       try {
-          await updateGlobalSettings({ busFareSettings, busFareCurrency });
+          await updateGlobalSettings({ busFareSettings, saturdayBusFareSettings, busFareCurrency });
           toast({
               title: "요금 및 통화 설정 저장 완료",
-              description: `목적지 그룹별 버스 요금 및 화폐 단위(${busFareCurrency})가 성공적으로 변경되었습니다.`
+              description: `[평일/토요일] 목적지 그룹별 버스 요금 및 화폐 단위(${busFareCurrency})가 성공적으로 저장되었습니다.`
           });
       } catch (err) {
           toast({
@@ -918,8 +927,34 @@ export const BusConfigurationTab = ({
                 </CardHeader>
                 <CardContent className="space-y-4">
                     {/* 화폐 통화 설정 드롭다운 */}
-                    <div className="flex gap-2 items-center bg-indigo-50/30 p-4 rounded-xl border border-indigo-100/30 mb-4 max-w-xl">
-                        <div className="flex-1 space-y-1">
+                    {/* 평일 / 토요일 요금제 선택 서브 탭 */}
+                    <div className="flex gap-2 border-b border-slate-200 pb-3 mb-4">
+                        <button
+                            type="button"
+                            onClick={() => setBusFareTab('weekday')}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                                busFareTab === 'weekday'
+                                    ? 'bg-indigo-600 text-white shadow-sm'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                        >
+                            <span>📅 평일 요금제 (월~금 정규/등하교)</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setBusFareTab('saturday')}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                                busFareTab === 'saturday'
+                                    ? 'bg-amber-600 text-white shadow-sm'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                        >
+                            <span>🚌 토요일 요금제 (토요 방과후 전용)</span>
+                        </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-4 items-center justify-between bg-indigo-50/30 p-3.5 rounded-xl border border-indigo-100/30 mb-4">
+                        <div className="flex-1 min-w-[200px] space-y-1">
                             <Label className="text-xs font-bold text-indigo-700">기본 화폐 단위 설정</Label>
                             <select
                                 value={busFareCurrency}
@@ -931,12 +966,21 @@ export const BusConfigurationTab = ({
                                 <option value="USD">USD (미국 달러)</option>
                             </select>
                         </div>
+                        <div className="text-xs text-slate-500 font-medium">
+                            {busFareTab === 'weekday' ? (
+                                <span className="text-indigo-700 font-bold">ℹ️ 평일 등하교 버스 Zone별 기본 징수 요금을 설정합니다.</span>
+                            ) : (
+                                <span className="text-amber-700 font-bold">ℹ️ 토요 방과후학교 신청자에게 적용될 토요일 전용 거리별 요금을 설정합니다.</span>
+                            )}
+                        </div>
                     </div>
 
                     {/* 그룹 추가 폼 */}
                     <div className="flex gap-2 items-end bg-indigo-50/50 p-4 rounded-xl border border-indigo-100/50 mb-4 max-w-xl">
                         <div className="flex-1 space-y-1">
-                            <Label className="text-xs font-bold text-indigo-700">새 목적지 그룹(Zone) 추가</Label>
+                            <Label className="text-xs font-bold text-indigo-700">
+                                {busFareTab === 'weekday' ? '새 평일 목적지 그룹(Zone) 추가' : '새 토요일 목적지 그룹(Zone) 추가'}
+                            </Label>
                             <Input
                                 placeholder="예: 푸미흥 (근거리), 안푸 (중거리)"
                                 value={newGroupName}
@@ -948,7 +992,8 @@ export const BusConfigurationTab = ({
                             onClick={() => {
                                 const name = newGroupName.trim();
                                 if (!name) return;
-                                if (busFareSettings[name] !== undefined) {
+                                const currentSettings = busFareTab === 'weekday' ? busFareSettings : saturdayBusFareSettings;
+                                if (currentSettings[name] !== undefined) {
                                     toast({
                                         variant: "destructive",
                                         title: "추가 불가",
@@ -956,14 +1001,15 @@ export const BusConfigurationTab = ({
                                     });
                                     return;
                                 }
-                                setBusFareSettings(prev => ({
-                                    ...prev,
-                                    [name]: 0
-                                }));
+                                if (busFareTab === 'weekday') {
+                                    setBusFareSettings(prev => ({ ...prev, [name]: 0 }));
+                                } else {
+                                    setSaturdayBusFareSettings(prev => ({ ...prev, [name]: 0 }));
+                                }
                                 setNewGroupName('');
                                 toast({
                                     title: "그룹 추가 완료",
-                                    description: `"${name}" 그룹이 목록에 추가되었습니다. 적용 저장 버튼을 눌러 확정해 주세요.`,
+                                    description: `"${name}" 그룹이 [${busFareTab === 'weekday' ? '평일' : '토요일'}] 목록에 추가되었습니다. 적용 저장 버튼을 눌러 확정해 주세요.`,
                                 });
                             }}
                             className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold"
@@ -974,46 +1020,58 @@ export const BusConfigurationTab = ({
 
                     {/* 요금 입력 리스트 */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {Object.keys(busFareSettings).map((zoneName) => (
-                            <div key={zoneName} className="space-y-1.5 p-4 rounded-xl bg-slate-50 border border-slate-100 flex flex-col justify-between">
-                                <div className="flex justify-between items-center gap-1 border-b pb-1.5 mb-1">
-                                    <Label className="text-xs font-bold text-slate-700 truncate" title={zoneName}>{zoneName}</Label>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6 text-destructive hover:bg-destructive/10 rounded-full"
-                                        onClick={() => {
-                                            if (confirm(`"${zoneName}" 목적지 그룹을 삭제하시겠습니까? 해당 그룹에 지정된 목적지들은 미지정으로 변경됩니다.`)) {
-                                                setBusFareSettings(prev => {
-                                                    const next = { ...prev };
-                                                    delete next[zoneName];
-                                                    return next;
-                                                });
-                                            }
-                                        }}
-                                    >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                    </Button>
+                        {Object.keys(busFareTab === 'weekday' ? busFareSettings : saturdayBusFareSettings).map((zoneName) => {
+                            const currentVal = (busFareTab === 'weekday' ? busFareSettings : saturdayBusFareSettings)[zoneName] || 0;
+                            return (
+                                <div key={zoneName} className="space-y-1.5 p-4 rounded-xl bg-slate-50 border border-slate-100 flex flex-col justify-between">
+                                    <div className="flex justify-between items-center gap-1 border-b pb-1.5 mb-1">
+                                        <Label className="text-xs font-bold text-slate-700 truncate" title={zoneName}>{zoneName}</Label>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 text-destructive hover:bg-destructive/10 rounded-full"
+                                            onClick={() => {
+                                                if (confirm(`"${zoneName}" 목적지 그룹을 [${busFareTab === 'weekday' ? '평일' : '토요일'}] 목록에서 삭제하시겠습니까?`)) {
+                                                    if (busFareTab === 'weekday') {
+                                                        setBusFareSettings(prev => {
+                                                            const next = { ...prev };
+                                                            delete next[zoneName];
+                                                            return next;
+                                                        });
+                                                    } else {
+                                                        setSaturdayBusFareSettings(prev => {
+                                                            const next = { ...prev };
+                                                            delete next[zoneName];
+                                                            return next;
+                                                        });
+                                                    }
+                                                }
+                                            }}
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </Button>
+                                    </div>
+                                    <div className="relative mt-1">
+                                        <Input
+                                            type="number"
+                                            value={currentVal}
+                                            onChange={(e) => {
+                                                const val = parseInt(e.target.value, 10) || 0;
+                                                if (busFareTab === 'weekday') {
+                                                    setBusFareSettings(prev => ({ ...prev, [zoneName]: val }));
+                                                } else {
+                                                    setSaturdayBusFareSettings(prev => ({ ...prev, [zoneName]: val }));
+                                                }
+                                            }}
+                                            className="pr-8 text-right font-bold text-slate-800 focus-visible:ring-indigo-500 text-xs"
+                                        />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                                            {busFareCurrency === 'KRW' ? '원' : busFareCurrency === 'USD' ? '$' : 'VND'}
+                                        </span>
+                                    </div>
                                 </div>
-                                <div className="relative mt-1">
-                                    <Input
-                                        type="number"
-                                        value={busFareSettings[zoneName] || 0}
-                                        onChange={(e) => {
-                                            const val = parseInt(e.target.value, 10) || 0;
-                                            setBusFareSettings(prev => ({
-                                                ...prev,
-                                                [zoneName]: val
-                                            }));
-                                        }}
-                                        className="pr-8 text-right font-bold text-slate-800 focus-visible:ring-indigo-500 text-xs"
-                                    />
-                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
-                                        {busFareCurrency === 'KRW' ? '원' : busFareCurrency === 'USD' ? '$' : 'VND'}
-                                    </span>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </CardContent>
                 <CardFooter className="flex justify-end border-t bg-slate-50/50 px-6 py-3">

@@ -402,10 +402,55 @@ export async function deleteAfterschoolEnrollment(enrollmentId: string): Promise
 
 export async function deleteAfterschoolEnrollmentsBatch(enrollmentIds: string[]): Promise<void> {
   if (!enrollmentIds || enrollmentIds.length === 0) return;
-  for (const id of enrollmentIds) {
-    await cancelAfterschoolEnrollmentTransaction(id);
+  const db = getDb();
+  // Firestore batch limit is 500
+  const chunkSize = 400;
+  for (let i = 0; i < enrollmentIds.length; i += chunkSize) {
+    const chunk = enrollmentIds.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+    chunk.forEach((id) => {
+      batch.delete(doc(db, 'afterschool_enrollments', id));
+    });
+    await batch.commit();
   }
 }
+
+/**
+ * 수강생 명단 전체 비우기 (Firestore afterschool_enrollments 컬렉션 일괄 삭제 및 모든 강좌 인원수 0으로 초기화)
+ */
+export async function purgeAllAfterschoolEnrollments(): Promise<{ count: number }> {
+  const db = getDb();
+  const snapshot = await getDocs(collection(db, 'afterschool_enrollments'));
+  if (snapshot.empty) return { count: 0 };
+
+  const chunkSize = 400;
+  const docs = snapshot.docs;
+  for (let i = 0; i < docs.length; i += chunkSize) {
+    const chunk = docs.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+    chunk.forEach((d) => {
+      batch.delete(d.ref);
+    });
+    await batch.commit();
+  }
+
+  // 모든 강좌의 수강 인원수를 0으로 리셋
+  const coursesSnap = await getDocs(collection(db, 'afterschool_courses'));
+  if (!coursesSnap.empty) {
+    const courseDocs = coursesSnap.docs;
+    for (let i = 0; i < courseDocs.length; i += chunkSize) {
+      const chunk = courseDocs.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((d) => {
+        batch.update(d.ref, { currentStudents: 0, waitingStudents: 0 });
+      });
+      await batch.commit();
+    }
+  }
+
+  return { count: docs.length };
+}
+
 
 export async function syncCourseStudentCounts(courseId: string, allEnrollments: import('@/lib/afterschool/types').Enrollment[]): Promise<void> {
   if (!courseId) return;

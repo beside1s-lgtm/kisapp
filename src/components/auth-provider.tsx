@@ -166,9 +166,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isStudentPattern = (email: string | null) => {
     if (!email) return false;
-    if (process.env.NODE_ENV === 'development' && email.includes('student')) return true; // dev 환경 폴백
-    // 이메일 앞부분이 숫자 4자리로 시작하고, 도메인이 @kshcm.net인지 검사
-    return /^\d{4}[a-zA-Z0-9._-]+@kshcm\.net$/.test(email);
+    const clean = email.trim().toLowerCase();
+    if (clean === ADMIN_EMAIL || clean === 'bus@kshcm.net' || clean.startsWith('teacher') || clean.startsWith('admin')) {
+      return false;
+    }
+    if (process.env.NODE_ENV === 'development' && clean.includes('student')) return true;
+    // 1. 입학년도/학번 숫자(2~8자리)로 시작하는 이메일 (예: 2026hong@kshcm.net, 230101@kshcm.net)
+    // 2. student, s+연도 패턴
+    return /^\d{2,8}[a-zA-Z0-9._-]*@kshcm\.net$/i.test(clean) || clean.startsWith('s20') || clean.startsWith('student');
   };
 
   const fetchProfile = useCallback(async (firebaseUser: FirebaseUser): Promise<UserProfile | null> => {
@@ -367,7 +372,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   };
 
-  const isParent = profile?.role === '학부모';
+  const isParent = profile?.role === '학부모' || profile?.role === '학생' || isStudentPattern(user?.email || profile?.email || null);
 
   const bypassLogin = async (role: 'admin' | 'parent') => {
     if (process.env.NODE_ENV !== 'development') return;

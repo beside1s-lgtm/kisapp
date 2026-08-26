@@ -219,19 +219,19 @@ export default function ParentsDashboard() {
 
       {/* 미제출 보고서 알림 배너 */}
       {pendingReports.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-amber-100 rounded-lg text-amber-700 shrink-0">
-              <AlertCircle className="h-6 w-6" />
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3.5 sm:p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 shadow-xs sm:shadow-sm">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="p-2 sm:p-2.5 bg-amber-100 rounded-lg text-amber-700 shrink-0">
+              <AlertCircle className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
             <div>
-              <h4 className="font-bold text-[16px]">보고서 제출 필요 {pendingReports.length}건</h4>
-              <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+              <h4 className="font-bold text-sm sm:text-base">보고서 제출 필요 {pendingReports.length}건</h4>
+              <p className="text-[11px] sm:text-xs text-amber-700 mt-0.5 sm:mt-1 leading-relaxed">
                 승인된 교외체험학습 종료 후 7일 이내에 결과보고서를 제출해야 출석 처리가 최종 완료됩니다.
               </p>
             </div>
           </div>
-          <Button className="bg-amber-600 hover:bg-amber-700 text-white font-bold shrink-0 self-end sm:self-auto transition-colors" asChild>
+          <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs sm:text-sm shrink-0 self-end sm:self-auto transition-colors" asChild>
             <Link href="/parents/history">보고서 작성하러 가기</Link>
           </Button>
         </div>
@@ -239,64 +239,64 @@ export default function ParentsDashboard() {
 
       {/* 교외체험학습 및 출석 현황 현황판 */}
       {profile && (
-        <Card className="border border-slate-200/60 shadow-sm bg-slate-50/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg font-bold flex items-center gap-2">
-              <GraduationCap className="h-5 w-5 text-indigo-600" />
-              <span>{profile.studentName || '자녀'} 학생 출결 및 교외체험학습 현황</span>
+        <Card className="border border-slate-200/60 shadow-xs sm:shadow-sm bg-slate-50/50">
+          <CardHeader className="p-3.5 sm:p-6 pb-2 sm:pb-3">
+            <CardTitle className="text-base sm:text-lg font-bold flex items-center gap-2">
+              <GraduationCap className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-600 shrink-0" />
+              <span className="truncate">{profile.studentName || '자녀'} 학생 출결 및 체험학습 현황</span>
             </CardTitle>
-            <CardDescription className="text-xs">
+            <CardDescription className="text-[11px] sm:text-xs">
               학년도 연간 총 수업일수 기준 한도 설정 현황입니다. (올해 기준 수업일수: {config?.annualSchoolDays || 190}일)
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-6 md:grid-cols-2">
+          <CardContent className="p-3.5 sm:p-6 pt-0 sm:pt-0 grid gap-3 sm:gap-6 md:grid-cols-2">
             {/* 교외체험학습 한도 카드 */}
-            <div className="bg-white border rounded-xl p-4 shadow-sm space-y-3">
+            <div className="bg-white border rounded-xl p-3 sm:p-4 shadow-xs space-y-2.5 sm:space-y-3">
               <div className="flex justify-between items-center">
-                <span className="font-semibold text-sm text-slate-700">교외체험학습 사용 일수</span>
-                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">연간 10% 한도</span>
+                <span className="font-semibold text-xs sm:text-sm text-slate-700">체험학습 사용 일수</span>
+                <span className="text-[10px] sm:text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">연간 10% 한도</span>
               </div>
               <div className="flex justify-between items-baseline">
-                <span className="text-2xl font-black text-slate-800">
-                  {accumulatedFieldTripDays}일 <span className="text-xs font-normal text-slate-400">사용</span>
+                <span className="text-xl sm:text-2xl font-black text-slate-800">
+                  {accumulatedFieldTripDays}일 <span className="text-[11px] sm:text-xs font-normal text-slate-400">사용</span>
                 </span>
-                <span className="text-sm font-semibold text-slate-500">
+                <span className="text-xs sm:text-sm font-semibold text-slate-500">
                   최대 {Math.floor((config?.annualSchoolDays || 190) * 0.1)}일 중 {Math.max(Math.floor((config?.annualSchoolDays || 190) * 0.1) - accumulatedFieldTripDays, 0)}일 남음
                 </span>
               </div>
               {/* 프로그레스바 */}
-              <div className="w-full bg-slate-100 rounded-full h-2">
+              <div className="w-full bg-slate-100 rounded-full h-1.5 sm:h-2">
                 <div 
-                  className="bg-indigo-600 h-2 rounded-full transition-all duration-500" 
+                  className="bg-indigo-600 h-1.5 sm:h-2 rounded-full transition-all duration-500" 
                   style={{ width: `${Math.min((accumulatedFieldTripDays / Math.max(Math.floor((config?.annualSchoolDays || 190) * 0.1), 1)) * 100, 100)}%` }}
                 ></div>
               </div>
             </div>
 
             {/* 결석 한도 카드 */}
-            <div className="bg-white border rounded-xl p-4 shadow-sm space-y-3">
+            <div className="bg-white border rounded-xl p-3 sm:p-4 shadow-xs space-y-2.5 sm:space-y-3">
               <div className="flex justify-between items-center">
-                <span className="font-semibold text-sm text-slate-700">누적 결석 일수 (미인정/병결 등)</span>
-                <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">수업일수 2/3 출석 의무</span>
+                <span className="font-semibold text-xs sm:text-sm text-slate-700">누적 결석 일수</span>
+                <span className="text-[10px] sm:text-xs font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">수업일수 2/3 출석 의무</span>
               </div>
               <div className="flex justify-between items-baseline">
-                <span className="text-2xl font-black text-rose-600">
-                  {accumulatedAbsenceDays}일 <span className="text-xs font-normal text-slate-400">결석</span>
+                <span className="text-xl sm:text-2xl font-black text-rose-600">
+                  {accumulatedAbsenceDays}일 <span className="text-[11px] sm:text-xs font-normal text-slate-400">결석</span>
                 </span>
-                <span className="text-sm font-semibold text-slate-500">
+                <span className="text-xs sm:text-sm font-semibold text-slate-500">
                   최대 {(config?.annualSchoolDays || 190) - Math.ceil((config?.annualSchoolDays || 190) * 2 / 3)}일 허용 중 {Math.max(((config?.annualSchoolDays || 190) - Math.ceil((config?.annualSchoolDays || 190) * 2 / 3)) - accumulatedAbsenceDays, 0)}일 남음
                 </span>
               </div>
               {/* 프로그레스바 */}
-              <div className="w-full bg-slate-100 rounded-full h-2">
+              <div className="w-full bg-slate-100 rounded-full h-1.5 sm:h-2">
                 <div 
-                  className="bg-rose-500 h-2 rounded-full transition-all duration-500" 
+                  className="bg-rose-500 h-1.5 sm:h-2 rounded-full transition-all duration-500" 
                   style={{ width: `${Math.min((accumulatedAbsenceDays / Math.max(((config?.annualSchoolDays || 190) - Math.ceil((config?.annualSchoolDays || 190) * 2 / 3)), 1)) * 100, 100)}%` }}
                 ></div>
               </div>
               {accumulatedAbsenceDays >= ((config?.annualSchoolDays || 190) - Math.ceil((config?.annualSchoolDays || 190) * 2 / 3)) * 0.8 && (
-                <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1 animate-pulse">
-                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <p className="text-[10px] sm:text-[11px] text-rose-600 font-semibold flex items-center gap-1 animate-pulse">
+                  <AlertCircle className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
                   <span>수업일수 부족으로 인한 미수료(유급) 위험이 있으니 주의하십시오.</span>
                 </p>
               )}
@@ -305,21 +305,21 @@ export default function ParentsDashboard() {
         </Card>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card className="hover:shadow-lg transition-all duration-300 border-primary/20 bg-gradient-to-br from-primary/5 to-background hover:-translate-y-1">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xl text-primary">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <FileEdit className="h-6 w-6" />
+          <CardHeader className="p-3.5 sm:p-6">
+            <CardTitle className="flex items-center gap-2 text-base sm:text-xl text-primary">
+              <div className="p-1.5 sm:p-2 bg-primary/10 rounded-lg shrink-0">
+                <FileEdit className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
               신청서 제출
             </CardTitle>
-            <CardDescription className="text-sm">
+            <CardDescription className="text-xs sm:text-sm mt-1">
               학교에 제출할 각종 신청서 및 동의서를 간편하게 작성하고 제출합니다.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button className="w-full font-bold shadow-md hover:shadow-lg transition-all" asChild>
+          <CardContent className="p-3.5 sm:p-6 pt-0 sm:pt-0">
+            <Button className="w-full font-bold shadow-xs sm:shadow-md hover:shadow-lg transition-all h-9 sm:h-10 text-xs sm:text-sm" asChild>
               <Link href="/parents/apply">바로가기</Link>
             </Button>
           </CardContent>
@@ -327,42 +327,42 @@ export default function ParentsDashboard() {
 
         <Card className="hover:shadow-lg transition-all duration-300 hover:-translate-y-1 relative overflow-hidden border-slate-200">
           {pendingReports.length > 0 && (
-            <div className="absolute top-3 right-3 bg-rose-500 text-white text-[11px] font-black px-2 py-0.5 rounded-full animate-bounce">
+            <div className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 bg-rose-500 text-white text-[10px] sm:text-[11px] font-black px-1.5 sm:px-2 py-0.5 rounded-full animate-bounce">
               보고서 대기 {pendingReports.length}
             </div>
           )}
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <div className="p-2 bg-blue-500/10 text-blue-500 rounded-lg">
-                <History className="h-6 w-6" />
+          <CardHeader className="p-3.5 sm:p-6">
+            <CardTitle className="flex items-center gap-2 text-base sm:text-xl">
+              <div className="p-1.5 sm:p-2 bg-blue-500/10 text-blue-500 rounded-lg shrink-0">
+                <History className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
               제출 내역
             </CardTitle>
-            <CardDescription className="text-sm">
+            <CardDescription className="text-xs sm:text-sm mt-1">
               이전에 제출하신 문서들의 상세 내용과 실시간 처리 상태를 확인합니다.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button variant="outline" className="w-full font-bold hover:bg-blue-500/5 hover:text-blue-600 transition-colors" asChild>
+          <CardContent className="p-3.5 sm:p-6 pt-0 sm:pt-0">
+            <Button variant="outline" className="w-full font-bold hover:bg-blue-500/5 hover:text-blue-600 transition-colors h-9 sm:h-10 text-xs sm:text-sm" asChild>
               <Link href="/parents/history">내역 보기</Link>
             </Button>
           </CardContent>
         </Card>
 
         <Card className="hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <div className="p-2 bg-green-500/10 text-green-500 rounded-lg">
-                <Info className="h-6 w-6" />
+          <CardHeader className="p-3.5 sm:p-6">
+            <CardTitle className="flex items-center gap-2 text-base sm:text-xl">
+              <div className="p-1.5 sm:p-2 bg-green-500/10 text-green-500 rounded-lg shrink-0">
+                <Info className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
               학교 공지사항
             </CardTitle>
-            <CardDescription className="text-sm">
+            <CardDescription className="text-xs sm:text-sm mt-1">
               학교에서 안내하는 주요 공지사항과 가정통신문을 확인합니다.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button variant="secondary" className="w-full font-bold text-muted-foreground" disabled>
+          <CardContent className="p-3.5 sm:p-6 pt-0 sm:pt-0">
+            <Button variant="secondary" className="w-full font-bold text-muted-foreground h-9 sm:h-10 text-xs sm:text-sm" disabled>
               준비 중입니다
             </Button>
           </CardContent>
@@ -370,44 +370,44 @@ export default function ParentsDashboard() {
       </div>
 
       {/* 프리미엄 연계 서비스 섹션 */}
-      <div className="space-y-4 pt-4 border-t">
+      <div className="space-y-3 sm:space-y-4 pt-3 sm:pt-4 border-t">
         <h3 className="text-xl font-bold text-foreground font-headline flex items-center gap-2">
           연계 교육 서비스
         </h3>
         <div className="grid gap-6 md:grid-cols-2">
           {/* 스쿨버스 카드 */}
           <Card className="hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border-amber-200 bg-gradient-to-br from-amber-500/5 to-background">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl text-amber-600 font-headline flex-wrap">
-                <div className="p-2 bg-amber-500/10 rounded-lg shrink-0">
-                  <BusIcon className="h-6 w-6" />
+            <CardHeader className="p-3.5 sm:p-6">
+              <CardTitle className="flex items-center gap-1.5 sm:gap-2 text-base sm:text-xl text-amber-600 font-headline flex-wrap">
+                <div className="p-1.5 sm:p-2 bg-amber-500/10 rounded-lg shrink-0">
+                  <BusIcon className="h-5 w-5 sm:h-6 sm:w-6" />
                 </div>
                 <span>스쿨버스</span>
-                <Badge variant="outline" className="bg-amber-50 border-amber-200 text-amber-800 text-xs sm:text-sm font-semibold px-2.5 py-0.5 rounded-full">
-                  ( {busInfoText} )
+                <Badge variant="outline" className="bg-amber-50 border-amber-200 text-amber-800 text-[10px] sm:text-xs font-semibold px-2 py-0.5 rounded-full">
+                  {busInfoText}
                 </Badge>
               </CardTitle>
-              <CardDescription className="text-sm">
+              <CardDescription className="text-xs sm:text-sm mt-1">
                 스쿨버스 탑승 신청 및 자녀의 배정 좌석, 버스 탑승 여부를 확인합니다.
               </CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col gap-3">
+            <CardContent className="p-3.5 sm:p-6 pt-0 sm:pt-0 flex flex-col gap-2.5 sm:gap-3">
               <div className="flex gap-2">
                 {config?.isBusApplyActive ? (
-                  <Button className="flex-1 font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-md transition-all" asChild>
+                  <Button className="flex-1 font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs sm:shadow-md transition-all h-9 sm:h-10 text-xs sm:text-sm" asChild>
                     <Link href="/parents/bus/apply">탑승 신청</Link>
                   </Button>
                 ) : (
-                  <Button className="flex-1 font-bold text-muted-foreground bg-slate-100 hover:bg-slate-100 cursor-not-allowed" variant="secondary" disabled>
+                  <Button className="flex-1 font-bold text-muted-foreground bg-slate-100 hover:bg-slate-100 cursor-not-allowed h-9 sm:h-10 text-xs sm:text-sm" variant="secondary" disabled>
                     탑승 신청 (기간 종료)
                   </Button>
                 )}
-                <Button variant="outline" className="flex-1 font-bold border-amber-200 text-amber-700 hover:bg-amber-50" asChild>
+                <Button variant="outline" className="flex-1 font-bold border-amber-200 text-amber-700 hover:bg-amber-50 h-9 sm:h-10 text-xs sm:text-sm" asChild>
                   <Link href="/parents/bus/student">자녀 탑승 조회</Link>
                 </Button>
               </div>
               {!config?.isBusApplyActive && (
-                <p className="text-xs text-amber-600 text-center font-medium bg-amber-50 border border-amber-200/50 py-1.5 rounded-lg">
+                <p className="text-[11px] sm:text-xs text-amber-600 text-center font-medium bg-amber-50 border border-amber-200/50 py-1.5 rounded-lg">
                   ※ 현재는 스쿨버스 탑승 신청 기간이 아닙니다.
                 </p>
               )}
@@ -416,28 +416,28 @@ export default function ParentsDashboard() {
 
           {/* 방과후학교 카드 */}
           <Card className="hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border-violet-200 bg-gradient-to-br from-violet-500/5 to-background">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl text-violet-600 font-headline flex-wrap">
-                <div className="p-2 bg-violet-500/10 rounded-lg shrink-0">
-                  <GraduationCap className="h-6 w-6" />
+            <CardHeader className="p-3.5 sm:p-6">
+              <CardTitle className="flex items-center gap-1.5 sm:gap-2 text-base sm:text-xl text-violet-600 font-headline flex-wrap">
+                <div className="p-1.5 sm:p-2 bg-violet-500/10 rounded-lg shrink-0">
+                  <GraduationCap className="h-5 w-5 sm:h-6 sm:w-6" />
                 </div>
                 <span>방과후학교</span>
-                <Badge variant="outline" className="bg-violet-50 border-violet-200 text-violet-800 text-xs sm:text-sm font-semibold px-2.5 py-0.5 rounded-full">
-                  ( {afterschoolInfoText} )
+                <Badge variant="outline" className="bg-violet-50 border-violet-200 text-violet-800 text-[10px] sm:text-xs font-semibold px-2 py-0.5 rounded-full">
+                  {afterschoolInfoText}
                 </Badge>
               </CardTitle>
-              <CardDescription className="text-sm">
+              <CardDescription className="text-xs sm:text-sm mt-1">
                 방과후학교의 수강신청을 하거나 수강 신청된 강좌를 확인 및 취소합니다.
               </CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col gap-3">
+            <CardContent className="p-3.5 sm:p-6 pt-0 sm:pt-0 flex flex-col gap-2.5 sm:gap-3">
               <div className="flex gap-2">
                 {isAfterschoolActive ? (
-                  <Button className="flex-1 font-bold bg-violet-600 hover:bg-violet-700 text-white shadow-md transition-all" asChild>
+                  <Button className="flex-1 font-bold bg-violet-600 hover:bg-violet-700 text-white shadow-xs sm:shadow-md transition-all h-9 sm:h-10 text-xs sm:text-sm" asChild>
                     <Link href="/parents/afterschool?tab=apply">수강 신청</Link>
                   </Button>
                 ) : (
-                  <Button className="flex-1 font-bold text-muted-foreground bg-slate-100 hover:bg-slate-100 cursor-not-allowed" variant="secondary" disabled>
+                  <Button className="flex-1 font-bold text-muted-foreground bg-slate-100 hover:bg-slate-100 cursor-not-allowed h-9 sm:h-10 text-xs sm:text-sm" variant="secondary" disabled>
                     수강 신청 (기간 종료)
                   </Button>
                 )}

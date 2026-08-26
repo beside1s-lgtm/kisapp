@@ -105,13 +105,13 @@ export function AppHeader() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 flex h-16 items-center justify-between border-b bg-card px-4 lg:px-8">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <Link href="/inbox" className="flex items-center gap-4 cursor-pointer hover:opacity-80 transition-opacity shrink-0">
-            <div className="bg-primary p-2 rounded-lg text-primary-foreground">
-              <FileText size={20} />
+      <header className="fixed top-0 left-0 right-0 z-50 flex h-14 sm:h-16 items-center justify-between border-b bg-card px-2.5 sm:px-4 lg:px-8 max-w-full overflow-x-hidden min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+          <Link href="/inbox" className="flex items-center gap-2 sm:gap-4 cursor-pointer hover:opacity-80 transition-opacity shrink-0">
+            <div className="bg-primary p-1.5 sm:p-2 rounded-lg text-primary-foreground">
+              <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <h1 className="font-headline text-lg font-bold tracking-tight text-foreground uppercase hidden sm:block">
+            <h1 className="font-headline text-sm sm:text-lg font-bold tracking-tight text-foreground uppercase hidden sm:block">
               KSHCM ADMIN
             </h1>
           </Link>
@@ -126,7 +126,7 @@ export function AppHeader() {
           </Button>
         </div>
 
-        <div className="flex items-center gap-6 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-6 shrink-0">
           {/* 깔끔하게 오른쪽 정렬된 플랫 사용자 정보 텍스트 */}
           {!profileLoading && profile && (
             <div className="hidden lg:flex items-center gap-4 text-[15.5px] text-slate-500 font-medium max-w-3xl truncate mr-4">

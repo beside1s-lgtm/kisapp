@@ -25,10 +25,23 @@ export const isStudentEmail = (email?: string | null): boolean => {
 export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => void) => {
   let masterList: MasterStudent[] = [];
   let userList: MasterStudent[] = [];
+  let busStudentList: any[] = [];
+  let destinationList: any[] = [];
+  let routeList: any[] = [];
+  let busList: any[] = [];
 
   const mergeAndEmit = () => {
     const map = new Map<string, MasterStudent>();
-    
+    const destMap = new Map<string, string>();
+    destinationList.forEach(d => {
+      if (d.id) destMap.set(d.id, d.name || d.id);
+    });
+
+    const busNameMap = new Map<string, string>();
+    busList.forEach(b => {
+      if (b.id) busNameMap.set(b.id, b.name || b.id);
+    });
+
     // 1. users 컬렉션 (시스템에 직접 등록된 실제 학생 계정만 필터링)
     userList.forEach(s => {
       const key = (s.studentEmail || s.studentId).toLowerCase();
@@ -46,6 +59,60 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
       }
     });
 
+    // 3. 스쿨버스 학생 & 목적지 & 노선 정보와 양방향 100% 통합 매칭
+    map.forEach((master, key) => {
+      // 1. 기존 address 값이 ID 값인 경우 정류장 실제 명칭으로 변환
+      if (master.address && destMap.has(master.address)) {
+        master.address = destMap.get(master.address)!;
+      }
+
+      // 이름, 학년/반, 또는 연락처/카드번호로 매칭
+      const matchedBusStudent = busStudentList.find(bs => {
+        const nameMatches = bs.name === master.name || bs.nameKo === master.name || (bs.name && bs.name.includes(master.name));
+        const gradeClassMatches = String(bs.grade) === String(master.grade) && String(bs.class) === String(master.classNum);
+        const contactMatches = master.contact && bs.contact && master.contact.replace(/\D/g, '') === bs.contact.replace(/\D/g, '');
+        const kisbusNoMatches = master.kisbusNo && bs.kisbusNo && master.kisbusNo === bs.kisbusNo;
+        return (nameMatches && gradeClassMatches) || (nameMatches && contactMatches) || kisbusNoMatches || nameMatches;
+      });
+
+      if (matchedBusStudent) {
+        // 목적지 ID -> 목적지명 변환
+        const morningDestId = matchedBusStudent.morningDestinationId || matchedBusStudent.suggestedMorningDestination || null;
+        const afternoonDestId = matchedBusStudent.afternoonDestinationId || matchedBusStudent.suggestedAfternoonDestination || null;
+        const destName = (morningDestId ? (destMap.get(morningDestId) || morningDestId) : null) || 
+                         (afternoonDestId ? (destMap.get(afternoonDestId) || afternoonDestId) : null);
+
+        // 등하교 목적지(주소)가 비어있거나 ID 형식이면 스쿨버스 목적지명으로 자동 연동
+        if ((!master.address || destMap.has(master.address)) && destName) {
+          master.address = destName;
+        }
+
+        // 스쿨버스 노선 및 배정 버스/좌석 조회
+        let assignedBusName: string | null = null;
+        let assignedBusId: string | null = null;
+        let assignedSeatNumber: number | null = null;
+
+        for (const route of routeList) {
+          const seat = (route.seating || []).find((se: any) => se.studentId === matchedBusStudent.id);
+          if (seat) {
+            assignedBusId = route.busId || null;
+            assignedBusName = busNameMap.get(route.busId) || null;
+            assignedSeatNumber = seat.seatNumber || null;
+            break;
+          }
+        }
+
+        master.busSummary = {
+          morningDestinationId: morningDestId,
+          afternoonDestinationId: afternoonDestId,
+          assignedBusId,
+          assignedBusName: assignedBusName || master.busSummary?.assignedBusName || null,
+          assignedSeatNumber,
+          afterSchoolDestinations: matchedBusStudent.afterSchoolDestinations || {}
+        };
+      }
+    });
+
     callback(Array.from(map.values()));
   };
 
@@ -58,7 +125,7 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
     mergeAndEmit();
   }, (err) => console.error('master_students snapshot error:', err));
 
-  // 2. users 실시간 리스너 (시스템 설정 사용자 탭에 등록된 실제 학생 계정 100% 자동 매칭)
+  // 2. users 실시간 리스너
   const unsubUsers = onSnapshot(collection(getDb(), 'users'), (snapshot) => {
     const rawUsers = snapshot.docs.map(doc => {
       const data = doc.data();
@@ -70,10 +137,7 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
       };
     });
 
-    // beside1s@kshcm.net 등 교직원 계정은 엄격히 제외하고, 2023kangdongyun@kshcm.net 등 실제 학생 계정만 필터링
-    const filtered = rawUsers.filter((u: any) => {
-      return isStudentEmail(u.email);
-    });
+    const filtered = rawUsers.filter((u: any) => isStudentEmail(u.email));
     
     userList = filtered.map((u: any) => ({
       studentEmail: u.email,
@@ -85,6 +149,7 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
       gender: u.gender === 'Female' || u.gender === '여' ? 'Female' : 'Male',
       contact: u.phone || u.parentPhone || u.contact || '',
       parentEmail: u.parentEmail || '',
+      address: u.address || u.residenceDestinationId || '',
       kisbusNo: u.kisbusNo || '',
       afterschoolSummary: {
         enrolledCourseIds: [],
@@ -98,13 +163,41 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
     mergeAndEmit();
   }, (err) => console.error('users snapshot error:', err));
 
+  // 3. 스쿨버스 students 실시간 리스너
+  const unsubBusStudents = onSnapshot(collection(getKisbusDb(), 'students'), (snapshot) => {
+    busStudentList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    mergeAndEmit();
+  }, (err) => console.error('kisbus students snapshot error:', err));
+
+  // 4. 스쿨버스 destinations 실시간 리스너
+  const unsubDestinations = onSnapshot(collection(getKisbusDb(), 'destinations'), (snapshot) => {
+    destinationList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    mergeAndEmit();
+  }, (err) => console.error('kisbus destinations snapshot error:', err));
+
+  // 5. 스쿨버스 routes 실시간 리스너
+  const unsubRoutes = onSnapshot(collection(getKisbusDb(), 'routes'), (snapshot) => {
+    routeList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    mergeAndEmit();
+  }, (err) => console.error('kisbus routes snapshot error:', err));
+
+  // 6. 스쿨버스 buses 실시간 리스너
+  const unsubBuses = onSnapshot(collection(getKisbusDb(), 'buses'), (snapshot) => {
+    busList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    mergeAndEmit();
+  }, (err) => console.error('kisbus buses snapshot error:', err));
+
   return () => {
     unsubMaster();
     unsubUsers();
+    unsubBusStudents();
+    unsubDestinations();
+    unsubRoutes();
+    unsubBuses();
   };
 };
 
-// 2. 단일 마스터 학생 생성 (users & master_students 동시 연동)
+// 2. 단일 마스터 학생 생성 (users & master_students & kisbus students 동시 연동)
 export const createMasterStudent = async (studentData: NewMasterStudent): Promise<string> => {
   const colRef = collection(getDb(), COLLECTION_NAME);
   const docRef = doc(colRef);
@@ -130,7 +223,8 @@ export const createMasterStudent = async (studentData: NewMasterStudent): Promis
         grade: studentData.grade,
         class: studentData.classNum,
         number: studentData.studentNum,
-        phone: studentData.contact
+        phone: studentData.contact,
+        address: studentData.address || ''
       });
     } else {
       const userRef = doc(collection(getDb(), 'users'));
@@ -142,15 +236,21 @@ export const createMasterStudent = async (studentData: NewMasterStudent): Promis
         class: studentData.classNum,
         number: studentData.studentNum,
         phone: studentData.contact,
+        address: studentData.address || '',
         role: 'student'
       });
     }
   }
 
+  // 스쿨버스 students 컬렉션에도 거주지 주소(목적지) 동기화
+  if (studentData.address && studentData.name) {
+    await syncAddressToKisbusStudent(studentData.name, studentData.grade, studentData.classNum, studentData.address, studentData.contact);
+  }
+
   return docRef.id;
 };
 
-// 3. 마스터 학생 정보 수정 (기본 프로필 + users 컬렉션 동시 업데이트)
+// 3. 마스터 학생 정보 수정 (기본 프로필 + users 컬렉션 + 스쿨버스 students 동시 양방향 업데이트)
 export const updateMasterStudent = async (studentId: string, updateData: Partial<MasterStudent>): Promise<void> => {
   const docRef = doc(getDb(), COLLECTION_NAME, studentId);
   const now = new Date().toISOString();
@@ -160,7 +260,7 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
   });
 
   // users 컬렉션 동시 업데이트
-  if (updateData.studentEmail || updateData.name || updateData.grade) {
+  if (updateData.studentEmail || updateData.name || updateData.grade || updateData.address) {
     const emailToSearch = updateData.studentEmail || studentId;
     const q = query(collection(getDb(), 'users'), where("email", "==", emailToSearch.trim()));
     const snapshot = await getDocs(q);
@@ -172,8 +272,64 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
       if (updateData.classNum) payload.class = updateData.classNum;
       if (updateData.studentNum) payload.number = updateData.studentNum;
       if (updateData.contact) payload.phone = updateData.contact;
+      if (updateData.address !== undefined) payload.address = updateData.address;
       await updateDoc(doc(getDb(), 'users', userDoc.id), payload);
     }
+  }
+
+  // 스쿨버스 students 컬렉션 동시 양방향 동기화
+  if (updateData.name || updateData.address !== undefined) {
+    const name = updateData.name;
+    const grade = updateData.grade;
+    const classNum = updateData.classNum;
+    const address = updateData.address;
+    const contact = updateData.contact;
+    if (name && address) {
+      await syncAddressToKisbusStudent(name, grade, classNum, address, contact);
+    }
+  }
+};
+
+// 스쿨버스 학생 목적지 동기화 헬퍼 함수
+export const syncAddressToKisbusStudent = async (
+  name: string, 
+  grade?: string, 
+  classNum?: string, 
+  address?: string | null,
+  contact?: string | null
+) => {
+  try {
+    if (!name || !address) return;
+    const busDb = getKisbusDb();
+    
+    // 1. 목적지 목록에서 목적지 ID 조회
+    const destSnap = await getDocs(collection(busDb, 'destinations'));
+    const destinations = destSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const matchedDest = destinations.find((d: any) => d.name === address || d.id === address);
+    const destIdToSet = matchedDest ? matchedDest.id : address;
+
+    // 2. 스쿨버스 students 컬렉션에서 학생 조회
+    const studSnap = await getDocs(collection(busDb, 'students'));
+    const busStudents = studSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    
+    const targetStudent = busStudents.find((s: any) => {
+      const nameMatches = s.name === name || s.nameKo === name || (s.name && s.name.includes(name));
+      const gradeMatches = !grade || String(s.grade) === String(grade);
+      const classMatches = !classNum || String(s.class) === String(classNum);
+      return nameMatches && gradeMatches && classMatches;
+    }) || busStudents.find((s: any) => s.name === name || s.nameKo === name);
+
+    if (targetStudent) {
+      await updateDoc(doc(busDb, 'students', targetStudent.id), {
+        morningDestinationId: destIdToSet,
+        afternoonDestinationId: destIdToSet,
+        suggestedMorningDestination: destIdToSet,
+        suggestedAfternoonDestination: destIdToSet,
+        contact: contact ? contact.replace(/\D/g, '') : targetStudent.contact
+      });
+    }
+  } catch (err) {
+    console.error("Error syncing address to kisbus student:", err);
   }
 };
 

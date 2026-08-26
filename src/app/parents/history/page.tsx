@@ -65,24 +65,24 @@ export default function ParentHistoryPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto py-8 px-4">
+    <div className="max-w-3xl mx-auto py-3 px-2 sm:py-8 sm:px-4">
       {/* 통일된 상단 네비게이션 헤더 */}
-      <div className="mb-6 flex items-center gap-2 print:hidden">
-        <Button variant="outline" className="bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-sm" onClick={() => router.back()}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
+      <div className="mb-4 sm:mb-6 flex items-center gap-1.5 sm:gap-2 print:hidden">
+        <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.back()}>
+          <ArrowLeft className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
           뒤로가기
         </Button>
-        <Button variant="outline" className="bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-sm" onClick={() => router.push('/parents')}>
-          <Home className="mr-2 h-4 w-4" />
+        <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.push('/parents')}>
+          <Home className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
           홈
         </Button>
       </div>
 
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold font-headline flex items-center mb-2">
-          <History className="mr-2 h-6 w-6 text-primary" /> 나의 제출 내역
+      <div className="mb-4 sm:mb-8">
+        <h1 className="text-lg sm:text-2xl font-bold font-headline flex items-center mb-1 sm:mb-2">
+          <History className="mr-2 h-5 w-5 sm:h-6 sm:w-6 text-primary" /> 나의 제출 내역
         </h1>
-        <p className="text-muted-foreground">제출하신 신청서의 결재 진행 상황을 확인할 수 있습니다.</p>
+        <p className="text-xs sm:text-sm text-muted-foreground">제출하신 신청서의 결재 진행 상황을 확인할 수 있습니다.</p>
       </div>
 
       {documents.length === 0 ? (

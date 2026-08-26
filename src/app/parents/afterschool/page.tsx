@@ -66,16 +66,16 @@ function AfterschoolEnrollment() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-6">
+    <div className="max-w-7xl mx-auto p-2.5 sm:p-4 md:p-8 space-y-3 sm:space-y-6">
       {/* 통일된 상단 네비게이션 헤더 */}
-      <div className="flex items-center justify-between print:hidden mb-2">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" className="bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-sm" onClick={() => router.back()}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 print:hidden mb-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.back()}>
+            <ArrowLeft className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
             뒤로가기
           </Button>
-          <Button variant="outline" className="bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-sm" onClick={() => router.push('/parents')}>
-            <Home className="mr-2 h-4 w-4" />
+          <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.push('/parents')}>
+            <Home className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
             홈
           </Button>
         </div>
@@ -83,7 +83,7 @@ function AfterschoolEnrollment() {
         <Button
           variant="ghost"
           size="sm"
-          className="text-xs text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200/80 bg-white shadow-xs flex items-center gap-1.5"
+          className="text-xs text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200/80 bg-white shadow-xs flex items-center gap-1.5 self-start sm:self-auto h-8"
           onClick={() => setIsConsentModalOpen(true)}
         >
           <ShieldCheck className="h-3.5 w-3.5 text-indigo-500" />
@@ -92,15 +92,15 @@ function AfterschoolEnrollment() {
         </Button>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl border shadow-sm mb-6">
-        <h1 className="text-2xl font-bold font-headline text-slate-800">방과후학교 학생 수강신청</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+      <div className="bg-white p-3.5 sm:p-6 rounded-xl sm:rounded-2xl border shadow-xs sm:shadow-sm mb-3 sm:mb-6">
+        <h1 className="text-lg sm:text-2xl font-bold font-headline text-slate-800">방과후학교 학생 수강신청</h1>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 sm:mt-1">
           개설된 방과후학교 강좌 목록을 확인하고, 실시간으로 수강신청 및 대기신청을 진행할 수 있습니다.
         </p>
       </div>
 
-      <Card className="border-slate-200/80 shadow-md bg-white">
-        <CardContent className="p-6">
+      <Card className="border-slate-200/80 shadow-xs sm:shadow-md bg-white">
+        <CardContent className="p-3 sm:p-6">
           <StudentView 
             courses={courses}
             enrollments={enrollments}

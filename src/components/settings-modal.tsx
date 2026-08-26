@@ -1,6 +1,6 @@
 'use client';
 
-import { bulkRegisterUsers, getUsersDirectory, saveUserProfile, deleteUser } from '@/lib/services/userService';
+import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser } from '@/lib/services/userService';
 import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES } from '@/lib/services/settingsService';
 import { getAuditLogs } from '@/lib/services/documentService';
 import { DocConfig, UserProfile, OrgStructure, DelegationRule, AcademicCalendarConfig, AcademicEvent, AcademicSemesterPeriod } from '@/lib/types';
@@ -563,6 +563,8 @@ export function SettingsModal() {
     }
   };
 
+  const [userSubTab, setUserSubTab] = useState<'teachers' | 'students'>('teachers');
+
   const handleBulkUpload = () => {
     if (!selectedFile) {
         toast({ variant: 'destructive', title: '파일 없음', description: '업로드할 엑셀 파일을 선택해주세요.'});
@@ -574,19 +576,24 @@ export function SettingsModal() {
         reader.readAsDataURL(selectedFile);
         reader.onload = async (e) => {
             const fileData = e.target?.result as string;
-            const result = await bulkRegisterUsers(fileData);
+            const result = userSubTab === 'students'
+              ? await bulkRegisterStudents(fileData)
+              : await bulkRegisterUsers(fileData);
+
             if (result.success) {
-                toast({ title: '사용자 일괄 등록 성공', description: result.summary });
+                toast({ title: userSubTab === 'students' ? '학생 계정 일괄 등록 성공' : '사용자 일괄 등록 성공', description: result.summary });
                 fetchUsers();
+                setSelectedFile(null);
+                setIsBulkUploadOpen(false);
             } else {
                 toast({ variant: 'destructive', title: '일괄 등록 실패', description: result.error, duration: 8000 });
             }
         };
         reader.onerror = (error) => {
             toast({ variant: 'destructive', title: '파일 읽기 오류', description: '파일을 읽는 중 문제가 발생했습니다.' });
-        }
+        };
     });
-  }
+  };
 
   const onFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -594,15 +601,61 @@ export function SettingsModal() {
     }
   };
   
-  const handleDownloadTemplate = () => {
+  // 학생 계정 일괄 등록 양식 다운로드
+  const handleDownloadStudentTemplate = () => {
     const templateData = [
-      { email: 'user1@example.com', name: '홍길동', role: '교사' },
-      { email: 'user2@example.com', name: '김철수', role: '부장' },
+      {
+        '학년': 4,
+        '반': 4,
+        '번호': 2,
+        '학생이름': '강동윤',
+        '학생 계정 이메일': '2026kdy@kshcm.net',
+        '보호자 이름': '서고은',
+        '보호자 연락처': '0773365357',
+      },
+      {
+        '학년': 1,
+        '반': 1,
+        '번호': 1,
+        '학생이름': '홍길동',
+        '학생 계정 이메일': '2026hgd@kshcm.net',
+        '보호자 이름': '',
+        '보호자 연락처': '',
+      },
+      {
+        '학년': 2,
+        '반': 3,
+        '번호': 12,
+        '학생이름': '김철수',
+        '학생 계정 이메일': '2026kcs@kshcm.net',
+        '보호자 이름': '김부모',
+        '보호자 연락처': '0901234567',
+      },
     ];
     const worksheet = xlsx.utils.json_to_sheet(templateData);
     const workbook = xlsx.utils.book_new();
-    xlsx.utils.book_append_sheet(workbook, worksheet, '사용자 목록');
-    xlsx.writeFile(workbook, 'user_template.xlsx');
+    xlsx.utils.book_append_sheet(workbook, worksheet, '학생계정목록');
+    xlsx.writeFile(workbook, '학생_계정_일괄등록_양식.xlsx');
+  };
+
+  // 교직원 일괄 등록 양식 다운로드
+  const handleDownloadTeacherTemplate = () => {
+    const templateData = [
+      { '이메일': 'teacher1@kshcm.net', '이름': '홍길동', '직책': '교사', '소속': '1학년부' },
+      { '이메일': 'teacher2@kshcm.net', '이름': '김철수', '직책': '부장', '소속': '연구기획부' },
+    ];
+    const worksheet = xlsx.utils.json_to_sheet(templateData);
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, worksheet, '교직원목록');
+    xlsx.writeFile(workbook, '교직원_일괄등록_양식.xlsx');
+  };
+
+  const handleDownloadTemplate = () => {
+    if (userSubTab === 'students') {
+      handleDownloadStudentTemplate();
+    } else {
+      handleDownloadTeacherTemplate();
+    }
   };
 
   const handleHomeroomFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
@@ -2385,16 +2438,46 @@ export function SettingsModal() {
               <Dialog open={isBulkUploadOpen} onOpenChange={setIsBulkUploadOpen}>
                 <DialogContent className="sm:max-w-lg">
                   <DialogHeader>
-                    <DialogTitle>사용자 일괄 등록</DialogTitle>
-                    <DialogDescription>엑셀 파일로 사용자를 추가하거나 업데이트합니다.</DialogDescription>
+                    <DialogTitle>{userSubTab === 'students' ? '학생 계정 일괄 등록' : '교직원 일괄 등록'}</DialogTitle>
+                    <DialogDescription>
+                      {userSubTab === 'students'
+                        ? '엑셀 파일로 학생 계정을 추가하거나 업데이트합니다.'
+                        : '엑셀 파일로 교직원 사용자를 추가하거나 업데이트합니다.'}
+                    </DialogDescription>
                   </DialogHeader>
+
                   <div className="flex flex-col gap-4 py-2">
+                    {userSubTab === 'students' ? (
+                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs space-y-1.5">
+                        <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <span className="text-blue-600">📌 필수 입력 항목:</span>
+                          <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-mono text-[11px]">
+                            학년, 반, 번호, 학생이름, 학생 계정 이메일
+                          </span>
+                        </div>
+                        <div className="text-slate-500 text-[11px] leading-relaxed">
+                          • <b>추후 입력 가능 (선택)</b>: 보호자 이름, 보호자 연락처
+                          <br />
+                          • 엑셀 양식을 다운로드하여 작성 후 업로드해주세요.
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs space-y-1.5">
+                        <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <span className="text-blue-600">📌 필수 입력 항목:</span>
+                          <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-mono text-[11px]">
+                            이메일, 이름, 직책, 소속
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
                     <Input type="file" accept=".xlsx, .xls" onChange={onFileSelect} />
                     <div className="flex gap-2 justify-end">
                       <Button onClick={handleDownloadTemplate} variant="outline" size="sm">
                         <Download className="mr-2 h-4 w-4"/>양식 다운로드
                       </Button>
-                      <Button onClick={() => { handleBulkUpload(); setIsBulkUploadOpen(false); }} disabled={isUploading || !selectedFile} size="sm">
+                      <Button onClick={handleBulkUpload} disabled={isUploading || !selectedFile} size="sm">
                         {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileUp className="mr-2 h-4 w-4"/>}
                         업로드
                       </Button>
@@ -2403,7 +2486,7 @@ export function SettingsModal() {
                 </DialogContent>
               </Dialog>
 
-              <Tabs defaultValue="teachers" className="flex-1 min-h-0 flex flex-col">
+              <Tabs value={userSubTab} onValueChange={(val) => setUserSubTab(val as 'teachers' | 'students')} className="flex-1 min-h-0 flex flex-col">
                 <div className="flex justify-between items-center px-1 shrink-0 mb-2">
                     <TabsList className="grid grid-cols-2 w-[340px]">
                       <TabsTrigger value="teachers">교직원 ({users.filter(u => u.email === 'beside1s@kshcm.net' || (!u.studentName && u.role !== '학부모' && u.role !== 'student')).length})</TabsTrigger>

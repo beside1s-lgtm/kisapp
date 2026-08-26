@@ -1,17 +1,20 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Eraser, Save, Upload, Pencil } from 'lucide-react';
+import { Loader2, Eraser, Save, Upload, Pencil, MapPin } from 'lucide-react';
 import SignatureCanvas from 'react-signature-canvas';
 import { storage } from '@/lib/firebase';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { saveUserProfile } from '@/lib/services/userService';
+import { getDestinations } from '@/lib/kisbus';
+import type { Destination } from '@/lib/kisbus/types';
+import { Combobox } from '@/components/ui/combobox';
 
 async function hashPIN(pin: string) {
   if (typeof crypto !== 'undefined' && crypto.subtle) {
@@ -45,10 +48,27 @@ export default function ParentsSetupPage() {
   const [confirmPin, setConfirmPin] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [parentName, setParentName] = useState('');
+  const [parentRelation, setParentRelation] = useState('');
   const [studentName, setStudentName] = useState('');
   const [studentGrade, setStudentGrade] = useState('');
   const [studentClass, setStudentClass] = useState('');
   const [studentNumber, setStudentNumber] = useState('');
+  const [address, setAddress] = useState('');
+  const [destinations, setDestinations] = useState<Destination[]>([]);
+
+  useEffect(() => {
+    getDestinations().then(data => {
+      const sorted = (data || []).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+      setDestinations(sorted);
+    }).catch(console.error);
+  }, []);
+
+  const destinationOptions = useMemo(() => {
+    return destinations.map(d => ({
+      value: d.name,
+      label: d.name
+    }));
+  }, [destinations]);
   
   const sigCanvas = useRef<SignatureCanvas>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -159,10 +179,13 @@ export default function ParentsSetupPage() {
         hashedPin,
         parentSignature: signatureUrl,
         parentName: parentName.trim(),
+        parentRelation: parentRelation.trim(),
         studentName: studentName.trim(),
         studentGrade,
         studentClass,
         studentNumber,
+        address: address.trim(),
+        residenceDestinationId: address.trim(),
       });
 
       if (res.success) {
@@ -181,103 +204,153 @@ export default function ParentsSetupPage() {
   };
 
   return (
-    <div className="max-w-xl mx-auto py-8">
-      <div className="bg-card rounded-xl shadow-sm border p-6 md:p-8 space-y-8">
-        <div className="text-center space-y-2">
-          <h1 className="text-2xl font-bold font-headline">학부모 최초 정보 등록</h1>
-          <p className="text-muted-foreground text-sm">
-            전자서명과 제출 확인을 위해 필요한 정보를 등록해주세요. 이 정보는 문서 제출 시 법적 효력을 확인하는 데 사용됩니다.
+    <div className="max-w-xl mx-auto py-4 px-3 sm:py-8 sm:px-4">
+      <div className="bg-card rounded-xl shadow-sm border p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-8">
+        <div className="text-center space-y-1 sm:space-y-2">
+          <h1 className="text-xl sm:text-2xl font-bold font-headline">학부모 최초 정보 등록</h1>
+          <p className="text-muted-foreground text-xs sm:text-sm">
+            전자서명과 제출 확인을 위해 필요한 정보를 등록해주세요.
           </p>
         </div>
 
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="parentName">학부모 성명 (서명란에 표시됨)</Label>
+        <div className="space-y-3 sm:space-y-4">
+          {/* 학부모 정보 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="parentName" className="text-xs sm:text-sm font-bold">학부모 성명 <span className="text-red-500">*</span></Label>
               <Input 
                 id="parentName" 
                 placeholder="예: 홍길동" 
                 value={parentName}
                 onChange={(e) => setParentName(e.target.value)}
+                className="h-9 sm:h-10 text-sm"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="studentName">학생 이름</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="parentRelation" className="text-xs sm:text-sm font-bold">학생과의 관계 <span className="text-red-500">*</span></Label>
+              <select
+                id="parentRelation"
+                value={parentRelation}
+                onChange={(e) => setParentRelation(e.target.value)}
+                className="flex h-9 sm:h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <option value="">관계 선택</option>
+                <option value="부">부 (아버지)</option>
+                <option value="모">모 (어머니)</option>
+                <option value="조부">조부 (할아버지)</option>
+                <option value="조모">조모 (할머니)</option>
+                <option value="기타">기타 보호자</option>
+              </select>
+            </div>
+          </div>
+
+          {/* 학생 정보 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="studentName" className="text-xs sm:text-sm font-bold">학생 이름 <span className="text-red-500">*</span></Label>
               <Input 
                 id="studentName" 
                 placeholder="예: 홍길동" 
                 value={studentName}
                 onChange={(e) => setStudentName(e.target.value)}
+                className="h-9 sm:h-10 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="phone" className="text-xs sm:text-sm font-bold">학부모 연락처 <span className="text-red-500">*</span></Label>
+              <Input 
+                id="phone" 
+                type="tel" 
+                placeholder="010-0000-0000" 
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/[^0-9-]/g, ''))}
+                className="h-9 sm:h-10 text-sm"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="studentGrade">학년</Label>
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="studentGrade" className="text-xs sm:text-sm font-bold">학년</Label>
               <Input 
                 id="studentGrade" 
                 type="number"
-                placeholder="예: 5" 
+                placeholder="5" 
                 value={studentGrade}
                 onChange={(e) => setStudentGrade(e.target.value)}
+                className="h-9 sm:h-10 text-sm text-center"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="studentClass">반</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="studentClass" className="text-xs sm:text-sm font-bold">반</Label>
               <Input 
                 id="studentClass" 
                 type="number"
-                placeholder="예: 1" 
+                placeholder="1" 
                 value={studentClass}
                 onChange={(e) => setStudentClass(e.target.value)}
+                className="h-9 sm:h-10 text-sm text-center"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="studentNumber">번호</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="studentNumber" className="text-xs sm:text-sm font-bold">번호</Label>
               <Input 
                 id="studentNumber" 
                 type="number"
-                placeholder="예: 15" 
+                placeholder="15" 
                 value={studentNumber}
                 onChange={(e) => setStudentNumber(e.target.value)}
+                className="h-9 sm:h-10 text-sm text-center"
               />
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="phone">학부모 연락처 (휴대폰)</Label>
-            <Input 
-              id="phone" 
-              type="tel" 
-              placeholder="010-0000-0000" 
-              value={phone}
-              onChange={(e) => setPhone(e.target.value.replace(/[^0-9-]/g, ''))}
+          {/* 등하교 목적지 및 스쿨버스 정류장 */}
+          <div className="space-y-1.5 bg-indigo-50/50 p-3.5 rounded-xl border border-indigo-100">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs sm:text-sm font-bold text-indigo-950 flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-indigo-600" />
+                <span>등하교 목적지 (스쿨버스 정류장)</span>
+              </Label>
+              <span className="text-[11px] text-indigo-700 font-medium">📍 정류장 검색 선택</span>
+            </div>
+            <Combobox 
+              options={destinationOptions}
+              value={address || null}
+              onSelect={(val) => setAddress(val || '')}
+              placeholder="스쿨버스 정류장 및 목적지 검색 (예: Hung Vuong KFC, Sky 1,2...)"
             />
+            <p className="text-[11px] text-slate-500">
+              세부 동/호수를 입력할 필요 없이 등록된 정류장을 선택하시면 등하교 목적지와 스쿨버스가 통합 연동됩니다.
+            </p>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="pin">서명 인증 PIN (숫자 4자리)</Label>
-            <Input 
-              id="pin" 
-              type="password" 
-              maxLength={4} 
-              placeholder="****" 
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="confirmPin">PIN 확인</Label>
-            <Input 
-              id="confirmPin" 
-              type="password" 
-              maxLength={4} 
-              placeholder="****" 
-              value={confirmPin}
-              onChange={(e) => setConfirmPin(e.target.value.replace(/[^0-9]/g, ''))}
-            />
+          {/* PIN */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="pin" className="text-xs sm:text-sm font-bold">서명 인증 PIN (숫자 4자리)</Label>
+              <Input 
+                id="pin" 
+                type="password" 
+                maxLength={4} 
+                placeholder="****" 
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))}
+                className="h-9 sm:h-10 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="confirmPin" className="text-xs sm:text-sm font-bold">PIN 확인</Label>
+              <Input 
+                id="confirmPin" 
+                type="password" 
+                maxLength={4} 
+                placeholder="****" 
+                value={confirmPin}
+                onChange={(e) => setConfirmPin(e.target.value.replace(/[^0-9]/g, ''))}
+                className="h-9 sm:h-10 text-sm"
+              />
+            </div>
           </div>
 
           <div className="space-y-2">

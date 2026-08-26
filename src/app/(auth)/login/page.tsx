@@ -29,12 +29,20 @@ function LoginForm() {
 
   useEffect(() => {
     if (!loading && user) {
-      if (redirectTarget && redirectTarget.startsWith('/')) {
-        router.replace(redirectTarget);
-      } else if (isParent) {
-        router.replace('/parents');
+      if (isParent) {
+        // 학생/학부모 계정: 교직원 전용 경로(/inbox, /admin 등) 접근 차단하고 /parents로 안내
+        if (redirectTarget && (redirectTarget.startsWith('/parents') || redirectTarget.startsWith('/afterschool'))) {
+          router.replace(redirectTarget);
+        } else {
+          router.replace('/parents');
+        }
       } else {
-        router.replace('/inbox');
+        // 교직원 계정
+        if (redirectTarget && redirectTarget.startsWith('/')) {
+          router.replace(redirectTarget);
+        } else {
+          router.replace('/inbox');
+        }
       }
     }
   }, [user, loading, router, redirectTarget, isParent]);

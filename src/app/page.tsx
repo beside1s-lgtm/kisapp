@@ -15,12 +15,18 @@ function RootRedirect() {
   useEffect(() => {
     if (!loading) {
       if (user) {
-        if (redirectTarget && redirectTarget.startsWith('/')) {
-          router.replace(redirectTarget);
-        } else if (isParent) {
-          router.replace('/parents');
+        if (isParent) {
+          if (redirectTarget && (redirectTarget.startsWith('/parents') || redirectTarget.startsWith('/afterschool'))) {
+            router.replace(redirectTarget);
+          } else {
+            router.replace('/parents');
+          }
         } else {
-          router.replace('/inbox');
+          if (redirectTarget && redirectTarget.startsWith('/')) {
+            router.replace(redirectTarget);
+          } else {
+            router.replace('/inbox');
+          }
         }
       } else {
         const loginUrl = redirectTarget ? `/login?redirect=${encodeURIComponent(redirectTarget)}` : '/login';

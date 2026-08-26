@@ -7,6 +7,10 @@ import {
   deleteMasterStudent, batchImportMasterStudents, batchPromoteStudents, isStudentEmail
 } from '@/lib/services/masterStudentService';
 import type { MasterStudent, NewMasterStudent } from '@/lib/types/masterStudent';
+import { onDestinationsUpdate } from '@/lib/kisbus';
+import type { Destination } from '@/lib/kisbus/types';
+import { Combobox } from '@/components/ui/combobox';
+import { Checkbox } from '@/components/ui/checkbox';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -20,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { 
   Users, GraduationCap, Bus, Calendar, Plus, Upload, Download, Search, 
-  UserCheck, Mail, Phone, MapPin, CreditCard, ShieldCheck, Trash2, Edit3, FileText, CheckCircle2, ArrowUpRight, Sparkles 
+  UserCheck, Mail, Phone, MapPin, CreditCard, ShieldCheck, Trash2, Edit3, FileText, CheckCircle2, ArrowUpRight, Sparkles, CheckSquare, Square, Filter 
 } from 'lucide-react';
 import { cn } from '@/lib/kisbus/utils';
 
@@ -30,6 +34,7 @@ export default function AdminMasterStudentsPage() {
   const promoteFileInputRef = useRef<HTMLInputElement>(null);
 
   const [students, setStudents] = useState<MasterStudent[]>([]);
+  const [destinations, setDestinations] = useState<Destination[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 필터 및 검색
@@ -42,6 +47,14 @@ export default function AdminMasterStudentsPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPromoteDialogOpen, setIsPromoteDialogOpen] = useState(false);
+  const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false);
+
+  // 명단 다운로드 시 선택된 학년/반 목록 (Set or array of "grade-classNum")
+  const [selectedClassesForDownload, setSelectedClassesForDownload] = useState<string[]>([]);
+
+  // 진급 서식 다운로드 시 선택된 학년/반 필터
+  const [promoteTemplateGrade, setPromoteTemplateGrade] = useState<string>('all');
+  const [promoteTemplateClass, setPromoteTemplateClass] = useState<string>('all');
 
   // 수정 중인 학생 객체 state
   const [editStudentForm, setEditStudentForm] = useState<Partial<MasterStudent>>({});
@@ -65,12 +78,26 @@ export default function AdminMasterStudentsPage() {
 
   // Firestore 실시간 구독
   useEffect(() => {
-    const unsub = onMasterStudentsUpdate((data) => {
+    const unsubMaster = onMasterStudentsUpdate((data) => {
       setStudents(data);
       setLoading(false);
     });
-    return () => unsub();
+    const unsubDest = onDestinationsUpdate((dList) => {
+      const sorted = [...(dList || [])].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+      setDestinations(sorted);
+    });
+    return () => {
+      unsubMaster();
+      unsubDest();
+    };
   }, []);
+
+  const destinationOptions = useMemo(() => {
+    return destinations.map(d => ({
+      value: d.name,
+      label: d.name
+    }));
+  }, [destinations]);
 
   // 필터링된 학생 목록
   const filteredStudents = useMemo(() => {
@@ -217,14 +244,152 @@ export default function AdminMasterStudentsPage() {
     }
   };
 
-  // 진급 엑셀 양식 다운로드 (기존 학년/반/번호 기반 템플릿)
-  const handleDownloadPromoteTemplate = () => {
+  // 학년별 반 목록 및 학생 수 집계 트리
+  const gradeClassTree = useMemo(() => {
+    const grades = ['1', '2', '3', '4', '5', '6', '졸업'];
+    const result: {
+      grade: string;
+      classes: { classNum: string; count: number; key: string }[];
+      totalCount: number;
+    }[] = [];
+
+    grades.forEach(g => {
+      const studentsInGrade = students.filter(s => String(s.grade) === g);
+      if (studentsInGrade.length === 0 && g === '졸업') return;
+      
+      const classMap = new Map<string, number>();
+      studentsInGrade.forEach(s => {
+        const c = String(s.classNum || '1');
+        classMap.set(c, (classMap.get(c) || 0) + 1);
+      });
+
+      const sortedClasses = Array.from(classMap.entries())
+        .sort((a, b) => (parseInt(a[0]) || 0) - (parseInt(b[0]) || 0))
+        .map(([classNum, count]) => ({
+          classNum,
+          count,
+          key: `${g}-${classNum}`
+        }));
+
+      // 학생이 없더라도 1~6학년이면 기본 1~4반 표시
+      if (sortedClasses.length === 0 && g !== '졸업') {
+        ['1', '2', '3', '4'].forEach(c => {
+          sortedClasses.push({ classNum: c, count: 0, key: `${g}-${c}` });
+        });
+      }
+
+      result.push({
+        grade: g,
+        classes: sortedClasses,
+        totalCount: studentsInGrade.length
+      });
+    });
+
+    return result;
+  }, [students]);
+
+  // 전체 선택/해제 핸들러
+  const handleSelectAllClassesForDownload = () => {
+    const allKeys: string[] = [];
+    gradeClassTree.forEach(g => {
+      g.classes.forEach(c => allKeys.push(c.key));
+    });
+    setSelectedClassesForDownload(allKeys);
+  };
+
+  const handleDeselectAllClassesForDownload = () => {
+    setSelectedClassesForDownload([]);
+  };
+
+  // 특정 학년 전체 토글
+  const handleToggleGradeForDownload = (grade: string) => {
+    const gradeItem = gradeClassTree.find(g => g.grade === grade);
+    if (!gradeItem) return;
+    const gradeKeys = gradeItem.classes.map(c => c.key);
+    const allSelected = gradeKeys.every(k => selectedClassesForDownload.includes(k));
+    
+    if (allSelected) {
+      setSelectedClassesForDownload(prev => prev.filter(k => !gradeKeys.includes(k)));
+    } else {
+      setSelectedClassesForDownload(prev => Array.from(new Set([...prev, ...gradeKeys])));
+    }
+  };
+
+  // 단일 반 토글
+  const handleToggleClassForDownload = (key: string) => {
+    setSelectedClassesForDownload(prev => 
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
+
+  // 명단 다운로드 모달 열기 (초기값: 전체 선택)
+  const handleOpenDownloadDialog = () => {
+    const allKeys: string[] = [];
+    gradeClassTree.forEach(g => {
+      g.classes.forEach(c => allKeys.push(c.key));
+    });
+    setSelectedClassesForDownload(allKeys);
+    setIsDownloadDialogOpen(true);
+  };
+
+  // 선택된 학년/반 학생 엑셀 명단 다운로드
+  const handleDownloadFilteredExcel = () => {
+    const targetStudents = students.filter(s => {
+      const key = `${s.grade}-${s.classNum || '1'}`;
+      return selectedClassesForDownload.includes(key);
+    });
+
+    if (targetStudents.length === 0) {
+      toast({ title: '다운로드 오류', description: '선택된 학년/반에 해당하는 학생이 없습니다.', variant: 'destructive' });
+      return;
+    }
+
+    import('xlsx').then(XLSX => {
+      const headers = ["학생계정이메일", "학생이름", "학년", "반", "번호", "성별", "보호자연락처", "등하교목적지", "승차권번호"];
+      const wsData = [
+        headers,
+        ...targetStudents.map(s => [
+          s.studentEmail, s.name, s.grade, s.classNum, s.studentNum || '',
+          s.gender === 'Male' ? '남' : '여', s.contact, s.address || '', s.kisbusNo || ''
+        ])
+      ];
+
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "학생명단");
+      XLSX.writeFile(wb, `통합학생명단_${new Date().toISOString().split('T')[0]}.xlsx`);
+      setIsDownloadDialogOpen(false);
+      toast({ title: '명단 다운로드 완료', description: `총 ${targetStudents.length}명의 학생 명단이 다운로드되었습니다.` });
+    });
+  };
+
+  // 진급 엑셀 양식 다운로드 (선택된 학년/반 기반 템플릿)
+  const handleDownloadPromoteTemplate = (targetGrade?: string, targetClass?: string) => {
+    const gFilter = targetGrade !== undefined ? targetGrade : promoteTemplateGrade;
+    const cFilter = targetClass !== undefined ? targetClass : promoteTemplateClass;
+
+    const filtered = students.filter(s => {
+      if (gFilter !== 'all' && String(s.grade) !== String(gFilter)) return false;
+      if (cFilter !== 'all' && String(s.classNum) !== String(cFilter)) return false;
+      return true;
+    }).sort((a, b) => {
+      const gA = parseInt(a.grade) || 0;
+      const gB = parseInt(b.grade) || 0;
+      if (gA !== gB) return gA - gB;
+      const cA = parseInt(a.classNum) || 0;
+      const cB = parseInt(b.classNum) || 0;
+      if (cA !== cB) return cA - cB;
+      const nA = parseInt(a.studentNum || '0') || 0;
+      const nB = parseInt(b.studentNum || '0') || 0;
+      return nA - nB;
+    });
+
     import('xlsx').then(XLSX => {
       const headers = ["학생계정이메일", "학생이름", "기존학년", "기존반", "기존번호", "신규학년", "신규반", "신규번호"];
       
       let rows: any[][] = [];
-      if (students.length > 0) {
-        rows = students.map(s => {
+      if (filtered.length > 0) {
+        rows = filtered.map(s => {
           const currentG = parseInt(s.grade || '1', 10);
           const nextG = !isNaN(currentG) && currentG < 6 ? String(currentG + 1) : (currentG >= 6 ? '졸업' : '1');
           return [
@@ -234,8 +399,8 @@ export default function AdminMasterStudentsPage() {
             s.classNum,
             s.studentNum || '',
             nextG,
-            s.classNum,
-            s.studentNum || ''
+            '', // 신규반 (담임 교사가 직접 입력)
+            ''  // 신규번호 (담임 교사가 직접 입력)
           ];
         });
       } else {
@@ -248,7 +413,11 @@ export default function AdminMasterStudentsPage() {
       const ws = XLSX.utils.aoa_to_sheet(wsData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "학생진급양식");
-      XLSX.writeFile(wb, `학생진급서식양식_${new Date().toISOString().split('T')[0]}.xlsx`);
+      
+      const gradeStr = gFilter === 'all' ? '전체학년' : `${gFilter}학년`;
+      const classStr = cFilter === 'all' ? '전체반' : `${cFilter}반`;
+      XLSX.writeFile(wb, `학생진급서식_${gradeStr}_${classStr}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast({ title: '진급 양식 다운로드', description: `${gradeStr} ${classStr} (${rows.length}명) 진급 서식이 다운로드되었습니다.` });
     });
   };
 
@@ -459,28 +628,77 @@ export default function AdminMasterStudentsPage() {
                       </TabsList>
 
                       <TabsContent value="excel" className="space-y-3 pt-3">
-                        <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs space-y-2">
+                        <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-xl text-xs space-y-3">
                           <div className="flex items-center justify-between">
-                            <span className="font-bold text-purple-950">진급 엑셀 서식 양식</span>
-                            <Button 
-                              type="button" 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={handleDownloadPromoteTemplate}
-                              className="h-7 text-[11px] font-bold bg-white text-purple-900 border-purple-300 hover:bg-purple-100 shadow-xs"
-                            >
-                              <Download className="w-3 h-3 mr-1 text-purple-700 shrink-0" />
-                              진급 양식 (.xlsx) 다운로드
-                            </Button>
+                            <span className="font-bold text-purple-950 flex items-center gap-1.5">
+                              <GraduationCap className="w-4 h-4 text-purple-700" />
+                              <span>진급 서식 양식 다운로드 (이전 학년 담임용)</span>
+                            </span>
                           </div>
+                          
                           <p className="text-purple-800 text-[11px] leading-relaxed">
-                            기존 학생 명단과 기존 학년/반/번호가 포함된 <strong>양식 파일(.xlsx)을 다운로드</strong>받으신 후, <strong>[신규학년], [신규반], [신규번호]</strong> 항목을 입력하여 아래 파일 선택창에 업로드하세요.
+                            이전 학년 담임 교사가 직접 진급할 학생의 새 학년/반을 작성할 수 있도록, <strong>원하는 학년과 반을 선택하여 서식을 다운로드</strong>하세요.
                           </p>
-                          <div className="p-2 bg-white/90 rounded-lg text-[10px] font-mono text-purple-950 border border-purple-200 leading-tight">
-                            기본 컬럼: 학생계정이메일 | 학생이름 | 기존학년 | 기존반 | 기존번호 | <span className="font-bold text-indigo-700">신규학년</span> | <span className="font-bold text-indigo-700">신규반</span> | <span className="font-bold text-indigo-700">신규번호</span>
+
+                          {/* 학년 및 반 선택 필터 바 */}
+                          <div className="grid grid-cols-2 gap-2 bg-white p-2.5 rounded-lg border border-purple-200">
+                            <div className="space-y-1">
+                              <Label className="text-[11px] font-bold text-purple-900">학년 선택</Label>
+                              <Select value={promoteTemplateGrade} onValueChange={(val) => {
+                                setPromoteTemplateGrade(val);
+                                setPromoteTemplateClass('all');
+                              }}>
+                                <SelectTrigger className="h-8 text-xs bg-purple-50/50">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="all">전체 학년</SelectItem>
+                                  <SelectItem value="1">1학년</SelectItem>
+                                  <SelectItem value="2">2학년</SelectItem>
+                                  <SelectItem value="3">3학년</SelectItem>
+                                  <SelectItem value="4">4학년</SelectItem>
+                                  <SelectItem value="5">5학년</SelectItem>
+                                  <SelectItem value="6">6학년</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[11px] font-bold text-purple-900">반 선택</Label>
+                              <Select value={promoteTemplateClass} onValueChange={setPromoteTemplateClass}>
+                                <SelectTrigger className="h-8 text-xs bg-purple-50/50">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="all">전체 반</SelectItem>
+                                  {promoteTemplateGrade !== 'all' ? (
+                                    (gradeClassTree.find(g => g.grade === promoteTemplateGrade)?.classes || []).map(c => (
+                                      <SelectItem key={c.classNum} value={c.classNum}>{c.classNum}반 ({c.count}명)</SelectItem>
+                                    ))
+                                  ) : (
+                                    ['1', '2', '3', '4', '5', '6', '7', '8'].map(c => (
+                                      <SelectItem key={c} value={c}>{c}반</SelectItem>
+                                    ))
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
+
+                          <Button 
+                            type="button" 
+                            size="sm" 
+                            onClick={() => handleDownloadPromoteTemplate()}
+                            className="w-full h-8 text-xs font-bold bg-purple-700 hover:bg-purple-800 text-white shadow-xs"
+                          >
+                            <Download className="w-3.5 h-3.5 mr-1 text-white shrink-0" />
+                            {promoteTemplateGrade === 'all' ? '전체 학년' : `${promoteTemplateGrade}학년`} {promoteTemplateClass === 'all' ? '전체 반' : `${promoteTemplateClass}반`} 진급 서식 (.xlsx) 다운로드
+                          </Button>
                         </div>
-                        <Input type="file" ref={promoteFileInputRef} onChange={handlePromoteFileUpload} accept=".xlsx, .xls" className="text-xs h-9 cursor-pointer" />
+
+                        <div className="space-y-1 pt-1">
+                          <Label className="text-xs font-bold text-slate-700">작성 완료된 진급 서식 엑셀 파일 업로드</Label>
+                          <Input type="file" ref={promoteFileInputRef} onChange={handlePromoteFileUpload} accept=".xlsx, .xls" className="text-xs h-9 cursor-pointer" />
+                        </div>
                       </TabsContent>
 
                       <TabsContent value="auto" className="space-y-3 pt-3">
@@ -547,6 +765,18 @@ export default function AdminMasterStudentsPage() {
                         <Label className="text-xs">보호자 연락처</Label>
                         <Input placeholder="010-0000-0000" value={newStudent.contact} onChange={e => setNewStudent({...newStudent, contact: e.target.value})} />
                       </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs text-slate-700 font-bold">등하교 목적지 (스쿨버스 정류장)</Label>
+                          <span className="text-[10px] text-indigo-600 font-medium">📍 정류장 검색 선택</span>
+                        </div>
+                        <Combobox 
+                          options={destinationOptions}
+                          value={newStudent.address || null}
+                          onSelect={(val) => setNewStudent({ ...newStudent, address: val || '' })}
+                          placeholder="스쿨버스 정류장/목적지 검색 (예: Hung Vuong KFC, Sky 1,2...)"
+                        />
+                      </div>
                     </div>
                     <DialogFooter>
                       <Button onClick={handleCreateStudent} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold">등록하기</Button>
@@ -559,7 +789,12 @@ export default function AdminMasterStudentsPage() {
                   <Upload className="mr-1.5 h-3.5 w-3.5" /> 엑셀 일괄 등록
                 </Button>
                 {/* 4. 명단 다운로드 */}
-                <Button variant="outline" size="sm" onClick={handleDownloadExcel} className="h-8 text-xs px-2.5 font-bold whitespace-nowrap">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleOpenDownloadDialog} 
+                  className="h-8 text-xs px-2.5 font-bold whitespace-nowrap text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+                >
                   <Download className="mr-1.5 h-3.5 w-3.5" /> 명단 다운로드
                 </Button>
                 <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls" className="hidden" />
@@ -734,8 +969,16 @@ export default function AdminMasterStudentsPage() {
                 <Input value={editStudentForm.contact || ''} onChange={e => setEditStudentForm({...editStudentForm, contact: e.target.value})} className="h-8 text-xs" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-slate-600">거주지 주소</Label>
-                <Input value={editStudentForm.address || ''} onChange={e => setEditStudentForm({...editStudentForm, address: e.target.value})} className="h-8 text-xs" />
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-slate-700 font-bold">등하교 목적지 (스쿨버스 정류장)</Label>
+                  <span className="text-[10px] text-indigo-600 font-medium">📍 정류장 검색 선택</span>
+                </div>
+                <Combobox 
+                  options={destinationOptions}
+                  value={editStudentForm.address || null}
+                  onSelect={(val) => setEditStudentForm({ ...editStudentForm, address: val || '' })}
+                  placeholder="스쿨버스 정류장/목적지 검색 (예: Hung Vuong KFC, Sky 1,2...)"
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-600 flex items-center justify-between">
@@ -862,8 +1105,8 @@ export default function AdminMasterStudentsPage() {
                       </div>
                     </div>
                     <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                      <span className="text-slate-500 block mb-1">거주지 주소</span>
-                      <span className="font-medium text-slate-800">{selectedStudent.address || '등록된 주소 정보가 없습니다.'}</span>
+                      <span className="text-slate-500 block mb-1">등하교 목적지</span>
+                      <span className="font-medium text-slate-800">{selectedStudent.address || '등록된 목적지 정보가 없습니다.'}</span>
                     </div>
                   </TabsContent>
 
@@ -901,6 +1144,10 @@ export default function AdminMasterStudentsPage() {
                         <span className="text-slate-500 block">좌석 번호</span>
                         <span className="font-bold text-sky-900">{selectedStudent.busSummary?.assignedSeatNumber ? `${selectedStudent.busSummary.assignedSeatNumber}번` : '미배정'}</span>
                       </div>
+                      <div className="col-span-2 bg-white/80 p-2.5 rounded-lg border border-sky-100">
+                        <span className="text-slate-500 block">등/하교 목적지 정류장 (거주지 연동)</span>
+                        <span className="font-bold text-sky-900">{selectedStudent.address || selectedStudent.busSummary?.morningDestinationId || '미등록'}</span>
+                      </div>
                     </div>
                   </div>
                 </TabsContent>
@@ -921,6 +1168,128 @@ export default function AdminMasterStudentsPage() {
           </Dialog>
           );
         })()}
+
+        {/* 6. 엑셀 명단 다운로드 학년/반 선택 팝업 모달 */}
+        <Dialog open={isDownloadDialogOpen} onOpenChange={setIsDownloadDialogOpen}>
+          <DialogContent className="sm:max-w-xl w-[95vw] max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl">
+            <DialogHeader className="pb-2 border-b border-slate-200">
+              <div className="flex items-center justify-between">
+                <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
+                  <Download className="h-5 w-5 text-indigo-600" />
+                  <span>학생 명단 엑셀 다운로드 (학년/반 선택)</span>
+                </DialogTitle>
+              </div>
+              <DialogDescription className="text-xs text-slate-500">
+                다운로드할 학년과 반을 체크박스로 선택해주세요.
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* 빠른 선택 바 */}
+            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
+              <span className="font-bold text-slate-700">
+                선택된 대상: <strong className="text-indigo-600">{
+                  students.filter(s => selectedClassesForDownload.includes(`${s.grade}-${s.classNum || '1'}`)).length
+                }명</strong> / 전체 {students.length}명
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleSelectAllClassesForDownload} 
+                  className="h-7 text-xs font-semibold px-2"
+                >
+                  전체 선택
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleDeselectAllClassesForDownload} 
+                  className="h-7 text-xs font-semibold px-2 text-slate-500"
+                >
+                  전체 해제
+                </Button>
+              </div>
+            </div>
+
+            {/* 학년별 반 선택 체크박스 그리드 */}
+            <div className="space-y-3 py-1">
+              {gradeClassTree.map((gItem) => {
+                const gradeKeys = gItem.classes.map(c => c.key);
+                const allSelected = gradeKeys.length > 0 && gradeKeys.every(k => selectedClassesForDownload.includes(k));
+                const someSelected = gradeKeys.some(k => selectedClassesForDownload.includes(k));
+
+                return (
+                  <div key={gItem.grade} className="p-3 bg-white border border-slate-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox 
+                          id={`grade-all-${gItem.grade}`}
+                          checked={allSelected ? true : (someSelected ? 'indeterminate' : false)}
+                          onCheckedChange={() => handleToggleGradeForDownload(gItem.grade)}
+                          className="h-4 w-4 text-indigo-600 rounded"
+                        />
+                        <Label htmlFor={`grade-all-${gItem.grade}`} className="text-xs font-bold text-slate-800 cursor-pointer flex items-center gap-1.5">
+                          <span>{gItem.grade === '졸업' ? '졸업생' : `${gItem.grade}학년 전체`}</span>
+                          <span className="text-[11px] font-normal text-slate-500">({gItem.totalCount}명)</span>
+                        </Label>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => handleToggleGradeForDownload(gItem.grade)}
+                        className="text-[11px] text-indigo-600 hover:text-indigo-800 font-medium"
+                      >
+                        {allSelected ? '학년 해제' : '학년 선택'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 pt-1">
+                      {gItem.classes.map((c) => {
+                        const isChecked = selectedClassesForDownload.includes(c.key);
+                        return (
+                          <div 
+                            key={c.key} 
+                            onClick={() => handleToggleClassForDownload(c.key)}
+                            className={cn(
+                              "flex items-center space-x-2 p-2 rounded-lg border text-xs cursor-pointer transition select-none",
+                              isChecked 
+                                ? "bg-indigo-50 border-indigo-300 text-indigo-900 font-bold" 
+                                : "bg-slate-50/60 border-slate-200 text-slate-600 hover:bg-slate-100"
+                            )}
+                          >
+                            <Checkbox 
+                              id={c.key}
+                              checked={isChecked}
+                              onCheckedChange={() => handleToggleClassForDownload(c.key)}
+                              className="h-3.5 w-3.5"
+                            />
+                            <span className="truncate">{c.classNum}반 ({c.count}명)</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <DialogFooter className="pt-2 flex items-center justify-between sm:justify-end gap-2 border-t border-slate-100">
+              <Button variant="outline" size="sm" onClick={() => setIsDownloadDialogOpen(false)} className="text-xs font-bold">
+                취소
+              </Button>
+              <Button 
+                onClick={handleDownloadFilteredExcel} 
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs gap-1.5 shadow-xs"
+              >
+                <Download className="h-4 w-4" />
+                <span>선택된 학생 ({
+                  students.filter(s => selectedClassesForDownload.includes(`${s.grade}-${s.classNum || '1'}`)).length
+                }명) 엑셀 다운로드</span>
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );

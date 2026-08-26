@@ -45,7 +45,7 @@ export const safeParseDate = (dateStr: any): Date => {
   return new Date();
 };
 
-export type PeriodGroup = '1~2차시' | '3~4차시' | '1~4차시';
+export type PeriodGroup = '8~9차시' | '1~2차시' | '3~4차시' | '1~4차시';
 
 export function getCoursePeriodGroup(course: Course): PeriodGroup {
   const classTime = String(course.classTime || '').trim();
@@ -53,49 +53,59 @@ export function getCoursePeriodGroup(course: Course): PeriodGroup {
   const period = String(course.period || '').trim();
   const periodSlot = String(course.periodSlot || '').trim();
   const description = String(course.description || '').trim();
+  const classDays = Array.isArray(course.classDays) ? course.classDays : [];
+  const isSaturday = classDays.some(d => d.includes('토') || d.toLowerCase().includes('sat'));
+
   const combined = `${classTime} ${period} ${title} ${periodSlot} ${description}`.trim();
 
-  // 1. 1~4차시 (전일제 / 통합 / 08:30 ~ 11:40 / 1~4차시) 최우선 판별
+  // 1. 8~9차시 (평일 방과후 15:00~16:30 / 15:10~16:30 / 8~9차시 / 8-9차시)
+  if (
+    combined.includes('8~9') || 
+    combined.includes('8-9') || 
+    combined.includes('8,9') || 
+    combined.includes('8~9차시') || 
+    combined.includes('15:10') || 
+    combined.includes('15:00') || 
+    combined.includes('16:30') ||
+    (!isSaturday && !combined.includes('08:30') && !combined.includes('10:10') && !combined.includes('1~4') && !combined.includes('1-4'))
+  ) {
+    return '8~9차시';
+  }
+
+  // 2. 1~4차시 (토요/방학 4차시 통합 / 08:30 ~ 11:40 / 1~4차시 / 전일제)
   if (
     combined.includes('1~4') || 
     combined.includes('1-4') || 
     combined.includes('1~4차시') || 
-    combined.includes('08:30 ~ 11:40') || 
-    combined.includes('08:30~11:40') || 
-    combined.includes('8:30~11:40') || 
+    combined.includes('11:40') || 
     combined.includes('전일제') || 
     combined.includes('통합')
   ) {
     return '1~4차시';
   }
 
-  // 2. 3~4차시 (10:10 ~ 11:40 / 10:00 ~ 11:40 / 3~4차시 / 3-4차시) 판별
+  // 3. 3~4차시 (토요/방학 10:10 ~ 11:40 / 3~4차시 / 3-4차시)
   if (
     combined.includes('3~4') || 
     combined.includes('3-4') || 
     combined.includes('3~4차시') || 
-    combined.includes('10:10') || 
-    combined.includes('10:00 ~ 11:40') || 
-    combined.includes('16:50') || 
-    combined.includes('17:00')
+    combined.includes('10:10')
   ) {
     return '3~4차시';
   }
 
-  // 3. 1~2차시 (08:30 ~ 10:00 / 1~2차시 / 1-2차시 / 15:00) 판별
+  // 4. 1~2차시 (토요/방학 08:30 ~ 10:00 / 1~2차시 / 1-2차시)
   if (
     combined.includes('1~2') || 
     combined.includes('1-2') || 
     combined.includes('1~2차시') || 
-    combined.includes('08:30 ~ 10:00') || 
-    combined.includes('08:30~10:00') || 
-    combined.includes('8:30~10:00') || 
-    combined.includes('15:00')
+    combined.includes('08:30') || 
+    combined.includes('8:30')
   ) {
     return '1~2차시';
   }
 
-  return '1~2차시';
+  return isSaturday ? '1~2차시' : '8~9차시';
 }
 
 export function cleanClassTime(classTimeStr?: string): string {
@@ -114,6 +124,7 @@ export function shouldForceWaiting(
   allCourses: Course[]
 ): { forceWaiting: boolean; reason?: string } {
   const targetPeriodGroup = getCoursePeriodGroup(targetCourse);
+  const targetDays = Array.isArray(targetCourse.classDays) ? targetCourse.classDays : ['월'];
 
   const sortedEnrollments = [...studentEnrollments].sort((a, b) => {
     const tA = a.timestampMs || new Date(a.registrationDate || 0).getTime();
@@ -126,12 +137,15 @@ export function shouldForceWaiting(
     return {
       enrollment: e,
       course: c,
-      periodGroup: c ? getCoursePeriodGroup(c) : '1~2차시'
+      periodGroup: c ? getCoursePeriodGroup(c) : '8~9차시',
+      classDays: c && Array.isArray(c.classDays) ? c.classDays : ['월'],
     };
   }).filter(item => item.course !== undefined);
 
-  // 1. 이미 1~4차시 통합 강좌를 1순위로 신청한 경우 -> 모든 후속 신청은 대기자 처리
-  const hasFirstChoice1To4 = appliedDetails.some(item => item.periodGroup === '1~4차시');
+  // 1. 토요일: 이미 1~4차시 통합 강좌를 1순위로 신청한 경우 -> 토요 후속 신청은 대기자 처리
+  const hasFirstChoice1To4 = appliedDetails.some(item => 
+    item.periodGroup === '1~4차시' && item.classDays.some(d => targetDays.includes(d))
+  );
   if (hasFirstChoice1To4) {
     return {
       forceWaiting: true,
@@ -139,9 +153,10 @@ export function shouldForceWaiting(
     };
   }
 
-  // 2. 신청하려는 강좌가 1~4차시인데, 이미 다른 차시(1~2차시 또는 3~4차시) 강좌를 신청한 경우 -> 대기자 처리
+  // 2. 토요일: 신청하려는 강좌가 1~4차시인데, 이미 토요일 다른 차시(1~2차시 또는 3~4차시) 강좌를 신청한 경우 -> 대기자 처리
   if (targetPeriodGroup === '1~4차시') {
-    if (appliedDetails.length > 0) {
+    const hasSatOther = appliedDetails.some(item => item.classDays.some(d => targetDays.includes(d)));
+    if (hasSatOther) {
       return {
         forceWaiting: true,
         reason: '이미 다른 차시(1~2차시/3~4차시) 강좌를 신청하셨으므로, 1~4차시 통합 강좌는 대기자 명단으로 등록됩니다.'
@@ -149,12 +164,14 @@ export function shouldForceWaiting(
     }
   }
 
-  // 3. 동일 차시 그룹(예: 1~2차시)에서 이미 1순위 강좌를 신청한 경우 -> 2순위 강좌는 대기자 처리
-  const existingInSameGroup = appliedDetails.filter(item => item.periodGroup === targetPeriodGroup);
-  if (existingInSameGroup.length > 0) {
+  // 3. 동일 요일 + 동일 차시 그룹(예: 월요일 8~9차시 또는 토요일 1~2차시)에서 이미 1순위 강좌를 신청한 경우 -> 2순위 강좌는 대기자 처리
+  const existingInSameSlot = appliedDetails.filter(item => 
+    item.periodGroup === targetPeriodGroup && item.classDays.some(d => targetDays.includes(d))
+  );
+  if (existingInSameSlot.length > 0) {
     return {
       forceWaiting: true,
-      reason: `이미 ${targetPeriodGroup} 강좌(${existingInSameGroup[0].course?.title})를 1순위로 신청하셨으므로, 동시간대 2순위 신청 강좌는 대기자 명단으로 등록됩니다.`
+      reason: `이미 해당 요일 ${targetPeriodGroup} 강좌(${existingInSameSlot[0].course?.title})를 1순위로 신청하셨으므로, 동시간대 2순위 신청 강좌는 대기자 명단으로 등록됩니다.`
     };
   }
 
@@ -180,7 +197,8 @@ export const StudentView: React.FC<StudentViewProps> = ({
 }) => {
   const { profile } = useAuth();
   const router = useRouter();
-  const currentStudentId = 's1';
+  const currentStudentName = (profile?.studentName || profile?.name || '').trim();
+  const currentStudentId = profile?.uid || profile?.email || (currentStudentName ? `s_${currentStudentName}` : 's1');
 
   // Bus & Settings States
   const [busStudents, setBusStudents] = useState<BusStudent[]>([]);
@@ -397,12 +415,16 @@ export const StudentView: React.FC<StudentViewProps> = ({
         setQueueTicket(null);
 
         const enrollmentId = `e_student_${Date.now()}`;
-        const needsBus = needsBusMap[course.id] || false;
+        const needsBus = course.hasBusOption ? (needsBusMap[course.id] || false) : false;
         const studentProfile = {
-          name: profile?.studentName || '홍길동',
-          phone: profile?.parentPhone || '010-1234-5678',
-          parentPhone: profile?.parentPhone || '010-5678-1234',
+          name: currentStudentName || profile?.studentName || profile?.name || '홍길동',
+          grade: Number(profile?.studentGrade) || 1,
+          classNum: Number(profile?.studentClass) || 1,
+          studentNum: Number(profile?.studentNumber) || 1,
+          phone: profile?.parentPhone || '',
+          parentPhone: profile?.parentPhone || '',
           kisbusNo: needsBus ? '신청' : '-',
+          needsBus: needsBus,
         };
 
         const forceInfo = shouldForceWaiting(course, myEnrollments, courses);
@@ -454,7 +476,23 @@ export const StudentView: React.FC<StudentViewProps> = ({
     }
   };
 
-  const myEnrollments = enrollments.filter((e) => e.studentId === currentStudentId);
+  const myEnrollments = enrollments.filter((e) => {
+    // 1. studentId 일치
+    if (e.studentId && (e.studentId === currentStudentId || e.studentId === profile?.uid || e.studentId === profile?.email)) {
+      return true;
+    }
+    // 2. 학생 이름 + 학년/반 일치 (로그인 학생 정보가 있는 경우)
+    if (currentStudentName && e.name === currentStudentName) {
+      if (profile?.studentGrade && String(e.grade) !== String(profile.studentGrade)) return false;
+      if (profile?.studentClass && String(e.classNum) !== String(profile.studentClass)) return false;
+      return true;
+    }
+    // 3. 로그인 정보가 전혀 없을 때만 s1 fallback
+    if (!currentStudentName && !profile?.email && e.studentId === 's1') {
+      return true;
+    }
+    return false;
+  });
 
   return (
     <div className="space-y-6">
@@ -548,26 +586,38 @@ export const StudentView: React.FC<StudentViewProps> = ({
       {activeStudentTab === 'apply' && (
         <div className="space-y-4">
           {/* 차시별 강좌 그룹 분류 탭 툴바 */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-            <div className="space-y-0.5">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-base font-bold text-slate-800">개설 강좌 목록</h3>
-                <span className="text-[11px] bg-indigo-50 text-indigo-700 font-bold px-2.5 py-0.5 rounded-md border border-indigo-200/80 whitespace-nowrap">
-                  수강료 & 시간 — 1~2차시/3~4차시: 800,000동 (08:30~10:00 / 10:10~11:40) | 1~4차시: 800,000동 (08:30~11:40)
-                </span>
+                <div className="flex items-center gap-1.5 flex-wrap text-[10px] sm:text-[11px] font-semibold">
+                  <span className="bg-blue-50 text-blue-800 px-2 py-0.5 rounded-md border border-blue-200 whitespace-nowrap">
+                    평일 8~9차시 (15:10~16:30)
+                  </span>
+                  <span className="bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200 whitespace-nowrap">
+                    토요 1~2차시 (08:30~10:00)
+                  </span>
+                  <span className="bg-purple-50 text-purple-800 px-2 py-0.5 rounded-md border border-purple-200 whitespace-nowrap">
+                    토요 3~4차시 (10:10~11:40)
+                  </span>
+                  <span className="bg-indigo-50 text-indigo-800 px-2 py-0.5 rounded-md border border-indigo-200 whitespace-nowrap">
+                    토요 1~4차시 통합 (08:30~11:40 / 4차시)
+                  </span>
+                </div>
               </div>
               <p className="text-xs text-slate-500 font-medium">
-                동시간대(차시) 1순위 강좌는 수강 명단 선착순 배정, 2순위 이상 강좌는 대기자 명단으로 자동 분류됩니다.
+                동시간대(차시) 1순위 강좌는 선착순 배정되며, 동일 차시 2순위 이상 강좌는 대기자 명단으로 자동 분류됩니다.
               </p>
             </div>
 
-            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200/70 shrink-0">
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200/70 shrink-0 overflow-x-auto max-w-full">
               {[
                 { id: 'ALL', label: '전체 강좌', count: courses.length },
-                { id: '1~2차시', label: '1~2차시', count: courses.filter(c => getCoursePeriodGroup(c) === '1~2차시').length },
-                { id: '3~4차시', label: '3~4차시', count: courses.filter(c => getCoursePeriodGroup(c) === '3~4차시').length },
-                { id: '1~4차시', label: '1~4차시 (통합)', count: courses.filter(c => getCoursePeriodGroup(c) === '1~4차시').length },
-              ].map((tab) => (
+                { id: '8~9차시', label: '8~9차시 (평일)', count: courses.filter(c => getCoursePeriodGroup(c) === '8~9차시').length },
+                { id: '1~2차시', label: '1~2차시 (토요)', count: courses.filter(c => getCoursePeriodGroup(c) === '1~2차시').length },
+                { id: '3~4차시', label: '3~4차시 (토요)', count: courses.filter(c => getCoursePeriodGroup(c) === '3~4차시').length },
+                { id: '1~4차시', label: '1~4차시 (토요통합)', count: courses.filter(c => getCoursePeriodGroup(c) === '1~4차시').length },
+              ].filter(tab => tab.id === 'ALL' || tab.count > 0).map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setSelectedPeriodTab(tab.id as any)}
@@ -599,116 +649,121 @@ export const StudentView: React.FC<StudentViewProps> = ({
                 const periodGroup = getCoursePeriodGroup(course);
                 const forceInfo = shouldForceWaiting(course, myEnrollments, courses);
                 const instructorName = course.instructorName || course.teacherName || '담당 교사';
+                const daysText = Array.isArray(course.classDays) && course.classDays.length > 0 ? course.classDays.join(',') : '월';
+                const tuitionFormatted = (course.tuition || 0).toLocaleString();
 
                 return (
                   <div
                     key={course.id}
-                    className="bg-white rounded-xl border border-slate-200/80 shadow-2xs hover:border-indigo-300 transition p-3 flex flex-col xl:flex-row xl:items-center justify-between gap-3"
+                    className="bg-white rounded-xl border border-slate-200/80 shadow-2xs hover:border-indigo-300 transition p-3 flex flex-col gap-2"
                   >
-                    {/* 1. 좌측 강좌 필수 정보 컬럼 그룹 (고정 너비 컬럼 정렬) */}
-                    <div className="flex flex-wrap md:flex-nowrap items-center gap-3 flex-1 min-w-0">
-                      {/* 컬럼 1: 차시 및 모집 상태 배지 (고정 너비: w-[180px]) */}
-                      <div className="flex items-center gap-1.5 w-[180px] shrink-0">
-                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md border whitespace-nowrap ${
-                          periodGroup === '1~2차시' 
+                    {/* 상단: 배지 + 강좌명 + 강사 + 요일/시간/수강료 */}
+                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md border whitespace-nowrap shrink-0 ${
+                        periodGroup === '8~9차시'
+                          ? 'bg-blue-50 text-blue-900 border-blue-200'
+                          : periodGroup === '1~2차시' 
                             ? 'bg-amber-50 text-amber-900 border-amber-200' 
                             : periodGroup === '3~4차시'
                               ? 'bg-purple-50 text-purple-900 border-purple-200'
                               : 'bg-indigo-50 text-indigo-900 border-indigo-200'
-                        }`}>
-                          {periodGroup}
+                      }`}>
+                        {periodGroup}
+                      </span>
+
+                      {isFull ? (
+                        <span className="text-[11px] bg-rose-50 text-rose-700 border border-rose-200 font-bold px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
+                          마감
                         </span>
+                      ) : (
+                        <span className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
+                          신청가능 ({course.currentStudents}/{course.maxStudents})
+                        </span>
+                      )}
 
-                        {isFull ? (
-                          <span className="text-[11px] bg-rose-50 text-rose-700 border border-rose-200 font-bold px-2 py-0.5 rounded-md whitespace-nowrap">
-                            마감 ({course.currentStudents}/{course.maxStudents})
-                          </span>
-                        ) : (
-                          <span className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2 py-0.5 rounded-md whitespace-nowrap">
-                            신청가능 ({course.currentStudents}/{course.maxStudents})
-                          </span>
-                        )}
-                      </div>
-
-                      {/* 컬럼 2: 강좌명 및 강사명 (가변 가득 채움: flex-1) */}
-                      <div className="flex items-center gap-2 flex-1 min-w-[220px] overflow-hidden">
-                        <h4 className="text-sm font-bold text-slate-900 truncate whitespace-nowrap">{course.title}</h4>
-                        <span className="text-xs text-slate-500 font-medium whitespace-nowrap shrink-0">
-                          👤 강사: {instructorName}
+                      <h4 className="text-sm font-bold text-slate-900 truncate flex-1 min-w-0">{course.title}</h4>
+                      
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium whitespace-nowrap shrink-0">
+                        <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-semibold">
+                          {daysText}요일 {course.classTime || (periodGroup === '8~9차시' ? '15:10~16:30' : periodGroup === '1~4차시' ? '08:30~11:40' : periodGroup === '3~4차시' ? '10:10~11:40' : '08:30~10:00')}
+                        </span>
+                        <span className="text-indigo-600 font-bold">
+                          {tuitionFormatted}동
+                        </span>
+                        <span className="hidden sm:inline">
+                          👤 {instructorName}
                         </span>
                       </div>
                     </div>
 
-                    {/* 2. 우측 제어 및 액션 버튼 컬럼 그룹 (수직 수평 100% 칼정렬) */}
-                    <div className="flex items-center gap-2 shrink-0 justify-end">
-                      {/* 컬럼 4: 스쿨버스 귀가 체크박스 (컴팩트 고정 너비: w-[80px]) */}
-                      <div className="w-[80px] shrink-0 flex items-center justify-end">
-                        {!myRecord && !isLocked ? (
-                          <div className="flex items-center gap-1 px-1.5 py-1 bg-slate-50 rounded-lg border border-slate-200/80 whitespace-nowrap">
-                            <input
-                              type="checkbox"
-                              id={`bus-check-${course.id}`}
-                              checked={needsBusMap[course.id] || false}
-                              onChange={(e) => {
-                                const val = e.target.checked;
-                                setNeedsBusMap(prev => ({ ...prev, [course.id]: val }));
-                              }}
-                              className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
-                            />
-                            <label
-                              htmlFor={`bus-check-${course.id}`}
-                              className="text-[11px] font-bold text-slate-700 cursor-pointer select-none whitespace-nowrap"
-                            >
-                              버스
-                            </label>
-                          </div>
-                        ) : (
-                          <div className="w-[80px]" />
-                        )}
-                      </div>
+                    {/* 하단: 버스체크 + 계획서 + 수강신청 버튼 */}
+                    <div className="flex items-center gap-1.5 justify-end flex-wrap">
+                      {/* 강사명 모바일 표시 */}
+                      <span className="text-[11px] text-slate-500 mr-auto sm:hidden">👤 {instructorName}</span>
 
-                      {/* 컬럼 5: 강의계획서 버튼 (고정 너비: w-[100px]) */}
-                      <div className="w-[100px] shrink-0 flex items-center justify-center">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSelectedSyllabusCourse(course)}
-                          className="text-xs h-8 px-2.5 font-bold text-slate-700 border-slate-300 hover:bg-slate-50 whitespace-nowrap rounded-lg w-full"
-                        >
-                          <FileText className="w-3.5 h-3.5 mr-1 text-slate-500" />
-                          계획서
-                        </Button>
-                      </div>
+                      {/* 버스 체크박스 (강좌에 hasBusOption이 활성화된 경우에만 노출) */}
+                      {!myRecord && !isLocked && course.hasBusOption && (
+                        <div className="flex items-center gap-1 px-1.5 py-1 bg-emerald-50 rounded-lg border border-emerald-300 whitespace-nowrap shadow-2xs">
+                          <input
+                            type="checkbox"
+                            id={`bus-check-${course.id}`}
+                            checked={needsBusMap[course.id] || false}
+                            onChange={(e) => {
+                              const val = e.target.checked;
+                              setNeedsBusMap(prev => ({ ...prev, [course.id]: val }));
+                            }}
+                            className="w-3.5 h-3.5 text-emerald-600 rounded border-emerald-400 focus:ring-emerald-500 cursor-pointer"
+                          />
+                          <label
+                            htmlFor={`bus-check-${course.id}`}
+                            className="text-[11px] font-bold text-emerald-800 cursor-pointer select-none whitespace-nowrap"
+                          >
+                            버스
+                          </label>
+                        </div>
+                      )}
 
-                      {/* 컬럼 6: 수강신청 / 대기신청 버튼 (고정 너비: w-[170px]) */}
-                      <div className="w-[170px] shrink-0 flex flex-col items-end justify-center relative">
+                      {/* 강의계획서 버튼 */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedSyllabusCourse(course)}
+                        className="text-xs h-8 px-2.5 font-bold text-slate-700 border-slate-300 hover:bg-slate-50 whitespace-nowrap rounded-lg"
+                      >
+                        <FileText className="w-3.5 h-3.5 sm:mr-1 text-slate-500" />
+                        <span className="hidden sm:inline">계획서</span>
+                      </Button>
+
+                      {/* 수강신청 버튼 */}
+                      <div className="relative flex flex-col items-end">
                         {forceInfo.forceWaiting && !myRecord && !isLocked && (
                           <span className="text-[9px] text-amber-700 font-bold whitespace-nowrap absolute -top-4 right-0">
-                            2순위 대기자 배치
+                            2순위 대기
                           </span>
                         )}
                         {myRecord ? (
-                          <div className="w-full px-2 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 text-center whitespace-nowrap">
-                            {myRecord.status === 'ENROLLED' ? '신청 완료 (수강)' : '대기 접수 완료'}
+                          <div className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap">
+                            {myRecord.status === 'ENROLLED' ? '✓ 신청완료' : '⏳ 대기접수'}
                           </div>
                         ) : isLocked ? (
                           <button
                             disabled
-                            className="w-full px-2 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-400 flex items-center justify-center gap-1 cursor-not-allowed whitespace-nowrap"
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-400 flex items-center gap-1 cursor-not-allowed whitespace-nowrap"
                           >
                             <Lock className="w-3.5 h-3.5" />
-                            {isBeforeStart ? `대기중 (${formatCountdown(secondsUntilStart)})` : '신청 잠김'}
+                            {isBeforeStart ? formatCountdown(secondsUntilStart) : '잠김'}
                           </button>
                         ) : (
                           <button
                             onClick={() => handleApplyCourseWithQueue(course)}
-                            className={`w-full px-2.5 py-1.5 rounded-lg text-xs font-bold shadow-2xs transition flex items-center justify-center gap-1 whitespace-nowrap ${
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold shadow-2xs transition flex items-center gap-1 whitespace-nowrap ${
                               forceInfo.forceWaiting || isFull
                                 ? 'bg-amber-600 hover:bg-amber-700 text-white'
                                 : 'bg-indigo-600 hover:bg-indigo-700 text-white'
                             }`}
                           >
-                            {forceInfo.forceWaiting ? '대기자 신청 (2순위)' : isFull ? '대기자 신청 (마감)' : '수강 신청 (1순위)'}
+                            <span className="hidden sm:inline">{forceInfo.forceWaiting ? '대기자 신청 (2순위)' : isFull ? '대기자 신청 (마감)' : '수강 신청 (1순위)'}</span>
+                            <span className="sm:hidden">{forceInfo.forceWaiting || isFull ? '대기신청' : '수강신청'}</span>
                             <ChevronRight className="w-3.5 h-3.5" />
                           </button>
                         )}
@@ -724,99 +779,159 @@ export const StudentView: React.FC<StudentViewProps> = ({
       {/* Tab 2: My Enrollments View */}
       {activeStudentTab === 'my' && (
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
             <h4 className="font-bold text-slate-900 text-sm">신청한 강좌 목록</h4>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 font-bold text-slate-700 border-b">
-                  <tr>
-                    <th className="p-3">강좌명</th>
-                    <th className="p-3">강의시간</th>
-                    <th className="p-3 text-right">수강료</th>
-                    <th className="p-3 text-center">신청 상태</th>
-                    <th className="p-3 text-center">버스 번호</th>
-                    <th className="p-3 text-center">신청 취소</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
+
+            {myEnrollments.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 text-sm">신청한 강좌가 없습니다.</div>
+            ) : (
+              <>
+                {/* 모바일 카드형 (sm 미만) */}
+                <div className="sm:hidden space-y-2.5">
                   {myEnrollments.map((item) => {
                     const course = courses.find((c) => c.id === item.courseId);
-                    const busNo = getAssignedBusNo(profile?.studentName || '홍길동');
-
+                    const courseTitle = course?.title || (item as any).courseTitle || '강좌명 미확인';
+                    const busNo = getAssignedBusNo(currentStudentName || profile?.studentName || '');
                     return (
-                      <tr key={item.id} className="hover:bg-slate-50">
-                        <td className="p-3 font-bold text-slate-900">
-                          <div className="flex items-center gap-2">
-                            <span>{course?.title}</span>
-                            {course && (
-                              <button
-                                onClick={() => setSelectedSyllabusCourse(course)}
-                                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded flex items-center gap-1 transition"
-                              >
-                                <FileText className="w-3 h-3" />
-                                계획서
-                              </button>
+                      <div key={item.id} className="bg-slate-50 rounded-xl border border-slate-200 p-3 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-bold text-slate-900 truncate">{courseTitle}</div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">{course?.classTime || (course ? '' : '개설 정보 없음')}</div>
+                          </div>
+                          <div className="shrink-0">
+                            {item.status === 'ENROLLED' ? (
+                              <span className="bg-emerald-100 text-emerald-800 text-[11px] px-2 py-0.5 rounded font-bold">수강등록</span>
+                            ) : (
+                              <span className="bg-amber-100 text-amber-800 text-[11px] px-2 py-0.5 rounded font-bold">대기자</span>
                             )}
                           </div>
-                        </td>
-                        <td className="p-3 text-slate-600">{course?.classTime}</td>
-                        <td className="p-3 text-right">
-                          <div className="flex flex-col items-end gap-1">
-                            <span className="font-mono font-bold text-indigo-600">
-                              {formatAmount(getCalculatedTuition(item))}
-                            </span>
-                            {item.status === 'ENROLLED' && (
-                              <button
-                                onClick={() => {
-                                  if (course) {
-                                    setSelectedPaymentCourse(course);
-                                    setShowPaymentModal(true);
-                                  }
-                                }}
-                                className="px-2.5 py-1 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded transition-colors"
-                              >
-                                납부
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3 text-center">
-                          {item.status === 'ENROLLED' ? (
-                            <span className="bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 rounded font-bold">
-                              수강등록
-                            </span>
-                          ) : (
-                            <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded font-bold">
-                              대기자
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3 text-center">
-                          {busNo ? (
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-mono font-bold text-indigo-600">{formatAmount(getCalculatedTuition(item))}</span>
+                          {item.status === 'ENROLLED' && course && (
                             <button
-                              onClick={() => router.push(`/parents/bus/student?name=${encodeURIComponent(profile?.studentName || '홍길동')}`)}
+                              onClick={() => { setSelectedPaymentCourse(course); setShowPaymentModal(true); }}
+                              className="px-2 py-0.5 text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded transition-colors"
+                            >
+                              납부
+                            </button>
+                          )}
+                          {busNo && (
+                            <button
+                              onClick={() => router.push(`/parents/bus/student?name=${encodeURIComponent(currentStudentName || profile?.studentName || '')}`)}
                               className="text-blue-600 hover:text-blue-800 underline font-bold font-mono text-[11px]"
                             >
-                              {busNo}
+                              🚌 {busNo}
                             </button>
-                          ) : (
-                            <span className="text-slate-400 font-medium text-[11px]">미등록</span>
                           )}
-                        </td>
-                        <td className="p-3 text-center">
                           <button
                             onClick={() => handleCancelEnrollment(item)}
-                            className="px-2 py-1 text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded transition-colors"
+                            className="ml-auto px-2 py-0.5 text-[11px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded transition-colors"
                           >
-                            신청 취소
+                            취소
                           </button>
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+                </div>
+
+                {/* 데스크탑 테이블 (sm 이상) */}
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 font-bold text-slate-700 border-b">
+                      <tr>
+                        <th className="p-3">강좌명</th>
+                        <th className="p-3">강의시간</th>
+                        <th className="p-3 text-right">수강료</th>
+                        <th className="p-3 text-center">신청 상태</th>
+                        <th className="p-3 text-center">버스 번호</th>
+                        <th className="p-3 text-center">신청 취소</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {myEnrollments.map((item) => {
+                        const course = courses.find((c) => c.id === item.courseId);
+                        const courseTitle = course?.title || (item as any).courseTitle || '강좌명 미확인';
+                        const busNo = getAssignedBusNo(currentStudentName || profile?.studentName || '');
+
+                        return (
+                          <tr key={item.id} className="hover:bg-slate-50">
+                            <td className="p-3 font-bold text-slate-900">
+                              <div className="flex items-center gap-2">
+                                <span>{courseTitle}</span>
+                                {course && (
+                                  <button
+                                    onClick={() => setSelectedSyllabusCourse(course)}
+                                    className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded flex items-center gap-1 transition"
+                                  >
+                                    <FileText className="w-3 h-3" />
+                                    계획서
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-3 text-slate-600">{course?.classTime}</td>
+                            <td className="p-3 text-right">
+                              <div className="flex flex-col items-end gap-1">
+                                <span className="font-mono font-bold text-indigo-600">
+                                  {formatAmount(getCalculatedTuition(item))}
+                                </span>
+                                {item.status === 'ENROLLED' && (
+                                  <button
+                                    onClick={() => {
+                                      if (course) {
+                                        setSelectedPaymentCourse(course);
+                                        setShowPaymentModal(true);
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded transition-colors"
+                                  >
+                                    납부
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-3 text-center">
+                              {item.status === 'ENROLLED' ? (
+                                <span className="bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 rounded font-bold">
+                                  수강등록
+                                </span>
+                              ) : (
+                                <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded font-bold">
+                                  대기자
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3 text-center">
+                              {busNo ? (
+                                <button
+                                  onClick={() => router.push(`/parents/bus/student?name=${encodeURIComponent(profile?.studentName || '홍길동')}`)}
+                                  className="text-blue-600 hover:text-blue-800 underline font-bold font-mono text-[11px]"
+                                >
+                                  {busNo}
+                                </button>
+                              ) : (
+                                <span className="text-slate-400 font-medium text-[11px]">미등록</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-center">
+                              <button
+                                onClick={() => handleCancelEnrollment(item)}
+                                className="px-2 py-1 text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded transition-colors"
+                              >
+                                신청 취소
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

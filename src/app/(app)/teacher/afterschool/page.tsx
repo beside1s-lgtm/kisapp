@@ -199,39 +199,44 @@ function AfterschoolConsole() {
 
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-6">
+      <div className="max-w-7xl mx-auto p-2.5 sm:p-4 md:p-8 space-y-3 sm:space-y-6">
         
         {/* 상단 타이틀 & 설명 배너 */}
-        <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center gap-3">
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
-            <BookOpen size={28} />
+        <div className="bg-white p-3.5 sm:p-6 rounded-xl sm:rounded-2xl border shadow-xs sm:shadow-sm flex items-center gap-2.5 sm:gap-3">
+          <div className="p-2 sm:p-3 bg-indigo-50 text-indigo-600 rounded-lg sm:rounded-xl shrink-0">
+            <BookOpen className="w-5 h-5 sm:w-7 sm:h-7" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold font-headline flex items-center gap-2 text-slate-800">
+            <h1 className="text-base sm:text-2xl font-bold font-headline flex items-center gap-2 text-slate-800">
               {t('afterschool.teacher.title')}
             </h1>
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1">
               {t('afterschool.teacher.desc')}
             </p>
           </div>
         </div>
 
         {/* 탭 인터페이스 */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid grid-cols-3 max-w-lg h-auto p-1 bg-slate-100/80 rounded-xl border border-slate-200">
-            <TabsTrigger value="course" className="py-2.5 rounded-lg font-bold text-sm gap-2">
-              <BookOpen size={16} /> {t('afterschool.teacher.my_courses')} ({myCourses.length})
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-3 sm:space-y-6">
+          <TabsList className="grid grid-cols-3 max-w-lg w-full h-auto p-1 bg-slate-100/80 rounded-xl border border-slate-200 gap-0.5">
+            <TabsTrigger value="course" className="py-1.5 sm:py-2.5 rounded-lg font-bold text-xs sm:text-sm gap-1 sm:gap-2 px-1 truncate">
+              <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="truncate">{t('afterschool.teacher.my_courses')}</span>
+              <span className="text-[10px] sm:text-xs text-slate-500">({myCourses.length})</span>
             </TabsTrigger>
-            <TabsTrigger value="student" className="py-2.5 rounded-lg font-bold text-sm gap-2">
-              <Users size={16} /> {t('afterschool.teacher.enrolled_students')} ({myEnrollments.length})
+            <TabsTrigger value="student" className="py-1.5 sm:py-2.5 rounded-lg font-bold text-xs sm:text-sm gap-1 sm:gap-2 px-1 truncate">
+              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="truncate">{t('afterschool.teacher.enrolled_students')}</span>
+              <span className="text-[10px] sm:text-xs text-slate-500">({myEnrollments.length})</span>
             </TabsTrigger>
-            <TabsTrigger value="attendance" className="py-2.5 rounded-lg font-bold text-sm gap-2">
-              <ClipboardCheck size={16} /> {t('afterschool.teacher.attendance_check')}
+            <TabsTrigger value="attendance" className="py-1.5 sm:py-2.5 rounded-lg font-bold text-xs sm:text-sm gap-1 sm:gap-2 px-1 truncate">
+              <ClipboardCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="truncate">{t('afterschool.teacher.attendance_check')}</span>
             </TabsTrigger>
           </TabsList>
 
-          <Card className="border-slate-200/80 shadow-md bg-white">
-            <CardContent className="p-6">
+          <Card className="border-slate-200/80 shadow-xs sm:shadow-md bg-white">
+            <CardContent className="p-3 sm:p-6">
               <TabsContent value="course" className="m-0 focus-visible:outline-none">
                 <CourseManagement
                   courses={myCourses}

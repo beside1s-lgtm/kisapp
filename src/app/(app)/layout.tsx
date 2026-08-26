@@ -58,15 +58,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen bg-background text-foreground font-body">
-        <div className="print:hidden">
+      <div className="min-h-screen bg-background text-foreground font-body w-full max-w-full">
+        <div className="print:hidden w-full max-w-full">
           <AppHeader />
         </div>
-        <div className="flex print:block pt-16">
-          <div className="print:hidden">
+        <div className="flex print:block pt-14 sm:pt-16 min-w-0 w-full max-w-full">
+          <div className="print:hidden shrink-0">
             <AppSidebar />
           </div>
-          <main className="flex-1 pb-24 lg:pb-8 print:p-0 print:m-0 print:block">
+          <main className="flex-1 min-w-0 w-full max-w-full pb-24 lg:pb-8 print:p-0 print:m-0 print:block">
               {children}
           </main>
         </div>

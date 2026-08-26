@@ -14,6 +14,7 @@ import type { DocConfig } from '@/lib/types';
 import { StudentManagement } from './StudentManagement';
 import { OfficialSeal } from './AttendanceManagement';
 import { useAuth } from '@/hooks/use-auth';
+import { useTranslation } from '@/hooks/use-translation';
 
 interface AdminPanelProps {
   courses: Course[];
@@ -30,6 +31,8 @@ interface AdminPanelProps {
   setEnrollments: React.Dispatch<React.SetStateAction<Enrollment[]>>;
   studentsList: Student[];
   destinations?: any[];
+  routes?: any[];
+  buses?: any[];
   onClose: () => void;
   timerConfig?: any;
 }
@@ -51,11 +54,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   setEnrollments,
   studentsList,
   destinations = [],
+  routes = [],
+  buses = [],
   onClose,
   timerConfig,
 }) => {
   const router = useRouter();
   const { profile, user } = useAuth();
+  const { t, i18n } = useTranslation();
   const [tab, setTab] = useState<AdminTab>('courses');
   const [selectedCourseId, setSelectedCourseId] = useState<string>(courses[0]?.id || '');
 
@@ -913,44 +919,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     router.push('/new?afterschoolMode=result');
   };
 
-  const tabs: { key: AdminTab; icon: React.ReactNode; label: string; badge?: number }[] = [
-    { key: 'courses', icon: <BookOpen className="w-4 h-4" />, label: '강좌 현황 & 승인' },
-    { key: 'batchCreate', icon: <Plus className="w-4 h-4" />, label: '강좌 일괄 개설' },
-    { key: 'students', icon: <UserPlus className="w-4 h-4" />, label: '수강생 관리' },
-    { key: 'classrooms', icon: <Building2 className="w-4 h-4" />, label: '교실 관리' },
-    { key: 'approval', icon: <ClipboardList className="w-4 h-4" />, label: '전자결재 일괄 기안' },
+  const tabs: { key: AdminTab; icon: React.ReactNode; label: string; shortLabel: string; badge?: number }[] = [
+    { key: 'courses', icon: <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />, label: t('afterschool.admin.tab_courses') || '강좌 현황 & 승인', shortLabel: t('afterschool.admin.tab_courses_short') || '강좌' },
+    { key: 'batchCreate', icon: <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />, label: t('afterschool.admin.tab_batch') || '강좌 일괄 개설', shortLabel: t('afterschool.admin.tab_batch_short') || '일괄개설' },
+    { key: 'students', icon: <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />, label: t('afterschool.admin.tab_students') || '수강생 관리', shortLabel: t('afterschool.admin.tab_students_short') || '수강생' },
+    { key: 'classrooms', icon: <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />, label: t('afterschool.admin.tab_classrooms') || '교실 관리', shortLabel: t('afterschool.admin.tab_classrooms_short') || '교실' },
+    { key: 'approval', icon: <ClipboardList className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />, label: t('afterschool.admin.tab_approval') || '전자결재 일괄 기안', shortLabel: t('afterschool.admin.tab_approval_short') || '전자결재' },
   ];
 
   return (
-    <div className="w-full bg-white flex flex-col rounded-xl overflow-hidden border border-slate-200">
-      {/* Panel Header */}
-      <div className="bg-slate-800 px-5 py-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2.5 text-white">
-          <Shield className="w-5 h-5 text-amber-400" />
-          <div>
-            <div className="font-bold text-sm">마스터 설정 상세 패널</div>
-            <div className="text-[10px] text-slate-300">예체능방과후부장 전용</div>
-          </div>
-        </div>
-        <button onClick={onClose} className="text-white/80 hover:text-white bg-white/10 hover:bg-white/20 p-1.5 rounded-lg transition-colors">
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
+    <div className="w-full max-w-full bg-white flex flex-col rounded-xl overflow-hidden border border-slate-200 min-w-0">
         {/* Tabs */}
-        <div className="flex border-b border-slate-200 bg-white shrink-0 overflow-x-auto">
-          {tabs.map((t) => (
+        <div className="flex border-b border-slate-200 bg-white shrink-0 w-full min-w-0">
+          {tabs.map((tItem) => (
             <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`flex-1 py-2.5 text-xs font-bold border-b-2 transition flex items-center justify-center gap-1 relative whitespace-nowrap px-2 ${
-                tab === t.key ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-800'
+              key={tItem.key}
+              onClick={() => setTab(tItem.key)}
+              className={`flex-1 min-w-0 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold border-b-2 transition flex items-center justify-center gap-1 relative px-1 sm:px-2 ${
+                tab === tItem.key ? 'border-amber-500 text-amber-700 bg-amber-50/30' : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
-              {t.icon}{t.label}
-              {t.badge ? (
-                <span className="absolute top-1 right-1 w-4 h-4 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center">
-                  {t.badge}
+              {tItem.icon}
+              <span className="hidden sm:inline truncate">{tItem.label}</span>
+              <span className="sm:hidden truncate text-[11px]">{tItem.shortLabel}</span>
+              {tItem.badge ? (
+                <span className="absolute top-0.5 right-0.5 sm:right-1 w-3.5 h-3.5 bg-rose-500 text-white rounded-full text-[8px] sm:text-[9px] font-black flex items-center justify-center">
+                  {tItem.badge}
                 </span>
               ) : null}
             </button>
@@ -958,27 +952,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
 
         {/* Panel Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-1.5 sm:p-2.5 space-y-1.5 sm:space-y-2 min-w-0 w-full">
 
           {/* ===== 방과후학교 운영 단계 마스터 설정 카드 (접기/펼치기 기능 지원) ===== */}
-          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-blue-200 shadow-sm space-y-3.5 transition-all">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-md font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    마스터 단계 제어
+          <div className="bg-white p-2 sm:p-3 rounded-xl border border-blue-200 shadow-2xs space-y-1.5 sm:space-y-2 transition-all min-w-0">
+            <div className="flex items-center justify-between gap-1.5 sm:gap-2 border-b border-slate-100 pb-1.5 sm:pb-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <span className="bg-blue-100 text-blue-800 text-[10px] sm:text-xs px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-md font-bold flex items-center gap-1 shrink-0">
+                    <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                    {t('afterschool.admin.stage_control') || '단계 제어'}
                   </span>
-                  <h3 className="text-base font-bold text-slate-800">방과후학교 운영 단계 설정</h3>
+                  <h3 className="text-xs sm:text-base font-bold text-slate-800 truncate">{t('afterschool.admin.stage_title') || '방과후 운영 단계'}</h3>
                 </div>
                 {!isStageControlFolded && (
-                  <p className="text-xs text-slate-500 mt-1">
-                    방과후학교 운영 단계(강사 모집 ➔ 수강 신청 ➔ 운영 중 ➔ 종료)를 직접 전환합니다. <b>'운영 중'</b> 단계일 때 출석부가 공식 활성화됩니다.
+                  <p className="text-[11px] sm:text-xs text-slate-500 mt-1 hidden sm:block">
+                    방과후학교 운영 단계(강사 모집 ➔ 수강 신청 ➔ 운영 중 ➔ 종료)를 직접 전환합니다.
                   </p>
                 )}
               </div>
-              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
-                <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                <span className={`px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold border shrink-0 ${
                   (teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING'
                     ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
                     : (teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING'
@@ -987,10 +981,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     ? 'bg-slate-100 text-slate-700 border-slate-300'
                     : 'bg-blue-50 text-blue-700 border-blue-300'
                 }`}>
-                  현재 상태: {
-                    (teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING' ? '방과후학교 운영 중' :
-                    (teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING' ? '수강 신청 진행 중' :
-                    (teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED' ? '방과후학교 운영 종료' : '강사 모집 진행 중'
+                  {
+                    (teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING' ? (t('afterschool.admin.stage_operating') || '운영 중') :
+                    (teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING' ? (t('afterschool.admin.stage_applying') || '수강 신청') :
+                    (teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED' ? (t('afterschool.admin.stage_closed') || '종료') : (t('afterschool.admin.stage_recruiting') || '강사 모집')
                   }
                 </span>
 
@@ -998,18 +992,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsStageControlFolded((prev) => !prev)}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-300 flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] sm:text-xs font-bold px-1.5 py-1 sm:px-2.5 sm:py-1.5 rounded-lg border border-slate-300 flex items-center gap-1 transition shadow-2xs cursor-pointer shrink-0"
                   title={isStageControlFolded ? '설정 펼치기' : '설정 접기'}
                 >
                   {isStageControlFolded ? (
                     <>
-                      <ChevronDown className="w-4 h-4 text-slate-600" />
-                      <span>설정 펼치기</span>
+                      <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-600" />
+                      <span className="hidden sm:inline">펼치기</span>
                     </>
                   ) : (
                     <>
-                      <ChevronUp className="w-4 h-4 text-slate-600" />
-                      <span>설정 접기</span>
+                      <ChevronUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-600" />
+                      <span className="hidden sm:inline">접기</span>
                     </>
                   )}
                 </button>
@@ -1018,85 +1012,85 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
             {/* 5단계 상태 전환 버튼 그룹 (접힘 상태가 아닐 때 표출) */}
             {!isStageControlFolded && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 animate-in fade-in duration-200">
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-1.5 sm:gap-2 animate-in fade-in duration-200">
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('RECRUITING')}
-                  className={`p-2.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
+                  className={`p-1.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
                     ((teacherApplySettings as any)?.afterschoolStageStatus || 'RECRUITING') === 'RECRUITING'
                       ? 'bg-blue-50 border-2 border-blue-600 ring-2 ring-blue-100 text-blue-900 font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-1 min-w-0">
-                    <span className="truncate">강사 모집 중</span>
-                    {((teacherApplySettings as any)?.afterschoolStageStatus || 'RECRUITING') === 'RECRUITING' && <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 ml-1" />}
+                  <div className="flex items-center justify-between text-xs mb-0 sm:mb-1 min-w-0">
+                    <span className="truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_recruiting') || '강사 모집 중'}</span>
+                    {((teacherApplySettings as any)?.afterschoolStageStatus || 'RECRUITING') === 'RECRUITING' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600 shrink-0 ml-0.5" />}
                   </div>
-                  <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">프로그램 개설 및 강사 접수</p>
+                  <p className="text-[9px] sm:text-[10px] text-slate-500 truncate hidden sm:block">프로그램 개설 및 접수</p>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('APPLYING')}
-                  className={`p-2.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
+                  className={`p-1.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING'
                       ? 'bg-amber-50 border-2 border-amber-600 ring-2 ring-amber-100 text-amber-900 font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-1 min-w-0">
-                    <span className="truncate">수강 신청 중</span>
-                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING' && <CheckCircle2 className="w-4 h-4 text-amber-600 shrink-0 ml-1" />}
+                  <div className="flex items-center justify-between text-xs mb-0 sm:mb-1 min-w-0">
+                    <span className="truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_applying') || '수강 신청 중'}</span>
+                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-amber-600 shrink-0 ml-0.5" />}
                   </div>
-                  <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">학생 선착순 수강신청 접수</p>
+                  <p className="text-[9px] sm:text-[10px] text-slate-500 truncate hidden sm:block">선착순 수강신청</p>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('CONFIRMED')}
-                  className={`p-2.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
+                  className={`p-1.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'CONFIRMED'
                       ? 'bg-violet-50 border-2 border-violet-600 ring-2 ring-violet-100 text-violet-900 font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-1 min-w-0">
-                    <span className="text-violet-800 font-extrabold truncate">수강신청 완료</span>
-                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'CONFIRMED' && <CheckCircle2 className="w-4 h-4 text-violet-600 shrink-0 ml-1" />}
+                  <div className="flex items-center justify-between text-xs mb-0 sm:mb-1 min-w-0">
+                    <span className="text-violet-800 font-extrabold truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_confirmed') || '수강신청 완료'}</span>
+                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'CONFIRMED' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-violet-600 shrink-0 ml-0.5" />}
                   </div>
-                  <p className="text-[10px] sm:text-[11px] text-violet-600 font-medium truncate">결과 확정 및 학부모 통보</p>
+                  <p className="text-[9px] sm:text-[10px] text-violet-600 font-medium truncate hidden sm:block">결과 확정 통보</p>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('OPERATING')}
-                  className={`p-2.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
+                  className={`p-1.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING'
                       ? 'bg-emerald-50 border-2 border-emerald-600 ring-2 ring-emerald-100 text-emerald-900 shadow-sm font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-1 min-w-0">
-                    <span className="text-emerald-700 font-extrabold truncate">방과후 운영 중</span>
-                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING' && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 ml-1" />}
+                  <div className="flex items-center justify-between text-xs mb-0 sm:mb-1 min-w-0">
+                    <span className="text-emerald-700 font-extrabold truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_operating') || '방과후 운영 중'}</span>
+                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-600 shrink-0 ml-0.5" />}
                   </div>
-                  <p className="text-[10px] sm:text-[11px] text-emerald-600 font-medium truncate">출석부 및 수업 활성화</p>
+                  <p className="text-[9px] sm:text-[10px] text-emerald-600 font-medium truncate hidden sm:block">출석부 및 수업</p>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('CLOSED')}
-                  className={`p-2.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 col-span-2 sm:col-span-1 xl:col-span-1 ${
+                  className={`p-1.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 col-span-2 sm:col-span-1 xl:col-span-1 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED'
                       ? 'bg-slate-200 border-2 border-slate-600 ring-2 ring-slate-200 text-slate-900 font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-1 min-w-0">
-                    <span className="truncate">운영 종료</span>
-                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED' && <CheckCircle2 className="w-4 h-4 text-slate-600 shrink-0 ml-1" />}
+                  <div className="flex items-center justify-between text-xs mb-0 sm:mb-1 min-w-0">
+                    <span className="truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_closed') || '운영 종료'}</span>
+                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-slate-600 shrink-0 ml-0.5" />}
                   </div>
-                  <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">학기 운영 최종 마감</p>
+                  <p className="text-[9px] sm:text-[10px] text-slate-500 truncate hidden sm:block">학기 운영 마감</p>
                 </button>
               </div>
             )}
@@ -1108,88 +1102,122 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <p className="text-xs text-slate-500">모든 강사의 강좌 개설 신청 및 운영 현황입니다. 개설 신청(PENDING) 강좌를 승인하거나 폐강하세요.</p>
 
               {/* 수강료 일괄 자동 적용 배너 */}
-              <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+              <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl p-2.5 sm:p-3.5 flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 min-w-0">
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-indigo-800 flex items-center gap-1.5">
-                    <DollarSign className="w-3.5 h-3.5 text-indigo-600" />
+                  <p className="text-xs font-bold text-indigo-800 flex items-center gap-1.5 truncate">
+                    <DollarSign className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                     수강료 일괄 자동 계산 적용
                   </p>
-                  <p className="text-[11px] text-indigo-600 mt-0.5">
-                    공식: <b>{teacherApplySettings?.sessionsPerClass ?? 2}차시/회</b> × <b>운영기간 내 수업 일수</b> × <b>{(teacherApplySettings?.tuitionPerSession ?? 0).toLocaleString()} {currency}</b>
-                    &nbsp;·&nbsp; 운영기간: <b>{teacherApplySettings?.operatingStartDate || '미설정'} ~ {teacherApplySettings?.operatingEndDate || '미설정'}</b>
+                  <p className="text-[10px] sm:text-[11px] text-indigo-600 mt-0.5 break-all">
+                    공식: <b>{teacherApplySettings?.sessionsPerClass ?? 2}차시/회</b> × <b>운영기간 수업일수</b> × <b>{(teacherApplySettings?.tuitionPerSession ?? 0).toLocaleString()} {currency}</b>
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={handleBatchApplyTuition}
                   disabled={isBatchApplyingTuition}
-                  className="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                  className="w-full sm:w-auto shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl transition flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
                 >
-                  <DollarSign className="w-3.5 h-3.5" />
-                  {isBatchApplyingTuition ? '적용 중...' : '전체 강좌 수강료 일괄 적용'}
+                  <DollarSign className="w-3.5 h-3.5 shrink-0" />
+                  <span>{isBatchApplyingTuition ? '적용 중...' : '수강료 일괄 적용'}</span>
                 </button>
               </div>
 
               {/* 필터 및 일괄 선택 툴바 */}
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-slate-100/90 p-3 rounded-xl border border-slate-200/80">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-slate-100/90 p-2 sm:p-3 rounded-xl border border-slate-200/80 min-w-0">
                 {/* 상태 필터 버튼 그룹 */}
-                <div className="flex items-center gap-1.5 flex-wrap text-xs font-semibold">
-                  <span className="text-slate-500 text-[11px] flex items-center gap-1 mr-1">
-                    <Filter className="w-3.5 h-3.5 text-slate-400" /> 필터:
-                  </span>
+                <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 sm:gap-1.5 w-full sm:w-auto text-xs font-semibold">
                   <button
                     type="button"
                     onClick={() => setStatusFilter('ALL')}
-                    className={`px-2.5 py-1 rounded-lg text-xs transition-colors ${
+                    className={`px-2 py-1 rounded-lg text-xs transition-colors truncate text-center ${
                       statusFilter === 'ALL' ? 'bg-slate-800 text-white font-bold shadow-xs' : 'bg-white text-slate-600 border hover:bg-slate-50'
                     }`}
                   >
-                    전체 ({courses.length})
+                    {t('afterschool.admin.filter_all') || '전체'} ({courses.length})
                   </button>
                   <button
                     type="button"
                     onClick={() => setStatusFilter('PENDING')}
-                    className={`px-2.5 py-1 rounded-lg text-xs transition-colors ${
+                    className={`px-2 py-1 rounded-lg text-xs transition-colors truncate text-center ${
                       statusFilter === 'PENDING' ? 'bg-amber-600 text-white font-bold shadow-xs' : 'bg-white text-amber-800 border border-amber-200 hover:bg-amber-50'
                     }`}
                   >
-                    개설신청 대기 ({courses.filter(c => c.status === 'PENDING').length})
+                    {t('afterschool.admin.filter_pending') || '대기'} ({courses.filter(c => c.status === 'PENDING').length})
                   </button>
                   <button
                     type="button"
                     onClick={() => setStatusFilter('OPEN')}
-                    className={`px-2.5 py-1 rounded-lg text-xs transition-colors ${
+                    className={`px-2 py-1 rounded-lg text-xs transition-colors truncate text-center ${
                       statusFilter === 'OPEN' ? 'bg-emerald-600 text-white font-bold shadow-xs' : 'bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-50'
                     }`}
                   >
-                    {((teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED' ? '운영 종료' :
-                      (teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING' ? '운영 중' :
-                      (teacherApplySettings as any)?.afterschoolStageStatus === 'CONFIRMED' ? '개설 확정' :
-                      (teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING' ? '신청접수 중' :
-                      '개설 승인')} ({courses.filter(c => c.status === 'OPEN').length})
+                    {t('afterschool.admin.filter_open') || '승인/운영'} ({courses.filter(c => c.status === 'OPEN').length})
                   </button>
                   <button
                     type="button"
                     onClick={() => setStatusFilter('CANCELLED')}
-                    className={`px-2.5 py-1 rounded-lg text-xs transition-colors ${
+                    className={`px-2 py-1 rounded-lg text-xs transition-colors truncate text-center ${
                       statusFilter === 'CANCELLED' ? 'bg-slate-600 text-white font-bold shadow-xs' : 'bg-white text-slate-600 border hover:bg-slate-50'
                     }`}
                   >
-                    폐강 ({courses.filter(c => c.status === 'CANCELLED').length})
+                    {t('afterschool.admin.filter_cancelled') || '폐강'} ({courses.filter(c => c.status === 'CANCELLED').length})
                   </button>
                 </div>
 
-                {/* 전체 선택 체크박스 */}
+                {/* 전체 선택 체크박스 + 강좌 목록 다운로드 */}
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end shrink-0">
-                  <label htmlFor="select-all-courses-cb" className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer bg-white px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition shadow-2xs select-none">
+                  <label htmlFor="select-all-courses-cb" className="flex items-center gap-1.5 sm:gap-2 text-xs font-bold text-slate-700 cursor-pointer bg-white px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition shadow-2xs select-none w-full sm:w-auto justify-center sm:justify-start">
                     <Checkbox
                       id="select-all-courses-cb"
                       checked={filteredCourses.length > 0 && filteredCourses.every(c => selectedCourseIds.includes(c.id))}
                       onCheckedChange={handleToggleSelectAllCourses}
-                      className="h-4 w-4 data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
+                      className="h-3.5 w-3.5 sm:h-4 sm:w-4 data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
                     />
-                    <span>전체 선택 ({selectedCourseIds.length}개 선택됨)</span>
+                    <span className="text-xs">{t('afterschool.admin.select_all') || '전체 선택'} ({selectedCourseIds.length})</span>
                   </label>
+
+                  {/* 강좌 목록 다운로드 버튼 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const targetCourses = filteredCourses.length > 0 ? filteredCourses : courses;
+                      if (targetCourses.length === 0) return;
+                      import('xlsx').then(XLSX => {
+                        const headers = ['강좌명', '지도교사', '장소', '수업요일', '수업시간', '정원', '현재수강생', '수강료', '상태'];
+                        const rows = targetCourses.map(c => {
+                          const teacherNames = [c.instructorName, c.instructor2, c.instructor3, c.instructor4]
+                            .filter(Boolean).join(', ');
+                          const classDays = (c.classDays || []).join(', ');
+                          const statusLabel =
+                            c.status === 'OPEN' ? '승인/운영' :
+                            c.status === 'PENDING' ? '개설대기' :
+                            c.status === 'CLOSED' ? '마감' :
+                            c.status === 'CANCELLED' ? '폐강' : c.status;
+                          return [
+                            c.title || '',
+                            teacherNames,
+                            c.classroom || '',
+                            classDays,
+                            c.classTime || '',
+                            c.maxStudents ?? '',
+                            c.currentStudents ?? '',
+                            (c.tuition || 0).toLocaleString(),
+                            statusLabel,
+                          ];
+                        });
+                        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                        const wb = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(wb, ws, '방과후강좌목록');
+                        XLSX.writeFile(wb, `방과후강좌목록_${new Date().toISOString().split('T')[0]}.xlsx`);
+                      });
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1.5 rounded-lg transition shadow-2xs shrink-0 whitespace-nowrap"
+                  >
+                    <Download className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden sm:inline">강좌 목록 다운로드</span>
+                    <span className="sm:hidden">목록</span>
+                  </button>
                 </div>
               </div>
 
@@ -1420,21 +1448,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               )}
 
-              {/* 강좌 카드 목록 */}
+              {/* 강좌 카드 목록 (1줄에 2개씩 2열 그리드 배치) */}
               {filteredCourses.length === 0 ? (
                 <div className="text-center py-12 bg-slate-50 border border-dashed rounded-xl text-slate-400 text-xs">
                   해당 조건의 강좌가 존재하지 않습니다.
                 </div>
               ) : (
-                filteredCourses.map((c, index) => {
-                  const isSelected = selectedCourseIds.includes(c.id);
-                  return (
-                    <div
-                      key={`${c.id}_${index}`}
-                      className={`rounded-xl border p-3 space-y-2 transition-all ${
-                        isSelected ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-300 shadow-sm' : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 sm:gap-3">
+                  {filteredCourses.map((c, index) => {
+                    const isSelected = selectedCourseIds.includes(c.id);
+                    return (
+                      <div
+                        key={`${c.id}_${index}`}
+                        className={`rounded-xl border p-2.5 sm:p-3 space-y-2 transition-all flex flex-col justify-between ${
+                          isSelected ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-300 shadow-xs' : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
                       <div className="flex items-start gap-3">
                         {/* 강좌 선택 체크박스 */}
                         <div className="pt-0.5 shrink-0">
@@ -1668,7 +1697,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </div>
 
                       {/* 개별 액션 버튼들 */}
-                      <div className="flex gap-2 pt-1 border-t border-slate-100">
+                      <div className="flex gap-1.5 sm:gap-2 pt-1 border-t border-slate-100">
                         {c.status === 'PENDING' && (
                           <>
                             <button
@@ -1676,14 +1705,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               onClick={() => handleApproveCourse(c.id)}
                               className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-1.5 rounded-lg flex items-center justify-center gap-1 transition-colors"
                             >
-                              <CheckCircle2 className="w-3.5 h-3.5" />개설 승인
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">개설 </span>승인
                             </button>
                             <button
                               type="button"
                               onClick={() => handleCancelCourse(c.id)}
                               className="flex-1 bg-slate-100 hover:bg-rose-50 text-rose-700 text-xs font-bold py-1.5 rounded-lg flex items-center justify-center gap-1 border border-slate-200 transition-colors"
                             >
-                              <XCircle className="w-3.5 h-3.5" />폐강 처리
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">폐강 처리</span><span className="sm:hidden">폐강</span>
                             </button>
                           </>
                         )}
@@ -1694,42 +1725,47 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               onClick={() => handleRevertToPending(c.id)}
                               className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-1.5 rounded-lg flex items-center justify-center gap-1 transition-colors"
                             >
-                              <Clock className="w-3.5 h-3.5" />승인 취소 (대기)
+                              <Clock className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">승인 취소 (대기)</span><span className="sm:hidden">대기</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => handleCancelCourse(c.id)}
                               className="flex-1 bg-slate-100 hover:bg-rose-50 text-rose-700 text-xs font-bold py-1.5 rounded-lg flex items-center justify-center gap-1 border border-slate-200 transition-colors"
                             >
-                              <XCircle className="w-3.5 h-3.5" />폐강 처리
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">폐강 처리</span><span className="sm:hidden">폐강</span>
                             </button>
                           </>
                         )}
                         {c.status === 'CANCELLED' && (
-                          <div className="flex w-full gap-2">
+                          <div className="flex w-full gap-1.5 sm:gap-2">
                             <button
                               type="button"
                               onClick={() => handleRestoreCourse(c.id)}
                               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-1.5 rounded-lg flex items-center justify-center gap-1 transition-colors"
                             >
-                              <CheckCircle2 className="w-3.5 h-3.5" />폐강 복구 (운영중)
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">폐강 복구</span><span className="sm:hidden">복구</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDeleteCourse(c.id)}
                               className="flex-1 bg-slate-100 hover:bg-rose-50 text-rose-700 text-xs font-bold py-1.5 rounded-lg flex items-center justify-center gap-1 border border-slate-200 transition-colors"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />강좌 영구 삭제
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">영구 삭제</span><span className="sm:hidden">삭제</span>
                             </button>
                           </div>
                         )}
                       </div>
                     </div>
                   );
-                })
-              )}
-            </div>
-          )}
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
           {tab === 'batchCreate' && (
             <div className="space-y-6 text-left animate-in fade-in duration-200">
@@ -1943,6 +1979,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 setEnrollments={setEnrollments}
                 studentsList={studentsList}
                 destinations={destinations}
+                routes={routes}
+                buses={buses}
                 teacherApplySettings={teacherApplySettings}
               />
             </div>

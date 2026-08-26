@@ -2,34 +2,52 @@ import * as XLSX from 'xlsx';
 import type { Course, SyllabusSession, AttendanceRecord, Classroom } from './types';
 
 // Export Enrollment List to Excel
-export function exportEnrollmentsToExcel(enrollments: any[], courseTitle = '수강생목록', ..._rest: any[]) {
+export function exportEnrollmentsToExcel(
+  enrollments: any[],
+  courseTitle = '수강생목록',
+  courses: Course[] = [],
+  ..._rest: any[]
+) {
+  const courseMap = new Map<string, string>();
+  courses.forEach((c) => {
+    if (c.id) courseMap.set(c.id, c.title);
+  });
+
   const data = enrollments.map((item, index) => {
+    const rawName = item.name || item.studentName || '';
+    const courseName = item.courseTitle || courseMap.get(item.courseId) || item.courseId || '-';
     const busFee = item.busFee || 0;
+    const tuition = item.tuition || 0;
+    const textbook = item.textbookFee || 0;
+    const material = item.materialFee || 0;
+    const total = tuition + textbook + material + busFee;
+
     return {
       순번: index + 1,
-      학년: item.grade,
-      반: item.classNum,
-      번호: item.studentNum,
-      학생이름: item.name,
-      학생연락처: item.phone,
-      학부모연락처: item.parentPhone,
-      '수강료(VND)': item.tuition,
-      '교재비(VND)': item.textbookFee,
-      '재료비(VND)': item.materialFee,
-      '버스비(VND)': busFee,
-      '총금액(VND)': item.tuition + item.textbookFee + item.materialFee + busFee,
-      신청일시: item.registrationDate,
-      상태: item.status === 'ENROLLED' ? '수강등록' : '대기자',
-      버스번호: item.kisbusNo || '-',
+      강좌명: courseName,
+      학년: item.grade || '',
+      반: item.classNum || '',
+      번호: item.studentNum || '',
+      학생이름: rawName,
+      학부모연락처: item.parentPhone || item.phone || '',
+      스쿨버스: item.kisbusNo || '-',
+      방과후버스: item.afterschoolBusNo || (item.afterSchoolBusAssignment ? `${item.afterSchoolBusAssignment}호차` : '-'),
       목적지: item.destinationName || '-',
-      목적지그룹: item.zone || '-',
+      '수강료(VND)': tuition,
+      '교재비(VND)': textbook,
+      '재료비(VND)': material,
+      '스쿨버스비(VND)': busFee,
+      '총금액(VND)': total,
+      신청상태: item.status === 'ENROLLED' ? '수강확정' : '대기자',
+      등록일자: item.registrationDate ? String(item.registrationDate).slice(0, 10) : '',
     };
   });
 
   const worksheet = XLSX.utils.json_to_sheet(data);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, '수강생목록');
-  XLSX.writeFile(workbook, `${courseTitle}_수강생명단.xlsx`);
+  const cleanTitle = courseTitle.replace(/[\\/:*?"<>|]/g, '_');
+  XLSX.writeFile(workbook, `${cleanTitle}_수강생명단.xlsx`);
 }
 
 // Legacy alias function exports for StudentManagement & RefundManagement
@@ -42,40 +60,46 @@ export const downloadAddCancelExcel = (enrollments: any, ...rest: any[]) =>
 export const downloadSampleExcel = () => {
   const data = [
     {
-      '강좌명(필수)': '사고력 쑥쑥! 놀면서 배우는 창의수학(A)',
       '학년': 1,
       '반': 1,
       '번호': 1,
-      '학생이름': '홍길동',
-      '스쿨버스': '11호차',
-      '학생연락처': '',
-      '학부모연락처': '010-1234-5678',
+      '이름': '홍길동',
+      '강좌명': '사고력 쑥쑥! 놀면서 배우는 창의수학(A)',
+      '스쿨버스(선택)': '11호차',
+      '학부모연락처(선택)': '010-1234-5678',
     },
     {
-      '강좌명(필수)': 'AI 로봇코딩',
+      '학년': 1,
+      '반': 1,
+      '번호': 1,
+      '이름': '홍길동',
+      '강좌명': 'AI 로봇코딩',
+      '스쿨버스(선택)': '',
+      '학부모연락처(선택)': '',
+    },
+    {
       '학년': 2,
       '반': 3,
       '번호': 12,
-      '학생이름': '김철수',
-      '스쿨버스': '18호차',
-      '학생연락처': '',
-      '학부모연락처': '',
+      '이름': '김철수',
+      '강좌명': 'K-Pop 댄스교실',
+      '스쿨버스(선택)': '18호차',
+      '학부모연락처(선택)': '010-9876-5432',
     },
     {
-      '강좌명(필수)': 'K-Pop 댄스교실',
       '학년': 3,
       '반': 2,
       '번호': 5,
-      '학생이름': '이영희',
-      '스쿨버스': '미신청',
-      '학생연락처': '',
-      '학부모연락처': '',
+      '이름': '이영희',
+      '강좌명': '체스 & 보드게임 교실',
+      '스쿨버스(선택)': '',
+      '학부모연락처(선택)': '',
     },
   ];
   const worksheet = XLSX.utils.json_to_sheet(data);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, '수강생일괄등록_양식');
-  XLSX.writeFile(workbook, '수강생일괄등록_샘플양식.xlsx');
+  XLSX.writeFile(workbook, '강좌별_수강생_일괄등록_양식.xlsx');
 };
 
 // Export Refund List to Excel
@@ -504,22 +528,66 @@ export function parseEnrollmentExcel(file: File): Promise<any[]> {
         const json: any[] = XLSX.utils.sheet_to_json(sheet);
         
         const mapped = json.map((row, idx) => {
-          const courseTitle = row['강좌명(필수)'] || row['강좌명'] ? String(row['강좌명(필수)'] || row['강좌명']).trim() : '';
-          const name = row['학생이름'] || row['이름'] ? String(row['학생이름'] || row['이름']).trim() : '';
-          
-          // 버스 번호 정밀 파싱 (11호, 18호, 1호차~30호차 등)
-          const rawBusVal = row['스쿨버스'] || row['버스'] || row['스쿨버스신청'] || row['스쿨버스(예: 1~5호차 또는 미신청)'] || '';
-          const kisbusNo = formatBusNo(rawBusVal);
+          // 키 목록 정규화 헬퍼 (공백 및 특수문자 제거 후 비교)
+          const findVal = (...keys: string[]): string => {
+            const rowKeys = Object.keys(row);
+            for (const key of keys) {
+              const cleanKey = key.replace(/[\s\(\)\{\}\[\]\_\-\.]/g, '').toLowerCase();
+              const matchedRowKey = rowKeys.find(rk => rk.replace(/[\s\(\)\{\}\[\]\_\-\.]/g, '').toLowerCase() === cleanKey);
+              if (matchedRowKey && row[matchedRowKey] !== undefined && row[matchedRowKey] !== null) {
+                return String(row[matchedRowKey]).trim();
+              }
+            }
+            return '';
+          };
+
+          // 1. 강좌명
+          const courseTitle = findVal(
+            '강좌명', '강좌명(필수)', '강좌', '과목명', '과목', '강의명', '강의',
+            '신청강좌', '수강강좌', '방과후강좌', '방과후과목', '방과후프로그램',
+            '프로그램명', '프로그램', '희망강좌', '희망과목', '강좌제목', '개설강좌',
+            '수업명', '수강과목', 'courseTitle', 'course', 'subject', 'program'
+          );
+
+          // 2. 학생 이름
+          const name = findVal(
+            '이름', '학생이름', '성명', '학생명', '이름(필수)', '학생',
+            'name', 'studentName', 'student'
+          );
+
+          // 3. 스쿨버스
+          const rawBusVal = findVal(
+            '스쿨버스', '스쿨버스(선택)', '버스', '버스번호', '스쿨버스신청',
+            '호차', '탑승버스', '노선', 'kisbusNo', 'busNo', 'bus', '스쿨버스(예: 1~5호차 또는 미신청)'
+          );
+          const kisbusNo = rawBusVal ? formatBusNo(rawBusVal) : '';
+
+          // 4. 학년 / 반 / 번호
+          const rawGrade = findVal('학년', 'grade', 'year');
+          const rawClass = findVal('반', '학반', 'class', 'classNum', 'classroom');
+          const rawNum = findVal('번호', '출석번호', '학번', '번', 'number', 'studentNum', 'no');
+
+          const gradeVal = parseInt(rawGrade.replace(/\D/g, '') || '1', 10);
+          const classVal = parseInt(rawClass.replace(/\D/g, '') || '1', 10);
+          const numVal = parseInt(rawNum.replace(/\D/g, '') || '1', 10);
+
+          // 5. 연락처
+          const phone = findVal('학생연락처', '학생전화번호', '학생핸드폰', 'phone', 'studentPhone');
+          const parentPhone = findVal(
+            '학부모연락처', '학부모연락처(선택)', '보호자연락처', '비상연락처', '부모연락처',
+            '학부모전화번호', '보호자전화번호', '연락처', '전화번호', '핸드폰', '휴대폰',
+            'parentPhone', 'contact'
+          );
 
           return {
             id: `excel_student_${idx}_${Date.now()}`,
             courseTitle,
-            grade: row['학년'] ? parseInt(row['학년'], 10) : 1,
-            classNum: row['반'] ? parseInt(row['반'], 10) : 1,
-            studentNum: row['번호'] ? parseInt(row['번호'], 10) : 1,
+            grade: isNaN(gradeVal) ? 1 : gradeVal,
+            classNum: isNaN(classVal) ? 1 : classVal,
+            studentNum: isNaN(numVal) ? 1 : numVal,
             name,
-            phone: row['학생연락처'] || row['학생전화번호'] ? String(row['학생연락처'] || row['학생전화번호']).trim() : '',
-            parentPhone: row['학부모연락처'] || row['부모연락처'] ? String(row['학부모연락처'] || row['부모연락처']).trim() : '',
+            phone,
+            parentPhone,
             kisbusNo,
           };
         }).filter(item => item.name !== '');

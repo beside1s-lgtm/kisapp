@@ -393,13 +393,16 @@ const AdminPageContent: React.FC<{
                 </Collapsible>
             )}
             <Tabs value={activeTab} onValueChange={setActiveTab} defaultValue="student-management" id="admin-tabs-root" className="w-full">
-                <TabsList className="grid grid-cols-3 sm:grid-cols-6 h-auto w-full bg-slate-100 p-1.5 rounded-2xl gap-1 border border-slate-200/80">
-                    <TabsTrigger value="bus-registration" className="w-full text-xs sm:text-sm font-bold px-2 py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_registration')}</TabsTrigger>
-                    <TabsTrigger value="teacher-management" className="w-full text-xs sm:text-sm font-bold px-2 py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.teacher_management')}</TabsTrigger>
-                    <TabsTrigger value="bus-configuration" className="w-full text-xs sm:text-sm font-bold px-2 py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_configuration')}</TabsTrigger>
-                    <TabsTrigger value="student-management" className="w-full text-xs sm:text-sm font-bold px-2 py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.student_management')}</TabsTrigger>
-                    <TabsTrigger value="after-school-management" className="w-full text-xs sm:text-sm font-bold px-2 py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">방과후 하교 버스 배정</TabsTrigger>
-                    <TabsTrigger value="notification-management" className="w-full text-xs sm:text-sm font-bold px-2 py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.notifications')}</TabsTrigger>
+                <TabsList className="grid grid-cols-3 sm:grid-cols-6 h-auto w-full bg-slate-100 p-1 sm:p-1.5 rounded-2xl gap-1 border border-slate-200/80">
+                    <TabsTrigger value="bus-registration" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_registration')}</TabsTrigger>
+                    <TabsTrigger value="teacher-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.teacher_management')}</TabsTrigger>
+                    <TabsTrigger value="bus-configuration" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_configuration')}</TabsTrigger>
+                    <TabsTrigger value="student-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.student_management')}</TabsTrigger>
+                    <TabsTrigger value="after-school-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">
+                        <span className="hidden sm:inline">방과후 하교 버스 조회</span>
+                        <span className="inline sm:hidden">방과후 조회</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="notification-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.notifications')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="bus-registration" className="mt-6">
                     <BusRegistrationTab buses={filteredBuses} routes={filteredRoutes} destinations={destinations} semesterMode={semesterMode} />
@@ -2472,33 +2475,37 @@ ${leaderRowsHtml}
     };
 
     const titleActions = (
-        <div className="flex items-center gap-2 flex-wrap">
-            {/* 1. 스쿨버스 관련 공문서 작성 버튼 (관리자 페이지 제목 옆, 회색톤 bg-slate-100, h-8 크기) */}
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap shrink-0">
+            {/* 1. 스쿨버스 관련 공문서 작성 버튼 */}
             <Button
                 type="button"
                 variant="ghost"
                 onClick={() => setIsBusDocModalOpen(true)}
-                className="h-8 px-2.5 bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200/90 text-slate-700 font-bold text-xs rounded-lg shadow-none flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap"
+                className="h-8 px-2 sm:px-2.5 bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200/90 text-slate-700 font-bold text-xs rounded-lg shadow-none flex items-center gap-1 cursor-pointer transition whitespace-nowrap"
+                title="스쿨버스 관련 공문서 작성"
             >
-                <span>스쿨버스 관련 공문서 작성</span>
-                <Badge variant="outline" className="bg-white text-slate-600 border-slate-200/90 text-[10px] px-1 py-0 font-bold whitespace-nowrap">
-                    3종 양식
+                <FileText className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <span className="hidden sm:inline">스쿨버스 공문서</span>
+                <span className="inline sm:hidden text-[11px]">공문서</span>
+                <Badge variant="outline" className="bg-white text-slate-600 border-slate-200/90 text-[10px] px-1 py-0 font-bold whitespace-nowrap hidden md:inline-flex">
+                    3종
                 </Badge>
             </Button>
 
-            {/* 2. 학부모 탑승 신청 제어 카드 (관리자 페이지 제목 옆, 회색톤 bg-slate-100, h-8 크기) */}
-            <div className="bg-slate-100/90 border border-slate-200/90 rounded-lg px-2.5 py-1 flex items-center gap-2 h-8 shadow-none shrink-0">
-                <span className="text-xs font-bold text-slate-700 whitespace-nowrap">학부모 탑승 신청</span>
+            {/* 2. 학부모 탑승 신청 제어 카드 */}
+            <div className="bg-slate-100/90 border border-slate-200/90 rounded-lg px-2 sm:px-2.5 py-1 flex items-center gap-1.5 sm:gap-2 h-8 shadow-none shrink-0" title="학부모 탑승 신청 열림/마감">
+                <span className="text-[11px] sm:text-xs font-bold text-slate-700 whitespace-nowrap hidden sm:inline">학부모 신청</span>
+                <span className="text-[11px] font-bold text-slate-700 whitespace-nowrap inline sm:hidden">신청</span>
                 <Badge 
                     variant="outline"
                     className={cn(
-                        "text-[10px] font-bold px-1.5 py-0 whitespace-nowrap shrink-0", 
+                        "text-[9px] sm:text-[10px] font-bold px-1 sm:px-1.5 py-0 whitespace-nowrap shrink-0", 
                         docConfig.isBusApplyActive 
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
                             : "bg-white text-slate-500 border-slate-200"
                     )}
                 >
-                    {docConfig.isBusApplyActive ? '진행 중' : '마감'}
+                    {docConfig.isBusApplyActive ? '진행' : '마감'}
                 </Badge>
                 <Switch 
                     checked={docConfig.isBusApplyActive ?? false}
@@ -2510,7 +2517,7 @@ ${leaderRowsHtml}
             {/* 3. 시스템 설정 버튼 */}
             <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
                 <DialogTrigger asChild>
-                    <Button variant="outline" size="icon" className="h-8 w-8 p-0 cursor-pointer border-slate-200 hover:bg-slate-50">
+                    <Button variant="outline" size="icon" className="h-8 w-8 p-0 cursor-pointer border-slate-200 hover:bg-slate-50 shrink-0" title="시스템 설정">
                         <Settings className="h-4 w-4 text-slate-600" />
                     </Button>
                 </DialogTrigger>

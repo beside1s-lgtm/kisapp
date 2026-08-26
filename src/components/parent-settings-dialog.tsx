@@ -46,6 +46,7 @@ export function ParentSettingsDialog() {
   const [studentClass, setStudentClass] = useState('');
   const [studentNumber, setStudentNumber] = useState('');
   const [parentName, setParentName] = useState('');
+  const [parentRelation, setParentRelation] = useState('부');
   const [phone, setPhone] = useState('');
   const [linkedStudents, setLinkedStudents] = useState<LinkedStudent[]>([]);
 
@@ -69,6 +70,7 @@ export function ParentSettingsDialog() {
         setStudentClass(profile.studentClass || '');
         setStudentNumber(profile.studentNumber || '');
         setParentName(profile.parentName || '');
+        setParentRelation((profile as any)?.parentRelation || '부');
         setPhone(profile.parentPhone || '');
         setLinkedStudents(profile.linkedStudents || []);
         setResidenceDestinationId(profile.residenceDestinationId || null);
@@ -166,6 +168,7 @@ export function ParentSettingsDialog() {
         studentClass,
         studentNumber,
         parentName: parentName.trim(),
+        parentRelation: parentRelation.trim(),
         parentPhone: phone,
         residenceDestinationId: useCustomResidence ? null as any : residenceDestinationId || undefined,
         customResidenceDestination: useCustomResidence ? customResidenceDestination.trim() : undefined,
@@ -203,18 +206,18 @@ export function ParentSettingsDialog() {
           <span className="sr-only">설정</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[680px] md:max-w-[750px] w-[95vw] max-h-[90vh] overflow-y-auto p-6 rounded-2xl">
+      <DialogContent className="sm:max-w-[680px] md:max-w-[750px] w-[95vw] max-h-[90vh] overflow-y-auto p-4 sm:p-6 rounded-2xl">
         <DialogHeader className="pb-2 border-b border-slate-100">
-          <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-900 whitespace-nowrap">
+          <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-900">
             <Users className="w-5 h-5 text-indigo-600 shrink-0" />
             <span>학부모 정보 & 자녀 형제/자매 설정</span>
           </DialogTitle>
-          <DialogDescription className="text-xs text-slate-500 mt-1 whitespace-nowrap">
+          <DialogDescription className="text-xs text-slate-500 mt-1">
             신청서 작성 시 자동으로 입력될 자녀 정보, 기본 거주지 정류장 및 형제/자매 연동 정보를 관리할 수 있습니다.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-3 text-xs">
+        <div className="grid gap-3 sm:gap-4 py-2 sm:py-3 text-xs">
           {/* 학생 기본 인적사항 (한글 + 영문) */}
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
             <h4 className="font-bold text-slate-800 text-xs flex items-center justify-between">
@@ -222,7 +225,7 @@ export function ParentSettingsDialog() {
               <span className="text-[11px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">기본 선택 자녀</span>
             </h4>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
               <div className="space-y-1">
                 <Label htmlFor="sName" className="text-[11px] font-bold text-slate-600">학생 한글 이름</Label>
                 <Input id="sName" value={studentName} onChange={(e) => setStudentName(e.target.value)} placeholder="예: 강동윤" className="text-xs h-9 bg-white font-bold" />
@@ -249,15 +252,30 @@ export function ParentSettingsDialog() {
             </div>
           </div>
 
-          {/* 학부모 기본 연락처 */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* 학부모 기본 정보 (성명 + 관계 + 연락처) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 p-3 bg-slate-50/50 rounded-xl border border-slate-200">
             <div className="space-y-1">
               <Label htmlFor="pName" className="text-[11px] font-bold text-slate-600">학부모 성명 <span className="text-destructive">*</span></Label>
-              <Input id="pName" value={parentName} onChange={(e) => setParentName(e.target.value)} placeholder="예: 서고운" className="text-xs h-9" />
+              <Input id="pName" value={parentName} onChange={(e) => setParentName(e.target.value)} placeholder="예: 서고운" className="text-xs h-9 bg-white" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="pRelation" className="text-[11px] font-bold text-slate-600">자녀와의 관계 <span className="text-destructive">*</span></Label>
+              <Select value={parentRelation} onValueChange={setParentRelation}>
+                <SelectTrigger id="pRelation" className="text-xs h-9 bg-white">
+                  <SelectValue placeholder="관계 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="부">부 (아버지)</SelectItem>
+                  <SelectItem value="모">모 (어머니)</SelectItem>
+                  <SelectItem value="조부">조부 (할아버지)</SelectItem>
+                  <SelectItem value="조모">조모 (할머니)</SelectItem>
+                  <SelectItem value="기타">기타 (보호자)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label htmlFor="pPhone" className="text-[11px] font-bold text-slate-600">학부모 연락처</Label>
-              <Input id="pPhone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value.replace(/[^0-9-]/g, ''))} placeholder="0773365357" className="text-xs h-9 font-mono" />
+              <Input id="pPhone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value.replace(/[^0-9-]/g, ''))} placeholder="0773365357" className="text-xs h-9 bg-white font-mono" />
             </div>
           </div>
 

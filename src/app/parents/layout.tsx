@@ -49,13 +49,13 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
       {/* Header */}
       {!isAuthPage && (
         <>
-      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b bg-card px-4 md:px-8 print:hidden">
-        <div className="flex items-center gap-6">
-          <Link href="/parents" className="flex items-center gap-2 font-headline text-lg font-bold tracking-tight text-foreground hover:text-primary transition-colors">
-            <div className="bg-primary p-1.5 rounded-md text-primary-foreground">
-              <FileText size={18} />
+      <header className="sticky top-0 z-50 flex h-14 sm:h-16 items-center justify-between border-b bg-card px-3 sm:px-4 md:px-8 print:hidden">
+        <div className="flex items-center gap-3 sm:gap-6 min-w-0">
+          <Link href="/parents" className="flex items-center gap-1.5 sm:gap-2 font-headline text-base sm:text-lg font-bold tracking-tight text-foreground hover:text-primary transition-colors truncate">
+            <div className="bg-primary p-1 sm:p-1.5 rounded-md text-primary-foreground shrink-0">
+              <FileText className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
             </div>
-            KISAPP 학부모 서비스
+            <span className="truncate">KISAPP 학부모 서비스</span>
           </Link>
           <nav className="hidden lg:flex items-center gap-2">
             <Button 
@@ -115,21 +115,21 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
           </nav>
         </div>
         
-        <div className="flex items-center gap-2 md:gap-4">
+        <div className="flex items-center gap-1.5 sm:gap-2 md:gap-4 shrink-0">
           <ParentSettingsDialog />
-          <Button variant="ghost" size="sm" onClick={logout} className="text-muted-foreground hover:text-foreground">
-            <LogOut className="mr-2 h-4 w-4" />
+          <Button variant="ghost" size="sm" onClick={logout} className="h-8 px-2 text-muted-foreground hover:text-foreground" title="로그아웃">
+            <LogOut className="h-4 w-4 sm:mr-1.5" />
             <span className="hidden sm:inline">로그아웃</span>
           </Button>
         </div>
       </header>
       
       {/* Mobile nav */}
-      <div className="md:hidden grid grid-cols-4 gap-1 border-b bg-muted/30 p-2 print:hidden">
+      <div className="md:hidden grid grid-cols-4 gap-1 border-b bg-muted/30 p-1.5 print:hidden">
         <Button 
           variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
           size="sm"
-          className="text-xs h-9 px-1"
+          className="text-xs h-8 px-0.5 font-semibold"
           asChild
         >
           <Link href="/parents/apply">신청서</Link>
@@ -137,7 +137,7 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
         <Button 
           variant={pathname === '/parents/history' ? 'default' : 'ghost'} 
           size="sm"
-          className="text-xs h-9 px-1"
+          className="text-xs h-8 px-0.5 font-semibold"
           asChild
         >
           <Link href="/parents/history">내역</Link>
@@ -145,7 +145,7 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
         <Button 
           variant={pathname.startsWith('/parents/bus') ? 'default' : 'ghost'} 
           size="sm"
-          className="text-xs h-9 px-1"
+          className="text-xs h-8 px-0.5 font-semibold"
           asChild
         >
           <Link href="/parents/bus/apply">스쿨버스</Link>
@@ -153,14 +153,14 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
         <Button 
           variant={pathname.startsWith('/parents/afterschool') ? 'default' : 'ghost'} 
           size="sm"
-          className="text-xs h-9 px-1"
+          className="text-xs h-8 px-0.5 font-semibold"
           asChild
         >
           <Link href="/parents/afterschool">방과후</Link>
         </Button>
       </div>
 
-      <main className="flex-1 p-4 md:p-8 overflow-y-auto print:p-0 print:m-0 print:block">
+      <main className="flex-1 p-2.5 sm:p-4 md:p-8 overflow-y-auto print:p-0 print:m-0 print:block">
         {children}
       </main>
       </>

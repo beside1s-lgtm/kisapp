@@ -385,43 +385,43 @@ export const MorningGateDutyDialog = ({
                 </div>
 
                 {/* 4. Full Schedule Table */}
-                <div className="border rounded-xl overflow-hidden shadow-2xs flex flex-col flex-1 min-h-[300px] bg-white">
-                    <div className="bg-slate-50 px-4 py-2 border-b flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                            <Calendar className="h-4 w-4 text-indigo-600" />
+                <div className="border rounded-xl overflow-hidden shadow-2xs flex flex-col flex-1 min-h-[260px] bg-white w-full max-w-full">
+                    <div className="bg-slate-50 px-2.5 sm:px-4 py-1.5 sm:py-2 border-b flex items-center justify-between gap-1 flex-wrap">
+                        <span className="text-[11px] sm:text-xs font-bold text-slate-700 flex items-center gap-1">
+                            <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-indigo-600 shrink-0" />
                             <span>{activeSemesterInfo?.name || '전체 배정표'} ({currentSchedule.length}주차)</span>
                         </span>
-                        <div className="flex items-center gap-3 text-[11px] font-semibold">
-                            <span className="flex items-center gap-1 text-amber-800">
-                                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block border border-amber-500" />
+                        <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-[11px] font-semibold">
+                            <span className="flex items-center gap-0.5 text-amber-800">
+                                <span className="w-2 h-2 rounded-full bg-amber-400 inline-block border border-amber-500" />
                                 오늘
                             </span>
-                            <span className="flex items-center gap-1 text-sky-800">
-                                <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block border border-sky-500" />
+                            <span className="flex items-center gap-0.5 text-sky-800">
+                                <span className="w-2 h-2 rounded-full bg-sky-400 inline-block border border-sky-500" />
                                 내일
                             </span>
-                            <span className="flex items-center gap-1 text-indigo-800">
-                                <span className="w-2.5 h-2.5 rounded-full bg-indigo-200 inline-block border border-indigo-400" />
+                            <span className="flex items-center gap-0.5 text-indigo-800">
+                                <span className="w-2 h-2 rounded-full bg-indigo-200 inline-block border border-indigo-400" />
                                 본인
                             </span>
-                            <span className="flex items-center gap-1 text-rose-700">
-                                <span className="w-2.5 h-2.5 rounded-full bg-rose-200 inline-block border border-rose-300" />
+                            <span className="flex items-center gap-0.5 text-rose-700">
+                                <span className="w-2 h-2 rounded-full bg-rose-200 inline-block border border-rose-300" />
                                 휴일
                             </span>
                         </div>
                     </div>
 
-                    <div className="overflow-y-auto flex-1 max-h-[46vh]">
-                        <Table className="w-full text-xs">
-                            <TableHeader className="sticky top-0 bg-slate-100/95 backdrop-blur-xs z-10 shadow-2xs">
+                    <div className="overflow-y-auto flex-1 max-h-[50vh] w-full">
+                        <Table className="w-full text-xs table-fixed sm:table-auto">
+                            <TableHeader className="sticky top-0 bg-slate-100/95 backdrop-blur-md z-20 shadow-xs border-b border-slate-200">
                                 <TableRow className="hover:bg-transparent">
-                                    <TableHead className="w-[50px] text-center font-bold text-slate-700 py-2">주차</TableHead>
-                                    <TableHead className="w-[85px] text-center font-bold text-slate-700 py-2">기간</TableHead>
-                                    <TableHead className="text-center font-bold text-slate-700 py-2">월요일</TableHead>
-                                    <TableHead className="text-center font-bold text-slate-700 py-2">화요일</TableHead>
-                                    <TableHead className="text-center font-bold text-slate-700 py-2">수요일</TableHead>
-                                    <TableHead className="text-center font-bold text-slate-700 py-2">목요일</TableHead>
-                                    <TableHead className="text-center font-bold text-slate-700 py-2">금요일</TableHead>
+                                    <TableHead className="w-[32px] sm:w-[50px] text-center font-bold text-slate-700 py-1.5 sm:py-2 px-0.5 sm:px-1 text-[11px] sm:text-xs">주</TableHead>
+                                    <TableHead className="w-[58px] sm:w-[85px] text-center font-bold text-slate-700 py-1.5 sm:py-2 px-0.5 sm:px-1 text-[10px] sm:text-xs">기간</TableHead>
+                                    <TableHead className="text-center font-bold text-slate-700 py-1.5 sm:py-2 px-0.5 sm:px-1 text-[11px] sm:text-xs">월</TableHead>
+                                    <TableHead className="text-center font-bold text-slate-700 py-1.5 sm:py-2 px-0.5 sm:px-1 text-[11px] sm:text-xs">화</TableHead>
+                                    <TableHead className="text-center font-bold text-slate-700 py-1.5 sm:py-2 px-0.5 sm:px-1 text-[11px] sm:text-xs">수</TableHead>
+                                    <TableHead className="text-center font-bold text-slate-700 py-1.5 sm:py-2 px-0.5 sm:px-1 text-[11px] sm:text-xs">목</TableHead>
+                                    <TableHead className="text-center font-bold text-slate-700 py-1.5 sm:py-2 px-0.5 sm:px-1 text-[11px] sm:text-xs">금</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -441,19 +441,19 @@ export const MorningGateDutyDialog = ({
                                     currentSchedule.map((row) => (
                                         <TableRow key={row.weekNum} className="hover:bg-slate-50/50">
                                             {/* Week Num */}
-                                            <TableCell className="text-center font-bold text-slate-600 bg-slate-50/60 py-2 border-r">
+                                            <TableCell className="text-center font-bold text-slate-600 bg-slate-50/60 py-1 sm:py-2 px-0.5 sm:px-1 border-r text-[10px] sm:text-xs">
                                                 {row.weekNum}
                                             </TableCell>
                                             {/* Period */}
-                                            <TableCell className="text-center text-[11px] text-slate-500 whitespace-nowrap py-2 border-r font-mono">
-                                                {row.periodStr}
+                                            <TableCell className="text-center text-[9px] sm:text-[11px] text-slate-500 whitespace-nowrap py-1 sm:py-2 px-0.5 sm:px-1 border-r font-mono">
+                                                {row.periodStr ? row.periodStr.replace(/\.202\d/g, '').replace(/(\d+)\.(\d+)~(\d+)\.(\d+)/, '$2/$3~$4') : row.periodStr}
                                             </TableCell>
                                             {/* Days Mon-Fri */}
                                             {daysKeys.map((dayKey) => {
                                                 const slot = row.days[dayKey];
                                                 if (!slot) {
                                                     return (
-                                                        <TableCell key={dayKey} className="text-center text-slate-300 py-2 border-r">
+                                                        <TableCell key={dayKey} className="text-center text-slate-300 py-1 sm:py-2 px-0.5 border-r">
                                                             -
                                                         </TableCell>
                                                     );
@@ -471,29 +471,29 @@ export const MorningGateDutyDialog = ({
                                                     <TableCell
                                                         key={dayKey}
                                                         className={cn(
-                                                            "text-center py-2 px-1 border-r transition-all relative",
-                                                            isToday && "bg-amber-100/90 font-black text-amber-950 ring-2 ring-amber-400 shadow-xs z-1",
-                                                            isTomorrow && !isToday && "bg-sky-100/90 font-black text-sky-950 ring-2 ring-sky-400 shadow-xs z-1",
-                                                            isMyDuty && !isToday && !isTomorrow && "bg-indigo-50/90 font-bold text-indigo-900 border-indigo-300",
+                                                            "text-center py-1 sm:py-2 px-0.5 sm:px-1 border-r transition-all relative overflow-hidden",
+                                                            isToday && "bg-amber-100/95 font-black text-amber-950 ring-1.5 sm:ring-2 ring-amber-400 z-1",
+                                                            isTomorrow && !isToday && "bg-sky-100/95 font-black text-sky-950 ring-1.5 sm:ring-2 ring-sky-400 z-1",
+                                                            isMyDuty && !isToday && !isTomorrow && "bg-indigo-50/95 font-bold text-indigo-900 border-indigo-300",
                                                             isHoliday && !isToday && !isTomorrow && "bg-rose-50/80 text-rose-500 font-medium"
                                                         )}
                                                     >
-                                                        <div className="flex flex-col items-center justify-center gap-0.5">
+                                                        <div className="flex flex-col items-center justify-center gap-0">
                                                             {/* Date & Today/Tomorrow Badge */}
-                                                            <div className="flex items-center gap-1">
+                                                            <div className="flex items-center gap-0.5">
                                                                 <span className={cn(
-                                                                    "text-[10px] font-mono",
+                                                                    "text-[9px] sm:text-[10px] font-mono leading-tight",
                                                                     isToday ? "text-amber-800 font-extrabold" : (isTomorrow ? "text-sky-800 font-extrabold" : "text-slate-400")
                                                                 )}>
                                                                     {shortDate}
                                                                 </span>
                                                                 {isToday && (
-                                                                    <Badge className="bg-amber-500 text-white text-[9px] px-1 py-0 h-3.5 leading-none">
+                                                                    <Badge className="bg-amber-500 text-white text-[8px] sm:text-[9px] px-0.5 py-0 h-3 leading-none hidden sm:inline-flex">
                                                                         오늘
                                                                     </Badge>
                                                                 )}
                                                                 {isTomorrow && !isToday && (
-                                                                    <Badge className="bg-sky-500 text-white text-[9px] px-1 py-0 h-3.5 leading-none">
+                                                                    <Badge className="bg-sky-500 text-white text-[8px] sm:text-[9px] px-0.5 py-0 h-3 leading-none hidden sm:inline-flex">
                                                                         내일
                                                                     </Badge>
                                                                 )}
@@ -501,17 +501,17 @@ export const MorningGateDutyDialog = ({
 
                                                             {/* Teacher or Holiday Name */}
                                                             {isHoliday ? (
-                                                                <span className="text-[11px] font-semibold text-rose-600 truncate max-w-[90px]">
-                                                                    {slot.holidayName || '공휴일'}
+                                                                <span className="text-[10px] sm:text-[11px] font-semibold text-rose-600 truncate max-w-[44px] sm:max-w-[90px] leading-tight" title={slot.holidayName || '공휴일'}>
+                                                                    {slot.holidayName || '휴일'}
                                                                 </span>
                                                             ) : (
                                                                 <span className={cn(
-                                                                    "text-xs truncate max-w-[95px]",
+                                                                    "text-[10px] sm:text-xs truncate max-w-[46px] sm:max-w-[95px] leading-tight",
                                                                     isToday ? "font-black text-amber-950" : (isTomorrow ? "font-black text-sky-950" : (isMyDuty ? "font-bold text-indigo-900" : "font-semibold text-slate-800"))
-                                                                )}>
+                                                                )} title={slot.teacherName}>
                                                                     {slot.teacherName}
                                                                     {isMyDuty && !isToday && !isTomorrow && (
-                                                                        <span className="text-[10px] text-indigo-600 ml-0.5 font-bold">
+                                                                        <span className="text-[9px] text-indigo-600 ml-0.5 font-bold hidden sm:inline">
                                                                             (본인)
                                                                         </span>
                                                                     )}

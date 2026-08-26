@@ -18,46 +18,46 @@ export default function ParentsBusIndexPage() {
   }, []);
 
   return (
-    <div className="max-w-4xl mx-auto py-8 px-4 space-y-6">
+    <div className="max-w-4xl mx-auto py-3 px-2 sm:py-8 sm:px-4 space-y-3 sm:space-y-6">
       {/* 통일된 상단 네비게이션 헤더 */}
-      <div className="flex items-center gap-2 print:hidden">
-        <Button variant="outline" className="bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-sm" onClick={() => router.back()}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
+      <div className="flex items-center gap-1.5 sm:gap-2 print:hidden">
+        <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.back()}>
+          <ArrowLeft className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
           뒤로가기
         </Button>
-        <Button variant="outline" className="bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-sm" onClick={() => router.push('/parents')}>
-          <Home className="mr-2 h-4 w-4" />
+        <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.push('/parents')}>
+          <Home className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
           홈
         </Button>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl border shadow-sm mb-6">
-        <h1 className="text-2xl font-bold font-headline text-slate-800">스쿨버스 서비스</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+      <div className="bg-white p-3.5 sm:p-6 rounded-xl sm:rounded-2xl border shadow-xs sm:shadow-sm mb-3 sm:mb-6">
+        <h1 className="text-lg sm:text-2xl font-bold font-headline text-slate-800">스쿨버스 서비스</h1>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 sm:mt-1">
           자녀의 스쿨버스 탑승 신청을 진행하거나, 배정된 노선 및 좌석 정보를 실시간으로 확인합니다.
         </p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-3 sm:gap-6 md:grid-cols-2">
         {/* 탑승 신청 카드 */}
         <Card className={`hover:shadow-lg transition-all duration-300 hover:-translate-y-1 ${config?.isBusApplyActive ? 'border-amber-200 bg-amber-50/10' : 'border-slate-200 opacity-80'}`}>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xl text-amber-600 font-headline">
-              <CalendarCheck className="h-6 w-6 text-amber-500" />
+          <CardHeader className="p-3.5 sm:p-6">
+            <CardTitle className="flex items-center gap-2 text-base sm:text-xl text-amber-600 font-headline">
+              <CalendarCheck className="h-5 w-5 sm:h-6 sm:w-6 text-amber-500" />
               스쿨버스 탑승 신청
             </CardTitle>
-            <CardDescription className="text-sm">
+            <CardDescription className="text-xs sm:text-sm mt-1">
               정규 학기 등하교 버스 및 토요 방과후학교 버스 탑승 신청을 작성합니다.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="p-3.5 sm:p-6 pt-0 sm:pt-0 space-y-3 sm:space-y-4">
             {config?.isBusApplyActive ? (
-              <Button className="w-full font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-md transition-all" asChild>
+              <Button className="w-full font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs sm:shadow-md transition-all h-9 sm:h-10 text-xs sm:text-sm" asChild>
                 <Link href="/parents/bus/apply">탑승 신청하기</Link>
               </Button>
             ) : (
               <div className="space-y-2">
-                <Button className="w-full font-bold text-muted-foreground bg-slate-100 cursor-not-allowed" variant="secondary" disabled>
+                <Button className="w-full font-bold text-muted-foreground bg-slate-100 cursor-not-allowed h-9 sm:h-10 text-xs sm:text-sm" variant="secondary" disabled>
                   탑승 신청 (기간 종료)
                 </Button>
                 <p className="text-xs text-amber-600 text-center font-medium bg-amber-50 border border-amber-200/50 py-1.5 rounded-lg">

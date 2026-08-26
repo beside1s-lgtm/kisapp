@@ -10,7 +10,6 @@ import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/use-translation';
 import { LanguageSwitcher } from './language-switcher';
-import { AcademicCalendarSyncModal } from '../academic-calendar-sync-modal';
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -58,65 +57,119 @@ export const MainLayout: FC<MainLayoutProps> = ({
   }
 
   const showHomeButton = pathname.startsWith('/admin') || pathname.startsWith('/teacher');
+  const isInsideAppGroup = pathname.startsWith('/admin') || pathname.startsWith('/inbox') || pathname.startsWith('/sent') || pathname.startsWith('/new') || pathname.startsWith('/recalled') || pathname.startsWith('/registry');
+  const headerStickyClass = isInsideAppGroup ? 'sticky top-14 sm:top-16 z-40' : 'sticky top-0 z-40';
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
-       <AcademicCalendarSyncModal />
-       <header className="sticky top-0 z-10 flex flex-col gap-1.5 border-b bg-card/85 px-2.5 sm:px-4 md:px-6 py-1.5 sm:py-2 backdrop-blur-md shadow-xs">
-          <div className="flex w-full items-center justify-between gap-1.5 sm:gap-3 flex-nowrap min-w-0">
-              {/* 좌측 영역: 뒤로가기/홈(로그인 시) 또는 버스 로고(비로그인 시) + 타이틀 */}
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-shrink-0">
-                  {/* 로그인된 사용자에게만 뒤로가기 및 홈 버튼 노출 */}
+    <div className="flex flex-col min-h-screen bg-background w-full max-w-full min-w-0">
+       <header className={`${headerStickyClass} flex flex-col gap-1 border-b bg-card/95 px-2.5 sm:px-4 md:px-6 py-1.5 sm:py-2 backdrop-blur-md shadow-xs w-full max-w-full`}>
+          {/* 모바일 뷰 (sm:hidden): 2줄 레이아웃 */}
+          <div className="flex sm:hidden flex-col gap-1.5 w-full min-w-0">
+              {/* Row 1: 뒤로가기/홈 + 타이틀 + 언어선택기 */}
+              <div className="flex items-center justify-between gap-2 w-full min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0 shrink">
+                      {user ? (
+                        <div className="flex items-center gap-1 shrink-0">
+                          {pathname !== '/' && pathname !== '/inbox' && (
+                            <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => router.back()} title="뒤로가기">
+                              <ArrowLeft className="h-4 w-4" />
+                              <span className="sr-only">Back</span>
+                            </Button>
+                          )}
+                          {showHomeButton && (
+                            <Button asChild variant="outline" size="icon" className="h-8 w-8 shrink-0" title="결재 홈">
+                              <Link href="/">
+                                <Home className="h-4 w-4" />
+                                <span className="sr-only">Home</span>
+                              </Link>
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 px-2 py-1 bg-indigo-50/90 text-indigo-700 rounded-lg border border-indigo-200/70 text-xs font-bold shrink-0 shadow-xs">
+                          <Bus className="h-4 w-4 text-indigo-600 shrink-0" />
+                          <span className="font-extrabold tracking-tight">KIS BUS</span>
+                        </div>
+                      )}
+
+                      {!hideTitle && (
+                        <div className="min-w-0 truncate">
+                            <h1 className="text-sm font-bold font-headline truncate text-slate-800 dark:text-slate-100">
+                              {title || getPageTitle()}
+                            </h1>
+                        </div>
+                      )}
+                  </div>
+
+                  {/* Row 1 우측: LanguageSwitcher */}
+                  <div className="flex items-center gap-1 shrink-0">
+                      <LanguageSwitcher />
+                      {user && pathname.startsWith('/admin') && (
+                          <Button variant="outline" size="sm" onClick={handleLogout} className="h-8 px-2 text-xs text-rose-600 border-rose-200 hover:bg-rose-50" title={t('logout.button')}>
+                            <LogOut className="h-4 w-4" />
+                          </Button>
+                      )}
+                  </div>
+              </div>
+
+              {/* Row 2: titleActions 전체 폭 균등/나란히 배치 */}
+              {titleActions && (
+                  <div className="flex items-center justify-between gap-1 w-full min-w-0 pt-1 border-t border-slate-100/80 dark:border-slate-800/80">
+                      {titleActions}
+                  </div>
+              )}
+          </div>
+
+          {/* 데스크탑 뷰 (hidden sm:flex): 1줄 레이아웃 */}
+          <div className="hidden sm:flex w-full items-center justify-between gap-3 flex-nowrap min-w-0">
+              {/* 좌측 영역: 뒤로가기/홈 + 타이틀 */}
+              <div className="flex items-center gap-2 min-w-0 shrink-0">
                   {user ? (
-                    <>
+                    <div className="flex items-center gap-1.5 shrink-0">
                       {pathname !== '/' && pathname !== '/inbox' && (
-                        <Button variant="outline" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 flex-shrink-0" onClick={() => router.back()} title="뒤로가기">
-                          <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                        <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => router.back()} title="뒤로가기">
+                          <ArrowLeft className="h-4 w-4" />
                           <span className="sr-only">Back</span>
                         </Button>
                       )}
                       {showHomeButton && (
-                        <Button asChild variant="outline" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 flex-shrink-0" title="결재 홈">
+                        <Button asChild variant="outline" size="icon" className="h-8 w-8 shrink-0" title="결재 홈">
                           <Link href="/">
-                            <Home className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                            <Home className="h-4 w-4" />
                             <span className="sr-only">Home</span>
                           </Link>
                         </Button>
                       )}
-                    </>
+                    </div>
                   ) : (
-                    /* 비로그인 사용자: 결재 화면 이탈 방지용 깔끔한 전용 버스 배지 표출 */
-                    <div className="flex items-center gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 bg-indigo-50/90 text-indigo-700 rounded-lg border border-indigo-200/70 text-[11px] sm:text-xs font-bold shrink-0 shadow-xs">
-                      <Bus className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                    <div className="flex items-center gap-1 px-2 py-1 bg-indigo-50/90 text-indigo-700 rounded-lg border border-indigo-200/70 text-xs font-bold shrink-0 shadow-xs">
+                      <Bus className="h-4 w-4 text-indigo-600 shrink-0" />
                       <span className="font-extrabold tracking-tight">KIS BUS</span>
                     </div>
                   )}
 
-                  {!hideTitle ? (
-                    <h1 className="text-xs sm:text-sm md:text-base font-bold font-headline truncate whitespace-nowrap">
-                        {title || getPageTitle()}
-                    </h1>
-                  ) : (
-                    <div className="flex-1 sm:hidden min-w-0">
-                        {mobileHeaderRow1}
+                  {!hideTitle && (
+                    <div className="min-w-0 truncate">
+                        <h1 className="text-base md:text-lg font-bold font-headline truncate">
+                          {title || getPageTitle()}
+                        </h1>
                     </div>
                   )}
               </div>
 
-              {/* 우측 영역: titleActions + LanguageSwitcher + 로그아웃 (항상 1줄 유지) */}
-              <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0 flex-nowrap min-w-0">
+              {/* 우측 영역: titleActions + LanguageSwitcher + 로그아웃 */}
+              <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
                   {titleActions && (
-                      <div className="flex items-center flex-nowrap min-w-0">
+                      <div className="flex items-center gap-1.5 flex-nowrap min-w-0">
                           {titleActions}
                       </div>
                   )}
                   
-                  {/* LanguageSwitcher 배치 */}
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0">
                       <LanguageSwitcher />
                       {user && pathname.startsWith('/admin') && (
-                          <Button variant="outline" size="sm" onClick={handleLogout} className="h-7 sm:h-8 px-2 sm:px-2.5">
-                            <LogOut className="h-3.5 w-3.5 sm:mr-1.5" />
+                          <Button variant="outline" size="sm" onClick={handleLogout} className="h-8 px-2.5 text-xs text-rose-600 border-rose-200 hover:bg-rose-50">
+                            <LogOut className="h-4 w-4 mr-1.5" />
                             <span className="hidden md:inline text-xs">{t('logout.button')}</span>
                           </Button>
                       )}
@@ -124,16 +177,16 @@ export const MainLayout: FC<MainLayoutProps> = ({
               </div>
           </div>
           {headerContent && (
-            <div className="w-full">
+            <div className="w-full min-w-0 relative z-50">
               {headerContent}
             </div>
           )}
       </header>
-      <main className="flex-1 p-4 md:p-6 lg:p-8">
+      <main className="flex-1 p-2 sm:p-4 md:p-6 lg:p-8 w-full max-w-full overflow-x-hidden min-w-0">
         {children}
       </main>
-      <footer className="border-t py-4 text-center text-xs text-muted-foreground bg-card/30 backdrop-blur-sm no-print">
-        <div className="flex flex-col sm:flex-row justify-center items-center gap-2 sm:gap-6">
+      <footer className="border-t py-4 text-center text-xs text-muted-foreground bg-card/30 backdrop-blur-sm no-print w-full overflow-x-hidden">
+        <div className="flex flex-col sm:flex-row justify-center items-center gap-2 sm:gap-6 px-2">
           <span>© {new Date().getFullYear()} KIS School Bus. All rights reserved.</span>
           <Link href="/privacy" className="font-semibold text-primary hover:underline transition-all">
             개인정보처리방침 (Privacy Policy)

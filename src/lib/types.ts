@@ -17,6 +17,7 @@ export type UserProfile = {
   studentNumber?: string;
   residenceDestinationId?: string;
   customResidenceDestination?: string;
+  address?: string;
   linkedStudents?: {
     id: string;
     nameKo: string;

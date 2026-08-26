@@ -58,6 +58,7 @@ export interface Course {
   minStudentsToOpen?: number;  // 자동 폐강 기준 모집 인원
   assistantTeachers?: string[]; // 보조/예비 강사 목록
   isFree?: boolean;            // 무료 강좌 여부 (true일 경우 수강료 0원)
+  hasBusOption?: boolean;      // 학부모 수강신청 시 스쿨버스 탑승 체크박스 제공 여부 (방학/주말 강좌 등)
   [key: string]: any;
 }
 

@@ -323,43 +323,44 @@ export default function ApplyPage() {
     };
 
     return (
-        <div className="max-w-4xl mx-auto py-8 px-4 space-y-6">
+        <div className="max-w-4xl mx-auto py-4 px-3 sm:py-8 sm:px-4 space-y-4 sm:space-y-6">
             {/* 통일된 상단 네비게이션 헤더 */}
-            <div className="flex items-center justify-between print:hidden bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="flex items-center justify-between print:hidden bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-xs">
                 <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" className="bg-white hover:bg-slate-50 text-slate-700 shadow-2xs font-bold rounded-xl" onClick={() => router.back()}>
-                        <ArrowLeft className="mr-1.5 h-4 w-4" />
-                        뒤로가기
+                    <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-slate-700 shadow-2xs font-bold rounded-xl" onClick={() => router.back()}>
+                        <ArrowLeft className="h-3.5 w-3.5 sm:mr-1.5" />
+                        <span className="hidden sm:inline">뒤로가기</span>
                     </Button>
-                    <Button variant="outline" size="sm" className="bg-white hover:bg-slate-50 text-slate-700 shadow-2xs font-bold rounded-xl" onClick={() => router.push('/parents')}>
-                        <Home className="mr-1.5 h-4 w-4" />
-                        홈
+                    <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-slate-700 shadow-2xs font-bold rounded-xl" onClick={() => router.push('/parents')}>
+                        <Home className="h-3.5 w-3.5 sm:mr-1.5" />
+                        <span className="hidden sm:inline">홈</span>
                     </Button>
                 </div>
-                <div className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-100 flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-indigo-600" />
-                    <span>학부모 스쿨버스 간소화 신청 포털</span>
+                <div className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded-xl border border-indigo-100 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                    <span className="hidden sm:inline">학부모 스쿨버스 간소화 신청 포털</span>
+                    <span className="sm:hidden">스쿨버스 신청</span>
                 </div>
             </div>
 
-            <div className="flex flex-col items-center gap-6 w-full">
+            <div className="flex flex-col items-center gap-4 sm:gap-6 w-full">
                 {/* 1. 학생 기본 정보 카드 */}
                 <Card className="w-full shadow-sm rounded-2xl border-slate-200 overflow-hidden">
-                    <CardHeader className="bg-slate-50/70 border-b border-slate-100 pb-4">
+                    <CardHeader className="bg-slate-50/70 border-b border-slate-100 py-3 sm:pb-4">
                         <div className="flex items-center justify-between">
-                            <CardTitle className="flex items-center gap-2 text-base font-bold text-slate-900">
-                                <UserPlus className="text-indigo-600 w-5 h-5" />
+                            <CardTitle className="flex items-center gap-2 text-sm sm:text-base font-bold text-slate-900">
+                                <UserPlus className="text-indigo-600 w-4 h-4 sm:w-5 sm:h-5" />
                                 {t('apply.base_info.title')}
                             </CardTitle>
-                            <span className="text-xs bg-indigo-100 text-indigo-800 font-bold px-2.5 py-0.5 rounded-md">
-                                프로필 정보 자동 연결됨
+                            <span className="text-[11px] sm:text-xs bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-md whitespace-nowrap">
+                                자동 연결됨
                             </span>
                         </div>
-                        <CardDescription className="text-xs text-slate-500 mt-1">
+                        <CardDescription className="hidden sm:block text-xs text-slate-500 mt-1">
                             학부모 계정에 등록된 자녀 기본 정보가 자동으로 채워졌습니다. 필요한 경우 자유롭게 수정하실 수 있습니다.
                         </CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-6 pt-6">
+                    <CardContent className="space-y-4 sm:space-y-6 pt-4 sm:pt-6">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-indigo-50/40 p-4 rounded-xl border border-indigo-100/80">
                             <div className="space-y-1.5">
                                 <Label htmlFor="nameKo" className="text-xs font-bold text-slate-700">{t('student.name_ko', '성명(한글)')}</Label>
@@ -409,14 +410,14 @@ export default function ApplyPage() {
                                     }} 
                                     className="w-4 h-4 text-indigo-600 rounded"
                                 />
-                                <Label htmlFor="has-siblings" className="text-sm font-bold text-slate-900 cursor-pointer flex items-center gap-1.5">
-                                    <span>형제/자매가 스쿨버스에 함께 탑승하나요? (형제할인 혜택 적용)</span>
-                                    <span className="text-[11px] bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded-md">
+                                <Label htmlFor="has-siblings" className="text-xs sm:text-sm font-bold text-slate-900 cursor-pointer flex items-center gap-1.5 flex-wrap">
+                                    <span>형제/자매 함께 탑승 (형제할인)</span>
+                                    <span className="text-[11px] bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded-md hidden sm:inline">
                                         💡 동시 탑승 할인
                                     </span>
                                 </Label>
                             </div>
-                            <p className="text-xs text-slate-500 pl-6">
+                            <p className="hidden sm:block text-xs text-slate-500 pl-6">
                                 ※ 형제/자매이더라도 탑승하지 않는 자녀(도보/자전거/별도등교)가 있을 수 있으므로 <strong>실제 탑승하는 형제만 체크</strong>해주세요.
                             </p>
 
@@ -561,16 +562,16 @@ export default function ApplyPage() {
 
                 {/* 3. 학생 거주 주소 & 버스 목적지 (Stops) 선택 카드 */}
                 <Card className="w-full shadow-sm rounded-2xl border-slate-200 overflow-hidden">
-                    <CardHeader className="bg-slate-50/70 border-b border-slate-100 pb-4">
-                        <CardTitle className="flex items-center gap-2 text-base font-bold text-slate-900">
-                            <MapPin className="text-indigo-600 w-5 h-5" />
-                            📍 거주 주소 및 스쿨버스 정류장 선택
+                    <CardHeader className="bg-slate-50/70 border-b border-slate-100 py-3 sm:pb-4">
+                        <CardTitle className="flex items-center gap-2 text-sm sm:text-base font-bold text-slate-900">
+                            <MapPin className="text-indigo-600 w-4 h-4 sm:w-5 sm:h-5" />
+                            📍 정류장 선택
                         </CardTitle>
-                        <CardDescription className="text-xs text-slate-500 mt-1">
+                        <CardDescription className="hidden sm:block text-xs text-slate-500 mt-1">
                             세부 동/호수를 입력할 필요 없이 <strong>버스 관리자가 등록한 목적지 정류장</strong>을 선택해주시면 주소 및 등/하교 정류장이 통합 설정됩니다.
                         </CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-5 pt-6">
+                    <CardContent className="space-y-4 sm:space-y-5 pt-4 sm:pt-6">
                         {/* 대표 정류장 선택 */}
                         <div className="space-y-2 bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
                             <Label className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
@@ -646,7 +647,8 @@ export default function ApplyPage() {
                             onClick={handleMainSubmit} 
                             className="w-full mt-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm py-3 rounded-xl shadow-sm cursor-pointer"
                         >
-                            🚀 {hasSiblings ? `스쿨버스 탑승 신청서 제출 (${siblings.length + 1}명 자녀 동시 신청)` : '스쿨버스 탑승 신청서 제출'}
+                            🚀 <span className="hidden sm:inline">{hasSiblings ? `스쿨버스 탑승 신청서 제출 (${siblings.length + 1}명 자녀 동시 신청)` : '스쿨버스 탑승 신청서 제출'}</span>
+                            <span className="sm:hidden">{hasSiblings ? `신청 (${siblings.length + 1}명)` : '신청서 제출'}</span>
                         </Button>
                     </CardContent>
                 </Card>

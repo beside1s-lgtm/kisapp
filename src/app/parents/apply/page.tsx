@@ -128,7 +128,7 @@ function ApplyForm() {
       tripType: '가족동반여행',
       destination: '',
       companionName: profile?.parentName || '',
-      companionRelation: '',
+      companionRelation: (profile as any)?.parentRelation || '',
       purpose: '',
       detailedPlan: '',
       relatedApplyDocId: applyId || '',
@@ -137,7 +137,15 @@ function ApplyForm() {
     } as any
   });
 
-  const currentType = watch('type');
+  const [tabType, setTabType] = useState<'absence' | 'field-trip' | 'field-trip-report'>(defaultType);
+  const currentType = tabType;
+
+  useEffect(() => {
+    if (defaultType && defaultType !== tabType) {
+      setTabType(defaultType);
+      setValue('type', defaultType as any);
+    }
+  }, [defaultType, setValue, tabType]);
   const watchStudentName = watch('studentName');
   const watchGradeClassNumber = watch('gradeClassNumber');
   const watchAbsenceStartDate = watch('absencePeriod.startDate');
@@ -375,6 +383,8 @@ function ApplyForm() {
   const isOverLimit = isOverFieldTripLimit || isOverAbsenceLimit || isSingleFieldTripOverLimit;
 
   const handleTabChange = (val: string) => {
+    setTabType(val as any);
+    setValue('type', val as any);
     router.push(`/parents/apply?type=${val}`);
   };
 
@@ -569,47 +579,267 @@ function ApplyForm() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 py-8 px-4 print:p-0 print:bg-white animate-in fade-in duration-500">
-      <div className="max-w-[210mm] mx-auto mb-6 print:hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" className="bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-sm" onClick={() => router.back()}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
+    <div className="min-h-screen bg-slate-100 py-3 px-2 sm:py-8 sm:px-4 print:p-0 print:bg-white animate-in fade-in duration-500">
+      <div className="max-w-[210mm] mx-auto mb-3 sm:mb-6 print:hidden flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.back()}>
+            <ArrowLeft className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
             뒤로가기
           </Button>
-          <Button variant="outline" className="bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-sm" onClick={() => router.push('/parents')}>
-            <Home className="mr-2 h-4 w-4" />
+          <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.push('/parents')}>
+            <Home className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
             홈
           </Button>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
           {defaultType !== 'field-trip-report' ? (
-            <Tabs value={currentType} onValueChange={handleTabChange} className="w-[280px]">
-              <TabsList className="grid w-full grid-cols-2 h-10 shadow-sm">
-                <TabsTrigger value="absence" className="text-sm font-bold">결석계</TabsTrigger>
-                <TabsTrigger value="field-trip" className="text-sm font-bold">체험학습 신청서</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="grid grid-cols-2 p-1 bg-slate-200/80 rounded-xl w-full sm:w-[280px] gap-1">
+              <button
+                type="button"
+                onClick={() => handleTabChange('absence')}
+                className={`py-1.5 px-3 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+                  currentType === 'absence'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                결석계
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTabChange('field-trip')}
+                className={`py-1.5 px-3 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+                  currentType === 'field-trip'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                체험학습 신청서
+              </button>
+            </div>
           ) : (
-            <div className="bg-amber-100 border border-amber-200 text-amber-800 text-sm font-bold px-4 py-2 rounded-lg">
+            <div className="bg-amber-100 border border-amber-200 text-amber-800 text-xs sm:text-sm font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg w-full sm:w-auto text-center">
               체험학습 결과보고서 작성 모드
             </div>
           )}
         </div>
       </div>
 
-      <div className="w-[210mm] min-h-[297mm] mx-auto bg-white p-[20mm] shadow-2xl border border-slate-200/80 rounded-sm print:shadow-none print:border-none print:p-0 print:w-[170mm] print:mx-auto print:min-h-0">
+      <div className="w-full max-w-[210mm] min-h-0 sm:min-h-[297mm] mx-auto bg-white shadow-md sm:shadow-2xl border border-slate-200/80 rounded-xl sm:rounded-sm print:shadow-none print:border-none print:w-[170mm] print:mx-auto print:min-h-0">
         <form onSubmit={handleSubmit(onSubmit)}>
-          {currentType === 'absence' ? (
-            <div className="font-serif text-[11pt] text-black">
-              {/* 누적 결석 경고 알림 */}
-              <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex justify-between items-center gap-4 mb-6 print:hidden">
-                <div>
-                  <h5 className="font-bold text-slate-800 text-sm">연간 누적 결석 현황 (올해)</h5>
-                  <p className="text-xs text-muted-foreground mt-0.5">병결, 미인정, 기타 결석의 합계<br />(출석인정 제외)</p>
+
+          {/* ========== 모바일 전용 간소화 카드 UI (sm 미만에서만 표시) ========== */}
+          <div className="sm:hidden p-4 space-y-4">
+            {currentType === 'absence' ? (
+              <>
+                {/* 결석계 - 모바일 카드 */}
+                <div className="text-center pb-2 border-b border-slate-100">
+                  <h2 className="text-base font-bold text-slate-800">결 석 계</h2>
+                  <p className="text-[11px] text-red-500 font-semibold mt-0.5">결석한 날부터 5일 이내 제출</p>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs text-muted-foreground block">누적 / 한도 (유급)</span>
-                  <span className={`text-sm sm:text-base md:text-sm font-black whitespace-nowrap ${isOverAbsenceLimit ? 'text-destructive' : 'text-slate-700'}`}>
+
+                {/* 결석 기간 */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">결석 기간 <span className="text-red-500">*</span></label>
+                  <div className="flex items-center gap-2">
+                    <input type="date" {...register('absencePeriod.startDate')} className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-indigo-400" />
+                    <span className="text-slate-400 text-xs">~</span>
+                    <input type="date" {...register('absencePeriod.endDate')} className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-indigo-400" />
+                  </div>
+                  {watchAbsenceTotalDays > 0 && (
+                    <p className="text-[11px] text-indigo-600 font-semibold">
+                      총 <strong>{watchAbsenceTotalDays}일</strong>
+                      {absenceExcludedSummary && <span className="text-slate-500 font-normal ml-1">({absenceExcludedSummary.replace('※ 결석 기간 중 ', '').replace(` (실제 수업일수: ${watchAbsenceTotalDays}일)`, '')} 제외)</span>}
+                    </p>
+                  )}
+                  {(errors as any).absencePeriod?.startDate && <p className="text-[11px] text-red-500">{(errors as any).absencePeriod.startDate.message}</p>}
+                </div>
+
+                {/* 결석 종류 */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">결석 종류 <span className="text-red-500">*</span></label>
+                  <select
+                    value={watch('absenceType')}
+                    onChange={(e) => setValue('absenceType', e.target.value as any)}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 bg-white"
+                  >
+                    <option value="병결">병결</option>
+                    <option value="미인정">미인정</option>
+                    <option value="출석인정">출석인정</option>
+                    <option value="기타">기타</option>
+                  </select>
+                </div>
+
+                {/* 결석 사유 */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">결석 사유 <span className="text-red-500">*</span></label>
+                  <textarea
+                    {...register('absenceReason')}
+                    placeholder="결석 사유를 자세히 입력해주세요."
+                    rows={4}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 resize-none placeholder:text-slate-400"
+                  />
+                  {(errors as any).absenceReason && <p className="text-[11px] text-red-500">{(errors as any).absenceReason.message}</p>}
+                </div>
+
+                {/* 누적 결석 현황 */}
+                {isLoadingLimits ? (
+                  <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-500 text-center">누적 현황 조회 중...</div>
+                ) : (
+                  <div className={`rounded-lg px-3 py-2 text-xs flex justify-between items-center ${isOverAbsenceLimit ? 'bg-red-50 text-red-700' : 'bg-slate-50 text-slate-600'}`}>
+                    <span className="font-medium">올해 누적 결석</span>
+                    <span className="font-bold">{accumulatedAbsenceDays}일 + 신청 {watchAbsenceTotalDays}일 = {accumulatedAbsenceDays + Number(watchAbsenceTotalDays)}일 / 63일</span>
+                  </div>
+                )}
+                {isOverAbsenceLimit && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    한해 총 결석 63일 초과 시 진급이 불가할 수 있습니다.
+                  </div>
+                )}
+              </>
+            ) : currentType === 'field-trip-report' ? (
+              <>
+                {/* 결과보고서 - 모바일 */}
+                <div className="text-center pb-2 border-b border-slate-100">
+                  <h2 className="text-base font-bold text-slate-800">교외체험학습 결과보고서</h2>
+                  <p className="text-[11px] text-red-500 font-semibold mt-0.5">체험학습 종료 후 7일 이내 제출</p>
+                </div>
+                {originalApplyDoc && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                    <span className="font-bold text-slate-700">연동된 신청서:</span>
+                    <span className="ml-1 text-slate-600">{originalApplyDoc.docNo} ({originalApplyDoc.parentFormData?.tripPeriod?.startDate} ~ {originalApplyDoc.parentFormData?.tripPeriod?.endDate})</span>
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">보고서 제목 <span className="text-red-500">*</span></label>
+                  <input {...register('reportTitle')} placeholder="보고서 제목 입력" className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">결과 보고 내용 <span className="text-red-500">*</span></label>
+                  <textarea {...register('reportContent')} placeholder="체험학습의 결과 및 느낀 점을 작성해주세요." rows={6} className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 resize-none" />
+                </div>
+              </>
+            ) : (
+              <>
+                {/* 체험학습 신청서 - 모바일 카드 */}
+                <div className="text-center pb-2 border-b border-slate-100">
+                  <h2 className="text-base font-bold text-slate-800">교외체험학습 신청서</h2>
+                  <p className="text-[11px] text-red-500 font-semibold mt-0.5">체험학습 실시 7일 전 제출</p>
+                </div>
+
+                {/* 신청 기간 */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">신청 기간 <span className="text-red-500">*</span></label>
+                  <div className="flex items-center gap-2">
+                    <input type="date" {...register('tripPeriod.startDate')} className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-indigo-400" />
+                    <span className="text-slate-400 text-xs">~</span>
+                    <input type="date" {...register('tripPeriod.endDate')} className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-indigo-400" />
+                  </div>
+                  {watchFieldTripTotalDays > 0 && (
+                    <p className="text-[11px] text-indigo-600 font-semibold">총 <strong>{watchFieldTripTotalDays}일</strong> (주말·공휴일 제외 수업일수)</p>
+                  )}
+                  {(errors as any).tripPeriod?.startDate && <p className="text-[11px] text-red-500">{(errors as any).tripPeriod.startDate.message}</p>}
+                </div>
+
+                {/* 학습 형태 */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">학습 형태 <span className="text-red-500">*</span></label>
+                  <select
+                    value={watch('tripType')}
+                    onChange={(e) => setValue('tripType', e.target.value as any)}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 bg-white"
+                  >
+                    <option value="가족동반여행">가족동반여행</option>
+                    <option value="친인척 방문">친인척 방문</option>
+                    <option value="답사·견학 활동">답사·견학 활동</option>
+                    <option value="체험활동">체험활동</option>
+                    <option value="기타">기타</option>
+                  </select>
+                </div>
+
+                {/* 방문 장소 */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">방문 장소 <span className="text-red-500">*</span></label>
+                  <input
+                    {...register('destination')}
+                    placeholder="방문할 국가 및 도시명"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400"
+                  />
+                  {(errors as any).destination && <p className="text-[11px] text-red-500">{(errors as any).destination.message}</p>}
+                </div>
+
+                {/* 목적 */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">목적 <span className="text-red-500">*</span></label>
+                  <input
+                    {...register('purpose')}
+                    placeholder="체험학습을 통해 달성하고자 하는 목적"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400"
+                  />
+                  {(errors as any).purpose && <p className="text-[11px] text-red-500">{(errors as any).purpose.message}</p>}
+                </div>
+
+                {/* 학습 계획 */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">학습 계획 <span className="text-red-500">*</span></label>
+                  <textarea
+                    {...register('detailedPlan')}
+                    placeholder="일자별 이동 경로, 방문 장소 및 예상 활동"
+                    rows={4}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 resize-none placeholder:text-slate-400"
+                  />
+                  {(errors as any).detailedPlan && <p className="text-[11px] text-red-500">{(errors as any).detailedPlan.message}</p>}
+                </div>
+
+                {/* 보호자 정보 (자동 고정 표시) */}
+                <div className="bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-200 space-y-1">
+                  <p className="text-[11px] text-slate-500 font-medium">보호자 정보 (학부모 설정에서 자동 적용)</p>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-slate-500">성명:</span>
+                    <span className="font-bold text-slate-800">{profile?.parentName || '미설정'}</span>
+                    <span className="text-slate-400">|</span>
+                    <span className="text-slate-500">관계:</span>
+                    <span className="font-bold text-slate-800">{(profile as any)?.parentRelation || '미설정'}</span>
+                  </div>
+                  {(!(profile as any)?.parentRelation) && (
+                    <p className="text-[11px] text-amber-600">⚠ 설정 페이지에서 보호자 관계를 먼저 입력해 주세요.</p>
+                  )}
+                </div>
+
+                {/* 누적 체험학습 현황 */}
+                {isOverFieldTripLimit && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    연간 교외체험학습 허용 한도(20일)를 초과하여 신청할 수 없습니다.
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* 모바일 제출 버튼 */}
+            <div className="pt-2">
+              <Button type="submit" disabled={isSubmitting || isOverLimit} className="w-full h-11 font-bold bg-primary text-primary-foreground">
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                {currentType === 'field-trip-report' ? '결과보고서 제출' : '신청서 제출'}
+              </Button>
+            </div>
+          </div>
+          {/* ========== 모바일 전용 카드 UI 끝 ========== */}
+
+          {/* ========== 데스크탑 A4 서식 (sm 이상에서만 표시) ========== */}
+          <div className="hidden sm:block p-3.5 sm:p-6 md:p-[20mm] overflow-x-auto">
+            {currentType === 'absence' ? (
+              <div className="font-serif text-[10pt] sm:text-[11pt] text-black min-w-[280px]">
+              {/* 누적 결석 경고 알림 */}
+              <div className="bg-slate-50 border border-slate-200 p-2.5 sm:p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4 mb-4 sm:mb-6 print:hidden">
+                <div>
+                  <h5 className="font-bold text-slate-800 text-xs sm:text-sm">연간 누적 결석 현황 (올해)</h5>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">병결, 미인정, 기타 결석의 합계 (출석인정 제외)</p>
+                </div>
+                <div className="text-left sm:text-right">
+                  <span className="text-[10px] sm:text-xs text-muted-foreground block">누적 / 한도 (유급)</span>
+                  <span className={`text-xs sm:text-base md:text-sm font-black whitespace-nowrap ${isOverAbsenceLimit ? 'text-destructive' : 'text-slate-700'}`}>
                     {isLoadingLimits ? '...' : `${accumulatedAbsenceDays}일`}
                     {` + 신청 ${watchAbsenceTotalDays}일 = 총 ${accumulatedAbsenceDays + Number(watchAbsenceTotalDays)}일`}
                     {` / 63일`}
@@ -618,76 +848,81 @@ function ApplyForm() {
               </div>
 
               {isOverAbsenceLimit && (
-                <div className="bg-destructive/10 text-destructive p-4 rounded-lg text-sm font-semibold flex items-start gap-2 border border-destructive/20 mb-6 print:hidden">
-                  <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+                <div className="bg-destructive/10 text-destructive p-3 sm:p-4 rounded-lg text-xs sm:text-sm font-semibold flex items-start gap-2 border border-destructive/20 mb-4 sm:mb-6 print:hidden">
+                  <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 shrink-0 mt-0.5" />
                   <div>
                     <p className="font-bold">한해 총 결석 일수가 63일을 초과할 경우 교육과정 수료(진급)가 불가할 수 있습니다.</p>
                   </div>
                 </div>
               )}
 
-              <div className="mb-1 text-[9.5pt]">{'<서식 3>'}</div>
-              <div className="text-center mb-6">
-                <h1 className="text-2xl font-bold tracking-[0.5em] pl-[0.5em]">결 석 계</h1>
-                <p className="text-red-600 font-bold text-xs mt-1">(결석한 날부터 5일 이내 제출)</p>
+              <div className="mb-1 text-[8.5pt] sm:text-[9.5pt]">{'<서식 3>'}</div>
+              <div className="text-center mb-4 sm:mb-6">
+                <h1 className="text-xl sm:text-2xl font-bold tracking-[0.3em] sm:tracking-[0.5em] pl-[0.3em] sm:pl-[0.5em]">결 석 계</h1>
+                <p className="text-red-600 font-bold text-[11px] sm:text-xs mt-1">(결석한 날부터 5일 이내 제출)</p>
               </div>
 
-              <table className="w-full border-collapse border border-black leading-tight mb-4 text-xs md:text-sm [word-break:keep-all] [overflow-wrap:break-word]">
-                <tbody>
-                  <tr>
-                    <th className="border border-black bg-slate-50/50 py-2.5 w-[110px] font-bold text-center">결석 학생</th>
-                    <td className="border border-black px-3 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <span>학년 반 번 :</span>
-                        <input 
-                          {...register('gradeClassNumber')} 
-                          className={`flex-1 max-w-[150px] bg-transparent border-b border-gray-300 focus:border-black focus:outline-none text-center ${errors.gradeClassNumber ? 'border-destructive' : ''}`}
-                          placeholder="예: 4-4-2"
-                          readOnly={!!(profile?.studentGrade && profile?.studentClass && profile?.studentNumber)}
-                        />
-                        <span className="ml-4">성 명 :</span>
-                        <input 
-                          {...register('studentName')} 
-                          className={`flex-1 max-w-[150px] bg-transparent border-b border-gray-300 focus:border-black focus:outline-none font-bold text-center ${errors.studentName ? 'border-destructive' : ''}`}
-                          placeholder="학생 이름"
-                          readOnly={!!profile?.studentName}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-center">결석 기간</th>
-                    <td className="border border-black px-3 py-2.5">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <input type="date" {...register('absencePeriod.startDate')} className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none font-sans" />
-                        <span>~</span>
-                        <input type="date" {...register('absencePeriod.endDate')} className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none font-sans" />
-                        <span className="ml-2">대략 (</span>
-                        <input type="number" min="1" {...register('absencePeriod.totalDays')} className="w-10 text-center border-b border-gray-300 focus:border-black focus:outline-none font-bold font-sans" />
-                        <span>) 일간</span>
-                      </div>
-                      {absenceExcludedSummary && (
-                        <div className="mt-1.5 text-[8pt] text-indigo-700 font-sans bg-indigo-50/80 px-2 py-1 rounded border border-indigo-200/80 leading-relaxed font-medium">
-                          {absenceExcludedSummary}
+              <div className="overflow-x-auto -mx-1 sm:mx-0">
+                <table className="w-full border-collapse border border-black leading-tight mb-4 text-xs md:text-sm [word-break:keep-all] [overflow-wrap:break-word]">
+                  <tbody>
+                    <tr>
+                      <th className="border border-black bg-slate-50/50 py-2 sm:py-2.5 w-[85px] sm:w-[110px] font-bold text-center text-[11px] sm:text-xs">결석 학생</th>
+                      <td className="border border-black px-2 sm:px-3 py-2 sm:py-2.5">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[11px] sm:text-xs whitespace-nowrap">학년-반-번:</span>
+                            <input 
+                              {...register('gradeClassNumber')} 
+                              className={`flex-1 max-w-[120px] sm:max-w-[150px] bg-transparent border-b border-gray-300 focus:border-black focus:outline-none text-center text-xs sm:text-sm ${errors.gradeClassNumber ? 'border-destructive' : ''}`}
+                              placeholder="예: 4-4-2"
+                              readOnly={!!(profile?.studentGrade && profile?.studentClass && profile?.studentNumber)}
+                            />
+                          </div>
+                          <div className="flex items-center gap-1 sm:ml-4">
+                            <span className="text-[11px] sm:text-xs whitespace-nowrap">성 명:</span>
+                            <input 
+                              {...register('studentName')} 
+                              className={`flex-1 max-w-[120px] sm:max-w-[150px] bg-transparent border-b border-gray-300 focus:border-black focus:outline-none font-bold text-center text-xs sm:text-sm ${errors.studentName ? 'border-destructive' : ''}`}
+                              placeholder="학생 이름"
+                              readOnly={!!profile?.studentName}
+                            />
+                          </div>
                         </div>
-                      )}
-                    </td>
-                  </tr>
-                  <tr>
-                    <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-center">결석종류</th>
-                    <td className="border border-black px-3 py-2.5">
-                      <select 
-                        value={watch('absenceType')} 
-                        onChange={(e) => setValue('absenceType', e.target.value as any)} 
-                        className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none bg-transparent"
-                      >
-                        <option value="병결">병결</option>
-                        <option value="미인정">미인정</option>
-                        <option value="출석인정">출석인정</option>
-                        <option value="기타">기타</option>
-                      </select>
-                    </td>
-                  </tr>
+                      </td>
+                    </tr>
+                    <tr>
+                      <th className="border border-black bg-slate-50/50 py-2 sm:py-2.5 font-bold text-center text-[11px] sm:text-xs">결석 기간</th>
+                      <td className="border border-black px-2 sm:px-3 py-2 sm:py-2.5">
+                        <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 text-xs sm:text-sm">
+                          <input type="date" {...register('absencePeriod.startDate')} className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none font-sans text-xs" />
+                          <span>~</span>
+                          <input type="date" {...register('absencePeriod.endDate')} className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none font-sans text-xs" />
+                          <span className="ml-1 sm:ml-2">대략 (</span>
+                          <input type="number" min="1" {...register('absencePeriod.totalDays')} className="w-8 sm:w-10 text-center border-b border-gray-300 focus:border-black focus:outline-none font-bold font-sans text-xs sm:text-sm" />
+                          <span>) 일간</span>
+                        </div>
+                        {absenceExcludedSummary && (
+                          <div className="mt-1.5 text-[8pt] text-indigo-700 font-sans bg-indigo-50/80 px-2 py-1 rounded border border-indigo-200/80 leading-relaxed font-medium">
+                            {absenceExcludedSummary}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th className="border border-black bg-slate-50/50 py-2 sm:py-2.5 font-bold text-center text-[11px] sm:text-xs">결석종류</th>
+                      <td className="border border-black px-2 sm:px-3 py-2 sm:py-2.5">
+                        <select 
+                          value={watch('absenceType')} 
+                          onChange={(e) => setValue('absenceType', e.target.value as any)} 
+                          className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none bg-transparent text-xs sm:text-sm"
+                        >
+                          <option value="병결">병결</option>
+                          <option value="미인정">미인정</option>
+                          <option value="출석인정">출석인정</option>
+                          <option value="기타">기타</option>
+                        </select>
+                      </td>
+                    </tr>
                   <tr>
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-center">결석사유</th>
                     <td className="border border-black px-3 py-2.5">
@@ -729,6 +964,7 @@ function ApplyForm() {
                   </tr>
                 </tbody>
               </table>
+              </div>
 
               {/* 확인서 영역 */}
               <div className="text-center mb-2 print:hidden">
@@ -782,7 +1018,8 @@ function ApplyForm() {
                 <p className="text-red-600 font-bold text-xs">(체험학습 실시 후 7일 이내 제출)</p>
               </div>
 
-              <table className="w-full border-collapse border border-black leading-tight mb-4 text-center text-xs md:text-sm">
+              <div className="overflow-x-auto -mx-1 sm:mx-0">
+              <table className="w-full border-collapse border border-black leading-tight mb-4 text-center text-xs md:text-sm min-w-[500px]">
                 <colgroup>
                   <col style={{ width: '10%' }} />
                   <col style={{ width: '16%' }} />
@@ -902,6 +1139,7 @@ function ApplyForm() {
                   </tr>
                 </tbody>
               </table>
+              </div>
 
               <div className="text-xs text-gray-500 space-y-1 mt-4 font-sans font-normal leading-relaxed print:text-black">
                 <p>※ 보고서 제출 기한: 체험학습 종료 후 7일 이내</p>
@@ -910,16 +1148,16 @@ function ApplyForm() {
               </div>
             </div>
           ) : (
-            <div className="font-serif text-[10pt] text-black">
+            <div className="font-serif text-[10pt] text-black min-w-[280px]">
               {/* 누적 일수 경고 */}
-              <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex justify-between items-center gap-4 mb-6 print:hidden">
+              <div className="bg-slate-50 border border-slate-200 p-2.5 sm:p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4 mb-4 sm:mb-6 print:hidden">
                 <div>
-                  <h5 className="font-bold text-slate-800 text-sm">연간 누적 체험학습 현황 (올해)</h5>
-                  <p className="text-xs text-muted-foreground mt-0.5">출석인정 개인 교외체험학습 사용 현황</p>
+                  <h5 className="font-bold text-slate-800 text-xs sm:text-sm">연간 누적 체험학습 현황 (올해)</h5>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">출석인정 개인 교외체험학습 사용 현황</p>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs text-muted-foreground block">누적 / 한도 (연간)</span>
-                  <span className={`text-sm sm:text-base md:text-sm font-black whitespace-nowrap ${isOverFieldTripLimit ? 'text-destructive' : 'text-slate-700'}`}>
+                <div className="text-left sm:text-right">
+                  <span className="text-[10px] sm:text-xs text-muted-foreground block">누적 / 한도 (연간)</span>
+                  <span className={`text-xs sm:text-base md:text-sm font-black whitespace-nowrap ${isOverFieldTripLimit ? 'text-destructive' : 'text-slate-700'}`}>
                     {isLoadingLimits ? '...' : `${accumulatedFieldTripDays}일`}
                     {` + 신청 ${watchFieldTripTotalDays}일 = 총 ${accumulatedFieldTripDays + Number(watchFieldTripTotalDays)}일`}
                     {` / 20일`}
@@ -928,21 +1166,22 @@ function ApplyForm() {
               </div>
 
               {isOverFieldTripLimit && (
-                <div className="bg-destructive/10 text-destructive p-4 rounded-lg text-sm font-semibold flex items-start gap-2 border border-destructive/20 mb-6 print:hidden">
-                  <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+                <div className="bg-destructive/10 text-destructive p-3 sm:p-4 rounded-lg text-xs sm:text-sm font-semibold flex items-start gap-2 border border-destructive/20 mb-4 sm:mb-6 print:hidden">
+                  <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 shrink-0 mt-0.5" />
                   <div>
                     <p className="font-bold">연간 교외체험학습 허용 한도(20일)를 초과하여 신청할 수 없습니다.</p>
                   </div>
                 </div>
               )}
 
-              <div className="mb-1 text-[9.5pt]">{'<서식 1>'}</div>
-              <div className="text-center mb-5 space-y-1">
+              <div className="mb-1 text-[8.5pt] sm:text-[9.5pt]">{'<서식 1>'}</div>
+              <div className="text-center mb-4 sm:mb-5 space-y-1">
                 <h1 className="text-xl md:text-2xl font-bold whitespace-nowrap leading-snug">「학교장허가 교외체험학습」 신청서</h1>
-                <p className="text-red-600 font-bold text-xs">(체험학습 실시 7일전 제출)</p>
+                <p className="text-red-600 font-bold text-[11px] sm:text-xs">(체험학습 실시 7일전 제출)</p>
               </div>
 
-              <table className="w-full border-collapse border border-black leading-tight mb-4 text-center text-xs md:text-sm">
+              <div className="overflow-x-auto -mx-1 sm:mx-0">
+              <table className="w-full border-collapse border border-black leading-tight mb-4 text-center text-xs md:text-sm min-w-[500px]">
                 <colgroup>
                   <col style={{ width: '10%' }} />
                   <col style={{ width: '16%' }} />
@@ -1105,6 +1344,7 @@ function ApplyForm() {
                   </tr>
                 </tbody>
               </table>
+              </div>
 
               {/* 통보서 영역 */}
               <div className="text-center mb-2 print:hidden">
@@ -1135,6 +1375,9 @@ function ApplyForm() {
               {currentType === 'field-trip-report' ? '결과보고서 제출' : '신청서 제출'}
             </Button>
           </div>
+          </div>
+          {/* ========== 데스크탑 A4 서식 끝 ========== */}
+
         </form>
       </div>
 

@@ -132,8 +132,18 @@ function OvertimeBarChart({ data }: { data: { month: string; hours: number }[] }
 // ─────────────────────────────────────────────────────────────────────
 
 export default function InboxPage() {
-    const { user, profile } = useAuth();
+    const { user, profile, isParent } = useAuth();
     const router = useRouter();
+    
+    // 학생/학부모 계정 접근 차단 가드 (학생/학부모는 /parents 포털로 자동 안내)
+    useEffect(() => {
+        if (profile || user) {
+            const isStudentOrParent = isParent || profile?.role === '학부모' || profile?.role === '학생';
+            if (isStudentOrParent) {
+                router.replace('/parents');
+            }
+        }
+    }, [user, profile, isParent, router]);
     
     const [inboxDocs, setInboxDocs] = useState<ApprovalDoc[]>([]);
     const [pendingDocs, setPendingDocs] = useState<ApprovalDoc[]>([]);

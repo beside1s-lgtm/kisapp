@@ -89,12 +89,12 @@ export const AdminPageFilter = ({
     }, [showRouteStops, selectedBusId, routes, selectedDay, selectedRouteType, destinations, t]);
     
     return (
-        <Card className="mb-6">
-            <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:flex-wrap sm:items-end">
+        <Card className="mb-4 sm:mb-6">
+            <CardContent className="flex flex-col gap-2.5 sm:gap-4 p-3 sm:p-4 sm:flex-row sm:flex-wrap sm:items-end">
                 <div className="w-full sm:w-auto">
-                    <Label className="text-xs">{t('bus')}</Label>
+                    <Label className="text-[11px] sm:text-xs font-semibold text-slate-700">{t('bus')}</Label>
                     <Select value={selectedBusId || 'all'} onValueChange={setSelectedBusId}>
-                        <SelectTrigger className="w-full sm:w-[180px]">
+                        <SelectTrigger className="w-full sm:w-[180px] h-9 sm:h-10 text-xs sm:text-sm">
                             <SelectValue placeholder={t('select_bus')} />
                         </SelectTrigger>
                         <SelectContent position="popper" side="bottom" sideOffset={4} className="max-h-[40vh] overflow-y-auto">
@@ -108,9 +108,9 @@ export const AdminPageFilter = ({
                     </Select>
                 </div>
                 <div className="w-full sm:w-auto">
-                    <Label className="text-xs">{t('day')}</Label>
+                    <Label className="text-[11px] sm:text-xs font-semibold text-slate-700">{t('day')}</Label>
                     <Select value={selectedDay} onValueChange={(v) => setSelectedDay(v as DayOfWeek)}>
-                        <SelectTrigger className="w-full sm:w-[120px]">
+                        <SelectTrigger className="w-full sm:w-[120px] h-9 sm:h-10 text-xs sm:text-sm">
                             <SelectValue placeholder={t('select_day')} />
                         </SelectTrigger>
                         <SelectContent position="popper" side="bottom" sideOffset={4}>
@@ -123,19 +123,19 @@ export const AdminPageFilter = ({
                     </Select>
                 </div>
                 <div className="w-full sm:w-auto">
-                    <Label className="text-xs">{t('route')}</Label>
+                    <Label className="text-[11px] sm:text-xs font-semibold text-slate-700">{t('route')}</Label>
                     <Tabs value={selectedRouteType} onValueChange={(v) => setSelectedRouteType(v as RouteType)} className="w-full sm:w-[300px]">
-                        <TabsList className={cn("grid w-full", (selectedDay === 'Saturday' || semesterMode === 'vacation') ? "grid-cols-2" : "grid-cols-3")}>
-                            <TabsTrigger value="Morning">{t('route_type.morning')}</TabsTrigger>
-                            <TabsTrigger value="Afternoon">{t('route_type.afternoon')}</TabsTrigger>
-                            {(selectedDay !== 'Saturday' && semesterMode !== 'vacation') && <TabsTrigger value="AfterSchool">{t('route_type.after_school')}</TabsTrigger>}
+                        <TabsList className={cn("grid w-full h-9 sm:h-10 p-0.5", (selectedDay === 'Saturday' || semesterMode === 'vacation') ? "grid-cols-2" : "grid-cols-3")}>
+                            <TabsTrigger value="Morning" className="text-xs px-1">{t('route_type.morning')}</TabsTrigger>
+                            <TabsTrigger value="Afternoon" className="text-xs px-1">{t('route_type.afternoon')}</TabsTrigger>
+                            {(selectedDay !== 'Saturday' && semesterMode !== 'vacation') && <TabsTrigger value="AfterSchool" className="text-xs px-1">{t('route_type.after_school')}</TabsTrigger>}
                         </TabsList>
                     </Tabs>
                 </div>
                 {showRouteStops && currentRouteStops && (
                      <div className="flex-1 min-w-full sm:min-w-fit">
-                        <Label className="text-xs">{t('route')}</Label>
-                        <p className="text-sm p-2 bg-muted rounded-md truncate">{currentRouteStops}</p>
+                        <Label className="text-[11px] sm:text-xs font-semibold text-slate-700">{t('route')}</Label>
+                        <p className="text-xs sm:text-sm p-2 bg-muted rounded-md truncate">{currentRouteStops}</p>
                     </div>
                 )}
             </CardContent>
