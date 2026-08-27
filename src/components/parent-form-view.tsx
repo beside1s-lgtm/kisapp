@@ -77,26 +77,62 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
   // 승인자 목록 매핑 (직책 1줄 고정, 깔끔한 4칸 담임, 부장, 교감, 교장)
   const renderApprovers = () => {
     const slots = ['담임', '부장', '교감', '교장'];
+    const matchApprover = (targetRole: string) => {
+      return doc.approvers?.find(a => {
+        if (!a.role) return false;
+        const cleanRole = a.role.trim();
+        if (cleanRole === targetRole) return true;
+        if (targetRole === '부장') {
+          return cleanRole.includes('부장') || cleanRole === '교무부장' || cleanRole === '학년부장' || cleanRole === '연구부장' || cleanRole === '학생부장' || cleanRole === '부장교사';
+        }
+        if (targetRole === '담임') {
+          return cleanRole.includes('담임') || cleanRole.toLowerCase().includes('homeroom');
+        }
+        if (targetRole === '교감') {
+          return cleanRole.includes('교감') || cleanRole.toLowerCase().includes('vice') || cleanRole.toLowerCase().includes('vp');
+        }
+        if (targetRole === '교장') {
+          return (cleanRole.includes('교장') && !cleanRole.includes('교감')) || cleanRole.toLowerCase().includes('principal');
+        }
+        return cleanRole.includes(targetRole);
+      });
+    };
+
     return (
       <table className="border-collapse border border-black w-[240px] text-[8.5pt] ml-auto shrink-0 not-w-full" style={{ width: '240px' }}>
         <tbody>
           <tr>
             <th rowSpan={2} className="border border-black bg-slate-50/60 w-[24px] text-center font-bold px-0.5 text-[8pt] leading-tight">결<br/>재</th>
-            {slots.map((role, idx) => (
-              <th key={idx} className="border border-black bg-slate-50/60 text-center font-bold py-1 px-1 text-[8.5pt] whitespace-nowrap">{role}</th>
-            ))}
+            {slots.map((role, idx) => {
+              const matched = matchApprover(role);
+              const headerTitle = matched?.role && matched.role.length <= 4 ? matched.role : role;
+              return (
+                <th key={idx} className="border border-black bg-slate-50/60 text-center font-bold py-1 px-1 text-[8.5pt] whitespace-nowrap">
+                  {headerTitle}
+                </th>
+              );
+            })}
           </tr>
           <tr className="h-[52px]">
             {slots.map((role, idx) => {
-              const approver = doc.approvers?.find(a => a.role === role);
-              const signature = approver?.signature || (approver ? approverSignatures?.[approver.email.toLowerCase()] : undefined);
+              const approver = matchApprover(role);
+              const approverEmail = approver?.email?.trim().toLowerCase();
+              const signature = approver?.signature || (approverEmail ? approverSignatures?.[approverEmail] : undefined);
               return (
                 <td key={idx} className="border border-black text-center align-middle relative p-0.5 w-[54px]">
-                  {approver && approver.status === 'approved' && signature && (
-                    <>
-                      {approver.type === 'final' && <span className="absolute top-0 right-0 text-[7pt] text-red-600 font-bold bg-white/95 px-0.5 z-10 leading-none">전결</span>}
-                      <img src={signature} className="absolute inset-0 w-full h-full object-contain mix-blend-multiply p-0.5" alt="sig" />
-                    </>
+                  {approver && approver.status === 'approved' && (
+                    signature ? (
+                      <>
+                        {approver.type === 'final' && <span className="absolute top-0 right-0 text-[7pt] text-red-600 font-bold bg-white/95 px-0.5 z-10 leading-none">전결</span>}
+                        <img src={signature} className="absolute inset-0 w-full h-full object-contain mix-blend-multiply p-0.5" alt="sig" />
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full">
+                        {approver.type === 'final' && <span className="absolute top-0 right-0 text-[7pt] text-red-600 font-bold bg-white/95 px-0.5 z-10 leading-none">전결</span>}
+                        <span className="font-bold text-[8pt] text-slate-800 leading-tight">{approver.name || approver.approverName || '승인'}</span>
+                        <span className="text-[7pt] text-slate-500 font-normal">(서명)</span>
+                      </div>
+                    )
                   )}
                   {approver && approver.status === 'rejected' && <span className="text-red-500 font-bold text-[8pt]">반려</span>}
                 </td>

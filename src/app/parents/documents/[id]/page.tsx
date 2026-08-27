@@ -32,7 +32,7 @@ function MobileDocSummary({ documentData }: { documentData: ApprovalDoc }) {
   };
 
   return (
-    <div className="space-y-3 sm:hidden">
+    <div className="space-y-3 sm:hidden print:hidden">
       {/* 상단 헤더 */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4">
         <div className="flex items-center justify-between mb-2">
@@ -244,18 +244,18 @@ export default function ParentDocumentDetailPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto py-4 px-3 sm:py-8 sm:px-4">
+    <div className="max-w-4xl mx-auto py-4 px-3 sm:py-8 sm:px-4 print:p-0 print:m-0 print:max-w-none print:w-full">
       <div className="mb-3 sm:mb-4 print:hidden flex items-center gap-2">
         <Button asChild variant="ghost" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm">
           <Link href="/parents/history"><ArrowLeft className="w-3.5 h-3.5 mr-1.5" /> 목록으로 돌아가기</Link>
         </Button>
       </div>
 
-      {/* 모바일: 요약 카드 (sm 미만) */}
+      {/* 모바일: 요약 카드 (sm 미만, 인쇄 시 숨김) */}
       <MobileDocSummary documentData={documentData} />
 
-      {/* 데스크탑: 전체 서식 (sm 이상) */}
-      <div className="hidden sm:block">
+      {/* 데스크탑 및 인쇄: 전체 서식 */}
+      <div className="hidden sm:block print:block">
         <DocumentView initialDoc={documentData} initialConfig={configData} />
       </div>
     </div>

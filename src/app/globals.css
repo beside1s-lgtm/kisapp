@@ -132,11 +132,12 @@
   }
   html, body {
     width: 210mm !important;
-    height: 297mm !important;
+    height: auto !important;
+    min-height: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     background: white !important;
-    overflow: hidden !important;
+    overflow: visible !important;
   }
   .print\:hidden, .print-hidden {
     display: none !important;

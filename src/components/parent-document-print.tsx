@@ -77,6 +77,27 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
     // 4칸 직책 결재란
     const renderApprovers = () => {
       const slots = ['담임', '부장', '교감', '교장'];
+      const matchApprover = (targetRole: string) => {
+        return doc.approvers?.find(a => {
+          if (!a.role) return false;
+          const cleanRole = a.role.trim();
+          if (cleanRole === targetRole) return true;
+          if (targetRole === '부장') {
+            return cleanRole.includes('부장') || cleanRole === '교무부장' || cleanRole === '학년부장' || cleanRole === '연구부장' || cleanRole === '학생부장' || cleanRole === '부장교사';
+          }
+          if (targetRole === '담임') {
+            return cleanRole.includes('담임') || cleanRole.toLowerCase().includes('homeroom');
+          }
+          if (targetRole === '교감') {
+            return cleanRole.includes('교감') || cleanRole.toLowerCase().includes('vice') || cleanRole.toLowerCase().includes('vp');
+          }
+          if (targetRole === '교장') {
+            return (cleanRole.includes('교장') && !cleanRole.includes('교감')) || cleanRole.toLowerCase().includes('principal');
+          }
+          return cleanRole.includes(targetRole);
+        });
+      };
+
       return (
         <table style={{ borderCollapse: 'collapse', border: '1px solid #000', width: '240px', fontSize: '8.5pt', marginLeft: 'auto' }}>
           <tbody>
@@ -84,27 +105,44 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
               <th rowSpan={2} style={{ border: '1px solid #000', backgroundColor: '#f8fafc', width: '24px', textAlign: 'center', fontWeight: 'bold', padding: '2px', fontSize: '8pt', lineHeight: 1.1 }}>
                 결<br/>재
               </th>
-              {slots.map((role, idx) => (
-                <th key={idx} style={{ border: '1px solid #000', backgroundColor: '#f8fafc', textAlign: 'center', fontWeight: 'bold', padding: '3px 2px', fontSize: '8.5pt', whiteSpace: 'nowrap' }}>
-                  {role}
-                </th>
-              ))}
+              {slots.map((role, idx) => {
+                const matched = matchApprover(role);
+                const headerTitle = matched?.role && matched.role.length <= 4 ? matched.role : role;
+                return (
+                  <th key={idx} style={{ border: '1px solid #000', backgroundColor: '#f8fafc', textAlign: 'center', fontWeight: 'bold', padding: '3px 2px', fontSize: '8.5pt', whiteSpace: 'nowrap' }}>
+                    {headerTitle}
+                  </th>
+                );
+              })}
             </tr>
             <tr style={{ height: '50px' }}>
               {slots.map((role, idx) => {
-                const approver = doc.approvers?.find(a => a.role === role);
-                const signature = approver?.signature || (approver ? approverSignatures[approver.email.toLowerCase()] : undefined);
+                const approver = matchApprover(role);
+                const approverEmail = approver?.email?.trim().toLowerCase();
+                const signature = approver?.signature || (approverEmail && approverSignatures ? approverSignatures[approverEmail] : undefined);
                 return (
                   <td key={idx} style={{ border: '1px solid #000', textAlign: 'center', verticalAlign: 'middle', position: 'relative', padding: '2px', width: '54px' }}>
-                    {approver && approver.status === 'approved' && signature && (
-                      <>
-                        {approver.type === 'final' && (
-                          <span style={{ position: 'absolute', top: 0, right: 0, fontSize: '7pt', color: '#dc2626', fontWeight: 'bold', backgroundColor: 'rgba(255,255,255,0.95)', padding: '0 2px', zIndex: 10, lineHeight: 1 }}>
-                            전결
-                          </span>
-                        )}
-                        <img src={signature} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', mixBlendMode: 'multiply', padding: '2px' }} alt="sig" />
-                      </>
+                    {approver && approver.status === 'approved' && (
+                      signature ? (
+                        <>
+                          {approver.type === 'final' && (
+                            <span style={{ position: 'absolute', top: 0, right: 0, fontSize: '7pt', color: '#dc2626', fontWeight: 'bold', backgroundColor: 'rgba(255,255,255,0.95)', padding: '0 2px', zIndex: 10, lineHeight: 1 }}>
+                              전결
+                            </span>
+                          )}
+                          <img src={signature} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', mixBlendMode: 'multiply', padding: '2px' }} alt="sig" />
+                        </>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                          {approver.type === 'final' && (
+                            <span style={{ position: 'absolute', top: 0, right: 0, fontSize: '7pt', color: '#dc2626', fontWeight: 'bold', backgroundColor: 'rgba(255,255,255,0.95)', padding: '0 2px', zIndex: 10, lineHeight: 1 }}>
+                              전결
+                            </span>
+                          )}
+                          <span style={{ fontWeight: 'bold', fontSize: '8pt', color: '#1e293b', lineHeight: 1.1 }}>{approver.name || approver.approverName || '승인'}</span>
+                          <span style={{ fontSize: '7pt', color: '#64748b', fontWeight: 'normal' }}>(서명)</span>
+                        </div>
+                      )
                     )}
                     {approver && approver.status === 'rejected' && (
                       <span style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '8pt' }}>반려</span>
