@@ -248,24 +248,24 @@ export default function ParentsDashboard() {
 
       {/* 교외체험학습 및 출석 현황 현황판 */}
       {profile && (
-        <Card className="border border-slate-200/60 shadow-xs sm:shadow-sm bg-slate-50/50">
+        <Card className="border border-slate-200/60 shadow-xs sm:shadow-sm bg-slate-50/50 w-full min-w-0 overflow-hidden">
           <CardHeader className="p-3.5 sm:p-6 pb-2 sm:pb-3">
-            <CardTitle className="text-base sm:text-lg font-bold flex items-center gap-2">
+            <CardTitle className="text-base sm:text-lg font-bold flex items-center gap-2 flex-wrap">
               <GraduationCap className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-600 shrink-0" />
-              <span className="truncate">{profile.studentName || '자녀'} 학생 출결 및 체험학습 현황</span>
+              <span className="break-words">{profile.studentName ? `${profile.studentName} ` : ''}{t('parents.stats_title') || '학생 출결 및 체험학습 현황'}</span>
             </CardTitle>
-            <CardDescription className="text-[11px] sm:text-xs">
-              학년도 연간 총 수업일수 기준 한도 설정 현황입니다. (올해 기준 수업일수: {config?.annualSchoolDays || 190}일)
+            <CardDescription className="text-[11px] sm:text-xs break-words">
+              {t('parents.stats_desc') || '학년도 연간 총 수업일수 기준 한도 설정 현황입니다.'} (수업일수: {config?.annualSchoolDays || 190}일)
             </CardDescription>
           </CardHeader>
           <CardContent className="p-3.5 sm:p-6 pt-0 sm:pt-0 grid gap-3 sm:gap-6 md:grid-cols-2">
             {/* 교외체험학습 한도 카드 */}
-            <div className="bg-white border rounded-xl p-3 sm:p-4 shadow-xs space-y-2.5 sm:space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-xs sm:text-sm text-slate-700">체험학습 사용 일수</span>
-                <span className="text-[10px] sm:text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">연간 10% 한도</span>
+            <div className="bg-white border rounded-xl p-3 sm:p-4 shadow-xs space-y-2.5 sm:space-y-3 w-full min-w-0">
+              <div className="flex justify-between items-center gap-1 flex-wrap">
+                <span className="font-semibold text-xs sm:text-sm text-slate-700">{t('parents.field_trip_used') || '체험학습 사용 일수'}</span>
+                <span className="text-[10px] sm:text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{t('parents.field_trip_limit') || '연간 10% 한도'}</span>
               </div>
-              <div className="flex justify-between items-baseline">
+              <div className="flex justify-between items-baseline gap-1 flex-wrap">
                 <span className="text-xl sm:text-2xl font-black text-slate-800">
                   {accumulatedFieldTripDays}일 <span className="text-[11px] sm:text-xs font-normal text-slate-400">사용</span>
                 </span>
@@ -283,12 +283,12 @@ export default function ParentsDashboard() {
             </div>
 
             {/* 결석 한도 카드 */}
-            <div className="bg-white border rounded-xl p-3 sm:p-4 shadow-xs space-y-2.5 sm:space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-xs sm:text-sm text-slate-700">누적 결석 일수</span>
-                <span className="text-[10px] sm:text-xs font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">수업일수 2/3 출석 의무</span>
+            <div className="bg-white border rounded-xl p-3 sm:p-4 shadow-xs space-y-2.5 sm:space-y-3 w-full min-w-0">
+              <div className="flex justify-between items-center gap-1 flex-wrap">
+                <span className="font-semibold text-xs sm:text-sm text-slate-700">{t('parents.absence_used') || '누적 결석 일수'}</span>
+                <span className="text-[10px] sm:text-xs font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">{t('parents.absence_limit') || '수업일수 2/3 출석 의무'}</span>
               </div>
-              <div className="flex justify-between items-baseline">
+              <div className="flex justify-between items-baseline gap-1 flex-wrap">
                 <span className="text-xl sm:text-2xl font-black text-rose-600">
                   {accumulatedAbsenceDays}일 <span className="text-[11px] sm:text-xs font-normal text-slate-400">결석</span>
                 </span>
@@ -411,9 +411,15 @@ export default function ParentsDashboard() {
                     {t('parents.bus_apply_closed') || '탑승 신청 (기간 종료)'}
                   </Button>
                 )}
-                <Button variant="outline" className="flex-1 font-bold border-amber-200 text-amber-700 hover:bg-amber-50 h-9 sm:h-10 text-xs sm:text-sm" asChild>
-                  <Link href="/parents/bus/student">{t('parents.bus_status_btn') || '자녀 탑승 조회'}</Link>
-                </Button>
+                {busInfoText !== '버스 미탑승' ? (
+                  <Button variant="outline" className="flex-1 font-bold border-amber-200 text-amber-700 hover:bg-amber-50 h-9 sm:h-10 text-xs sm:text-sm" asChild>
+                    <Link href="/parents/bus/student">{t('parents.bus_status_btn') || '자녀 탑승 조회'}</Link>
+                  </Button>
+                ) : (
+                  <Button variant="outline" className="flex-1 font-bold border-slate-200 text-slate-600 hover:bg-slate-50 h-9 sm:h-10 text-xs sm:text-sm" asChild>
+                    <Link href="/parents/bus">{t('parents.bus_title') || '스쿨버스 안내'}</Link>
+                  </Button>
+                )}
               </div>
               {!config?.isBusApplyActive && (
                 <p className="text-[11px] sm:text-xs text-amber-600 text-center font-medium bg-amber-50 border border-amber-200/50 py-1.5 rounded-lg">
@@ -466,26 +472,26 @@ export default function ParentsDashboard() {
 
 
       {/* 맨 하단: 2026학년도 학사 일정 캘린더 동기화 배너 */}
-      <div className="pt-2">
+      <div className="pt-2 w-full min-w-0">
         <div 
           onClick={() => window.dispatchEvent(new CustomEvent('openAcademicCalendarSyncModal'))}
-          className="group cursor-pointer p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-50/90 via-blue-50/70 to-slate-50/90 border border-indigo-200/80 hover:border-indigo-400 hover:shadow-md transition-all duration-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+          className="group cursor-pointer p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-50/90 via-blue-50/70 to-slate-50/90 border border-indigo-200/80 hover:border-indigo-400 hover:shadow-md transition-all duration-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 w-full min-w-0"
         >
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
             <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-xs shrink-0 group-hover:scale-105 transition-transform">
               <Calendar className="w-5 h-5" />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-extrabold text-slate-900 text-sm sm:text-base">
-                  2026학년도 학교 학사 일정 캘린더 동기화
+                <span className="font-extrabold text-slate-900 text-sm sm:text-base break-words">
+                  {t('parents.calendar_sync_title') || '2026학년도 학교 학사 일정 캘린더 동기화'}
                 </span>
-                <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 text-[10px] font-bold border-indigo-200">
-                  학부모 공유
+                <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 text-[10px] font-bold border-indigo-200 shrink-0">
+                  {t('parents.calendar_sync_badge') || '학부모 공유'}
                 </Badge>
               </div>
-              <p className="text-xs text-slate-600 mt-0.5">
-                학기 및 방학 운영 기간, 재량휴업일, 학교 행사를 내 구글/스마트폰 캘린더에 연동합니다.
+              <p className="text-xs text-slate-600 mt-0.5 break-words">
+                {t('parents.calendar_sync_desc') || '학기 및 방학 운영 기간, 재량휴업일, 학교 행사를 내 구글/스마트폰 캘린더에 연동합니다.'}
               </p>
             </div>
           </div>
@@ -495,7 +501,7 @@ export default function ParentsDashboard() {
             className="h-9 px-4 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs shrink-0 whitespace-nowrap self-stretch sm:self-auto"
           >
             <Calendar className="w-3.5 h-3.5 mr-1.5" />
-            학사일정 캘린더 연동
+            {t('parents.calendar_sync_btn') || '학사일정 캘린더 연동'}
           </Button>
         </div>
       </div>

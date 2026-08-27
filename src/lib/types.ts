@@ -120,6 +120,24 @@ export interface AcademicCalendarConfig {
     lastPublishedAt?: string; // 전체 사용자 공유 발송 시각 ISO
 }
 
+export interface FieldTripBlackoutPeriod {
+  id: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string;   // YYYY-MM-DD
+  reason: string;    // e.g. "개학·입학식 실시 후 7일"
+}
+
+export const DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS: FieldTripBlackoutPeriod[] = [
+  { id: 'bp-1', startDate: '2026-03-02', endDate: '2026-03-06', reason: '개학·입학식 실시 후 7일' },
+  { id: 'bp-2', startDate: '2026-04-17', endDate: '2026-04-23', reason: '재량휴업일 실시 전 7일' },
+  { id: 'bp-3', startDate: '2026-05-04', endDate: '2026-05-08', reason: '재량휴업일 실시 후 7일' },
+  { id: 'bp-4', startDate: '2026-07-08', endDate: '2026-07-14', reason: '여름방학 실시 전 7일' },
+  { id: 'bp-5', startDate: '2026-08-18', endDate: '2026-08-24', reason: '개학식 후 7일' },
+  { id: 'bp-6', startDate: '2026-10-12', endDate: '2026-10-16', reason: '재량휴업일 실시 전 7일' },
+  { id: 'bp-7', startDate: '2026-10-26', endDate: '2026-10-30', reason: '재량휴업일 실시 후 7일' },
+  { id: 'bp-8', startDate: '2027-01-04', endDate: '2027-01-07', reason: '졸업식, 종업식 전 7일' },
+];
+
 export type DocConfig = {
     address?: string;
     phone?: string;
@@ -141,6 +159,7 @@ export type DocConfig = {
     afterschoolStageStatus?: 'RECRUITING' | 'APPLYING' | 'CONFIRMED' | 'OPERATING' | 'CLOSED';
     isAfterschoolFinalized?: boolean; // 수강신청 최종 확정 여부
     afterschoolFinalizedAt?: string; // 최종 확정 일시
+    fieldTripBlackoutPeriods?: FieldTripBlackoutPeriod[]; // 체험학습 불인정(신청 불가) 기간 설정
 };
 
 export type Department = {

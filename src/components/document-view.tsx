@@ -6,11 +6,11 @@ import { useToast } from '@/hooks/use-toast';
 import { approveDocument, rejectDocument, recallDocument, deleteDocument } from '@/lib/services/documentService';
 import { getUserProfileByEmail } from '@/lib/services/userService';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, Paperclip, Trash2, Lock, Download, FileCheck } from 'lucide-react';
+import { CheckCircle2, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, Paperclip, Trash2, Lock, Download, FileCheck, Printer } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition, useEffect } from 'react';
 import Link from 'next/link'; 
-import { useRouter } from 'next/navigation'; 
+import { useRouter, usePathname } from 'next/navigation'; 
 import { exportA4PagesToPdf } from '@/lib/pdf-export'; 
 import {
     AlertDialog,
@@ -38,6 +38,7 @@ type DocumentViewProps = {
 
 export default function DocumentView({ initialDoc, initialConfig }: DocumentViewProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, profile } = useAuth();
   const { toast } = useToast();
   const [isApproving, startApproveTransition] = useTransition();
@@ -358,6 +359,11 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
              (userName && cName && cName === userName);
   }) ?? false;
 
+  const isParentPortal = Boolean(
+    pathname?.startsWith('/parents') || 
+    (profile?.role === '학부모' && !pathname?.startsWith('/documents'))
+  );
+
   let hasViewPermission = false;
   if (profile.isAdmin) hasViewPermission = true;
   else if (initialDoc.docType === 'parent') hasViewPermission = true;
@@ -639,15 +645,15 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
 
   return (
-    <div className="relative w-full bg-muted/30 py-8 min-h-screen print:bg-white print:py-0 print:min-h-0 print:block">
-        <div className={`print:hidden flex justify-end gap-2 mb-6 ${containerMaxWidth} mx-auto px-4`}>
+    <div className="relative w-full bg-muted/30 py-4 sm:py-8 min-h-screen print:bg-white print:py-0 print:min-h-0 print:block">
+        <div className={`print:hidden flex flex-wrap justify-between sm:justify-end items-center gap-2 mb-4 sm:mb-6 ${containerMaxWidth} mx-auto px-2 sm:px-4`}>
              {process.env.NODE_ENV === 'development' && initialDoc.status === 'pending' && (
-                 <div className="flex gap-2 p-1 border border-amber-200 bg-amber-50 rounded-xl shadow-inner mr-auto items-center">
-                     <span className="text-[10px] text-amber-800 font-bold px-2">🛠️ 개발자 우회 결재:</span>
+                 <div className="w-full sm:w-auto flex flex-wrap gap-1.5 p-1 border border-amber-200 bg-amber-50 rounded-xl shadow-inner sm:mr-auto items-center">
+                     <span className="text-[10px] text-amber-800 font-bold px-1.5">🛠️ 우회 결재:</span>
                      <Button 
                          variant="outline" 
                          onClick={handleBypassApprove}
-                         className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-8 px-3 border-none font-bold rounded-lg"
+                         className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-7 px-2.5 border-none font-bold rounded-lg"
                          disabled={isApproving}
                      >
                          {isApproving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
@@ -656,7 +662,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                      <Button 
                          variant="outline" 
                          onClick={handleBypassReject}
-                         className="bg-red-600 hover:bg-red-700 text-white text-xs h-8 px-3 border-none font-bold rounded-lg"
+                         className="bg-red-600 hover:bg-red-700 text-white text-xs h-7 px-2.5 border-none font-bold rounded-lg"
                          disabled={isRejecting}
                      >
                          강제 반려
@@ -664,102 +670,117 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                  </div>
              )}
 
-            {canRecall && (
-                <AlertDialog>
-                    <AlertDialogTrigger asChild><Button variant="outline" disabled={isRecalling}>회수하기</Button></AlertDialogTrigger>
-                    <AlertDialogContent>
-                        <AlertDialogHeader><AlertDialogTitle>회수하시겠습니까?</AlertDialogTitle></AlertDialogHeader>
-                        <AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction onClick={handleRecall}>확인</AlertDialogAction></AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
-            )}
+            <div className="flex items-center gap-2 ml-auto flex-wrap">
+              {canRecall && (
+                  <AlertDialog>
+                      <AlertDialogTrigger asChild><Button variant="outline" size="sm" className="h-8 text-xs font-bold" disabled={isRecalling}>회수하기</Button></AlertDialogTrigger>
+                      <AlertDialogContent>
+                          <AlertDialogHeader><AlertDialogTitle>회수하시겠습니까?</AlertDialogTitle></AlertDialogHeader>
+                          <AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction onClick={handleRecall}>확인</AlertDialogAction></AlertDialogFooter>
+                      </AlertDialogContent>
+                  </AlertDialog>
+              )}
 
-            {(isRecalled || isRejected) && isRequester && (
-                <>
-                <Button asChild variant="default" className="shadow-sm cursor-pointer bg-primary hover:bg-primary/90 text-primary-foreground font-bold">
-                    <Link href={
-                      initialDoc.docType === 'parent' 
-                        ? `/parents/apply?type=${initialDoc.parentFormData?.type || 'field-trip'}&cloneId=${initialDoc.id}`
-                        : initialDoc.docType === 'teacher-duty'
-                        ? `/teacher/duty?cloneId=${initialDoc.id}`
-                        : initialDoc.docType === 'teacher-overtime'
-                        ? `/teacher/overtime?cloneId=${initialDoc.id}`
-                        : initialDoc.docType === 'teacher-afterschool'
-                        ? `/teacher/afterschool/new?cloneId=${initialDoc.id}`
-                        : `/edit/${initialDoc.id}`
-                    }>
-                        <Edit className="mr-2 h-4 w-4" />
-                        수정 및 재기안
-                    </Link>
-                </Button>
-                <Button variant="destructive" className="shadow-sm cursor-pointer font-bold" onClick={handleDelete} disabled={isDeleting}>
-                    {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                    삭제
-                </Button>
-                </>
-            )}
+              {(isRecalled || isRejected) && isRequester && (
+                  <>
+                  <Button asChild variant="default" size="sm" className="h-8 text-xs shadow-sm cursor-pointer bg-primary hover:bg-primary/90 text-primary-foreground font-bold">
+                      <Link href={
+                        initialDoc.docType === 'parent' 
+                          ? `/parents/apply?type=${initialDoc.parentFormData?.type || 'field-trip'}&cloneId=${initialDoc.id}`
+                          : initialDoc.docType === 'teacher-duty'
+                          ? `/teacher/duty?cloneId=${initialDoc.id}`
+                          : initialDoc.docType === 'teacher-overtime'
+                          ? `/teacher/overtime?cloneId=${initialDoc.id}`
+                          : initialDoc.docType === 'teacher-afterschool'
+                          ? `/teacher/afterschool/new?cloneId=${initialDoc.id}`
+                          : `/edit/${initialDoc.id}`
+                      }>
+                          <Edit className="mr-1.5 h-3.5 w-3.5" />
+                          수정 및 재기안
+                      </Link>
+                  </Button>
+                  <Button variant="destructive" size="sm" className="h-8 text-xs shadow-sm cursor-pointer font-bold" onClick={handleDelete} disabled={isDeleting}>
+                      {isDeleting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1.5 h-3.5 w-3.5" />}
+                      삭제
+                  </Button>
+                  </>
+              )}
 
-            {isApproved && isRequester && (
-                <Button asChild variant="default" className="shadow-sm cursor-pointer">
-                    <Link href={
-                      initialDoc.docType === 'parent' 
-                        ? `/parents/apply?type=${initialDoc.parentFormData?.type || 'field-trip'}&cloneId=${initialDoc.id}`
-                        : initialDoc.docType === 'teacher-duty'
-                        ? `/teacher/duty?cloneId=${initialDoc.id}`
-                        : initialDoc.docType === 'teacher-overtime'
-                        ? `/teacher/overtime?cloneId=${initialDoc.id}`
-                        : initialDoc.docType === 'teacher-afterschool'
-                        ? `/teacher/afterschool/new?cloneId=${initialDoc.id}`
-                        : `/new?cloneId=${initialDoc.id}`
-                    }>
-                        <CopyPlus className="mr-2 h-4 w-4" />
-                        재기안 (복사 작성)
-                    </Link>
-                </Button>
-            )}
+              {isApproved && isRequester && (
+                  <Button asChild variant="default" size="sm" className="h-8 text-xs shadow-sm cursor-pointer font-bold">
+                      <Link href={
+                        initialDoc.docType === 'parent' 
+                          ? `/parents/apply?type=${initialDoc.parentFormData?.type || 'field-trip'}&cloneId=${initialDoc.id}`
+                          : initialDoc.docType === 'teacher-duty'
+                          ? `/teacher/duty?cloneId=${initialDoc.id}`
+                          : initialDoc.docType === 'teacher-overtime'
+                          ? `/teacher/overtime?cloneId=${initialDoc.id}`
+                          : initialDoc.docType === 'teacher-afterschool'
+                          ? `/teacher/afterschool/new?cloneId=${initialDoc.id}`
+                          : `/new?cloneId=${initialDoc.id}`
+                      }>
+                          <CopyPlus className="mr-1.5 h-3.5 w-3.5" />
+                          재기안 (복사)
+                      </Link>
+                  </Button>
+              )}
 
-            {isMyTurn && (
-                <Button asChild variant="outline" className="shadow-sm bg-white hover:bg-gray-100 cursor-pointer">
-                    <Link href={
-                      initialDoc.docType === 'parent' 
-                        ? `/parents/apply?type=${initialDoc.parentFormData?.type || 'field-trip'}&cloneId=${initialDoc.id}`
-                        : initialDoc.docType === 'teacher-duty'
-                        ? `/teacher/duty?cloneId=${initialDoc.id}`
-                        : initialDoc.docType === 'teacher-overtime'
-                        ? `/teacher/overtime?cloneId=${initialDoc.id}`
-                        : initialDoc.docType === 'teacher-afterschool'
-                        ? `/teacher/afterschool/new?cloneId=${initialDoc.id}`
-                        : `/edit/${initialDoc.id}`
-                    }>
-                        <Edit className="mr-2 h-4 w-4" />
-                        내용 수정
-                    </Link>
-                </Button>
-            )}
+              {isMyTurn && (
+                  <Button asChild variant="outline" size="sm" className="h-8 text-xs shadow-sm bg-white hover:bg-gray-100 cursor-pointer font-bold">
+                      <Link href={
+                        initialDoc.docType === 'parent' 
+                          ? `/parents/apply?type=${initialDoc.parentFormData?.type || 'field-trip'}&cloneId=${initialDoc.id}`
+                          : initialDoc.docType === 'teacher-duty'
+                          ? `/teacher/duty?cloneId=${initialDoc.id}`
+                          : initialDoc.docType === 'teacher-overtime'
+                          ? `/teacher/overtime?cloneId=${initialDoc.id}`
+                          : initialDoc.docType === 'teacher-afterschool'
+                          ? `/teacher/afterschool/new?cloneId=${initialDoc.id}`
+                          : `/edit/${initialDoc.id}`
+                      }>
+                          <Edit className="mr-1.5 h-3.5 w-3.5" />
+                          내용 수정
+                      </Link>
+                  </Button>
+              )}
 
-            {/* 체험학습 승인 완료시 통보서 받기 버튼 */}
-            {initialDoc.docType === 'parent' && initialDoc.parentFormData?.type === 'field-trip' && initialDoc.status === 'approved' && (
-                <Button 
-                    variant="outline" 
-                    type="button" 
-                    onClick={() => setShowNotificationModal(true)}
-                    className="cursor-pointer shadow-sm bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border-indigo-200"
-                >
-                    <FileCheck className="mr-2 h-4 w-4 text-indigo-600" />
-                    통보서 받기
-                </Button>
-            )}
+              {/* 체험학습 승인 완료시 통보서 받기 버튼 */}
+              {initialDoc.docType === 'parent' && initialDoc.parentFormData?.type === 'field-trip' && initialDoc.status === 'approved' && (
+                  <Button 
+                      variant="outline" 
+                      size="sm"
+                      type="button" 
+                      onClick={() => setShowNotificationModal(true)}
+                      className="h-8 text-xs cursor-pointer shadow-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border-indigo-200"
+                  >
+                      <FileCheck className="mr-1.5 h-3.5 w-3.5 text-indigo-600" />
+                      통보서 받기
+                  </Button>
+              )}
 
-            <Button 
-                variant="default" 
-                type="button" 
-                onClick={handlePdfDownload}
-                disabled={isPdfGenerating}
-                className="cursor-pointer shadow-sm bg-blue-600 hover:bg-blue-700 text-white font-bold"
-            >
-                {isPdfGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                {isPdfGenerating ? (pdfStatusText || 'PDF 생성 중...') : 'PDF 다운로드'}
-            </Button>
+              <Button 
+                  variant="outline" 
+                  size="sm"
+                  type="button" 
+                  onClick={() => window.print()}
+                  className="h-8 text-xs cursor-pointer shadow-xs bg-white hover:bg-slate-50 text-slate-700 font-bold border-slate-300"
+              >
+                  <Printer className="mr-1.5 h-3.5 w-3.5 text-slate-600" />
+                  인쇄 / 브라우저 저장
+              </Button>
+
+              <Button 
+                  variant="default" 
+                  size="sm"
+                  type="button" 
+                  onClick={handlePdfDownload}
+                  disabled={isPdfGenerating}
+                  className="h-8 text-xs cursor-pointer shadow-xs bg-blue-600 hover:bg-blue-700 text-white font-bold"
+              >
+                  {isPdfGenerating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}
+                  {isPdfGenerating ? (pdfStatusText || 'PDF 생성 중...') : 'PDF 다운로드'}
+              </Button>
+            </div>
         </div>
 
         {/* ── 반려 사유 상단 안내 배너 (화면 전용, 인쇄시 숨김) ── */}
@@ -837,6 +858,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                   teacherData={teacherConfirmData}
                   onTeacherDataChange={setTeacherConfirmData}
                   approverSignatures={approverSignatures}
+                  isParentPortal={isParentPortal}
                 />
             </div>
         ) : (

@@ -1,8 +1,8 @@
-import html2canvas from 'html2canvas';
+import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 
 /**
- * 화면에 렌더링된 DOM 요소(페이지별)를 고해상도(scale 2)로 캡처하여
+ * 화면에 렌더링된 DOM 요소(페이지별)를 브라우저 실제 픽셀 그대로 고해상도(scale 2)로 캡처하여
  * 정확히 210mm x 297mm (A4) 규격의 멀티페이지 PDF 파일로 생성 및 다운로드합니다.
  */
 export async function exportA4PagesToPdf(
@@ -23,24 +23,21 @@ export async function exportA4PagesToPdf(
 
   for (let i = 0; i < pageElements.length; i++) {
     const el = pageElements[i];
-    if (onProgress) onProgress(`[${i + 1}/${pageElements.length}] 페이지 렌더링 중...`);
+    if (onProgress) onProgress(`[${i + 1}/${pageElements.length}] 화면 그대로 고화질 캡처 중...`);
 
-    const canvas = await html2canvas(el, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      logging: false,
+    // 브라우저 렌더링 엔진(SVG foreignObject)을 통해 화면 픽셀 그대로 완벽 복제
+    const dataUrl = await toPng(el, {
+      pixelRatio: 2.5,
       backgroundColor: '#ffffff',
+      cacheBust: true,
     });
-
-    const imgData = canvas.toDataURL('image/jpeg', 0.98);
 
     if (i > 0) {
       pdf.addPage('a4', 'portrait');
     }
 
-    // A4 크기 (210mm x 297mm)에 오차 없이 정확히 채움
-    pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+    // A4 크기 (210mm x 297mm)에 오차 없이 1:1 배치
+    pdf.addImage(dataUrl, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
   }
 
   if (onProgress) onProgress('PDF 다운로드 완료!');

@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { onAfterschoolTimerUpdate, onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsUpdate } from '@/lib/services/settingsService';
 import type { GlobalTimerConfig } from '@/lib/afterschool/types';
+import { useTranslation } from '@/hooks/use-translation';
 
 import {
   initialCourses,

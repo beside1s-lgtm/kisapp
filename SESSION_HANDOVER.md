@@ -4,43 +4,35 @@
 
 ## 1. Current Status (현재 상태)
 
-### 1) 부장 결재인 누락 및 인쇄 시 1페이지 빈 페이지(공백) 버그 완벽 해결
-* **[문제 1] 부장 결재인 누락 원인 및 조치**:
-  1. 결재선의 `role: '교무부장'` 또는 `role: '학년부장'`이 `parent-form-view.tsx` 및 `parent-document-print.tsx`의 4칸 결재란(`['담임', '부장', '교감', '교장']`)에서 `matchApprover`를 통해 완벽히 매칭되도록 수정.
-  2. 만약 결재자 계정에 서명/도장 이미지가 아직 등록되지 않은 상태에서 승인한 경우에도 결재란이 빈칸으로 남지 않고 `[이름 (서명)]` 텍스트가 명확하게 표출되도록 fallback 로직 완비.
-* **[문제 2] 인쇄/PDF 출력물에 첫 페이지로 빈 페이지가 끼는 버그 원인 및 조치**:
-  1. `src/app/parents/documents/[id]/page.tsx`에서 모바일용 요약 카드(`MobileDocSummary`)에 `print:hidden`이 누락되어 인쇄 시 요약 카드가 1페이지 상단에 출력되고 정식 신청서가 2페이지로 밀려나던 구조적 버그 발견 및 해결.
-  2. `src/app/(app)/layout.tsx`에서 인쇄 시 상단 여백(`pt-14 sm:pt-16`)이 `print:pt-0`으로 제거되도록 수정.
-  3. `src/app/globals.css`의 `html, body` 인쇄 스타일에서 `height: 297mm; overflow: hidden;`을 `height: auto; min-height: 100%; overflow: visible;`로 정상화하여 멀티페이지 및 단일페이지 인쇄 오차 방지.
+### 1) 학부모 서식 A4 규격 및 레이아웃 최적화 완료
+- **교외체험학습 계획 셀 세로 높이 축소**: 기존 `245px` → `170px` (약 20mm 축소)로 최적화하여 하단 바닥글 및 유의사항, 원본대조필 직인이 A4 1페이지 내에 100% 안전하게 안착되도록 조정.
+- **불인정 기간 표 여백 및 정렬**: 표 외곽 `padding: 2mm` 및 상단 안내문구 `marginBottom: 2mm` 적용으로 외곽선과 텍스트의 2mm 간격 확보.
+- **모든 표 셀 수직 중앙 정렬**: 모든 단일행 셀에 `display: flex; align-items: center;` 컨테이너를 적용하여 텍스트가 셀 바닥에 가라앉지 않고 수직 정중앙에 정렬되도록 개선.
 
-### 2) 빌드 검증
-* `npm run build`: 39개 전체 페이지 컴파일 통과.
-* `npm run dev`: 백그라운드 정상 가동 중.
+### 2) PDF 내보내기 엔진 1:1 화면 캡처(`html-to-image`)로 전면 교체
+- 기존 `html2canvas`의 가상 뷰포트 재렌더링에 따른 폰트/레이아웃 밀림 및 잘림 문제를 근본적으로 해결.
+- 브라우저의 실제 렌더링 픽셀(Computed Style 및 폰트)을 그대로 캡처하는 `html-to-image` 기반으로 `src/lib/pdf-export.ts`를 교체하여, 사용자가 브라우저에서 보는 모습과 1:1로 일치하는 고해상도 PDF 다운로드 구현.
+- 브라우저 네이티브 인쇄 및 'PDF로 저장'을 위한 `[인쇄 / 브라우저 저장]` 버튼 추가.
+
+### 3) 원본대조필 직인 노출 권한 및 경로 격리 (학부모 전용)
+- **[학교 보관용 원본 (교직원/관리자 문서함)]**: 원본대조필 직인이 표시되지 않음 (`isParentPortal = false`).
+- **[학부모 포털 & 학부모 출력물]**: 결재 완료(`approved`) 시 하단 우측 여백에 교감 원본대조필 직인 날인 (`isParentPortal = true`).
 
 ---
 
-## 2. Modified & Created Files (수정 및 추가된 주요 파일)
+## 2. Modified Files (수정된 주요 파일)
 
 | 구분 | 파일 경로 | 변경 사유 |
 |:---|:---|:---|
-| **수정** | `src/components/parent-form-view.tsx` | 결재란 부장/교감/교장 매칭 강화 및 서명 fallback(`[이름 (서명)]`) 처리 |
-| **수정** | `src/components/parent-document-print.tsx` | 인쇄용 결재란 매칭 강화 및 서명 fallback 처리 |
-| **수정** | `src/app/parents/documents/[id]/page.tsx` | 모바일 요약 카드 `print:hidden` 추가 및 단일 문서 인쇄 래퍼 정리 (빈 페이지 제거) |
-| **수정** | `src/app/(app)/layout.tsx` | 인쇄 시 상단 여백 제거 (`print:pt-0`) |
-| **수정** | `src/app/globals.css` | 인쇄 전용 CSS 높이 및 오버플로우 정상화 |
+| **수정** | `src/lib/pdf-export.ts` | `html2canvas` 대신 `html-to-image` 기반으로 교체하여 화면 렌더링 100% 일치 PDF 생성 |
+| **수정** | `src/components/parent-form-view.tsx` | 교외체험학습 계획 셀 높이 2cm 축소, 불인정기간 표 외곽 2mm 여백, Flex 기반 수직 중앙 정렬 |
+| **수정** | `src/components/document-view.tsx` | `[인쇄 / 브라우저 저장]` 버튼 추가 및 `ParentFormView` 연동 |
+| **수정** | `package.json` | `html-to-image` 의존성 추가 |
+| **수정** | `SESSION_HANDOVER.md` | 세션 인수인계 정보 갱신 |
 
 ---
 
 ## 3. Next Steps (다음 작업 목표)
 
-1. 사용자에게 배포 승인을 받아 `origin/main` 푸시 및 Firebase 배포 진행.
-2. 배포 후 실제 결재 완료 문서에서 부장 도장/서명 표출 및 1페이지 빈 페이지 없이 깔끔하게 1장 인쇄되는지 최종 확인.
-
----
-
-## 4. Important Context (핵심 컨텍스트)
-
-* **Firebase 프로젝트 ID**: `studio-9153973571-7837c`
-* **인쇄 시 1페이지 규칙**:
-  - 결과보고서 미제출 신청서: 정확히 A4 1페이지로 인쇄
-  - 결과보고서 포함 승인 문서: 1페이지(신청서) + 2페이지(결과보고서) 총 2페이지로 인쇄
+1. 배포 후 프로덕션 환경에서 학부모 신청서/결과보고서/결석계의 PDF 다운로드 및 브라우저 인쇄 검증.
+2. 필요 시 다국어 지원 및 기타 학부모 포털 기능 모니터링.

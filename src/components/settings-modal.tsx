@@ -3,7 +3,7 @@
 import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache } from '@/lib/services/userService';
 import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES } from '@/lib/services/settingsService';
 import { getAuditLogs } from '@/lib/services/documentService';
-import { DocConfig, UserProfile, OrgStructure, DelegationRule, AcademicCalendarConfig, AcademicEvent, AcademicSemesterPeriod } from '@/lib/types';
+import { DocConfig, UserProfile, OrgStructure, DelegationRule, AcademicCalendarConfig, AcademicEvent, AcademicSemesterPeriod, FieldTripBlackoutPeriod, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS } from '@/lib/types';
 import { compressImage, generateAcademicIcsFile } from '@/lib/utils';
 import { ChangeEvent, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -228,6 +228,49 @@ export function SettingsModal() {
     } catch (err: any) {
       toast({ variant: 'destructive', title: '내보내기 실패', description: err.message });
     }
+  };
+
+  // 체험학습 불인정(신청 불가) 기간 관리 state 및 핸들러
+  const [newBlackoutStart, setNewBlackoutStart] = useState('');
+  const [newBlackoutEnd, setNewBlackoutEnd] = useState('');
+  const [newBlackoutReason, setNewBlackoutReason] = useState('');
+
+  const handleAddBlackoutPeriod = () => {
+    if (!newBlackoutStart || !newBlackoutEnd || !newBlackoutReason.trim()) {
+      toast({ variant: 'destructive', title: '입력 오류', description: '시작일, 종료일, 사유를 모두 입력해주세요.' });
+      return;
+    }
+    const currentList = config.fieldTripBlackoutPeriods || DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS;
+    const newPeriod: FieldTripBlackoutPeriod = {
+      id: Date.now().toString(),
+      startDate: newBlackoutStart,
+      endDate: newBlackoutEnd,
+      reason: newBlackoutReason.trim()
+    };
+    setConfig(prev => ({
+      ...prev,
+      fieldTripBlackoutPeriods: [...currentList, newPeriod].sort((a, b) => a.startDate.localeCompare(b.startDate))
+    }));
+    setNewBlackoutStart('');
+    setNewBlackoutEnd('');
+    setNewBlackoutReason('');
+    toast({ title: '불인정 기간 추가됨', description: `${newBlackoutStart} ~ ${newBlackoutEnd} (${newBlackoutReason.trim()})가 목록에 추가되었습니다. 하단 [일반 설정 저장]을 눌러 적용하세요.` });
+  };
+
+  const handleDeleteBlackoutPeriod = (id: string) => {
+    const currentList = config.fieldTripBlackoutPeriods || DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS;
+    setConfig(prev => ({
+      ...prev,
+      fieldTripBlackoutPeriods: currentList.filter(p => p.id !== id)
+    }));
+  };
+
+  const handleResetDefaultBlackoutPeriods = () => {
+    setConfig(prev => ({
+      ...prev,
+      fieldTripBlackoutPeriods: [...DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS]
+    }));
+    toast({ title: '기본값 복원됨', description: '학교 규정 기본 8개 불인정 기간으로 초기화되었습니다.' });
   };
   const [users, setUsers] = useState<UserProfile[]>([]);
 
@@ -1198,6 +1241,120 @@ export function SettingsModal() {
                   <div className="space-y-2">
                       <Label htmlFor="homepage">홈페이지</Label>
                       <Input id="homepage" name="homepage" value={config.homepage || ''} onChange={handleChange} />
+                  </div>
+                </div>
+
+                {/* 🚫 체험학습 불인정(신청 불가) 기간 관리 카드 */}
+                <div className="space-y-4 pt-4 border-t border-slate-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-red-600 shrink-0" />
+                        체험학습 불인정 기간(신청 불가 기간) 관리
+                        <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200 font-bold">
+                          학부모 신청 자동 차단 & 서식 1 연동
+                        </Badge>
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        개학식/방학 전후, 재량휴업일 등 체험학습이 불인정되는 기간을 설정합니다. 학부모가 이 기간에 신청 시 안내 및 차단됩니다.
+                      </p>
+                    </div>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={handleResetDefaultBlackoutPeriods}
+                      className="h-8 text-xs font-bold text-slate-700 border-slate-300 hover:bg-slate-100 shrink-0"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                      기본 8개 규정 복원
+                    </Button>
+                  </div>
+
+                  {/* 새 기간 추가 폼 */}
+                  <div className="p-3 bg-red-50/40 rounded-xl border border-red-200 space-y-3">
+                    <span className="font-bold text-red-950 text-xs flex items-center gap-1.5">
+                      <PlusCircle className="w-4 h-4 text-red-600" />
+                      새 불인정 기간 추가
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-7 gap-2 items-end">
+                      <div className="sm:col-span-2">
+                        <Label className="text-[10px] text-slate-600 font-semibold mb-1 block">시작일</Label>
+                        <Input 
+                          type="date" 
+                          value={newBlackoutStart} 
+                          onChange={e => setNewBlackoutStart(e.target.value)} 
+                          className="h-8 text-xs bg-white"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <Label className="text-[10px] text-slate-600 font-semibold mb-1 block">종료일</Label>
+                        <Input 
+                          type="date" 
+                          value={newBlackoutEnd} 
+                          onChange={e => setNewBlackoutEnd(e.target.value)} 
+                          className="h-8 text-xs bg-white"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <Label className="text-[10px] text-slate-600 font-semibold mb-1 block">불인정 사유 (예: 개학식 후 7일)</Label>
+                        <Input 
+                          type="text" 
+                          placeholder="사유 입력" 
+                          value={newBlackoutReason} 
+                          onChange={e => setNewBlackoutReason(e.target.value)} 
+                          className="h-8 text-xs bg-white"
+                        />
+                      </div>
+                      <div className="sm:col-span-1">
+                        <Button 
+                          type="button" 
+                          size="sm" 
+                          onClick={handleAddBlackoutPeriod}
+                          className="h-8 w-full text-xs font-bold bg-red-600 hover:bg-red-700 text-white"
+                        >
+                          추가
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 등록된 불인정 기간 테이블 */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                    <Table>
+                      <TableHeader className="bg-slate-50">
+                        <TableRow>
+                          <TableHead className="w-12 text-center text-xs font-bold">No</TableHead>
+                          <TableHead className="text-xs font-bold w-48">불인정 기간</TableHead>
+                          <TableHead className="text-xs font-bold">불인정 사유</TableHead>
+                          <TableHead className="w-16 text-center text-xs font-bold">삭제</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(config.fieldTripBlackoutPeriods || DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS).map((period, idx) => (
+                          <TableRow key={period.id || idx} className="hover:bg-slate-50/80">
+                            <TableCell className="text-center font-mono text-xs text-slate-500">{idx + 1}</TableCell>
+                            <TableCell className="font-mono text-xs font-bold text-red-700">
+                              {period.startDate} ~ {period.endDate}
+                            </TableCell>
+                            <TableCell className="text-xs font-medium text-slate-800">
+                              {period.reason}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Button 
+                                type="button" 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => handleDeleteBlackoutPeriod(period.id)}
+                                className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
               </div>

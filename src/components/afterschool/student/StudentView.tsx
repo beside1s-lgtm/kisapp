@@ -9,6 +9,7 @@ import { getDocConfig, saveAfterschoolEnrollment, deleteAfterschoolEnrollment, u
 import type { Route as BusRoute, Student as BusStudent } from '@/lib/kisbus/types';
 import type { DocConfig } from '@/lib/types';
 import { Button } from '@/components/ui/button';
+import { useTranslation } from '@/hooks/use-translation';
 
 export const safeParseDate = (dateStr: any): Date => {
   if (!dateStr) return new Date();
@@ -197,6 +198,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
 }) => {
   const { profile } = useAuth();
   const router = useRouter();
+  const { t, i18n } = useTranslation();
   const currentStudentName = (profile?.studentName || profile?.name || '').trim();
   const currentStudentId = profile?.uid || profile?.email || (currentStudentName ? `s_${currentStudentName}` : 's1');
 
@@ -277,6 +279,63 @@ export const StudentView: React.FC<StudentViewProps> = ({
     return `${formatted} ${getCurrencyLabel(cur)}`;
   };
 
+  const formatClassDaysAndTimes = (course: Course | undefined, fallbackPeriodGroup?: PeriodGroup) => {
+    if (!course) return '';
+    const rawDays = Array.isArray(course.classDays) && course.classDays.length > 0 ? course.classDays : ['월'];
+    const pGroup = fallbackPeriodGroup || getCoursePeriodGroup(course);
+
+    const isVi = i18n?.language === 'vi';
+    const isEn = i18n?.language === 'en';
+
+    const dayMapVi: Record<string, string> = {
+      '월': 'Thứ 2', '월요일': 'Thứ 2', 'Mon': 'Thứ 2', 'Monday': 'Thứ 2',
+      '화': 'Thứ 3', '화요일': 'Thứ 3', 'Tue': 'Thứ 3', 'Tuesday': 'Thứ 3',
+      '수': 'Thứ 4', '수요일': 'Thứ 4', 'Wed': 'Thứ 4', 'Wednesday': 'Thứ 4',
+      '목': 'Thứ 5', '목요일': 'Thứ 5', 'Thu': 'Thứ 5', 'Thursday': 'Thứ 5',
+      '금': 'Thứ 6', '금요일': 'Thứ 6', 'Fri': 'Thứ 6', 'Friday': 'Thứ 6',
+      '토': 'Thứ 7', '토요일': 'Thứ 7', 'Sat': 'Thứ 7', 'Saturday': 'Thứ 7',
+      '일': 'Chủ Nhật', '일요일': 'Chủ Nhật', 'Sun': 'Chủ Nhật', 'Sunday': 'Chủ Nhật',
+    };
+
+    const dayMapEn: Record<string, string> = {
+      '월': 'Mon', '월요일': 'Mon', 'Mon': 'Mon', 'Monday': 'Mon',
+      '화': 'Tue', '화요일': 'Tue', 'Tue': 'Tue', 'Tuesday': 'Tue',
+      '수': 'Wed', '수요일': 'Wed', 'Wed': 'Wed', 'Wednesday': 'Wed',
+      '목': 'Thu', '목요일': 'Thu', 'Thu': 'Thu', 'Thursday': 'Thu',
+      '금': 'Fri', '금요일': 'Fri', 'Fri': 'Fri', 'Friday': 'Fri',
+      '토': 'Sat', '토요일': 'Sat', 'Sat': 'Sat', 'Saturday': 'Sat',
+      '일': 'Sun', '일요일': 'Sun', 'Sun': 'Sun', 'Sunday': 'Sun',
+    };
+
+    const dayMapKo: Record<string, string> = {
+      '월': '월요일', '월요일': '월요일', 'Mon': '월요일',
+      '화': '화요일', '화요일': '화요일', 'Tue': '화요일',
+      '수': '수요일', '수요일': '수요일', 'Wed': '수요일',
+      '목': '목요일', '목요일': '목요일', 'Thu': '목요일',
+      '금': '금요일', '금요일': '금요일', 'Fri': '금요일',
+      '토': '토요일', '토요일': '토요일', 'Sat': '토요일',
+      '일': '일요일', '일요일': '일요일', 'Sun': '일요일',
+    };
+
+    const currentMap = isVi ? dayMapVi : isEn ? dayMapEn : dayMapKo;
+    const translatedDays = rawDays.map(d => currentMap[d.trim()] || d).join(', ');
+
+    let timeStr = course.classTime || (
+      pGroup === '8~9차시' ? '15:10~16:30' : 
+      pGroup === '1~4차시' ? '08:30~11:40' : 
+      pGroup === '3~4차시' ? '10:10~11:40' : 
+      '08:30~10:00'
+    );
+
+    if (isVi) {
+      timeStr = timeStr.replace(/(\d+~\d+)차시/g, 'Tiết $1').replace(/(\d+)차시/g, 'Tiết $1');
+    } else if (isEn) {
+      timeStr = timeStr.replace(/(\d+~\d+)차시/g, 'Periods $1').replace(/(\d+)차시/g, 'Period $1');
+    }
+
+    return `${translatedDays} ${timeStr}`;
+  };
+
   // Timer Tick State
   const [nowTime, setNowTime] = useState<Date>(new Date());
   const [queueTicket, setQueueTicket] = useState<QueueTicket | null>(null);
@@ -297,6 +356,12 @@ export const StudentView: React.FC<StudentViewProps> = ({
     if (!teacherApplySettings) return '방과후학교';
     const y = teacherApplySettings.year || '2026';
     const sem = teacherApplySettings.semester || '1학기';
+    if (i18n?.language === 'vi') {
+      return `Ngoại khóa Học kỳ ${sem.replace(/\D/g, '') || '1'} Năm ${y}`;
+    }
+    if (i18n?.language === 'en') {
+      return `${y} Semester ${sem.replace(/\D/g, '') || '1'} After-School`;
+    }
     if (sem.includes('학기')) {
       return `${y}학년도 제${sem} 방과후학교`;
     }
@@ -304,15 +369,15 @@ export const StudentView: React.FC<StudentViewProps> = ({
   };
 
   const getDetailedStatusText = () => {
-    if (!teacherApplySettings) return '수강신청 대기 중';
     const programName = getProgramName();
+    if (!teacherApplySettings) return t('afterschool.status_waiting', { program: programName }) || '수강신청 대기 중';
     const nowMs = nowTime.getTime();
 
     // 1. 강사 강좌 개설 신청 접수 일정 체크
     const applyStart = safeParseDate(teacherApplySettings.applyStartDate).getTime();
     const applyEnd = safeParseDate(teacherApplySettings.applyEndDate).getTime();
     if (!isNaN(applyStart) && !isNaN(applyEnd) && nowMs >= applyStart && nowMs <= applyEnd) {
-      return `${programName} 강사 모집 중`;
+      return t('afterschool.status_recruiting', { program: programName }) || `${programName} 강사 모집 중`;
     }
 
     // 2. 수강 신청 중 체크
@@ -323,7 +388,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
     };
 
     if (isApplyEnabled()) {
-      return `${programName} 수강신청 진행 중`;
+      return t('afterschool.status_applying', { program: programName }) || `${programName} 수강신청 진행 중`;
     }
 
     // 3. 운영 시작일 ~ 운영 종료일 체크
@@ -331,19 +396,19 @@ export const StudentView: React.FC<StudentViewProps> = ({
     const opEnd = new Date(teacherApplySettings.operatingEndDate || '').getTime();
     if (!isNaN(opStart) && !isNaN(opEnd)) {
       if (nowMs >= opStart && nowMs <= opEnd) {
-        return `${programName} 운영 중`;
+        return t('afterschool.status_operating', { program: programName }) || `${programName} 운영 중`;
       }
       if (nowMs > opEnd) {
-        return `${programName} 운영 종료`;
+        return t('afterschool.status_closed', { program: programName }) || `${programName} 운영 종료`;
       }
     }
 
     // 4. 수강 신청 대기 중
     if (nowMs < startTime) {
-      return `${programName} 수강신청 대기 중`;
+      return t('afterschool.status_waiting', { program: programName }) || `${programName} 수강신청 대기 중`;
     }
 
-    return `${programName} 수강신청 불가`;
+    return t('afterschool.status_disabled', { program: programName }) || `${programName} 수강신청 불가`;
   };
 
   const isBeforeStart = nowMs < startTime;
@@ -503,7 +568,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
             <Timer className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-xs text-slate-500 font-medium">수강신청 진행 현황</div>
+            <div className="text-xs text-slate-500 font-medium">{t('afterschool.status_title') || '수강신청 진행 현황'}</div>
             <div className="text-sm font-bold text-slate-800">
               {getDetailedStatusText()}
             </div>
@@ -518,7 +583,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
             </span>
           ) : (
             <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-lg font-bold">
-              {timerConfig.masterStatus === 'FORCE_LOCK' ? '신청 잠김' : '신청 가능'}
+              {timerConfig.masterStatus === 'FORCE_LOCK' ? (t('afterschool.status_locked') || '신청 잠김') : (t('afterschool.status_open') || '신청 가능')}
             </span>
           )}
         </div>
@@ -550,9 +615,14 @@ export const StudentView: React.FC<StudentViewProps> = ({
       {/* Student Banner Info */}
       <div className="bg-indigo-600 text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <div className="text-xs font-semibold text-indigo-200">{getProgramName()} 포털</div>
+          <div className="text-xs font-semibold text-indigo-200">{getProgramName()} {t('afterschool.portal_suffix') || '포털'}</div>
           <h2 className="text-xl font-bold mt-1">
-            {profile?.studentGrade || '1'}학년 {profile?.studentClass || '1'}반 {profile?.studentNumber || '1'}번 {profile?.studentName || '홍길동'} 학생
+            {t('afterschool.student_info', {
+              grade: profile?.studentGrade || '1',
+              class: profile?.studentClass || '1',
+              num: profile?.studentNumber || '1',
+              name: profile?.studentName || '홍길동'
+            }) || `${profile?.studentGrade || '1'}학년 ${profile?.studentClass || '1'}반 ${profile?.studentNumber || '1'}번 ${profile?.studentName || '홍길동'} 학생`}
           </h2>
         </div>
 
@@ -566,7 +636,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
                   : 'bg-indigo-700 text-white hover:bg-indigo-800'
               }`}
             >
-              강좌 수강신청
+              {t('afterschool.tab_courses') || '강좌 수강신청'}
             </button>
           )}
           <button
@@ -577,7 +647,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
                 : 'bg-indigo-700 text-white hover:bg-indigo-800'
             }`}
           >
-            내 신청내역 ({myEnrollments.length}건)
+            {t('afterschool.tab_my_history', { count: myEnrollments.length }) || `내 신청내역 (${myEnrollments.length}건)`}
           </button>
         </div>
       </div>
@@ -589,34 +659,34 @@ export const StudentView: React.FC<StudentViewProps> = ({
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-base font-bold text-slate-800">개설 강좌 목록</h3>
+                <h3 className="text-base font-bold text-slate-800">{t('afterschool.available_courses_title') || '개설 강좌 목록'}</h3>
                 <div className="flex items-center gap-1.5 flex-wrap text-[10px] sm:text-[11px] font-semibold">
                   <span className="bg-blue-50 text-blue-800 px-2 py-0.5 rounded-md border border-blue-200 whitespace-nowrap">
-                    평일 8~9차시 (15:10~16:30)
+                    {t('afterschool.period_8_9_badge') || '평일 8~9차시 (15:10~16:30)'}
                   </span>
                   <span className="bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200 whitespace-nowrap">
-                    토요 1~2차시 (08:30~10:00)
+                    {t('afterschool.period_1_2_badge') || '토요 1~2차시 (08:30~10:00)'}
                   </span>
                   <span className="bg-purple-50 text-purple-800 px-2 py-0.5 rounded-md border border-purple-200 whitespace-nowrap">
-                    토요 3~4차시 (10:10~11:40)
+                    {t('afterschool.period_3_4_badge') || '토요 3~4차시 (10:10~11:40)'}
                   </span>
                   <span className="bg-indigo-50 text-indigo-800 px-2 py-0.5 rounded-md border border-indigo-200 whitespace-nowrap">
-                    토요 1~4차시 통합 (08:30~11:40 / 4차시)
+                    {t('afterschool.period_1_4_badge') || '토요 1~4차시 통합 (08:30~11:40 / 4차시)'}
                   </span>
                 </div>
               </div>
               <p className="text-xs text-slate-500 font-medium">
-                동시간대(차시) 1순위 강좌는 선착순 배정되며, 동일 차시 2순위 이상 강좌는 대기자 명단으로 자동 분류됩니다.
+                {t('afterschool.guide_priority') || '동시간대(차시) 1순위 강좌는 선착순 배정되며, 동일 차시 2순위 이상 강좌는 대기자 명단으로 자동 분류됩니다.'}
               </p>
             </div>
 
             <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200/70 shrink-0 overflow-x-auto max-w-full">
               {[
-                { id: 'ALL', label: '전체 강좌', count: courses.length },
-                { id: '8~9차시', label: '8~9차시 (평일)', count: courses.filter(c => getCoursePeriodGroup(c) === '8~9차시').length },
-                { id: '1~2차시', label: '1~2차시 (토요)', count: courses.filter(c => getCoursePeriodGroup(c) === '1~2차시').length },
-                { id: '3~4차시', label: '3~4차시 (토요)', count: courses.filter(c => getCoursePeriodGroup(c) === '3~4차시').length },
-                { id: '1~4차시', label: '1~4차시 (토요통합)', count: courses.filter(c => getCoursePeriodGroup(c) === '1~4차시').length },
+                { id: 'ALL', label: t('afterschool.tab_all_courses') || '전체 강좌', count: courses.length },
+                { id: '8~9차시', label: t('afterschool.period_8_9') || '8~9차시 (평일)', count: courses.filter(c => getCoursePeriodGroup(c) === '8~9차시').length },
+                { id: '1~2차시', label: t('afterschool.period_1_2') || '1~2차시 (토요)', count: courses.filter(c => getCoursePeriodGroup(c) === '1~2차시').length },
+                { id: '3~4차시', label: t('afterschool.period_3_4') || '3~4차시 (토요)', count: courses.filter(c => getCoursePeriodGroup(c) === '3~4차시').length },
+                { id: '1~4차시', label: t('afterschool.period_1_4') || '1~4차시 (토요통합)', count: courses.filter(c => getCoursePeriodGroup(c) === '1~4차시').length },
               ].filter(tab => tab.id === 'ALL' || tab.count > 0).map((tab) => (
                 <button
                   key={tab.id}
@@ -655,55 +725,57 @@ export const StudentView: React.FC<StudentViewProps> = ({
                 return (
                   <div
                     key={course.id}
-                    className="bg-white rounded-xl border border-slate-200/80 shadow-2xs hover:border-indigo-300 transition p-3 flex flex-col gap-2"
+                    className="bg-white rounded-xl border border-slate-200/80 shadow-2xs hover:border-indigo-300 transition p-3.5 flex flex-col gap-2 w-full min-w-0"
                   >
-                    {/* 상단: 배지 + 강좌명 + 강사 + 요일/시간/수강료 */}
-                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md border whitespace-nowrap shrink-0 ${
-                        periodGroup === '8~9차시'
-                          ? 'bg-blue-50 text-blue-900 border-blue-200'
-                          : periodGroup === '1~2차시' 
-                            ? 'bg-amber-50 text-amber-900 border-amber-200' 
-                            : periodGroup === '3~4차시'
-                              ? 'bg-purple-50 text-purple-900 border-purple-200'
-                              : 'bg-indigo-50 text-indigo-900 border-indigo-200'
-                      }`}>
-                        {periodGroup}
-                      </span>
+                    {/* 1행: 배지 (차시 + 신청가능/마감) + 우측 수강료 */}
+                    <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md border whitespace-nowrap shrink-0 ${
+                          periodGroup === '8~9차시'
+                            ? 'bg-blue-50 text-blue-900 border-blue-200'
+                            : periodGroup === '1~2차시' 
+                              ? 'bg-amber-50 text-amber-900 border-amber-200' 
+                              : periodGroup === '3~4차시'
+                                ? 'bg-purple-50 text-purple-900 border-purple-200'
+                                : 'bg-indigo-50 text-indigo-900 border-indigo-200'
+                        }`}>
+                          {periodGroup}
+                        </span>
 
-                      {isFull ? (
-                        <span className="text-[11px] bg-rose-50 text-rose-700 border border-rose-200 font-bold px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
-                          마감
-                        </span>
-                      ) : (
-                        <span className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
-                          신청가능 ({course.currentStudents}/{course.maxStudents})
-                        </span>
-                      )}
-
-                      <h4 className="text-sm font-bold text-slate-900 truncate flex-1 min-w-0">{course.title}</h4>
-                      
-                      <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium whitespace-nowrap shrink-0">
-                        <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-semibold">
-                          {daysText}요일 {course.classTime || (periodGroup === '8~9차시' ? '15:10~16:30' : periodGroup === '1~4차시' ? '08:30~11:40' : periodGroup === '3~4차시' ? '10:10~11:40' : '08:30~10:00')}
-                        </span>
-                        <span className="text-indigo-600 font-bold">
-                          {tuitionFormatted}동
-                        </span>
-                        <span className="hidden sm:inline">
-                          👤 {instructorName}
-                        </span>
+                        {isFull ? (
+                          <span className="text-[11px] bg-rose-50 text-rose-700 border border-rose-200 font-bold px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
+                            {t('afterschool.badge_full') || '마감'}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
+                            {t('afterschool.badge_available', { current: course.currentStudents, max: course.maxStudents }) || `신청가능 (${course.currentStudents}/${course.maxStudents})`}
+                          </span>
+                        )}
                       </div>
+
+                      <span className="text-xs sm:text-sm font-black text-indigo-600 shrink-0">
+                        {tuitionFormatted}동
+                      </span>
                     </div>
 
-                    {/* 하단: 버스체크 + 계획서 + 수강신청 버튼 */}
-                    <div className="flex items-center gap-1.5 justify-end flex-wrap">
-                      {/* 강사명 모바일 표시 */}
-                      <span className="text-[11px] text-slate-500 mr-auto sm:hidden">👤 {instructorName}</span>
+                    {/* 2행: 강좌명 (전체 너비 확보하여 긴 제목도 절대 잘리지 않음) */}
+                    <h4 className="text-sm sm:text-base font-bold text-slate-900 break-words leading-snug">
+                      {course.title}
+                    </h4>
 
+                    {/* 3행: 수업 요일/시간 및 강사 정보 */}
+                    <div className="flex items-center gap-2 text-[11px] sm:text-xs text-slate-500 font-medium flex-wrap">
+                      <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-700 font-semibold">
+                        {formatClassDaysAndTimes(course, periodGroup)}
+                      </span>
+                      <span>👤 {instructorName}</span>
+                    </div>
+
+                    {/* 4행: 하단 액션 버튼들 나란히 배치 */}
+                    <div className="flex items-center gap-1.5 pt-1.5 border-t border-slate-100 justify-end w-full min-w-0">
                       {/* 버스 체크박스 (강좌에 hasBusOption이 활성화된 경우에만 노출) */}
                       {!myRecord && !isLocked && course.hasBusOption && (
-                        <div className="flex items-center gap-1 px-1.5 py-1 bg-emerald-50 rounded-lg border border-emerald-300 whitespace-nowrap shadow-2xs">
+                        <div className="flex items-center gap-1 px-2 py-1 bg-emerald-50 rounded-lg border border-emerald-300 whitespace-nowrap mr-auto shadow-2xs">
                           <input
                             type="checkbox"
                             id={`bus-check-${course.id}`}
@@ -718,7 +790,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
                             htmlFor={`bus-check-${course.id}`}
                             className="text-[11px] font-bold text-emerald-800 cursor-pointer select-none whitespace-nowrap"
                           >
-                            버스
+                            {t('afterschool.bus_checkbox') || '버스'}
                           </label>
                         </div>
                       )}
@@ -731,19 +803,19 @@ export const StudentView: React.FC<StudentViewProps> = ({
                         className="text-xs h-8 px-2.5 font-bold text-slate-700 border-slate-300 hover:bg-slate-50 whitespace-nowrap rounded-lg"
                       >
                         <FileText className="w-3.5 h-3.5 sm:mr-1 text-slate-500" />
-                        <span className="hidden sm:inline">계획서</span>
+                        <span>{t('afterschool.btn_syllabus') || '계획서'}</span>
                       </Button>
 
                       {/* 수강신청 버튼 */}
-                      <div className="relative flex flex-col items-end">
+                      <div className="relative flex items-center">
                         {forceInfo.forceWaiting && !myRecord && !isLocked && (
                           <span className="text-[9px] text-amber-700 font-bold whitespace-nowrap absolute -top-4 right-0">
                             2순위 대기
                           </span>
                         )}
                         {myRecord ? (
-                          <div className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap">
-                            {myRecord.status === 'ENROLLED' ? '✓ 신청완료' : '⏳ 대기접수'}
+                          <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap">
+                            {myRecord.status === 'ENROLLED' ? (t('afterschool.btn_applied') || '✓ 신청완료') : (t('afterschool.btn_waiting_accepted') || '⏳ 대기접수')}
                           </div>
                         ) : isLocked ? (
                           <button
@@ -756,14 +828,13 @@ export const StudentView: React.FC<StudentViewProps> = ({
                         ) : (
                           <button
                             onClick={() => handleApplyCourseWithQueue(course)}
-                            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold shadow-2xs transition flex items-center gap-1 whitespace-nowrap ${
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold shadow-2xs transition flex items-center gap-1 whitespace-nowrap ${
                               forceInfo.forceWaiting || isFull
                                 ? 'bg-amber-600 hover:bg-amber-700 text-white'
                                 : 'bg-indigo-600 hover:bg-indigo-700 text-white'
                             }`}
                           >
-                            <span className="hidden sm:inline">{forceInfo.forceWaiting ? '대기자 신청 (2순위)' : isFull ? '대기자 신청 (마감)' : '수강 신청 (1순위)'}</span>
-                            <span className="sm:hidden">{forceInfo.forceWaiting || isFull ? '대기신청' : '수강신청'}</span>
+                            <span>{forceInfo.forceWaiting ? (t('afterschool.btn_apply_waiting_2nd') || '대기자 신청 (2순위)') : isFull ? (t('afterschool.btn_apply_waiting') || '대기자 신청 (마감)') : (t('afterschool.btn_apply_1st') || '수강 신청 (1순위)')}</span>
                             <ChevronRight className="w-3.5 h-3.5" />
                           </button>
                         )}
@@ -780,10 +851,10 @@ export const StudentView: React.FC<StudentViewProps> = ({
       {activeStudentTab === 'my' && (
         <div className="space-y-6">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
-            <h4 className="font-bold text-slate-900 text-sm">신청한 강좌 목록</h4>
+            <h4 className="font-bold text-slate-900 text-sm">{t('afterschool.my_enrolled_title') || '신청한 강좌 목록'}</h4>
 
             {myEnrollments.length === 0 ? (
-              <div className="text-center py-8 text-slate-400 text-sm">신청한 강좌가 없습니다.</div>
+              <div className="text-center py-8 text-slate-400 text-sm">{t('afterschool.my_enrolled_empty') || '신청한 강좌가 없습니다.'}</div>
             ) : (
               <>
                 {/* 모바일 카드형 (sm 미만) */}
@@ -797,13 +868,13 @@ export const StudentView: React.FC<StudentViewProps> = ({
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-bold text-slate-900 truncate">{courseTitle}</div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">{course?.classTime || (course ? '' : '개설 정보 없음')}</div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">{formatClassDaysAndTimes(course) || (course ? '' : '개설 정보 없음')}</div>
                           </div>
                           <div className="shrink-0">
                             {item.status === 'ENROLLED' ? (
-                              <span className="bg-emerald-100 text-emerald-800 text-[11px] px-2 py-0.5 rounded font-bold">수강등록</span>
+                              <span className="bg-emerald-100 text-emerald-800 text-[11px] px-2 py-0.5 rounded font-bold">{t('afterschool.badge_enrolled') || '수강등록'}</span>
                             ) : (
-                              <span className="bg-amber-100 text-amber-800 text-[11px] px-2 py-0.5 rounded font-bold">대기자</span>
+                              <span className="bg-amber-100 text-amber-800 text-[11px] px-2 py-0.5 rounded font-bold">{t('afterschool.badge_waiting') || '대기자'}</span>
                             )}
                           </div>
                         </div>
@@ -814,7 +885,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
                               onClick={() => { setSelectedPaymentCourse(course); setShowPaymentModal(true); }}
                               className="px-2 py-0.5 text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded transition-colors"
                             >
-                              납부
+                              {t('afterschool.btn_pay') || '납부'}
                             </button>
                           )}
                           {busNo && (
@@ -829,7 +900,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
                             onClick={() => handleCancelEnrollment(item)}
                             className="ml-auto px-2 py-0.5 text-[11px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded transition-colors"
                           >
-                            취소
+                            {t('afterschool.btn_cancel') || '취소'}
                           </button>
                         </div>
                       </div>
@@ -842,12 +913,12 @@ export const StudentView: React.FC<StudentViewProps> = ({
                   <table className="w-full text-xs text-left">
                     <thead className="bg-slate-50 font-bold text-slate-700 border-b">
                       <tr>
-                        <th className="p-3">강좌명</th>
-                        <th className="p-3">강의시간</th>
-                        <th className="p-3 text-right">수강료</th>
-                        <th className="p-3 text-center">신청 상태</th>
-                        <th className="p-3 text-center">버스 번호</th>
-                        <th className="p-3 text-center">신청 취소</th>
+                        <th className="p-3">{t('afterschool.th_course_name') || '강좌명'}</th>
+                        <th className="p-3">{t('afterschool.th_time') || '강의시간'}</th>
+                        <th className="p-3 text-right">{t('afterschool.th_tuition') || '수강료'}</th>
+                        <th className="p-3 text-center">{t('afterschool.th_status') || '신청 상태'}</th>
+                        <th className="p-3 text-center">{t('afterschool.th_bus') || '버스 번호'}</th>
+                        <th className="p-3 text-center">{t('afterschool.th_cancel') || '신청 취소'}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
@@ -867,12 +938,12 @@ export const StudentView: React.FC<StudentViewProps> = ({
                                     className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded flex items-center gap-1 transition"
                                   >
                                     <FileText className="w-3 h-3" />
-                                    계획서
+                                    {t('afterschool.btn_syllabus') || '계획서'}
                                   </button>
                                 )}
                               </div>
                             </td>
-                            <td className="p-3 text-slate-600">{course?.classTime}</td>
+                            <td className="p-3 text-slate-600">{formatClassDaysAndTimes(course)}</td>
                             <td className="p-3 text-right">
                               <div className="flex flex-col items-end gap-1">
                                 <span className="font-mono font-bold text-indigo-600">
