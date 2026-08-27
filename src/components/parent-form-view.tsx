@@ -352,19 +352,21 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
                 <div className="text-center font-bold mb-2 text-[9pt]">
                   {reportSubmittedAt ? format(new Date(reportSubmittedAt), 'yyyy 년 MM 월 dd 일') : format(submitDate, 'yyyy 년 MM 월 dd 일')}
                 </div>
-                <div className="flex justify-end pr-8 items-center mb-1.5 text-[9pt]">
-                  <span className="font-bold mr-2">보호자 : </span>
-                  <span className="min-w-[70px] text-center font-bold mr-2 text-blue-800">{parentName}</span>
-                  <span className="relative inline-block text-center w-8 ml-1">
-                    <span className="font-medium">(인)</span>
-                    {parentSignature && (
-                      <img 
-                        src={parentSignature} 
-                        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 max-w-none object-contain mix-blend-multiply pointer-events-none z-10" 
-                        alt="sig" 
-                      />
-                    )}
-                  </span>
+                <div className="flex justify-end pr-8 items-center mb-1.5 text-[9pt] whitespace-nowrap">
+                  <div className="inline-flex items-center whitespace-nowrap">
+                    <span className="font-bold mr-1.5 whitespace-nowrap">보호자 :</span>
+                    <span className="min-w-[70px] text-center font-bold mr-2 text-blue-800 whitespace-nowrap">{parentName}</span>
+                    <span className="relative inline-block text-center w-8 ml-1 whitespace-nowrap">
+                      <span className="font-medium">(인)</span>
+                      {parentSignature && (
+                        <img 
+                          src={parentSignature} 
+                          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 max-w-none object-contain mix-blend-multiply pointer-events-none z-10" 
+                          alt="sig" 
+                        />
+                      )}
+                    </span>
+                  </div>
                 </div>
                 <div className="text-center font-black text-[13pt] tracking-widest mt-1">
                   호치민시한국국제학교장 귀하
@@ -611,19 +613,21 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
                 <div className="text-center font-bold mb-2 text-[9pt]">
                   {format(submitDate, 'yyyy 년 MM 월 dd 일')}
                 </div>
-                <div className="flex justify-end pr-8 items-center mb-1.5 text-[9pt]">
-                  <span className="font-bold mr-2">보호자 : </span>
-                  <span className="min-w-[70px] text-center font-bold mr-2 text-blue-800">{parentName}</span>
-                  <span className="relative inline-block text-center w-8 ml-1">
-                    <span className="font-medium">(인)</span>
-                    {parentSignature && (
-                      <img 
-                        src={parentSignature} 
-                        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 max-w-none object-contain mix-blend-multiply pointer-events-none z-10" 
-                        alt="sig" 
-                      />
-                    )}
-                  </span>
+                <div className="flex justify-end pr-8 items-center mb-1.5 text-[9pt] whitespace-nowrap">
+                  <div className="inline-flex items-center whitespace-nowrap">
+                    <span className="font-bold mr-1.5 whitespace-nowrap">보호자 :</span>
+                    <span className="min-w-[70px] text-center font-bold mr-2 text-blue-800 whitespace-nowrap">{parentName}</span>
+                    <span className="relative inline-block text-center w-8 ml-1 whitespace-nowrap">
+                      <span className="font-medium">(인)</span>
+                      {parentSignature && (
+                        <img 
+                          src={parentSignature} 
+                          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 max-w-none object-contain mix-blend-multiply pointer-events-none z-10" 
+                          alt="sig" 
+                        />
+                      )}
+                    </span>
+                  </div>
                 </div>
                 <div className="text-center font-black text-[13pt] tracking-widest mt-1">
                   호치민시한국국제학교장 귀하

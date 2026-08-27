@@ -30,6 +30,8 @@ export async function exportA4PagesToPdf(
       pixelRatio: 2.5,
       backgroundColor: '#ffffff',
       cacheBust: true,
+      width: el.offsetWidth,
+      height: el.offsetHeight,
     });
 
     if (i > 0) {
