@@ -15,8 +15,40 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar, Globe, Check, Lock, Sun, Clock, Bell, BellOff, UserCheck, Sparkles, AlertCircle } from 'lucide-react';
 
+import { usePathname } from 'next/navigation';
+
+// 대시보드 및 내부 서비스 경로 확인 (로그인 화면, 루트 리다이렉트, 약관 페이지 제외)
+function isDashboardRoute(pathname: string | null): boolean {
+  if (!pathname) return false;
+  if (
+    pathname === '/' ||
+    pathname === '/login' ||
+    pathname === '/parents/login' ||
+    pathname === '/parents/setup' ||
+    pathname === '/privacy'
+  ) {
+    return false;
+  }
+  return (
+    pathname.startsWith('/inbox') ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/teacher') ||
+    pathname.startsWith('/parents') ||
+    pathname.startsWith('/new') ||
+    pathname.startsWith('/sent') ||
+    pathname.startsWith('/recalled') ||
+    pathname.startsWith('/registry') ||
+    pathname.startsWith('/attendance-registry') ||
+    pathname.startsWith('/field-trip-registry') ||
+    pathname.startsWith('/circular') ||
+    pathname.startsWith('/documents') ||
+    pathname.startsWith('/edit')
+  );
+}
+
 export function AcademicCalendarSyncModal() {
   const { user, profile, loading } = useAuth();
+  const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [academicCal, setAcademicCal] = useState<AcademicCalendarConfig | null>(null);
   const [gateDutyConfig, setGateDutyConfig] = useState<MultiSemesterMorningGateDutyConfig | null>(null);
@@ -62,9 +94,10 @@ export function AcademicCalendarSyncModal() {
     }
   }, [profile?.name, isParent]);
 
-  // Listen for custom open event to allow opening modal from anywhere
+  // Listen for custom open event to allow opening modal from anywhere (단, 로그인된 상태일 때만)
   useEffect(() => {
     const handleOpen = () => {
+      if (!user) return;
       getDocConfig().then(cfg => {
         if (cfg?.academicCalendar) {
           setAcademicCal(cfg.academicCalendar);
@@ -74,11 +107,15 @@ export function AcademicCalendarSyncModal() {
     };
     window.addEventListener('openAcademicCalendarSyncModal', handleOpen);
     return () => window.removeEventListener('openAcademicCalendarSyncModal', handleOpen);
-  }, []);
+  }, [user]);
 
   // Listen for Doc Config (Academic Calendar) & Gate Duty Config
+  // 로그인 성공 후 대시보드에 정상 진입했을 때만 자동 팝업 평가
   useEffect(() => {
-    if (loading || !user) return;
+    if (loading || !user || !isDashboardRoute(pathname)) {
+      setIsOpen(false);
+      return;
+    }
 
     const checkCalendarSync = (cal?: AcademicCalendarConfig) => {
       if (!cal) return;
@@ -108,7 +145,7 @@ export function AcademicCalendarSyncModal() {
       unsubDoc();
       unsubDuty();
     };
-  }, [loading, user, profile?.lastAckAcademicCalVersion, profile?.email]);
+  }, [loading, user, pathname, profile?.lastAckAcademicCalVersion, profile?.email]);
 
   // Extract all unique teacher names from gate duty sequence & schedules
   const allTeacherNames = useMemo(() => {
@@ -190,8 +227,8 @@ export function AcademicCalendarSyncModal() {
     window.open('https://calendar.google.com/calendar/r/settings/export', '_blank');
   };
 
-  // 로그인되지 않았거나 로딩 중이면 모달을 렌더링하지 않음 (로그인 전 팝업 노출 원천 방지)
-  if (loading || !user || !academicCal) return null;
+  // 로그인되지 않았거나, 대시보드 외 경로(로그인/초기화면 등)에 있거나 로딩 중이면 모달을 렌더링하지 않음 (로그인 전 노출 원천 차단)
+  if (loading || !user || !isDashboardRoute(pathname) || !academicCal) return null;
 
   // Filter events based on role
   const visibleEvents = (academicCal.events || []).filter(ev => {
@@ -425,7 +462,7 @@ export function AcademicCalendarSyncModal() {
               onClick={handleDownloadIcs}
               className="h-9 text-xs font-bold text-indigo-700 border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100 rounded-xl px-3"
             >
-              📥 .ics 다운로드
+              .ics 다운로드
             </Button>
             <Button
               type="button"

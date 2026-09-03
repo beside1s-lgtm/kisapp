@@ -16,10 +16,40 @@ import {
     GraduationCap,
     School
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { usePathname } from 'next/navigation';
+
+// 대시보드 및 내부 서비스 경로 확인 (로그인 화면, 루트 리다이렉트, 약관 페이지 제외)
+function isDashboardRoute(pathname: string | null): boolean {
+    if (!pathname) return false;
+    if (
+        pathname === '/' ||
+        pathname === '/login' ||
+        pathname === '/parents/login' ||
+        pathname === '/parents/setup' ||
+        pathname === '/privacy'
+    ) {
+        return false;
+    }
+    return (
+        pathname.startsWith('/inbox') ||
+        pathname.startsWith('/admin') ||
+        pathname.startsWith('/teacher') ||
+        pathname.startsWith('/parents') ||
+        pathname.startsWith('/new') ||
+        pathname.startsWith('/sent') ||
+        pathname.startsWith('/recalled') ||
+        pathname.startsWith('/registry') ||
+        pathname.startsWith('/attendance-registry') ||
+        pathname.startsWith('/field-trip-registry') ||
+        pathname.startsWith('/circular') ||
+        pathname.startsWith('/documents') ||
+        pathname.startsWith('/edit')
+    );
+}
 
 export function PwaInstallPrompt() {
     const { user, loading } = useAuth();
+    const pathname = usePathname();
     const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
     const [isInstallable, setIsInstallable] = useState(false);
     const [isIos, setIsIos] = useState(false);
@@ -130,7 +160,7 @@ export function PwaInstallPrompt() {
         }
     };
 
-    if (!isMounted || isStandalone || dismissed || loading || !user) {
+    if (!isMounted || isStandalone || dismissed || loading || !user || !isDashboardRoute(pathname)) {
         return null;
     }
 
