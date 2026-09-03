@@ -1,6 +1,6 @@
 'use client';
 
-import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache, normalizeGrade, resolveDepartment } from '@/lib/services/userService';
+import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache, normalizeGrade, resolveDepartment, syncAllUsersToOrgStructure } from '@/lib/services/userService';
 import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES, getGoogleDriveConfig, saveGoogleDriveConfig, DEFAULT_GOOGLE_DRIVE_CONFIG } from '@/lib/services/settingsService';
 import { getAuditLogs } from '@/lib/services/documentService';
 import { DocConfig, UserProfile, OrgStructure, DelegationRule, AcademicCalendarConfig, AcademicEvent, AcademicSemesterPeriod, FieldTripBlackoutPeriod, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, CustomDutyRole, DutyRolePermission, DutyRoleAttendanceScope, ClassPeriodSchedule, DEFAULT_PERIOD_SCHEDULES, GoogleDriveConfig } from '@/lib/types';
@@ -1068,18 +1068,10 @@ export function SettingsModal() {
   const [studentPage, setStudentPage] = useState(1);
   const STUDENTS_PER_PAGE = 50;
 
-  useEffect(() => {
-    if (isOpen) {
-      getDocConfig().then(data => {
-        setConfig(data);
-        setHeaderPreview(data.headerImage || '');
-        if (data.academicCalendar) {
-          setAcademicCal(data.academicCalendar);
-        } else if (data.annualSchoolDays) {
-          setAcademicCal(prev => ({ ...prev, annualSchoolDays: data.annualSchoolDays || 190 }));
-        }
-      });
-      getOrgStructure().then(data => {
+  const fetchOrgStructure = async () => {
+    try {
+      const data = await getOrgStructure();
+      if (data) {
         setOrg({
           principal: data.principal || '',
           vicePrincipal: data.vicePrincipal || '',
@@ -1102,7 +1094,24 @@ export function SettingsModal() {
           dutyRoleDepts: data.dutyRoleDepts || {},
           dutyRolePermissions: data.dutyRolePermissions || {}
         });
+      }
+    } catch (e) {
+      console.error("fetchOrgStructure error:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      getDocConfig().then(data => {
+        setConfig(data);
+        setHeaderPreview(data.headerImage || '');
+        if (data.academicCalendar) {
+          setAcademicCal(data.academicCalendar);
+        } else if (data.annualSchoolDays) {
+          setAcademicCal(prev => ({ ...prev, annualSchoolDays: data.annualSchoolDays || 190 }));
+        }
       });
+      fetchOrgStructure();
       getDelegationRules().then(data => {
         setDelegationRules(data || []);
       });
@@ -1513,6 +1522,11 @@ export function SettingsModal() {
             if (result.success) {
                 toast({ title: userSubTab === 'students' ? '학생 계정 일괄 등록 성공' : '사용자 일괄 등록 성공', description: result.summary });
                 fetchUsers();
+                if ((result as any).updatedOrg) {
+                  setOrg((result as any).updatedOrg);
+                } else {
+                  fetchOrgStructure();
+                }
                 setSelectedFile(null);
                 setIsBulkUploadOpen(false);
             } else {
@@ -1571,10 +1585,10 @@ export function SettingsModal() {
   // 교직원 일괄 등록 양식 다운로드
   const handleDownloadTeacherTemplate = () => {
     const templateData = [
-      { '이메일': 'teacher1@kshcm.net', '이름': '홍길동', '직책': '교사', '학년': '3학년', '부서': '교무기획부' },
-      { '이메일': 'teacher2@kshcm.net', '이름': '김철수', '직책': '부장', '학년': '1학년', '부서': '수업연구부' },
-      { '이메일': 'teacher3@kshcm.net', '이름': '이영희', '직책': '교사', '학년': '6학년', '부서': '예체능방과후부' },
-      { '이메일': 'teacher4@kshcm.net', '이름': '박전담', '직책': '교사', '학년': '', '부서': '영어교육부' },
+      { '이메일': 'teacher1@kshcm.net', '이름': '홍길동', '직책': '교사', '학년': '3학년', '반': '1', '부서': '교무기획부' },
+      { '이메일': 'teacher2@kshcm.net', '이름': '김철수', '직책': '부장', '학년': '1학년', '반': '2', '부서': '수업연구부' },
+      { '이메일': 'teacher3@kshcm.net', '이름': '이영희', '직책': '교사', '학년': '6학년', '반': '', '부서': '예체능방과후부' },
+      { '이메일': 'teacher4@kshcm.net', '이름': '박전담', '직책': '교사', '학년': '', '반': '', '부서': '영어교육부' },
     ];
     const worksheet = xlsx.utils.json_to_sheet(templateData);
     const workbook = xlsx.utils.book_new();
@@ -2097,7 +2111,7 @@ export function SettingsModal() {
           <TabsList className="grid w-full grid-cols-6 shrink-0 rounded-none border-b bg-muted/30 h-11 text-xs md:text-sm">
             <TabsTrigger value="general" onClick={() => setActiveMainTab('general')} className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><SettingsIcon className="mr-2 h-4 w-4 hidden md:block"/>일반</TabsTrigger>
             <TabsTrigger value="academicCalendar" onClick={() => setActiveMainTab('academicCalendar')} className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary font-medium"><Calendar className="mr-2 h-4 w-4 hidden md:block"/>학사 일정 관리</TabsTrigger>
-            <TabsTrigger value="org" onClick={() => setActiveMainTab('org')} className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><Network className="mr-2 h-4 w-4 hidden md:block"/>조직도</TabsTrigger>
+            <TabsTrigger value="org" onClick={() => { setActiveMainTab('org'); fetchOrgStructure(); }} className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><Network className="mr-2 h-4 w-4 hidden md:block"/>조직도</TabsTrigger>
             <TabsTrigger value="delegation" onClick={() => setActiveMainTab('delegation')} className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><FileText className="mr-2 h-4 w-4 hidden md:block"/>전결규정</TabsTrigger>
             <TabsTrigger value="users" onClick={() => setActiveMainTab('users')} className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><Users className="mr-2 h-4 w-4 hidden md:block"/>사용자</TabsTrigger>
             <TabsTrigger value="audit" onClick={() => setActiveMainTab('audit')} className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><FileText className="mr-2 h-4 w-4 hidden md:block"/>감사 로그</TabsTrigger>
@@ -2921,6 +2935,26 @@ export function SettingsModal() {
                     부서 관리
                   </button>
                 </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-bold text-indigo-700 bg-white hover:bg-indigo-50 border-indigo-200 shrink-0"
+                  onClick={async () => {
+                    toast({ title: '조직도 동기화 진행 중...', description: '교직원 정보와 조직도를 맞추고 있습니다.' });
+                    const syncRes = await syncAllUsersToOrgStructure();
+                    if (syncRes.success && syncRes.updatedOrg) {
+                      setOrg(syncRes.updatedOrg);
+                      toast({ title: '동기화 완료', description: syncRes.message || '교원 소속이 조직도에 성공적으로 반영되었습니다.' });
+                    } else {
+                      toast({ variant: 'destructive', title: '동기화 실패', description: syncRes.message });
+                    }
+                  }}
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+                  교원 소속 ↔ 조직도 자동 동기화
+                </Button>
               </div>
             </div>
 
@@ -3560,6 +3594,14 @@ export function SettingsModal() {
                   {/* 배정된 담임 및 교과 교사 카드 그리드 (선택된 학년 필터링 - 가로폭 축소 및 다열 배치) */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
                     {(() => {
+                      const matchGrade = (itemGrade: string, viewGrade: string) => {
+                        if (viewGrade === 'all') return true;
+                        const n1 = String(itemGrade).replace(/\D/g, '');
+                        const n2 = String(viewGrade).replace(/\D/g, '');
+                        if (n1 && n2) return n1 === n2;
+                        return String(itemGrade).trim() === String(viewGrade).trim();
+                      };
+
                       // 1. Homeroom items
                       const homeroomItems = Object.entries(org.homerooms || {}).map(([gradeClass, email]) => {
                         const [grade, clazz] = gradeClass.split('-');
@@ -3592,8 +3634,7 @@ export function SettingsModal() {
 
                       // 3. Combined & Filtered by selectedGradeView
                       const filteredItems = [...homeroomItems, ...subjectItems].filter(item => {
-                        if (selectedGradeView === 'all') return true;
-                        return item.gradeStr === selectedGradeView;
+                        return matchGrade(item.gradeStr, selectedGradeView);
                       }).sort((a, b) => {
                         if (a.grade !== b.grade) return a.grade - b.grade;
                         return a.classNum - b.classNum;
@@ -3610,8 +3651,9 @@ export function SettingsModal() {
                       }
 
                       return filteredItems.map((item) => {
-                        const user = users.find(u => u.email?.toLowerCase() === item.email?.toLowerCase());
-                        const isGradeHead = item.type === 'homeroom' && org.gradeHeads[item.gradeStr] === item.email;
+                        const user = users.find(u => u.email?.toLowerCase().trim() === item.email?.toLowerCase().trim());
+                        const cleanGradeNum = item.gradeStr.replace(/\D/g, '') || item.gradeStr;
+                        const isGradeHead = (org.gradeHeads[item.gradeStr] === item.email) || (org.gradeHeads[cleanGradeNum] === item.email) || (org.gradeHeads[`${cleanGradeNum}학년`] === item.email);
 
                         if (item.type === 'subject') {
                           return (
@@ -4085,8 +4127,9 @@ export function SettingsModal() {
                                 ) : (
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 max-h-[340px] overflow-y-auto pr-0.5">
                                     {dept.memberEmails.map(email => {
-                                      const u = users.find(user => user.email === email);
-                                      const staffDuties = getStaffDutyRoles(email);
+                                      const cleanEmail = String(email || '').toLowerCase().trim();
+                                      const u = users.find(user => user.email?.toLowerCase().trim() === cleanEmail);
+                                      const staffDuties = getStaffDutyRoles(cleanEmail);
 
                                       return (
                                         <div key={email} className="flex items-center justify-between gap-1.5 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 p-1.5 px-2 rounded-md transition-colors">

@@ -181,15 +181,37 @@ export function onUsersDirectoryUpdate(callback: (users: UserProfile[]) => void)
 }
 
 /**
- * 학년 문자열/숫자를 스마트 정규화
- * 예: 3, '3', '3학년', '3학년부', '초등3', '3-1' -> { gradeNumber: '3', gradeName: '3학년' }
+ * 학년 문자열/숫자를 스마트 정규화 (반 정보 포함)
+ * 예: 3, '3', '3학년', '3학년부', '초등3', '3-1', '3학년 2반' -> { gradeNumber: '3', gradeName: '3학년', classNumber: '1' }
  */
-export function normalizeGrade(raw: any): { gradeNumber: string; gradeName: string } | null {
+export function normalizeGrade(raw: any): { gradeNumber: string; gradeName: string; classNumber?: string } | null {
   if (raw === null || raw === undefined) return null;
   const str = String(raw).trim();
   if (!str) return null;
 
-  // 1~6 숫자 추출
+  // 유치원 체크
+  if (str.includes('유치원')) {
+    const classMatch = str.match(/유치원\s*[-_ ]?\s*(\d+)/) || str.match(/(\d+)\s*반/);
+    return {
+      gradeNumber: '유치원',
+      gradeName: '유치원',
+      classNumber: classMatch ? classMatch[1] : undefined,
+    };
+  }
+
+  // '3-1', '3 - 2', '3학년 1반', '3학년1반' 등 학년-반 패턴 감지
+  const gradeClassMatch = str.match(/([1-6])\s*[-_ ]\s*(\d+)/) || str.match(/([1-6])\s*학년\s*(\d+)\s*반?/);
+  if (gradeClassMatch) {
+    const gNum = gradeClassMatch[1];
+    const cNum = gradeClassMatch[2];
+    return {
+      gradeNumber: gNum,
+      gradeName: `${gNum}학년`,
+      classNumber: cNum,
+    };
+  }
+
+  // 단순 1~6 숫자 추출
   const match = str.match(/[1-6]/);
   if (match) {
     const num = match[0];
@@ -377,13 +399,15 @@ export async function bulkRegisterUsers(fileData: string) {
         const name = String(row['name'] || row['이름'] || '').trim();
         const role = String(row['role'] || row['직책'] || '교사').trim();
 
-        // 학년 및 부서 분리 파싱
+        // 학년, 부서, 반 분리 파싱
         const rawGrade = row['학년'] || row['소속학년'] || row['grade'] || '';
         const rawDept = row['부서'] || row['소속부서'] || row['department'] || row['dept'] || '';
+        const rawClass = String(row['반'] || row['학급'] || row['class'] || '').replace(/\D/g, '').trim();
         const legacyAffiliation = row['소속'] || row['affiliation'] || '';
 
         let parsedGradeStr = '';
         let parsedGradeNum = '';
+        let parsedClassNum = rawClass;
         let parsedDeptStr = '';
 
         // 1. 학년 파싱
@@ -392,6 +416,9 @@ export async function bulkRegisterUsers(fileData: string) {
           if (gInfo) {
             parsedGradeNum = gInfo.gradeNumber;
             parsedGradeStr = gInfo.gradeName;
+            if (gInfo.classNumber && !parsedClassNum) {
+              parsedClassNum = gInfo.classNumber;
+            }
           }
         }
 
@@ -409,6 +436,9 @@ export async function bulkRegisterUsers(fileData: string) {
               if (gInfo) {
                 parsedGradeNum = gInfo.gradeNumber;
                 parsedGradeStr = gInfo.gradeName;
+                if (gInfo.classNumber && !parsedClassNum) {
+                  parsedClassNum = gInfo.classNumber;
+                }
                 continue;
               }
             }
@@ -450,6 +480,7 @@ export async function bulkRegisterUsers(fileData: string) {
                 orgData.departments = [...(orgData.departments || []), targetDept];
               }
 
+              if (!targetDept.memberEmails) targetDept.memberEmails = [];
               if (!targetDept.memberEmails.includes(email)) {
                 targetDept.memberEmails.push(email);
               }
@@ -462,17 +493,25 @@ export async function bulkRegisterUsers(fileData: string) {
 
             // 학년 조직도 편성
             if (parsedGradeNum) {
+              // 1) 반 담임 매핑
+              if (parsedClassNum) {
+                orgData.homerooms = orgData.homerooms || {};
+                orgData.homerooms[`${parsedGradeNum}-${parsedClassNum}`] = email;
+              }
+
+              // 2) 학년부장 매핑
               const isGradeHead = role.includes('부장') || role.includes('학년부장');
               if (isGradeHead) {
                 orgData.gradeHeads = orgData.gradeHeads || {};
                 orgData.gradeHeads[parsedGradeNum] = email;
                 orgData.gradeHeads[`${parsedGradeNum}학년`] = email;
-              } else {
-                orgData.gradeSubjects = orgData.gradeSubjects || {};
-                const currentSubs = orgData.gradeSubjects[parsedGradeNum] || [];
-                if (!currentSubs.includes(email)) {
-                  orgData.gradeSubjects[parsedGradeNum] = [...currentSubs, email];
-                }
+              }
+
+              // 3) 학년 교과 및 소속 매핑 (담임/부장/교과 모두 학년 교과 목록에 포함하여 조직도 카드에서 표시)
+              orgData.gradeSubjects = orgData.gradeSubjects || {};
+              const currentSubs = orgData.gradeSubjects[parsedGradeNum] || [];
+              if (!currentSubs.includes(email)) {
+                orgData.gradeSubjects[parsedGradeNum] = [...currentSubs, email];
               }
             }
           }
@@ -491,12 +530,135 @@ export async function bulkRegisterUsers(fileData: string) {
 
     return { 
       success: true, 
+      count,
+      facultyCount,
       summary: facultyCount > 0
         ? `${count}명의 사용자 계정이 등록/업데이트되었으며, 학년 및 부서 조직도에 자동 반영되었습니다.`
-        : `${count}명의 학생 계정이 등록/업데이트되었습니다.`
+        : `${count}명의 학생 계정이 등록/업데이트되었습니다.`,
+      updatedOrg: orgData || undefined,
     };
   } catch (error: any) {
     return { success: false, error: `일괄 등록 실패: ${error.message}` };
+  }
+}
+
+/**
+ * 전체 교원 프로필(users)의 학년/부서 정보를 현재 조직도(orgStructure)에 완벽 동기화
+ */
+export async function syncAllUsersToOrgStructure(): Promise<{ success: boolean; updatedOrg?: OrgStructure; message?: string }> {
+  try {
+    const currentOrg = await getOrgStructure();
+    const users = await getUsersDirectory(true);
+
+    const orgData: OrgStructure = {
+      principal: currentOrg.principal || '',
+      vicePrincipal: currentOrg.vicePrincipal || '',
+      academicHead: currentOrg.academicHead || '',
+      gradeHeads: { ...(currentOrg.gradeHeads || {}) },
+      homerooms: { ...(currentOrg.homerooms || {}) },
+      gradeSubjects: { ...(currentOrg.gradeSubjects || {}) },
+      departments: (currentOrg.departments || []).map(d => ({
+        ...d,
+        memberEmails: [...(d.memberEmails || [])]
+      })),
+      afterschoolManager: currentOrg.afterschoolManager || '',
+      busManager: currentOrg.busManager || '',
+      afterschoolManagers: [...(currentOrg.afterschoolManagers || [])],
+      busManagers: [...(currentOrg.busManagers || [])],
+      systemManagers: [...(currentOrg.systemManagers || [])],
+      peTeachers: [...(currentOrg.peTeachers || [])],
+      healthTeachers: [...(currentOrg.healthTeachers || [])],
+      specialTeachers: [...(currentOrg.specialTeachers || [])],
+      librarianTeachers: [...(currentOrg.librarianTeachers || [])],
+      subjectTeacherGroups: [...(currentOrg.subjectTeacherGroups || [])],
+      customDutyRoles: [...(currentOrg.customDutyRoles || [])],
+      dutyRoleDepts: { ...(currentOrg.dutyRoleDepts || {}) },
+      dutyRolePermissions: { ...(currentOrg.dutyRolePermissions || {}) }
+    };
+
+    let syncCount = 0;
+
+    for (const u of users) {
+      if (!u.email) continue;
+      // 학생/학부모 제외
+      if (u.studentName || u.role === '학부모' || u.role === 'student' || u.role === 'parent') continue;
+      if (/^\d{4}[a-zA-Z]+@kshcm\.net$/i.test(u.email)) continue;
+
+      const email = u.email.toLowerCase().trim();
+      const role = u.role || '교사';
+      const rawGrade = u.grade || '';
+      const rawDept = u.dept || '';
+
+      // 1. 부서 동기화
+      if (rawDept) {
+        const deptResolved = resolveDepartment(rawDept, orgData.departments);
+        if (deptResolved) {
+          let targetDept = orgData.departments.find(d => d.name === deptResolved);
+          if (!targetDept) {
+            targetDept = {
+              id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+              name: deptResolved,
+              headEmail: null,
+              memberEmails: [],
+            };
+            orgData.departments.push(targetDept);
+          }
+          if (!targetDept.memberEmails) targetDept.memberEmails = [];
+          if (!targetDept.memberEmails.includes(email)) {
+            targetDept.memberEmails.push(email);
+            syncCount++;
+          }
+          if (role.includes('부장') && !role.includes('학년') && !targetDept.headEmail) {
+            targetDept.headEmail = email;
+          }
+        }
+      }
+
+      // 2. 학년 동기화
+      if (rawGrade) {
+        const gInfo = normalizeGrade(rawGrade);
+        if (gInfo) {
+          const gNum = gInfo.gradeNumber;
+          const isGradeHead = role.includes('부장') || role.includes('학년부장');
+
+          // 반 담임
+          if (gInfo.classNumber) {
+            orgData.homerooms = orgData.homerooms || {};
+            if (!orgData.homerooms[`${gNum}-${gInfo.classNumber}`]) {
+              orgData.homerooms[`${gNum}-${gInfo.classNumber}`] = email;
+              syncCount++;
+            }
+          }
+
+          // 학년부장
+          if (isGradeHead) {
+            orgData.gradeHeads = orgData.gradeHeads || {};
+            if (!orgData.gradeHeads[gNum]) {
+              orgData.gradeHeads[gNum] = email;
+              orgData.gradeHeads[`${gNum}학년`] = email;
+              syncCount++;
+            }
+          }
+
+          // 학년 교과 및 소속
+          orgData.gradeSubjects = orgData.gradeSubjects || {};
+          const currentSubs = orgData.gradeSubjects[gNum] || [];
+          if (!currentSubs.includes(email)) {
+            orgData.gradeSubjects[gNum] = [...currentSubs, email];
+            syncCount++;
+          }
+        }
+      }
+    }
+
+    if (syncCount > 0) {
+      await saveOrgStructure(orgData);
+    }
+
+    return { success: true, updatedOrg: orgData, message: `${syncCount}건의 교원 소속이 조직도에 동기화되었습니다.` };
+  } catch (error: any) {
+    console.error("syncAllUsersToOrgStructure error:", error);
+    return { success: false, message: error.message };
   }
 }
 

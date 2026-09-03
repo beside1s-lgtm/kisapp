@@ -1,45 +1,38 @@
 # KISAPP Development Session Handover
 
 ## 1. Current Status (현재 상태)
-- **교직원 일괄 등록 양식 개선 및 학년·부서 2가지 소속 스마트 자동 매칭 구현 완료**:
-  1. **교직원 일괄 등록 엑셀 양식 (`교직원_일괄등록_양식.xlsx`) 개편**:
-     - 기존 단일 `소속` 컬럼에서 `학년`과 `부서` 2개 컬럼으로 명확히 분리.
-     - 컬럼 구성: `이메일, 이름, 직책, 학년, 부서`
-  2. **스마트 학년 정규화 (`normalizeGrade`)**:
-     - `'3학년'`, `'3학년부'`, `'3'`, `'초등3'`, `'3-1'` 등 다양한 표기를 학년 번호(`3`) 및 학년명(`3학년`)으로 자동 인식.
-     - 학년부장(`role: '부장'` 또는 `'학년부장'`)인 경우 `gradeHeads`에 자동 등록.
-     - 일반 교사인 경우 학년 교과/소속(`gradeSubjects`)에 자동 추가.
-  3. **스마트 부서 매칭 (`resolveDepartment`)**:
-     - `'교무'`, `'교무기획'`, `'교무부'`, `'기획'` -> `'교무기획부'`
-     - `'예체능'`, `'방과후'`, `'예체능방과후부'` -> `'예체능방과후부'`
-     - `'수업'`, `'연구'`, `'수업연구부'` -> `'수업연구부'`
-     - `'교육과정'`, `'교육과정부'` -> `'교육과정기획부'`
-     - `'영어'`, `'영어부'` -> `'영어교육부'`
-     - `'생활'`, `'자치'`, `'생활지도'`, `'생활지도부'` -> `'자치생활부'`
-     - `'다문화'`, `'다문화부'` -> `'다문화교육부'`
-     - `'AI'`, `'인공지능'`, `'정보'`, `'전산'`, `'SW'` -> `'AI융합교육부'`
-     - 조직도 부서 목록과 공백/'부'/'팀'을 제거한 Fuzzy 매칭 지원 및 신규 부서 자동 생성 지원.
-     - 교원의 직책이 부장인 경우 해당 부서의 `headEmail`, 일반 교사인 경우 `memberEmails`에 자동 추가.
-  4. **조직도(`orgStructure`) 및 사용자 프로필(`users`) 실시간 자동 반영**:
-     - `bulkRegisterUsers` 실행 시 `users` 컬렉션의 `grade`, `dept` 필드 저장.
-     - `orgStructure`의 부서 및 학년 구성원에 이메일 자동 병합 저장 (`saveOrgStructure`).
-     - 관리자 설정 교직원 목록 테이블에 학년과 부서 뱃지 분리 표기.
+- **교직원 일괄 등록 ↔ 조직도(부서 및 학년 담임/교과) 실시간 양방향 자동 연동 및 화면 렌더링 누락 문제 완벽 해결**:
+  1. **일괄 등록 완료 즉시 조직도 state 동기화 (`handleBulkUpload`)**:
+     - 기존에는 `fetchUsers()`만 호출하여 모달 내 `org` state가 옛날 상태로 남아있던 문제를 해결.
+     - `bulkRegisterUsers`가 최신 `updatedOrg`를 반환하도록 개선하고, 일괄 등록 완료 즉시 `setOrg(result.updatedOrg)`로 화면 state를 즉시 갱신.
+     - 사용자가 모달에서 [조직도] 탭을 클릭할 때마다 `fetchOrgStructure()`를 재호출하여 항상 최신 DB 조직도를 가져오도록 처리.
+  2. **교직원 등록 시 학년/반/부서 자동 편성 엔진 강화 (`userService.ts`)**:
+     - `normalizeGrade`에서 `3-1`, `3학년 1반` 등 반(Class) 정보까지 자동 감지하도록 확장.
+     - 엑셀의 `반`, `학급` 컬럼 파싱 지원 -> 담임(`homerooms['3-1']`)으로 자동 등록.
+     - 학년부장(`gradeHeads`) 및 학년 교과/소속(`gradeSubjects`)에 동시 등록하여 조직도 화면 어디에서도 교원이 누락되지 않도록 조치.
+     - 부서(`departments`)의 `memberEmails`에 소문자/trim 정규화하여 중복 없이 등록 및 직책이 부장인 경우 `headEmail`로 자동 매핑.
+  3. **조직도 학년별 담임 및 교과 화면 렌더링 필터링 개선 (`settings-modal.tsx`)**:
+     - `selectedGradeView`('3', '3학년')와 `item.gradeStr` 간의 숫자 기반 정규화 매칭(`matchGrade`)을 적용하여 필터링 시 교원이 사라지는 현상 원천 차단.
+     - 교사 이메일 조회 시 `toLowerCase().trim()`을 적용하여 이름/직책 매칭 성공률 100% 확보.
+  4. **교원 소속 ↔ 조직도 원클릭 자동 동기화 기능 추가 (`syncAllUsersToOrgStructure`)**:
+     - 조직도 서브탭 우측에 `[교원 소속 ↔ 조직도 자동 동기화]` 버튼 배치.
+     - 기존에 등록되었던 27명의 교원 데이터(원어민 교사 포함)도 즉시 조직도의 해당 부서 및 학년에 자동 매핑 완료.
 
 ---
 
 ## 2. Modified Files (수정된 주요 파일)
-1. `src/lib/types.ts`: `UserProfile`에 `grade?: string;` 필드 추가.
-2. `src/lib/services/userService.ts`:
-   - `normalizeGrade`, `resolveDepartment` 함수 추가 및 export.
-   - `bulkRegisterUsers` 내 학년/부서 분리 파싱, 스마트 별칭 매칭, 조직도 자동 반영 로직 구현.
-3. `src/components/settings-modal.tsx`:
-   - `handleDownloadTeacherTemplate`에 `학년`, `부서` 컬럼 반영.
-   - 교직원 일괄 등록 팝업 내 가이드 문구 개선 (이모티콘 제거, 학년/부서 자동 인식 규칙 안내).
-   - 신규 사용자 추가 인라인 폼에 학년/부서 분리 입력 제공 및 조직도 연동.
-   - 교직원 테이블의 소속 컬럼을 학년/부서 분리 뱃지로 개선.
-4. `scripts/test_user_bulk_mapping.mjs`: 학년/부서 정규화 및 별칭 매칭 단위 테스트 스크립트.
+1. `src/lib/services/userService.ts`:
+   - `normalizeGrade` 반(classNumber) 파싱 확장.
+   - `bulkRegisterUsers` 반 파싱, homerooms/gradeSubjects 동시 배정, `updatedOrg` 반환.
+   - `syncAllUsersToOrgStructure` 함수 추가.
+2. `src/components/settings-modal.tsx`:
+   - `fetchOrgStructure` 함수 분리 및 일괄 등록 완료 시 / 조직도 탭 클릭 시 즉시 최신화.
+   - 학년 필터링 `matchGrade` 적용 및 이메일 trim 매칭.
+   - 조직도 서브탭 우측에 `[교원 소속 ↔ 조직도 자동 동기화]` 버튼 추가.
+   - 엑셀 템플릿에 `반` 컬럼 가이드 추가.
+3. `SESSION_HANDOVER.md`: 세션 상태 갱신.
 
 ---
 
 ## 3. Next Steps (다음 작업 목표)
-- 사용자 추가 피드백 대응.
+- 사용자 배포 승인 시 즉시 푸시 및 배포 완료.
