@@ -1,44 +1,45 @@
 # KISAPP Development Session Handover
 
 ## 1. Current Status (현재 상태)
-- **프로덕션 배포 완료 (Deployment Complete)**:
-  1. **Google Drive 중앙 저장소 및 표준 하위 폴더 4종 자동 분류 체계 구축 완료**:
-     - `01_결재완료문서` (승인 완료된 전자결재 공문서)
-     - `02_업무작업문서(시트_첨부파일)` (업무용 Google 시트 자동 생성 저장소)
-     - `03_결석계(완료)` (전결 완료된 결석계 서류)
-     - `04_체험학습신청서(완료)` (전결 완료된 체험학습 서류)
-     - 엔드포인트 `/api/drive/sync-folders` 및 관리자 설정 모달 내 동기화 버튼 연동.
-  2. **업무 제목 Google Sheets 자동 생성 파이프라인 연동 완료**:
-     - 엔드포인트 `/api/drive/create-sheet` 구현.
-     - 업무 요청 시 표준 템플릿을 선택하면 학교 Google Drive 중앙 폴더 내에 업무 제목으로 스프레드시트가 자동 생성되고 헤더가 기입됨.
-  3. **업무 해결 방식 3종 명칭 개편 및 구글 설문지(Forms) 지원 완료**:
-     - `사용자 문서 링크형`: Google Sheets, Docs, Slides, Google Forms 설문지 링크 등록 및 새 설문지/새 시트 바로가기 버튼 제공.
-     - `표준 시트 양식 배포`: 중앙 드라이브에 시트 자동 생성 배포.
-     - `기안문 붙임 문서 자동 생성형`: 입력 결과를 공문서 무테 표로 자동 취합.
-  4. **단순 확인 완료형 (`acknowledgment`) 의견 첨부(선택) 기능 구축 완료**:
-     - 지침 확인 안내 카드 및 `의견 첨부 (선택)` Textarea 구현.
-     - 취합 화면에서 `✓ 확인 완료` 뱃지 및 교원 첨부 의견 표시.
-  5. **원격 배포 완료**:
-     - Firestore 보안 규칙 배포 완료 (`studio-9153973571-7837c`).
-     - 프로덕션 빌드 (`npm run build`) 통과.
-     - GitHub 원격 저장소(`origin/main`) 푸시 및 Firebase App Hosting 연동 배포 완료.
+- **교직원 일괄 등록 양식 개선 및 학년·부서 2가지 소속 스마트 자동 매칭 구현 완료**:
+  1. **교직원 일괄 등록 엑셀 양식 (`교직원_일괄등록_양식.xlsx`) 개편**:
+     - 기존 단일 `소속` 컬럼에서 `학년`과 `부서` 2개 컬럼으로 명확히 분리.
+     - 컬럼 구성: `이메일, 이름, 직책, 학년, 부서`
+  2. **스마트 학년 정규화 (`normalizeGrade`)**:
+     - `'3학년'`, `'3학년부'`, `'3'`, `'초등3'`, `'3-1'` 등 다양한 표기를 학년 번호(`3`) 및 학년명(`3학년`)으로 자동 인식.
+     - 학년부장(`role: '부장'` 또는 `'학년부장'`)인 경우 `gradeHeads`에 자동 등록.
+     - 일반 교사인 경우 학년 교과/소속(`gradeSubjects`)에 자동 추가.
+  3. **스마트 부서 매칭 (`resolveDepartment`)**:
+     - `'교무'`, `'교무기획'`, `'교무부'`, `'기획'` -> `'교무기획부'`
+     - `'예체능'`, `'방과후'`, `'예체능방과후부'` -> `'예체능방과후부'`
+     - `'수업'`, `'연구'`, `'수업연구부'` -> `'수업연구부'`
+     - `'교육과정'`, `'교육과정부'` -> `'교육과정기획부'`
+     - `'영어'`, `'영어부'` -> `'영어교육부'`
+     - `'생활'`, `'자치'`, `'생활지도'`, `'생활지도부'` -> `'자치생활부'`
+     - `'다문화'`, `'다문화부'` -> `'다문화교육부'`
+     - `'AI'`, `'인공지능'`, `'정보'`, `'전산'`, `'SW'` -> `'AI융합교육부'`
+     - 조직도 부서 목록과 공백/'부'/'팀'을 제거한 Fuzzy 매칭 지원 및 신규 부서 자동 생성 지원.
+     - 교원의 직책이 부장인 경우 해당 부서의 `headEmail`, 일반 교사인 경우 `memberEmails`에 자동 추가.
+  4. **조직도(`orgStructure`) 및 사용자 프로필(`users`) 실시간 자동 반영**:
+     - `bulkRegisterUsers` 실행 시 `users` 컬렉션의 `grade`, `dept` 필드 저장.
+     - `orgStructure`의 부서 및 학년 구성원에 이메일 자동 병합 저장 (`saveOrgStructure`).
+     - 관리자 설정 교직원 목록 테이블에 학년과 부서 뱃지 분리 표기.
 
 ---
 
-## 2. Modified & Created Files (수정 및 생성된 주요 파일)
-- `firestore.rules` (보안 규칙 갱신 및 배포 완료)
-- `src/lib/server/googleAuth.ts` [NEW]
-- `src/app/api/drive/create-sheet/route.ts` [NEW]
-- `src/app/api/drive/sync-folders/route.ts` [NEW]
-- `src/components/tasks/create-department-task-dialog.tsx`
-- `src/components/tasks/submit-department-task-dialog.tsx`
-- `src/components/tasks/task-submissions-dialog.tsx`
-- `src/components/settings-modal.tsx`
-- `src/lib/types.ts`
+## 2. Modified Files (수정된 주요 파일)
+1. `src/lib/types.ts`: `UserProfile`에 `grade?: string;` 필드 추가.
+2. `src/lib/services/userService.ts`:
+   - `normalizeGrade`, `resolveDepartment` 함수 추가 및 export.
+   - `bulkRegisterUsers` 내 학년/부서 분리 파싱, 스마트 별칭 매칭, 조직도 자동 반영 로직 구현.
+3. `src/components/settings-modal.tsx`:
+   - `handleDownloadTeacherTemplate`에 `학년`, `부서` 컬럼 반영.
+   - 교직원 일괄 등록 팝업 내 가이드 문구 개선 (이모티콘 제거, 학년/부서 자동 인식 규칙 안내).
+   - 신규 사용자 추가 인라인 폼에 학년/부서 분리 입력 제공 및 조직도 연동.
+   - 교직원 테이블의 소속 컬럼을 학년/부서 분리 뱃지로 개선.
+4. `scripts/test_user_bulk_mapping.mjs`: 학년/부서 정규화 및 별칭 매칭 단위 테스트 스크립트.
 
 ---
 
-## 3. Deployment Information
-- **Firebase Project ID**: `studio-9153973571-7837c`
-- **Live Domain**: `https://app.cjwave.kr`
-- **Git Commit**: `11e64f2` (main 브랜치 푸시 완료)
+## 3. Next Steps (다음 작업 목표)
+- 사용자 추가 피드백 대응.

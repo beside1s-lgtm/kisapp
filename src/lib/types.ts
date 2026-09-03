@@ -28,7 +28,8 @@ export type UserProfile = {
     gender?: 'Male' | 'Female';
   }[];
   hasUnreadInboxNotification?: boolean;
-  dept?: string; // 소속 (학년/부서)
+  dept?: string; // 소속 부서 (예: 교무기획부)
+  grade?: string; // 소속 학년 (예: 3학년)
   lastAckAcademicCalVersion?: number; // 캘린더 공유 팝업 확인 완료 버전 (계정당 1회 팝업 보장)
 };
 

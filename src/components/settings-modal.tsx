@@ -1,6 +1,6 @@
 'use client';
 
-import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache } from '@/lib/services/userService';
+import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache, normalizeGrade, resolveDepartment } from '@/lib/services/userService';
 import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES, getGoogleDriveConfig, saveGoogleDriveConfig, DEFAULT_GOOGLE_DRIVE_CONFIG } from '@/lib/services/settingsService';
 import { getAuditLogs } from '@/lib/services/documentService';
 import { DocConfig, UserProfile, OrgStructure, DelegationRule, AcademicCalendarConfig, AcademicEvent, AcademicSemesterPeriod, FieldTripBlackoutPeriod, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, CustomDutyRole, DutyRolePermission, DutyRoleAttendanceScope, ClassPeriodSchedule, DEFAULT_PERIOD_SCHEDULES, GoogleDriveConfig } from '@/lib/types';
@@ -1044,7 +1044,7 @@ export function SettingsModal() {
       toast({ variant: 'destructive', title: '추출 오류', description: err.message });
     }
   };
-  const [newUser, setNewUser] = useState({ email: '', name: '', role: '교사', dept: '' });
+  const [newUser, setNewUser] = useState({ email: '', name: '', role: '교사', dept: '', grade: '' });
   const [newStudent, setNewStudent] = useState({ grade: '', class: '', number: '', studentName: '', parentName: '', email: '', phone: '' });
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
   // 학생/학부모 인라인 편집 state
@@ -1378,12 +1378,58 @@ export function SettingsModal() {
           toast({ variant: 'destructive', title: '입력 오류', description: '이메일, 이름, 직책을 모두 입력해야 합니다.' });
           return;
       }
-      const result = await saveUserProfile('', newUser.email, newUser as any);
+      const normGrade = normalizeGrade(newUser.grade);
+      const gradeStr = normGrade ? normGrade.gradeName : (newUser.grade || '');
+      const deptStr = resolveDepartment(newUser.dept, org.departments || []);
+
+      const payload = {
+        ...newUser,
+        grade: gradeStr,
+        dept: deptStr,
+      };
+
+      const result = await saveUserProfile('', newUser.email, payload as any);
       if (result.success) {
-          toast({ title: '사용자 추가됨' });
+          // 조직도 동기화
+          if (deptStr || normGrade) {
+            let updatedOrg = { ...org };
+            if (deptStr) {
+              let targetDept = updatedOrg.departments?.find(d => d.name === deptStr);
+              if (!targetDept) {
+                targetDept = {
+                  id: Date.now().toString(),
+                  name: deptStr,
+                  headEmail: null,
+                  memberEmails: [],
+                };
+                updatedOrg.departments = [...(updatedOrg.departments || []), targetDept];
+              }
+              if (!targetDept.memberEmails.includes(newUser.email.toLowerCase())) {
+                targetDept.memberEmails = [...targetDept.memberEmails, newUser.email.toLowerCase()];
+              }
+              if (newUser.role.includes('부장') && !newUser.role.includes('학년')) {
+                targetDept.headEmail = newUser.email.toLowerCase();
+              }
+            }
+            if (normGrade) {
+              const gNum = normGrade.gradeNumber;
+              if (newUser.role.includes('부장') || newUser.role.includes('학년부장')) {
+                updatedOrg.gradeHeads = { ...(updatedOrg.gradeHeads || {}), [gNum]: newUser.email.toLowerCase(), [`${gNum}학년`]: newUser.email.toLowerCase() };
+              } else {
+                const currentSubs = updatedOrg.gradeSubjects?.[gNum] || [];
+                if (!currentSubs.includes(newUser.email.toLowerCase())) {
+                  updatedOrg.gradeSubjects = { ...(updatedOrg.gradeSubjects || {}), [gNum]: [...currentSubs, newUser.email.toLowerCase()] };
+                }
+              }
+            }
+            await saveOrgStructure(updatedOrg);
+            setOrg(updatedOrg);
+          }
+
+          toast({ title: '교직원 추가 완료', description: '사용자 정보 및 조직도에 반영되었습니다.' });
           fetchUsers(); // Refresh the list
           setIsAddingNewUser(false);
-          setNewUser({ email: '', name: '', role: '교사', dept: '' });
+          setNewUser({ email: '', name: '', role: '교사', dept: '', grade: '' });
       } else {
           toast({ variant: 'destructive', title: '추가 실패', description: result.error });
       }
@@ -1525,8 +1571,10 @@ export function SettingsModal() {
   // 교직원 일괄 등록 양식 다운로드
   const handleDownloadTeacherTemplate = () => {
     const templateData = [
-      { '이메일': 'teacher1@kshcm.net', '이름': '홍길동', '직책': '교사', '소속': '1학년부' },
-      { '이메일': 'teacher2@kshcm.net', '이름': '김철수', '직책': '부장', '소속': '연구기획부' },
+      { '이메일': 'teacher1@kshcm.net', '이름': '홍길동', '직책': '교사', '학년': '3학년', '부서': '교무기획부' },
+      { '이메일': 'teacher2@kshcm.net', '이름': '김철수', '직책': '부장', '학년': '1학년', '부서': '수업연구부' },
+      { '이메일': 'teacher3@kshcm.net', '이름': '이영희', '직책': '교사', '학년': '6학년', '부서': '예체능방과후부' },
+      { '이메일': 'teacher4@kshcm.net', '이름': '박전담', '직책': '교사', '학년': '', '부서': '영어교육부' },
     ];
     const worksheet = xlsx.utils.json_to_sheet(templateData);
     const workbook = xlsx.utils.book_new();
@@ -4380,12 +4428,17 @@ export function SettingsModal() {
                         </div>
                       </div>
                     ) : (
-                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs space-y-1.5">
-                        <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                          <span className="text-blue-600">📌 필수 입력 항목:</span>
-                          <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-mono text-[11px]">
-                            이메일, 이름, 직책, 소속
+                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs space-y-2">
+                        <div className="font-bold text-slate-800 flex flex-wrap items-center gap-1.5">
+                          <span className="text-indigo-600 font-semibold">[필수 입력 항목]</span>
+                          <span className="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded font-mono text-[11px]">
+                            이메일, 이름, 직책, 학년, 부서
                           </span>
+                        </div>
+                        <div className="text-slate-600 text-[11px] leading-relaxed space-y-1">
+                          <p>• <b>학년 자동 인식</b>: '3학년', '3학년부', '3' 등으로 입력 시 해당 학년 조직도에 자동 편성됩니다.</p>
+                          <p>• <b>부서 자동 매칭</b>: '교무', '교무기획' 등으로 입력 시 '교무기획부' 등 실제 부서로 자동 연결 및 부원으로 등록됩니다.</p>
+                          <p>• <b>단독 소속</b>: 전담교사 등 학년 소속이 없는 경우 '학년' 칸을 비워두시면 부서에만 편성됩니다.</p>
                         </div>
                       </div>
                     )}
@@ -4452,12 +4505,20 @@ export function SettingsModal() {
                               />
                               </TableCell>
                               <TableCell className="align-top pt-3">
-                              <Input 
-                                  placeholder="소속 (예: 1학년부)" 
-                                  value={newUser.dept || ''} 
-                                  onChange={(e) => setNewUser(p => ({ ...p, dept: e.target.value }))}
-                                  className="h-8"
-                              />
+                                <div className="flex gap-1.5">
+                                  <Input 
+                                      placeholder="학년 (예: 3학년)" 
+                                      value={newUser.grade || ''} 
+                                      onChange={(e) => setNewUser(p => ({ ...p, grade: e.target.value }))}
+                                      className="h-8 w-24 text-xs"
+                                  />
+                                  <Input 
+                                      placeholder="부서 (예: 교무기획부)" 
+                                      value={newUser.dept || ''} 
+                                      onChange={(e) => setNewUser(p => ({ ...p, dept: e.target.value }))}
+                                      className="h-8 flex-1 text-xs"
+                                  />
+                                </div>
                               </TableCell>
                               <TableCell className="align-top pt-3">
                                   <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r }))}>
@@ -4481,8 +4542,24 @@ export function SettingsModal() {
                           <div className="font-medium">{user.name}</div>
                           <div className="text-xs text-muted-foreground">{user.email}</div>
                           </TableCell>
-                          <TableCell className="text-sm font-semibold text-slate-600 max-w-[200px] truncate" title={user.dept || getUserDepartmentOrClass(user.email, org)}>
-                            {user.dept || getUserDepartmentOrClass(user.email, org)}
+                          <TableCell className="text-xs">
+                            <div className="flex flex-wrap items-center gap-1.5 max-w-[260px]">
+                              {user.grade && (
+                                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[11px] font-semibold px-2 py-0.5">
+                                  {user.grade}
+                                </Badge>
+                              )}
+                              {user.dept && (
+                                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[11px] font-semibold px-2 py-0.5">
+                                  {user.dept}
+                                </Badge>
+                              )}
+                              {!user.grade && !user.dept && (
+                                <span className="text-slate-500 font-medium">
+                                  {getUserDepartmentOrClass(user.email, org) || '-'}
+                                </span>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>
                           <Select 

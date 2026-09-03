@@ -9,9 +9,9 @@ import {
   deleteDoc as firestoreDeleteDoc,
 } from 'firebase/firestore';
 import { getDb } from '@/lib/firebase';
-import type { UserProfile, Approver, DelegationRule } from '@/lib/types';
+import type { UserProfile, Approver, DelegationRule, Department, OrgStructure } from '@/lib/types';
 import * as xlsx from 'xlsx';
-import { getOrgStructure, getDelegationRules } from '@/lib/services/settingsService';
+import { getOrgStructure, saveOrgStructure, getDelegationRules } from '@/lib/services/settingsService';
 
 const getUsersCol = () => collection(getDb(), 'users');
 
@@ -180,6 +180,122 @@ export function onUsersDirectoryUpdate(callback: (users: UserProfile[]) => void)
   }, (err) => console.error("onUsersDirectoryUpdate error:", err));
 }
 
+/**
+ * 학년 문자열/숫자를 스마트 정규화
+ * 예: 3, '3', '3학년', '3학년부', '초등3', '3-1' -> { gradeNumber: '3', gradeName: '3학년' }
+ */
+export function normalizeGrade(raw: any): { gradeNumber: string; gradeName: string } | null {
+  if (raw === null || raw === undefined) return null;
+  const str = String(raw).trim();
+  if (!str) return null;
+
+  // 1~6 숫자 추출
+  const match = str.match(/[1-6]/);
+  if (match) {
+    const num = match[0];
+    return {
+      gradeNumber: num,
+      gradeName: `${num}학년`,
+    };
+  }
+  return null;
+}
+
+/**
+ * 부서 문자열을 스마트 정규화 및 조직도 기존 부서와 Fuzzy 매칭
+ * 예: '교무', '교무기획', '교무부' -> '교무기획부'
+ *     '예체능', '방과후', '예체능방과후부' -> '예체능방과후부'
+ */
+export function resolveDepartment(raw: any, existingDepts: Department[] = []): string {
+  if (raw === null || raw === undefined) return '';
+  const str = String(raw).trim();
+  if (!str) return '';
+
+  // 1. 기존 부서 목록 중 정확히 일치하는 경우
+  const exactMatch = existingDepts.find(d => d.name === str);
+  if (exactMatch) return exactMatch.name;
+
+  // 2. 대표 학교 부서 별칭 매핑 (자주 쓰는 약칭)
+  const aliasMap: { [alias: string]: string } = {
+    '교무': '교무기획부',
+    '교무기획': '교무기획부',
+    '교무부': '교무기획부',
+    '기획': '교무기획부',
+    '기획부': '교무기획부',
+    
+    '예체능': '예체능방과후부',
+    '방과후': '예체능방과후부',
+    '방과후부': '예체능방과후부',
+    '예체능부': '예체능방과후부',
+    '예체능방과후': '예체능방과후부',
+    '방과후예체능': '예체능방과후부',
+    
+    '수업': '수업연구부',
+    '연구': '수업연구부',
+    '수업연구': '수업연구부',
+    '수업연구부': '수업연구부',
+    '연구부': '수업연구부',
+    
+    '교육과정': '교육과정기획부',
+    '교육과정기획': '교육과정기획부',
+    '교육과정부': '교육과정기획부',
+    
+    '영어': '영어교육부',
+    '영어교육': '영어교육부',
+    '영어부': '영어교육부',
+    '어학': '영어교육부',
+    
+    '생활': '자치생활부',
+    '자치': '자치생활부',
+    '자치생활': '자치생활부',
+    '생활지도': '자치생활부',
+    '생활지도부': '자치생활부',
+    '자치생활부': '자치생활부',
+    '생활부': '자치생활부',
+    '학생생활': '자치생활부',
+    '학생부': '자치생활부',
+    
+    '다문화': '다문화교육부',
+    '다문화교육': '다문화교육부',
+    '다문화부': '다문화교육부',
+    
+    'AI': 'AI융합교육부',
+    'AI융합': 'AI융합교육부',
+    'AI융합교육': 'AI융합교육부',
+    'AI융합교육부': 'AI융합교육부',
+    '인공지능': 'AI융합교육부',
+    '정보': 'AI융합교육부',
+    '정보부': 'AI융합교육부',
+    '전산': 'AI융합교육부',
+    'SW': 'AI융합교육부',
+    '융합': 'AI융합교육부',
+    '에듀테크': 'AI융합교육부',
+  };
+
+  const cleanInput = str.replace(/\s+/g, '');
+  if (aliasMap[cleanInput]) {
+    const targetName = aliasMap[cleanInput];
+    const found = existingDepts.find(d => d.name === targetName);
+    if (found) return found.name;
+    return targetName;
+  }
+
+  // 3. 기존 부서들과 Fuzzy 매칭 (공백, '부', '팀' 제외하고 상호 포함 여부)
+  const normalizedRaw = cleanInput.replace(/부$|팀$/, '');
+  for (const dept of existingDepts) {
+    const normalizedDept = dept.name.replace(/\s+/g, '').replace(/부$|팀$/, '');
+    if (normalizedDept === normalizedRaw || normalizedDept.includes(normalizedRaw) || normalizedRaw.includes(normalizedDept)) {
+      return dept.name;
+    }
+  }
+
+  // 4. 기존 부서에 매칭되지 않는 새로운 부서명인 경우
+  if (!str.endsWith('부') && !str.endsWith('팀')) {
+    return `${str}부`;
+  }
+  return str;
+}
+
 export async function bulkRegisterUsers(fileData: string) {
   try {
     const base64Data = fileData.split(',')[1];
@@ -191,8 +307,40 @@ export async function bulkRegisterUsers(fileData: string) {
     
     if (!rows.length) return { success: false, error: '엑셀 파일에 데이터가 없습니다.' };
 
+    // 현재 조직도 로드 (부서 및 학년 자동 배정용)
+    let orgData: OrgStructure | null = null;
+    try {
+      const currentOrg = await getOrgStructure();
+      orgData = {
+        principal: currentOrg.principal || '',
+        vicePrincipal: currentOrg.vicePrincipal || '',
+        academicHead: currentOrg.academicHead || '',
+        gradeHeads: { ...(currentOrg.gradeHeads || {}) },
+        homerooms: { ...(currentOrg.homerooms || {}) },
+        gradeSubjects: { ...(currentOrg.gradeSubjects || {}) },
+        departments: (currentOrg.departments || []).map(d => ({
+          ...d,
+          memberEmails: [...(d.memberEmails || [])]
+        })),
+        afterschoolManagers: currentOrg.afterschoolManagers || [],
+        busManagers: currentOrg.busManagers || [],
+        systemManagers: currentOrg.systemManagers || [],
+        peTeachers: currentOrg.peTeachers || [],
+        healthTeachers: currentOrg.healthTeachers || [],
+        specialTeachers: currentOrg.specialTeachers || [],
+        librarianTeachers: currentOrg.librarianTeachers || [],
+        subjectTeacherGroups: currentOrg.subjectTeacherGroups || [],
+        customDutyRoles: currentOrg.customDutyRoles || [],
+        dutyRoleDepts: currentOrg.dutyRoleDepts || {},
+        dutyRolePermissions: currentOrg.dutyRolePermissions || {},
+      };
+    } catch (e) {
+      console.warn("Failed to load orgStructure for bulk registration:", e);
+    }
+
     const batch = writeBatch(getDb());
     let count = 0;
+    let facultyCount = 0;
 
     for (const row of rows) {
       // 학생 계정 양식인 경우 (학년, 학생이름 또는 studentName 필드 감지 시)
@@ -228,24 +376,125 @@ export async function bulkRegisterUsers(fileData: string) {
         const email = String(row['email'] || row['이메일'] || '').trim().toLowerCase();
         const name = String(row['name'] || row['이름'] || '').trim();
         const role = String(row['role'] || row['직책'] || '교사').trim();
-        const dept = String(row['dept'] || row['소속'] || '').trim();
+
+        // 학년 및 부서 분리 파싱
+        const rawGrade = row['학년'] || row['소속학년'] || row['grade'] || '';
+        const rawDept = row['부서'] || row['소속부서'] || row['department'] || row['dept'] || '';
+        const legacyAffiliation = row['소속'] || row['affiliation'] || '';
+
+        let parsedGradeStr = '';
+        let parsedGradeNum = '';
+        let parsedDeptStr = '';
+
+        // 1. 학년 파싱
+        if (rawGrade) {
+          const gInfo = normalizeGrade(rawGrade);
+          if (gInfo) {
+            parsedGradeNum = gInfo.gradeNumber;
+            parsedGradeStr = gInfo.gradeName;
+          }
+        }
+
+        // 2. 부서 파싱
+        if (rawDept) {
+          parsedDeptStr = resolveDepartment(rawDept, orgData?.departments || []);
+        }
+
+        // 3. 레거시 '소속' 컬럼 폴백 지원
+        if (legacyAffiliation && (!parsedGradeStr || !parsedDeptStr)) {
+          const parts = String(legacyAffiliation).split(/[\/,\s+]/).map(p => p.trim()).filter(Boolean);
+          for (const part of parts) {
+            if (!parsedGradeStr) {
+              const gInfo = normalizeGrade(part);
+              if (gInfo) {
+                parsedGradeNum = gInfo.gradeNumber;
+                parsedGradeStr = gInfo.gradeName;
+                continue;
+              }
+            }
+            if (!parsedDeptStr) {
+              const deptResolved = resolveDepartment(part, orgData?.departments || []);
+              if (deptResolved) {
+                parsedDeptStr = deptResolved;
+              }
+            }
+          }
+        }
 
         if (email && name) {
           const userRef = doc(getDb(), "users", email);
           batch.set(userRef, {
             name: name,
             role: role,
-            dept: dept,
+            dept: parsedDeptStr,
+            grade: parsedGradeStr,
             email: email,
             isAdmin: false,
             signature: '',
           }, { merge: true });
           count++;
+          facultyCount++;
+
+          // 조직도 실시간 동기화
+          if (orgData) {
+            // 부서 조직도 편성
+            if (parsedDeptStr) {
+              let targetDept = orgData.departments?.find(d => d.name === parsedDeptStr);
+              if (!targetDept) {
+                targetDept = {
+                  id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+                  name: parsedDeptStr,
+                  headEmail: null,
+                  memberEmails: [],
+                };
+                orgData.departments = [...(orgData.departments || []), targetDept];
+              }
+
+              if (!targetDept.memberEmails.includes(email)) {
+                targetDept.memberEmails.push(email);
+              }
+
+              // 직책이 '부장'이면서 학년부장이 아닌 경우 해당 부서의 부장(headEmail)으로 매핑
+              if (role.includes('부장') && !role.includes('학년')) {
+                targetDept.headEmail = email;
+              }
+            }
+
+            // 학년 조직도 편성
+            if (parsedGradeNum) {
+              const isGradeHead = role.includes('부장') || role.includes('학년부장');
+              if (isGradeHead) {
+                orgData.gradeHeads = orgData.gradeHeads || {};
+                orgData.gradeHeads[parsedGradeNum] = email;
+                orgData.gradeHeads[`${parsedGradeNum}학년`] = email;
+              } else {
+                orgData.gradeSubjects = orgData.gradeSubjects || {};
+                const currentSubs = orgData.gradeSubjects[parsedGradeNum] || [];
+                if (!currentSubs.includes(email)) {
+                  orgData.gradeSubjects[parsedGradeNum] = [...currentSubs, email];
+                }
+              }
+            }
+          }
         }
       }
     }
+
     await batch.commit();
-    return { success: true, summary: `${count}명의 사용자(학생/교직원) 계정이 등록/업데이트되었습니다.` };
+
+    // 조직도 저장
+    if (orgData && facultyCount > 0) {
+      await saveOrgStructure(orgData);
+    }
+
+    invalidateUsersCache();
+
+    return { 
+      success: true, 
+      summary: facultyCount > 0
+        ? `${count}명의 사용자 계정이 등록/업데이트되었으며, 학년 및 부서 조직도에 자동 반영되었습니다.`
+        : `${count}명의 학생 계정이 등록/업데이트되었습니다.`
+    };
   } catch (error: any) {
     return { success: false, error: `일괄 등록 실패: ${error.message}` };
   }
