@@ -63,10 +63,29 @@ export const MainLayout: FC<MainLayoutProps> = ({
 
   const showHomeButton = pathname.startsWith('/admin') || pathname.startsWith('/teacher');
   const headerStickyClass = 'sticky top-0 z-30';
+  const headerRef = React.useRef<HTMLElement>(null);
+
+  React.useEffect(() => {
+    if (!headerRef.current) return;
+    const updateHeight = () => {
+      if (headerRef.current) {
+        const height = headerRef.current.offsetHeight;
+        document.documentElement.style.setProperty('--site-header-height', `${height}px`);
+      }
+    };
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(headerRef.current);
+    window.addEventListener('resize', updateHeight);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, []);
 
   return (
     <div className="flex flex-col min-h-screen bg-background w-full max-w-full min-w-0">
-       <header className={`${headerStickyClass} flex flex-col gap-1 border-b bg-card/95 px-2.5 sm:px-4 md:px-6 py-1.5 sm:py-2 backdrop-blur-md shadow-xs w-full max-w-full`}>
+       <header ref={headerRef} className={`${headerStickyClass} flex flex-col gap-1 border-b bg-card/95 px-2.5 sm:px-4 md:px-6 py-1.5 sm:py-2 backdrop-blur-md shadow-xs w-full max-w-full`}>
           {/* 모바일 뷰 (sm:hidden): 2줄 레이아웃 */}
           <div className="flex sm:hidden flex-col gap-1.5 w-full min-w-0">
               {/* Row 1: 뒤로가기/홈 + 타이틀 + 언어선택기 */}
@@ -188,7 +207,7 @@ export const MainLayout: FC<MainLayoutProps> = ({
             </div>
           )}
       </header>
-      <main className={cn("flex-1 w-full max-w-full overflow-x-hidden min-w-0", contentClassName || "p-2 sm:p-4 md:p-6 lg:p-8")}>
+      <main className={cn("flex-1 w-full max-w-full min-w-0", contentClassName || "p-2 sm:p-4 md:p-6 lg:p-8")}>
         {children}
       </main>
     </div>

@@ -328,6 +328,28 @@ export const BusConfigurationTab = ({
         .filter(Boolean) as string[];
   }, [selectedAllDestIds, routes, selectedDay, selectedRouteType, buses]);
 
+  // 미편성 목적지: 학생이 사용 중이나 현재 경로(요일+타입)의 어떤 버스 노선에도 편성되지 않은 목적지
+  const unassignedDestinations = useMemo(() => {
+    if (students.length === 0) return [];
+
+    // 현재 경로의 모든 버스 노선에 편성된 목적지 ID 집합
+    const assignedDestIds = new Set<string>();
+    routes
+      .filter(r => r.dayOfWeek === selectedDay && r.type === selectedRouteType)
+      .forEach(r => (r.stops || []).forEach(id => assignedDestIds.add(id)));
+
+    // 현재 경로 타입에 따라 학생의 목적지 ID 수집
+    const studentDestIds = new Set<string>();
+    students.forEach(s => {
+      const dId = selectedRouteType === 'Morning' ? s.morningDestinationId : s.afternoonDestinationId;
+      if (dId && !assignedDestIds.has(dId)) studentDestIds.add(dId);
+    });
+
+    // 해당 목적지가 destinations 목록에 존재하는 경우만 반환
+    return destinations.filter(d => studentDestIds.has(d.id));
+  }, [students, routes, destinations, selectedDay, selectedRouteType]);
+
+
   const getStopsForCurrentRoute = useCallback(() => {
     if (!currentRoute) return [];
     return currentRoute.stops.map(stopId => destinations.find(d => d.id === stopId)!).filter(Boolean);
@@ -785,22 +807,30 @@ export const BusConfigurationTab = ({
 
         <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 items-start">
             <Card>
-                <CardHeader>
-                <CardTitle>{t('admin.bus_config.dest.title')}</CardTitle>
-                <CardDescription>
-                    {t('admin.bus_config.dest.description')}
-                </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex justify-end gap-2 mb-4 flex-wrap">
-                        <Button variant="outline" onClick={handleDownloadDestinationTemplate}><Download className="mr-2 h-4 w-4" /> {t('admin.bus_config.dest.template')}</Button>
-                        <Button variant="outline" onClick={handleDownloadDestinationList}><Download className="mr-2 h-4 w-4" /> {t('admin.bus_config.dest.download.button')}</Button>
-                        <Button variant="outline" onClick={() => fileInputRef.current?.click()}><Upload className="mr-2 h-4 w-4" /> {t('batch_upload')}</Button>
+                <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3">
+                    <div>
+                        <CardTitle className="text-base sm:text-lg font-bold">목적지 관리</CardTitle>
+                        <CardDescription className="text-xs">
+                            {t('admin.bus_config.dest.description')}
+                        </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                        <Button variant="outline" size="sm" className="h-8 text-xs font-semibold" onClick={handleDownloadDestinationTemplate}>
+                            <Download className="mr-1.5 h-3.5 w-3.5" /> {t('admin.bus_config.dest.template')}
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-8 text-xs font-semibold" onClick={handleDownloadDestinationList}>
+                            <Download className="mr-1.5 h-3.5 w-3.5" /> {t('admin.bus_config.dest.download.button')}
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-8 text-xs font-semibold" onClick={() => fileInputRef.current?.click()}>
+                            <Upload className="mr-1.5 h-3.5 w-3.5" /> {t('batch_upload')}
+                        </Button>
                         <input type="file" ref={fileInputRef} onChange={handleDestinationFileUpload} accept=".xlsx" className="hidden" />
                     </div>
-                     <div className="flex justify-end gap-2 mb-4">
+                </CardHeader>
+                <CardContent>
+                    <div className="flex justify-end gap-2 mb-3">
                         <Dialog>
-                            <DialogTrigger asChild><Button className="w-full"><PlusCircle className="mr-2" /> {t('admin.bus_config.dest.add.button')}</Button></DialogTrigger>
+                            <DialogTrigger asChild><Button className="w-full h-9 text-xs font-bold"><PlusCircle className="mr-2 h-4 w-4" /> {t('admin.bus_config.dest.add.button')}</Button></DialogTrigger>
                             <DialogContent>
                                 <DialogHeader><DialogTitle>{t('admin.bus_config.dest.add.title')}</DialogTitle></DialogHeader>
                                 <Input placeholder={t('admin.bus_config.dest.add.placeholder')} value={newDestinationName} onChange={e => setNewDestinationName(e.target.value)} />
@@ -809,7 +839,7 @@ export const BusConfigurationTab = ({
                         </Dialog>
                         <AlertDialog>
                             <AlertDialogTrigger asChild>
-                                <Button variant="destructive" className="w-full"><Trash2 className="mr-2 h-4 w-4" /> {t('delete_all')}</Button>
+                                <Button variant="destructive" className="w-full h-9 text-xs font-bold"><Trash2 className="mr-2 h-4 w-4" /> {t('delete_all')}</Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                                 <AlertDialogHeader>
@@ -825,6 +855,189 @@ export const BusConfigurationTab = ({
                             </AlertDialogContent>
                         </AlertDialog>
                     </div>
+
+                    {/* ── 미편성 목적지 추천 + 목적지 그룹 설정 나란히 배치 (높이 일치) ── */}
+                    <div className="flex gap-3 mb-3 items-stretch">
+                        {/* 왼쪽: 미편성 목적지 추천 */}
+                        {unassignedDestinations.length > 0 && (
+                            <div className="flex-1 min-w-0 rounded-xl border border-amber-200 bg-amber-50/60 overflow-hidden flex flex-col justify-between">
+                                <div>
+                                    <div className="flex items-center justify-between px-3 py-2 border-b border-amber-200/70 bg-amber-100/60">
+                                        <div className="flex items-center gap-1.5">
+                                            <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                                            <span className="text-sm sm:text-base font-bold text-amber-800 whitespace-nowrap">미편성 목적지 추천</span>
+                                            <Badge className="bg-amber-500 text-white text-xs px-1.5 py-0 font-bold">{unassignedDestinations.length}</Badge>
+                                        </div>
+                                        <span className="text-xs text-amber-700 font-medium hidden sm:inline">노선 미편성</span>
+                                    </div>
+                                    <div className="p-2 space-y-1.5 max-h-40 overflow-y-auto">
+                                        {unassignedDestinations.map((dest) => {
+                                            const studentCount = students.filter(s => {
+                                                const dId = selectedRouteType === 'Morning' ? s.morningDestinationId : s.afternoonDestinationId;
+                                                return dId === dest.id;
+                                            }).length;
+                                            const candidateRoutes = routes.filter(r =>
+                                                r.dayOfWeek === selectedDay &&
+                                                r.type === selectedRouteType
+                                            );
+                                            const shortName = dest.name.length > 20 ? dest.name.slice(0, 20) + '...' : dest.name;
+                                            return (
+                                                <div key={dest.id} className="flex items-center gap-2 bg-white rounded-lg border border-amber-200/60 px-2.5 py-1.5">
+                                                    <div className="flex-1 min-w-0">
+                                                        <span className="text-sm font-bold text-slate-800 block truncate" title={dest.name}>{shortName}</span>
+                                                        <span className="text-xs text-slate-600 font-medium">{studentCount}명</span>
+                                                    </div>
+                                                    {candidateRoutes.length > 0 ? (
+                                                        <select
+                                                            className="h-7 text-xs border border-amber-300 rounded px-1.5 font-bold text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer w-20 shrink-0"
+                                                            defaultValue=""
+                                                            title="버스 선택 후 노선에 추가"
+                                                            onChange={async (e) => {
+                                                                const routeId = e.target.value;
+                                                                if (!routeId) return;
+                                                                const route = routes.find(r => r.id === routeId);
+                                                                if (!route) return;
+                                                                const newStops = [...(route.stops || [])];
+                                                                if (!newStops.includes(dest.id)) newStops.push(dest.id);
+                                                                try {
+                                                                    await updateRouteStops(routeId, newStops);
+                                                                    toast({ title: '노선 편성 완료', description: `[${dest.name}]이(가) ${buses.find(b => b.id === route.busId)?.name || '해당 버스'} 노선에 추가되었습니다.` });
+                                                                } catch {
+                                                                    toast({ title: '편성 실패', variant: 'destructive', description: '노선 stops 업데이트 중 오류가 발생했습니다.' });
+                                                                }
+                                                                e.target.value = '';
+                                                            }}
+                                                        >
+                                                            <option value="">버스</option>
+                                                            {candidateRoutes.map(r => {
+                                                                const busName = buses.find(b => b.id === r.busId)?.name || r.busId;
+                                                                return <option key={r.id} value={r.id}>{busName}</option>;
+                                                            })}
+                                                        </select>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-400 italic shrink-0">노선 없음</span>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 오른쪽: 목적지 그룹 설정 (높이 맞춤) */}
+                        <div className={cn(
+                            "rounded-xl border border-indigo-200/80 bg-gradient-to-r from-indigo-50 to-blue-50/80 shadow-xs overflow-hidden flex flex-col justify-between",
+                            unassignedDestinations.length > 0 ? "flex-1 min-w-0" : "w-full"
+                        )}>
+                            <div>
+                                {/* 헤더: 전체 선택 */}
+                                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-indigo-200/60 bg-indigo-100/40">
+                                    <label className="flex items-center gap-2 text-sm font-bold text-slate-800 cursor-pointer select-none">
+                                        <Checkbox
+                                            checked={filteredDestinations.length > 0 && filteredDestinations.every(d => selectedAllDestIds.includes(d.id))}
+                                            onCheckedChange={(checked) => {
+                                                if (checked) {
+                                                    setSelectedAllDestIds(filteredDestinations.map(d => d.id));
+                                                } else {
+                                                    setSelectedAllDestIds([]);
+                                                }
+                                            }}
+                                        />
+                                        <span>전체 선택</span>
+                                        <span className="text-xs font-semibold text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded">
+                                            {selectedAllDestIds.length}/{filteredDestinations.length}
+                                        </span>
+                                    </label>
+                                    {selectedAllDestIds.length > 0 && (
+                                        <button type="button" onClick={() => setSelectedAllDestIds([])} className="text-xs text-slate-500 hover:text-slate-800 underline font-medium transition">
+                                            해제
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* 그룹 이동 탭 + 드롭다운 */}
+                                <div className="px-3 py-2.5 space-y-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="text-xs sm:text-sm font-bold text-indigo-900">선택 목적지 그룹 이동:</span>
+                                        {/* 탭 버튼 */}
+                                        <div className="flex gap-1 p-0.5 bg-indigo-100/70 rounded-md">
+                                            <button
+                                                type="button"
+                                                onClick={() => setBatchZoneTab('weekday')}
+                                                className={cn(
+                                                    "text-xs font-bold px-2.5 py-1 rounded transition",
+                                                    batchZoneTab === 'weekday' ? "bg-blue-600 text-white shadow-sm" : "text-indigo-700 hover:bg-indigo-200/60"
+                                                )}
+                                            >
+                                                평일
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setBatchZoneTab('saturday')}
+                                                className={cn(
+                                                    "text-xs font-bold px-2.5 py-1 rounded transition",
+                                                    batchZoneTab === 'saturday' ? "bg-orange-500 text-white shadow-sm" : "text-indigo-700 hover:bg-indigo-200/60"
+                                                )}
+                                            >
+                                                토요일
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* 평일 탭 */}
+                                    {batchZoneTab === 'weekday' && (
+                                        <div className="flex items-center gap-1.5 pt-0.5">
+                                            <select
+                                                value={selectedBatchZone}
+                                                onChange={(e) => setSelectedBatchZone(e.target.value)}
+                                                className="text-xs sm:text-sm border border-blue-200 rounded-md px-2 py-1.5 font-bold text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 flex-1 min-w-0"
+                                            >
+                                                <option value="미지정">미지정 (요금 없음)</option>
+                                                {Object.keys(busFareSettings).map((g) => (
+                                                    <option key={g} value={g}>{g}</option>
+                                                ))}
+                                            </select>
+                                            <Button
+                                                size="sm"
+                                                onClick={() => handleBatchUpdateDestinationZone(selectedBatchZone)}
+                                                disabled={selectedAllDestIds.length === 0 || isBatchUpdatingZone}
+                                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3 h-8 shrink-0 shadow-xs cursor-pointer disabled:opacity-50 transition rounded-md"
+                                            >
+                                                {isBatchUpdatingZone ? '적용 중' : `${selectedAllDestIds.length}개 이동`}
+                                            </Button>
+                                        </div>
+                                    )}
+
+                                    {/* 토요일 탭 */}
+                                    {batchZoneTab === 'saturday' && (
+                                        <div className="flex items-center gap-1.5 pt-0.5">
+                                            <select
+                                                value={selectedSaturdayBatchZone}
+                                                onChange={(e) => setSelectedSaturdayBatchZone(e.target.value)}
+                                                className="text-xs sm:text-sm border border-orange-200 rounded-md px-2 py-1.5 font-bold text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-orange-400 flex-1 min-w-0"
+                                            >
+                                                <option value="미지정">미지정 (요금 없음)</option>
+                                                {Object.keys(saturdayBusFareSettings).map((g) => (
+                                                    <option key={g} value={g}>{g}</option>
+                                                ))}
+                                            </select>
+                                            <Button
+                                                size="sm"
+                                                onClick={() => handleBatchUpdateSaturdayZone(selectedSaturdayBatchZone)}
+                                                disabled={selectedAllDestIds.length === 0 || isBatchUpdatingZone}
+                                                className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs px-3 h-8 shrink-0 shadow-xs cursor-pointer disabled:opacity-50 transition rounded-md"
+                                            >
+                                                {isBatchUpdatingZone ? '적용 중' : `${selectedAllDestIds.length}개 이동`}
+                                            </Button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+
                     {/* 검색 및 그룹(Zone) 필터 바 */}
                     <div className="flex flex-col sm:flex-row gap-2 mb-3">
                         <div className="relative flex-1">
@@ -847,11 +1060,11 @@ export const BusConfigurationTab = ({
                                 className="h-9 text-xs border border-indigo-200 rounded-md px-2.5 font-bold text-slate-800 bg-white shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
                                 title="목적지 그룹(Zone)별 필터링"
                             >
-                                <option value="all">🔍 전체 그룹 보기 ({destinations.length}개)</option>
-                                <option value="미지정">⚠️ 미지정 (요금 없음)만 보기</option>
+                                <option value="all">전체 그룹 보기 ({destinations.length}개)</option>
+                                <option value="미지정">미지정 (요금 없음)만 보기</option>
                                 {Object.keys(batchZoneTab === 'weekday' ? busFareSettings : saturdayBusFareSettings).map((zoneName) => (
                                     <option key={zoneName} value={zoneName}>
-                                        🏷️ {zoneName}
+                                        {zoneName}
                                     </option>
                                 ))}
                             </select>
@@ -886,121 +1099,6 @@ export const BusConfigurationTab = ({
                         </div>
                     )}
 
-                    {/* 목적지 다중 선택 및 그룹 일괄 지정 툴바 */}
-                    <div className="mb-3 bg-gradient-to-r from-indigo-50 to-blue-50/80 p-3 rounded-xl border border-indigo-200/80 shadow-xs space-y-2">
-                        {/* 헤더: 전체 선택 & 선택 건수 */}
-                        <div className="flex items-center justify-between gap-2">
-                            <label className="flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer select-none">
-                                <Checkbox
-                                    checked={filteredDestinations.length > 0 && filteredDestinations.every(d => selectedAllDestIds.includes(d.id))}
-                                    onCheckedChange={(checked) => {
-                                        if (checked) {
-                                            const allIds = filteredDestinations.map(d => d.id);
-                                            setSelectedAllDestIds(allIds);
-                                        } else {
-                                            setSelectedAllDestIds([]);
-                                        }
-                                    }}
-                                />
-                                <span>전체 선택</span>
-                                <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-100/90 px-1.5 py-0.5 rounded-md">
-                                    {selectedAllDestIds.length} / {filteredDestinations.length}개
-                                </span>
-                            </label>
-
-                            {selectedAllDestIds.length > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={() => setSelectedAllDestIds([])}
-                                    className="text-[11px] text-slate-500 hover:text-slate-800 underline font-medium transition"
-                                >
-                                    선택 해제
-                                </button>
-                            )}
-                        </div>
-
-                        {/* 🏷️ 그룹 이동: 평일 / 토요일 탭 */}
-                        <div className="pt-2 border-t border-indigo-200/60 space-y-2">
-                            <div className="text-[11px] font-bold text-indigo-900 flex items-center gap-1 mb-1">
-                                <span>🏷️ 선택 목적지 그룹 이동:</span>
-                            </div>
-                            {/* 탭 버튼 */}
-                            <div className="flex gap-1 p-0.5 bg-indigo-100/70 rounded-lg w-fit">
-                                <button
-                                    type="button"
-                                    onClick={() => setBatchZoneTab('weekday')}
-                                    className={cn(
-                                        "text-[11px] font-bold px-3 py-1 rounded-md transition",
-                                        batchZoneTab === 'weekday'
-                                            ? "bg-blue-600 text-white shadow-sm"
-                                            : "text-indigo-700 hover:bg-indigo-200/60"
-                                    )}
-                                >
-                                    📅 평일 요금제
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setBatchZoneTab('saturday')}
-                                    className={cn(
-                                        "text-[11px] font-bold px-3 py-1 rounded-md transition",
-                                        batchZoneTab === 'saturday'
-                                            ? "bg-orange-500 text-white shadow-sm"
-                                            : "text-indigo-700 hover:bg-indigo-200/60"
-                                    )}
-                                >
-                                    🚌 토요일 요금제
-                                </button>
-                            </div>
-
-                            {/* 평일 탭 */}
-                            {batchZoneTab === 'weekday' && (
-                                <div className="flex items-center gap-1.5">
-                                    <select
-                                        value={selectedBatchZone}
-                                        onChange={(e) => setSelectedBatchZone(e.target.value)}
-                                        className="text-xs border border-blue-200 rounded-lg px-2.5 py-1.5 font-bold text-slate-800 bg-white shadow-xs focus:outline-none focus:ring-2 focus:ring-blue-400 flex-1 min-w-0"
-                                    >
-                                        <option value="미지정">미지정 (요금 없음)</option>
-                                        {Object.keys(busFareSettings).map((g) => (
-                                            <option key={g} value={g}>{g}</option>
-                                        ))}
-                                    </select>
-                                    <Button
-                                        size="sm"
-                                        onClick={() => handleBatchUpdateDestinationZone(selectedBatchZone)}
-                                        disabled={selectedAllDestIds.length === 0 || isBatchUpdatingZone}
-                                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3 py-1.5 h-8 shrink-0 shadow-xs cursor-pointer disabled:opacity-50 transition rounded-lg"
-                                    >
-                                        {isBatchUpdatingZone ? '적용 중...' : `📅 ${selectedAllDestIds.length}개 이동`}
-                                    </Button>
-                                </div>
-                            )}
-
-                            {/* 토요일 탭 */}
-                            {batchZoneTab === 'saturday' && (
-                                <div className="flex items-center gap-1.5">
-                                    <select
-                                        value={selectedSaturdayBatchZone}
-                                        onChange={(e) => setSelectedSaturdayBatchZone(e.target.value)}
-                                        className="text-xs border border-orange-200 rounded-lg px-2.5 py-1.5 font-bold text-slate-800 bg-white shadow-xs focus:outline-none focus:ring-2 focus:ring-orange-400 flex-1 min-w-0"
-                                    >
-                                        <option value="미지정">미지정 (요금 없음)</option>
-                                        {Object.keys(saturdayBusFareSettings).map((g) => (
-                                            <option key={g} value={g}>{g}</option>
-                                        ))}
-                                    </select>
-                                    <Button
-                                        size="sm"
-                                        onClick={() => handleBatchUpdateSaturdayZone(selectedSaturdayBatchZone)}
-                                        disabled={selectedAllDestIds.length === 0 || isBatchUpdatingZone}
-                                        className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs px-3 py-1.5 h-8 shrink-0 shadow-xs cursor-pointer disabled:opacity-50 transition rounded-lg"
-                                    >
-                                        {isBatchUpdatingZone ? '적용 중...' : `🚌 ${selectedAllDestIds.length}개 이동`}
-                                    </Button>
-                                </div>
-                            )}
-                        </div>
-                    </div>
 
                     <div className="flex flex-col gap-2 p-2 border rounded-md min-h-[300px] max-h-[40vh] overflow-y-auto bg-muted/50">
                         {filteredDestinations.map((dest) => {
@@ -1042,7 +1140,7 @@ export const BusConfigurationTab = ({
                                                                 ? "bg-rose-50 text-rose-700 border-rose-200" 
                                                                 : "bg-slate-100 text-slate-700 border-slate-200"
                                                         )}>
-                                                            👥 {riderCount}명 {isSmall && under3Surcharge > 0 ? `(3명이하 소수탑승 +${under3Surcharge.toLocaleString()} ${busFareCurrency})` : ''}
+                                                            {riderCount}명 {isSmall && under3Surcharge > 0 ? `(3명이하 소수탑승 +${under3Surcharge.toLocaleString()} ${busFareCurrency})` : ''}
                                                         </span>
                                                     ) : (
                                                         <span className="text-[10px] text-slate-400 font-medium shrink-0">0명</span>
@@ -1051,10 +1149,10 @@ export const BusConfigurationTab = ({
                                             </div>
                                         );
                                     })()}
-                                    {/* 평일 zone 셀렉트 */}
-                                    <div className="flex flex-col gap-0.5 items-end">
+                                    {/* 평일/토요일 zone 셀렉트 (가로 너비 통일 및 글씨 1pt 확대) */}
+                                    <div className="flex flex-col gap-1 items-end shrink-0">
                                         <div className="flex items-center gap-1">
-                                            <span className="text-[10px] text-blue-500 font-semibold shrink-0">📅</span>
+                                            <span className="text-xs text-blue-600 font-bold shrink-0 bg-blue-50 border border-blue-200 w-8 text-center py-0.5 rounded">평일</span>
                                             <select
                                                 value={dest.zone && Object.keys(busFareSettings).includes(dest.zone) ? dest.zone : '미지정'}
                                                 onChange={async (e) => {
@@ -1062,14 +1160,14 @@ export const BusConfigurationTab = ({
                                                     try {
                                                         await updateDestinationZone(dest.id, newZone);
                                                         toast({
-                                                            title: "📅 평일 그룹 변경",
+                                                            title: "평일 그룹 변경",
                                                             description: `\"${dest.name}\" → 평일 ${newZone === '미지정' ? '미지정' : newZone}`,
                                                         });
                                                     } catch (err) {
                                                         toast({ variant: "destructive", title: "변경 실패", description: "평일 그룹을 변경하는 중 오류가 발생했습니다." });
                                                     }
                                                 }}
-                                                className="text-[11px] border border-blue-200 rounded-md px-1.5 py-1 font-bold text-slate-700 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300"
+                                                className="text-xs border border-blue-200 rounded-md px-2 py-1 font-bold text-slate-700 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300 w-32 sm:w-36"
                                                 onClick={(e) => e.stopPropagation()}
                                             >
                                                 <option value="미지정">미지정</option>
@@ -1079,7 +1177,7 @@ export const BusConfigurationTab = ({
                                             </select>
                                         </div>
                                         <div className="flex items-center gap-1">
-                                            <span className="text-[10px] text-orange-500 font-semibold shrink-0">🚌</span>
+                                            <span className="text-xs text-orange-600 font-bold shrink-0 bg-orange-50 border border-orange-200 w-8 text-center py-0.5 rounded">토</span>
                                             <select
                                                 value={dest.saturdayZone && Object.keys(saturdayBusFareSettings).includes(dest.saturdayZone) ? dest.saturdayZone : '미지정'}
                                                 onChange={async (e) => {
@@ -1087,14 +1185,14 @@ export const BusConfigurationTab = ({
                                                     try {
                                                         await updateDestinationSaturdayZone(dest.id, newZone);
                                                         toast({
-                                                            title: "🚌 토요일 그룹 변경",
+                                                            title: "토요일 그룹 변경",
                                                             description: `\"${dest.name}\" → 토요일 ${newZone === '미지정' ? '미지정' : newZone}`,
                                                         });
                                                     } catch (err) {
                                                         toast({ variant: "destructive", title: "변경 실패", description: "토요일 그룹을 변경하는 중 오류가 발생했습니다." });
                                                     }
                                                 }}
-                                                className="text-[11px] border border-orange-200 rounded-md px-1.5 py-1 font-bold text-slate-700 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-orange-300"
+                                                className="text-xs border border-orange-200 rounded-md px-2 py-1 font-bold text-slate-700 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-orange-300 w-32 sm:w-36"
                                                 onClick={(e) => e.stopPropagation()}
                                             >
                                                 <option value="미지정">미지정</option>

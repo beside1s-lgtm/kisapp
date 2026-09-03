@@ -1,38 +1,32 @@
 # KISAPP Development Session Handover
 
 ## 1. Current Status (현재 상태)
-- **교직원 일괄 등록 ↔ 조직도(부서 및 학년 담임/교과) 실시간 양방향 자동 연동 및 화면 렌더링 누락 문제 완벽 해결**:
-  1. **일괄 등록 완료 즉시 조직도 state 동기화 (`handleBulkUpload`)**:
-     - 기존에는 `fetchUsers()`만 호출하여 모달 내 `org` state가 옛날 상태로 남아있던 문제를 해결.
-     - `bulkRegisterUsers`가 최신 `updatedOrg`를 반환하도록 개선하고, 일괄 등록 완료 즉시 `setOrg(result.updatedOrg)`로 화면 state를 즉시 갱신.
-     - 사용자가 모달에서 [조직도] 탭을 클릭할 때마다 `fetchOrgStructure()`를 재호출하여 항상 최신 DB 조직도를 가져오도록 처리.
-  2. **교직원 등록 시 학년/반/부서 자동 편성 엔진 강화 (`userService.ts`)**:
-     - `normalizeGrade`에서 `3-1`, `3학년 1반` 등 반(Class) 정보까지 자동 감지하도록 확장.
-     - 엑셀의 `반`, `학급` 컬럼 파싱 지원 -> 담임(`homerooms['3-1']`)으로 자동 등록.
-     - 학년부장(`gradeHeads`) 및 학년 교과/소속(`gradeSubjects`)에 동시 등록하여 조직도 화면 어디에서도 교원이 누락되지 않도록 조치.
-     - 부서(`departments`)의 `memberEmails`에 소문자/trim 정규화하여 중복 없이 등록 및 직책이 부장인 경우 `headEmail`로 자동 매핑.
-  3. **조직도 학년별 담임 및 교과 화면 렌더링 필터링 개선 (`settings-modal.tsx`)**:
-     - `selectedGradeView`('3', '3학년')와 `item.gradeStr` 간의 숫자 기반 정규화 매칭(`matchGrade`)을 적용하여 필터링 시 교원이 사라지는 현상 원천 차단.
-     - 교사 이메일 조회 시 `toLowerCase().trim()`을 적용하여 이름/직책 매칭 성공률 100% 확보.
-  4. **교원 소속 ↔ 조직도 원클릭 자동 동기화 기능 추가 (`syncAllUsersToOrgStructure`)**:
-     - 조직도 서브탭 우측에 `[교원 소속 ↔ 조직도 자동 동기화]` 버튼 배치.
-     - 기존에 등록되었던 27명의 교원 데이터(원어민 교사 포함)도 즉시 조직도의 해당 부서 및 학년에 자동 매핑 완료.
+1. **관리자 페이지 상단 고정 요소 덜컹거림(Jitter) 0.0px 완전 해결**:
+   - 스크롤 전(scrollTop=0) 초기 상태에서 헤더와 탭 영역 사이에 존재하던 42px 공백(Gap)을 완전히 제거하여 처음부터 헤더 밑면에 0px 틈으로 밀착.
+   - sticky top 오프셋을 헤더 높이(`--site-header-height`)에 정밀 일치시켜, 스크롤 시작 시나 도중에도 위아래로 단 1픽셀도 흔들리지 않고 그 자리에 딱 고정(Fixed)되도록 개선.
+2. **탑승 학생 관리 탭에서도 버스/요일/경로 필터 상단 고정 적용**:
+   - 기존 `버스 설정` 탭뿐만 아니라 요청하신 `탑승 학생 관리` 탭에서도 동일하게 버스/요일/경로 필터가 기능 선택 탭 바로 아래에 묶여 상단에 흔들림 없이 고정되도록 구현.
+   - `탑승 학생 관리` 탭 본문 내의 중복 필터 블록은 깔끔하게 정리.
+3. **미편성 목적지 추천 및 목적지 그룹 이동 블록 가독성 강화**:
+   - 제목, 목적지 명, 학생 수, 버튼, 드롭다운 등의 텍스트 크기를 1.5배 확대하여 가독성 개선.
+4. **목적지별 평일/토요일 그룹 선택 드롭다운 버튼 균일화**:
+   - 평일 및 토요일 그룹 드롭다운의 가로 길이를 `w-32 sm:w-36`으로 통일하고 글씨 크기 1pt 확대(`text-xs`).
+   - `평일`/`토` 뱃지의 가로 폭(`w-8 text-center`)도 일치시켜 단정하게 정렬.
 
 ---
 
 ## 2. Modified Files (수정된 주요 파일)
-1. `src/lib/services/userService.ts`:
-   - `normalizeGrade` 반(classNumber) 파싱 확장.
-   - `bulkRegisterUsers` 반 파싱, homerooms/gradeSubjects 동시 배정, `updatedOrg` 반환.
-   - `syncAllUsersToOrgStructure` 함수 추가.
-2. `src/components/settings-modal.tsx`:
-   - `fetchOrgStructure` 함수 분리 및 일괄 등록 완료 시 / 조직도 탭 클릭 시 즉시 최신화.
-   - 학년 필터링 `matchGrade` 적용 및 이메일 trim 매칭.
-   - 조직도 서브탭 우측에 `[교원 소속 ↔ 조직도 자동 동기화]` 버튼 추가.
-   - 엑셀 템플릿에 `반` 컬럼 가이드 추가.
-3. `SESSION_HANDOVER.md`: 세션 상태 갱신.
+1. `src/components/layout/main-layout.tsx`:
+   - `header` 요소의 높이를 측정하여 CSS 변수로 반영하고, 내부 `main`의 `overflow-x-hidden`을 제거하여 자식 sticky 요소가 스크롤 컨테이너에 정확히 부착되도록 개선.
+2. `src/app/(app)/admin/bus/page.tsx`:
+   - `TabsList`와 버스 설정용 `AdminPageFilter`를 묶어 sticky 래퍼에 배치(오직 `activeTab === 'bus-configuration'`일 때만 필터가 포함되어 상단 고정).
+3. `src/app/(app)/admin/bus/components/bus-configuration-tab.tsx`:
+   - 미편성 목적지 추천 및 목적지 그룹 이동 블록 글씨 크기 1.5배 확대.
+   - 목적지 목록 내 평일/토요일 드롭다운 가로 폭 통일 및 글자 크기 1pt 확대.
+4. `src/app/(app)/admin/bus/components/student-unassigned-panel.tsx`:
+   - 미배정 학생 검색 후 Enter 입력 시 카드 자동 스크롤 기능 구현.
 
 ---
 
 ## 3. Next Steps (다음 작업 목표)
-- 사용자 배포 승인 시 즉시 푸시 및 배포 완료.
+- 사용자의 명시적 배포 지시("배포해줘") 시 Firebase 호스팅 배포 진행.

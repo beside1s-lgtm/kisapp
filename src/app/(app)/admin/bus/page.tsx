@@ -240,223 +240,148 @@ const AdminPageContent: React.FC<{
     const departedBuses = activeBuses.filter(b => b.status === 'departed');
 
     return (
-        <>
-            {/* ── 실시간 통계 배너 & 시스템 운영 모드 설정 ── */}
-            <div className="flex flex-col xl:flex-row items-stretch gap-3 mb-5">
-                {/* 1. 상단 통계 카드 */}
-                <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1">
-                    <div className="flex items-center gap-2 bg-white border border-slate-200/80 rounded-xl p-2.5 shadow-xs min-w-[120px]">
-                        <div className="p-2 rounded-lg border shrink-0 text-blue-600 bg-blue-50 border-blue-100">
-                            <BusIcon className="w-3.5 h-3.5" />
-                        </div>
-                        <div className="min-w-0">
-                            <div className="text-[11px] text-slate-500 font-semibold truncate">전체 버스</div>
-                            <div className="text-sm sm:text-base font-extrabold text-slate-800 leading-tight">{activeBuses.length}</div>
-                        </div>
-                    </div>
+        <div className="w-full min-w-0">
+            <Tabs value={activeTab} onValueChange={setActiveTab} defaultValue="student-management" id="admin-tabs-root" className="w-full">
+                {/* 🌟 스크롤 여부와 상관 없이 헤더 바로 아래에 0px 오차 없이 완전히 딱 고정되는 탭 및 버스 설정 필터 래퍼 */}
+                <div className="sticky top-[var(--site-header-height,64px)] z-20 bg-background/95 backdrop-blur-md px-2.5 sm:px-4 md:px-6 py-2 space-y-2 border-b border-slate-200/50 shadow-xs">
+                    <TabsList className="grid grid-cols-3 sm:grid-cols-6 h-auto w-full bg-slate-100 p-1 sm:p-1.5 rounded-2xl gap-1 border border-slate-200/80">
+                        <TabsTrigger value="bus-registration" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_registration')}</TabsTrigger>
+                        <TabsTrigger value="teacher-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.teacher_management')}</TabsTrigger>
+                        <TabsTrigger value="bus-configuration" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_configuration')}</TabsTrigger>
+                        <TabsTrigger value="student-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.student_management')}</TabsTrigger>
+                        <TabsTrigger value="after-school-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">
+                            <span className="hidden sm:inline">방과후 하교 버스 조회</span>
+                            <span className="inline sm:hidden">방과후 조회</span>
+                        </TabsTrigger>
+                        <TabsTrigger value="fare-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">
+                            <span className="hidden sm:inline">요금 관리</span>
+                            <span className="inline sm:hidden">요금</span>
+                        </TabsTrigger>
+                    </TabsList>
 
-                    <div className="flex items-center gap-2 bg-white border border-slate-200/80 rounded-xl p-2.5 shadow-xs min-w-[120px]">
-                        <div className="p-2 rounded-lg border shrink-0 text-emerald-600 bg-emerald-50 border-emerald-100">
-                            <Activity className="w-3.5 h-3.5" />
+                    {/* 버스 설정 및 탑승 학생 관리 탭일 때 버스 요일 경로 필터가 함께 sticky로 고정됨 */}
+                    {(activeTab === 'bus-configuration' || activeTab === 'student-management') && (
+                        <div className="animate-in fade-in duration-150">
+                            <AdminPageFilter
+                                buses={filteredBuses}
+                                routes={filteredRoutes}
+                                selectedBusId={selectedBusId}
+                                setSelectedBusId={setSelectedBusId}
+                                selectedDay={selectedDay}
+                                setSelectedDay={setSelectedDay}
+                                selectedRouteType={selectedRouteType}
+                                setSelectedRouteType={setSelectedRouteType}
+                                days={DAYS}
+                                filterConfiguredBusesOnly={activeTab === 'student-management'}
+                                showRouteStops={activeTab === 'student-management'}
+                                destinations={destinations}
+                                semesterMode={semesterMode}
+                            />
                         </div>
-                        <div className="min-w-0">
-                            <div className="text-[11px] text-slate-500 font-semibold truncate">운행 노선</div>
-                            <div className="text-sm sm:text-base font-extrabold text-slate-800 leading-tight">{departedBuses.length || 14}</div>
-                        </div>
-                    </div>
+                    )}
                 </div>
 
-                {/* 2. 제어 컨트롤 그룹 (뷰 모드 및 시스템 적용) */}
-                <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0">
-                    {/* A. 편집 및 기획 뷰 모드 */}
-                    <div className="bg-white border border-slate-200/80 rounded-xl px-3 py-2 shadow-xs flex items-center gap-2 shrink-0">
-                        <span className="text-xs font-bold text-slate-700 whitespace-nowrap hidden sm:inline">뷰 모드</span>
-                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200/60 shrink-0">
-                            <Button 
-                                variant={semesterMode === 'regular' ? 'default' : 'ghost'} 
-                                size="sm" 
-                                className="text-xs h-7 px-2 font-bold rounded-md whitespace-nowrap"
-                                onClick={() => onSemesterModeChange('regular')}
-                            >
-                                학기 중
-                            </Button>
-                            <Button 
-                                variant={semesterMode === 'vacation' ? 'default' : 'ghost'} 
-                                size="sm" 
-                                className="text-xs h-7 px-2 font-bold rounded-md whitespace-nowrap"
-                                onClick={() => onSemesterModeChange('vacation')}
-                            >
-                                방학 중
-                            </Button>
-                        </div>
-                    </div>
-
-                    {/* C. 실제 앱 적용 모드 */}
-                    <div className="bg-white border border-slate-200/80 rounded-xl px-3 py-2 shadow-xs flex items-center gap-2 shrink-0">
-                        <div className="space-y-0.5 shrink-0">
-                            <div className="flex items-center gap-1.5 whitespace-nowrap">
-                                <span className="text-xs font-bold text-slate-800 whitespace-nowrap">적용 모드</span>
-                                <Badge 
-                                    variant={activeSystemMode === 'vacation' ? 'destructive' : 'secondary'} 
-                                    className="text-[10px] font-bold px-1.5 py-0.5 whitespace-nowrap shrink-0"
-                                >
-                                    {activeSystemMode === 'vacation' ? '방학 중' : '학기 중'}
-                                </Badge>
-                            </div>
-                        </div>
-
-                        {semesterMode !== activeSystemMode && (
-                            <Button
-                                variant="destructive"
-                                size="sm"
-                                className="text-xs h-7 px-2 font-bold shadow-xs cursor-pointer animate-pulse shrink-0 whitespace-nowrap rounded-md ml-1"
-                                onClick={onApplySystemMode}
-                            >
-                                적용
-                            </Button>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            {pendingStudents.length > 0 && (
-                 <Collapsible defaultOpen={true} className="mb-6">
-                    <Alert>
-                        <Bell className="h-4 w-4" />
-                        <div className="flex justify-between items-center w-full">
-                            <div className="flex items-center gap-2">
-                                <AlertTitle>{t('admin.new_applications.title')}</AlertTitle>
-                                <Badge variant="destructive">{pendingStudents.length}건</Badge>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Button size="sm" onClick={handleAcknowledgeAll}>
-                                    <CheckCheck className="mr-2 h-4 w-4" /> {t('admin.new_applications.acknowledge_all')}
-                                </Button>
-                                <CollapsibleTrigger asChild>
-                                    <Button variant="ghost" size="sm">
-                                        <ChevronsUpDown className="h-4 w-4" />
-                                    </Button>
-                                </CollapsibleTrigger>
-                            </div>
-                        </div>
-                        <AlertDescription>{t('admin.new_applications.description', { count: pendingStudents.length })}</AlertDescription>
-                    </Alert>
-                    <CollapsibleContent className="mt-2 space-y-2">
-                        {pendingStudents.map(student => (
-                            <Card key={student.id} className="p-4">
-                                <div className="flex justify-between items-center">
-                                    <div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-bold text-lg">{student.name}</span>
-                                            <Badge variant="outline">{student.grade}학년 {student.class}반</Badge>
-                                            <span className="text-xs text-muted-foreground">({student.contact})</span>
-                                        </div>
-                                        <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
-                                            {student.morningDestinationId && <div>• 등교: {getDestinationName(student.morningDestinationId)}</div>}
-                                            {student.afternoonDestinationId && <div>• 하교: {getDestinationName(student.afternoonDestinationId)}</div>}
-                                            {student.satMorningDestinationId && <div>• 토요 등교: {getDestinationName(student.satMorningDestinationId)}</div>}
-                                            {student.satAfternoonDestinationId && <div>• 토요 하교: {getDestinationName(student.satAfternoonDestinationId)}</div>}
-                                            {hasNewSuggestion(student) && (
-                                                <div className="text-primary font-medium flex items-center gap-1 mt-1">
-                                                    <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-primary/20">새 목적지 제안 포함</Badge>
-                                                </div>
-                                            )}
-                                        </div>
+                {/* 🌟 본문 영역 패딩 */}
+                <div className="px-2.5 sm:px-4 md:px-6 pt-3 pb-8">
+                    {pendingStudents.length > 0 && (
+                        <Collapsible defaultOpen={true} className="mb-6">
+                            <Alert>
+                                <Bell className="h-4 w-4" />
+                                <div className="flex justify-between items-center w-full">
+                                    <div className="flex items-center gap-2">
+                                        <AlertTitle>{t('admin.new_applications.title')}</AlertTitle>
+                                        <Badge variant="destructive">{pendingStudents.length}건</Badge>
                                     </div>
-                                    <div className="flex gap-2">
-                                        <Button size="sm" variant="secondary" onClick={() => handleManageStudent(student)}>
-                                            <UserCog className="mr-1 h-3 w-3" /> 관리
+                                    <div className="flex items-center gap-2">
+                                        <Button size="sm" onClick={handleAcknowledgeAll}>
+                                            <CheckCheck className="mr-2 h-4 w-4" /> {t('admin.new_applications.acknowledge_all')}
                                         </Button>
-                                        <Button size="sm" variant="outline" onClick={() => handleAcknowledgeSingle(student.id)}>
-                                            <Check className="mr-1 h-3 w-3" /> 확인
-                                        </Button>
-                                        <AlertDialog>
-                                            <AlertDialogTrigger asChild>
-                                                <Button size="sm" variant="destructive">
-                                                    <Trash2 className="mr-1 h-3 w-3" /> 삭제
-                                                </Button>
-                                            </AlertDialogTrigger>
-                                            <AlertDialogContent>
-                                                <AlertDialogHeader>
-                                                    <AlertDialogTitle>정말 이 신청을 삭제하시겠습니까?</AlertDialogTitle>
-                                                    <AlertDialogDescription>
-                                                        {student.name} 학생의 신청 정보가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
-                                                    </AlertDialogDescription>
-                                                </AlertDialogHeader>
-                                                <AlertDialogFooter>
-                                                    <AlertDialogCancel>취소</AlertDialogCancel>
-                                                    <AlertDialogAction onClick={() => handleDeleteSingle(student.id)}>삭제</AlertDialogAction>
-                                                </AlertDialogFooter>
-                                            </AlertDialogContent>
-                                        </AlertDialog>
+                                        <CollapsibleTrigger asChild>
+                                            <Button variant="ghost" size="sm">
+                                                <ChevronsUpDown className="h-4 w-4" />
+                                            </Button>
+                                        </CollapsibleTrigger>
                                     </div>
                                 </div>
-                            </Card>
-                        ))}
-                    </CollapsibleContent>
-                </Collapsible>
-            )}
-            <Tabs value={activeTab} onValueChange={setActiveTab} defaultValue="student-management" id="admin-tabs-root" className="w-full">
-                <TabsList className="grid grid-cols-3 sm:grid-cols-6 h-auto w-full bg-slate-100 p-1 sm:p-1.5 rounded-2xl gap-1 border border-slate-200/80">
-                    <TabsTrigger value="bus-registration" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_registration')}</TabsTrigger>
-                    <TabsTrigger value="teacher-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.teacher_management')}</TabsTrigger>
-                    <TabsTrigger value="bus-configuration" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_configuration')}</TabsTrigger>
-                    <TabsTrigger value="student-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.student_management')}</TabsTrigger>
-                    <TabsTrigger value="after-school-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">
-                        <span className="hidden sm:inline">방과후 하교 버스 조회</span>
-                        <span className="inline sm:hidden">방과후 조회</span>
-                    </TabsTrigger>
-                    <TabsTrigger value="fare-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">
-                        <span className="hidden sm:inline">요금 관리</span>
-                        <span className="inline sm:hidden">요금</span>
-                    </TabsTrigger>
-                </TabsList>
-                <TabsContent value="bus-registration" className="mt-6">
-                    <BusRegistrationTab buses={filteredBuses} routes={filteredRoutes} destinations={destinations} semesterMode={semesterMode} />
-                </TabsContent>
-                 <TabsContent value="teacher-management" className="mt-6">
-                    <TeacherManagementTab teachers={teachers} afterSchoolTeachers={afterSchoolTeachers} saturdayTeachers={saturdayTeachers} buses={filteredBuses} routes={filteredRoutes} destinations={destinations} semesterMode={semesterMode} />
-                </TabsContent>
-                <TabsContent value="bus-configuration" className="mt-6">
-                     <AdminPageFilter
-                        buses={filteredBuses}
-                        routes={filteredRoutes}
-                        selectedBusId={selectedBusId}
-                        setSelectedBusId={setSelectedBusId}
-                        selectedDay={selectedDay}
-                        setSelectedDay={setSelectedDay}
-                        selectedRouteType={selectedRouteType}
-                        setSelectedRouteType={setSelectedRouteType}
-                        days={DAYS}
-                        semesterMode={semesterMode}
-                    />
-                    <BusConfigurationTab
-                        buses={filteredBuses}
-                        routes={filteredRoutes}
-                        destinations={destinations}
-                        suggestedDestinations={suggestedDestinations}
-                        selectedDay={selectedDay}
-                        selectedRouteType={selectedRouteType}
-                        selectedBusId={selectedBusId}
-                    />
-                </TabsContent>
-                <TabsContent value="student-management" className="mt-6">
-                    <div id="student-management-panel" className="scroll-mt-20">
-                        <AdminPageFilter
+                                <AlertDescription>{t('admin.new_applications.description', { count: pendingStudents.length })}</AlertDescription>
+                            </Alert>
+                            <CollapsibleContent className="mt-2 space-y-2">
+                                {pendingStudents.map(student => (
+                                    <Card key={student.id} className="p-4">
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-lg">{student.name}</span>
+                                                    <Badge variant="outline">{student.grade}학년 {student.class}반</Badge>
+                                                    <span className="text-xs text-muted-foreground">({student.contact})</span>
+                                                </div>
+                                                <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                                                    {student.morningDestinationId && <div>• 등교: {getDestinationName(student.morningDestinationId)}</div>}
+                                                    {student.afternoonDestinationId && <div>• 하교: {getDestinationName(student.afternoonDestinationId)}</div>}
+                                                    {student.satMorningDestinationId && <div>• 토요 등교: {getDestinationName(student.satMorningDestinationId)}</div>}
+                                                    {student.satAfternoonDestinationId && <div>• 토요 하교: {getDestinationName(student.satAfternoonDestinationId)}</div>}
+                                                    {hasNewSuggestion(student) && (
+                                                        <div className="text-primary font-medium flex items-center gap-1 mt-1">
+                                                            <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-primary/20">새 목적지 제안 포함</Badge>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <Button size="sm" variant="secondary" onClick={() => handleManageStudent(student)}>
+                                                    <UserCog className="mr-1 h-3 w-3" /> 관리
+                                                </Button>
+                                                <Button size="sm" variant="outline" onClick={() => handleAcknowledgeSingle(student.id)}>
+                                                    <Check className="mr-1 h-3 w-3" /> 확인
+                                                </Button>
+                                                <AlertDialog>
+                                                    <AlertDialogTrigger asChild>
+                                                        <Button size="sm" variant="destructive">
+                                                            <Trash2 className="mr-1 h-3 w-3" /> 삭제
+                                                        </Button>
+                                                    </AlertDialogTrigger>
+                                                    <AlertDialogContent>
+                                                        <AlertDialogHeader>
+                                                            <AlertDialogTitle>정말 이 신청을 삭제하시겠습니까?</AlertDialogTitle>
+                                                            <AlertDialogDescription>
+                                                                {student.name} 학생의 신청 정보가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
+                                                            </AlertDialogDescription>
+                                                        </AlertDialogHeader>
+                                                        <AlertDialogFooter>
+                                                            <AlertDialogCancel>취소</AlertDialogCancel>
+                                                            <AlertDialogAction onClick={() => handleDeleteSingle(student.id)}>삭제</AlertDialogAction>
+                                                        </AlertDialogFooter>
+                                                    </AlertDialogContent>
+                                                </AlertDialog>
+                                            </div>
+                                        </div>
+                                    </Card>
+                                ))}
+                            </CollapsibleContent>
+                        </Collapsible>
+                    )}
+
+                    <TabsContent value="bus-registration" className="mt-0">
+                        <BusRegistrationTab buses={filteredBuses} routes={filteredRoutes} destinations={destinations} semesterMode={semesterMode} />
+                    </TabsContent>
+                    <TabsContent value="teacher-management" className="mt-0">
+                        <TeacherManagementTab teachers={teachers} afterSchoolTeachers={afterSchoolTeachers} saturdayTeachers={saturdayTeachers} buses={filteredBuses} routes={filteredRoutes} destinations={destinations} semesterMode={semesterMode} />
+                    </TabsContent>
+                    <TabsContent value="bus-configuration" className="mt-0">
+                        <BusConfigurationTab
                             buses={filteredBuses}
                             routes={filteredRoutes}
-                            selectedBusId={selectedBusId}
-                            setSelectedBusId={setSelectedBusId}
-                            selectedDay={selectedDay}
-                            setSelectedDay={setSelectedDay}
-                            selectedRouteType={selectedRouteType}
-                            setSelectedRouteType={setSelectedRouteType}
-                            days={DAYS}
-                            filterConfiguredBusesOnly={true}
-                            showRouteStops={true}
                             destinations={destinations}
-                            semesterMode={semesterMode}
+                            suggestedDestinations={suggestedDestinations}
+                            selectedDay={selectedDay}
+                            selectedRouteType={selectedRouteType}
+                            selectedBusId={selectedBusId}
+                            students={students}
                         />
+                    </TabsContent>
+
+                <TabsContent value="student-management" className="mt-0">
+                    <div id="student-management-panel" className="scroll-mt-20">
                         <StudentManagementTab 
                             students={students} 
                             buses={filteredBuses}
@@ -477,6 +402,7 @@ const AdminPageContent: React.FC<{
                         />
                     </div>
                 </TabsContent>
+
                 <TabsContent value="after-school-management" className="mt-6">
                     <AfterSchoolManagementTab
                         afterSchoolClasses={afterSchoolClasses}
@@ -496,8 +422,9 @@ const AdminPageContent: React.FC<{
                         academicCalendar={docConfig?.academicCalendar}
                     />
                 </TabsContent>
+                </div>
             </Tabs>
-        </>
+        </div>
     );
 };
 
@@ -2590,6 +2517,60 @@ ${leaderRowsHtml}
 
     const titleActions = (
         <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap shrink-0">
+            {/* 0. 뷰 모드 (학기 중 / 방학 중) */}
+            <div className="bg-slate-100/90 border border-slate-200/90 rounded-lg px-2 py-1 flex items-center gap-1 h-8 shrink-0">
+                <span className="text-[11px] font-bold text-slate-600 whitespace-nowrap hidden md:inline">뷰 모드</span>
+                <div className="flex items-center gap-0.5 bg-white rounded-md border border-slate-200/60 p-0.5">
+                    <Button
+                        variant={adminViewMode === 'regular' ? 'default' : 'ghost'}
+                        size="sm"
+                        className="text-[11px] h-6 px-2 font-bold rounded whitespace-nowrap"
+                        onClick={() => setAdminViewMode('regular')}
+                    >
+                        학기 중
+                    </Button>
+                    <Button
+                        variant={adminViewMode === 'vacation' ? 'default' : 'ghost'}
+                        size="sm"
+                        className="text-[11px] h-6 px-2 font-bold rounded whitespace-nowrap"
+                        onClick={() => setAdminViewMode('vacation')}
+                    >
+                        방학 중
+                    </Button>
+                </div>
+            </div>
+
+            {/* 0b. 적용 모드 */}
+            <div className="bg-slate-100/90 border border-slate-200/90 rounded-lg px-2 py-1 flex items-center gap-1.5 h-8 shrink-0">
+                <span className="text-[11px] font-bold text-slate-600 whitespace-nowrap hidden md:inline">적용 모드</span>
+                <Badge
+                    variant={activeSystemMode === 'vacation' ? 'destructive' : 'secondary'}
+                    className="text-[10px] font-bold px-1.5 py-0.5 whitespace-nowrap shrink-0"
+                >
+                    {activeSystemMode === 'vacation' ? '방학 중' : '학기 중'}
+                </Badge>
+                {adminViewMode !== activeSystemMode && (
+                    <Button
+                        variant="destructive"
+                        size="sm"
+                        className="text-[11px] h-6 px-1.5 font-bold cursor-pointer animate-pulse shrink-0 whitespace-nowrap rounded"
+                        onClick={async () => {
+                            try {
+                                await updateGlobalSettings({ semesterMode: adminViewMode });
+                                toast({
+                                    title: '시스템 반영 성공',
+                                    description: `[${adminViewMode === 'vacation' ? '방학 중 (방과후)' : '학기 중 (일반)'}] 모드가 정상 반영되었습니다.`
+                                });
+                            } catch (e) {
+                                toast({ title: '반영 실패', description: '설정 변경 중 오류가 발생했습니다.', variant: 'destructive' });
+                            }
+                        }}
+                    >
+                        적용
+                    </Button>
+                )}
+            </div>
+
             {/* 🌟 방과후 노선으로 이동 액션 버튼 */}
             <Button
                 type="button"
@@ -2715,7 +2696,7 @@ ${leaderRowsHtml}
     );
 
     return (
-        <MainLayout titleActions={titleActions}>
+        <MainLayout titleActions={titleActions} contentClassName="p-0">
             <AdminPageContent
                 buses={buses}
                 students={students}

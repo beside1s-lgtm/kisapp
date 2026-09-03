@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useRef, useCallback, KeyboardEvent } from 'react';
 import { Search, Download, Trash2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -38,8 +38,34 @@ export const StudentUnassignedPanel = ({
     handleToggleStudentSelection, handleUnassignedStudentClick, handleStudentCardClick
 }: StudentUnassignedPanelProps) => {
     const { t } = useTranslation();
+    const listRef = useRef<HTMLDivElement>(null);
 
     const siblingCount = filteredUnassignedStudents.filter(s => !!s.siblingGroupId).length;
+
+    // 검색어 입력 또는 엔터 시 첫 번째 카드로 스크롤
+    const scrollToFirstMatch = useCallback(() => {
+        if (!listRef.current || filteredUnassignedStudents.length === 0) return;
+        const firstCard = listRef.current.querySelector('[data-student-card]') as HTMLElement | null;
+        if (firstCard) {
+            firstCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            // 시각적 하이라이트 효과
+            firstCard.style.outline = '2px solid #6366f1';
+            firstCard.style.borderRadius = '8px';
+            setTimeout(() => {
+                if (firstCard) {
+                    firstCard.style.outline = '';
+                    firstCard.style.borderRadius = '';
+                }
+            }, 1500);
+        }
+    }, [filteredUnassignedStudents]);
+
+    const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            scrollToFirstMatch();
+        }
+    }, [scrollToFirstMatch]);
 
     return (
         <Card>
@@ -70,10 +96,11 @@ export const StudentUnassignedPanel = ({
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
                             type="search"
-                            placeholder={t('admin.student_management.unassigned.search_placeholder')}
+                            placeholder={`${t('admin.student_management.unassigned.search_placeholder')} (Enter: 카드로 이동)`}
                             className="pl-8 w-full h-9 text-xs"
                             value={unassignedSearchQuery}
                             onChange={(e) => setUnassignedSearchQuery(e.target.value)}
+                            onKeyDown={handleKeyDown}
                         />
                     </div>
                 </div>
@@ -106,19 +133,20 @@ export const StudentUnassignedPanel = ({
                         </AlertDialogContent>
                     </AlertDialog>
                 </div>
-                <div className="min-h-[200px] max-h-[30vh] overflow-y-auto pr-1">
-                    {filteredUnassignedStudents.map((student) => (
-                        <StudentCard 
-                            key={student.id}
-                            student={student} 
-                            destinations={destinations}
-                            isChecked={selectedStudentIds.has(student.id)}
-                            onCheckedChange={(isChecked) => handleToggleStudentSelection(student.id, isChecked)}
-                            onCardClick={() => handleUnassignedStudentClick(student)}
-                            onAssignClick={() => handleStudentCardClick(student.id)}
-                            routeType={selectedRouteType}
-                            dayOfWeek={selectedDay}
-                        />
+                <div ref={listRef} className="min-h-[200px] max-h-[30vh] overflow-y-auto pr-1">
+                    {filteredUnassignedStudents.map((student, idx) => (
+                        <div key={student.id} data-student-card={student.id}>
+                            <StudentCard 
+                                student={student} 
+                                destinations={destinations}
+                                isChecked={selectedStudentIds.has(student.id)}
+                                onCheckedChange={(isChecked) => handleToggleStudentSelection(student.id, isChecked)}
+                                onCardClick={() => handleUnassignedStudentClick(student)}
+                                onAssignClick={() => handleStudentCardClick(student.id)}
+                                routeType={selectedRouteType}
+                                dayOfWeek={selectedDay}
+                            />
+                        </div>
                     ))}
                 </div>
             </CardContent>
