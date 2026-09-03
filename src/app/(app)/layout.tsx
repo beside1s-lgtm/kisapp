@@ -58,16 +58,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen bg-background text-foreground font-body w-full max-w-full">
-        <div className="print:hidden w-full max-w-full">
+      <div className="h-screen max-h-screen overflow-hidden flex flex-col bg-background text-foreground font-body w-full max-w-full">
+        <div className="print:hidden w-full max-w-full shrink-0 z-50">
           <AppHeader />
         </div>
-        <div className="flex print:block pt-14 sm:pt-16 print:pt-0 min-w-0 w-full max-w-full">
-          <div className="print:hidden shrink-0">
+        <div className="flex-1 min-h-0 flex print:block pt-14 sm:pt-16 print:pt-0 min-w-0 w-full max-w-full overflow-hidden">
+          <div className="print:hidden shrink-0 h-full">
             <AppSidebar />
           </div>
-          <main className="flex-1 min-w-0 w-full max-w-full pb-24 lg:pb-8 print:p-0 print:m-0 print:block">
+          <main className="flex-1 min-w-0 w-full max-w-full h-full pb-20 lg:pb-0 overflow-y-auto print:p-0 print:m-0 print:block flex flex-col justify-between">
+            <div className="flex-1 min-w-0">
               {children}
+            </div>
+            <footer className="border-t py-2 text-center text-xs text-muted-foreground bg-card/30 backdrop-blur-sm no-print print:hidden w-full overflow-x-hidden shrink-0 mt-2">
+              <div className="flex flex-col sm:flex-row justify-center items-center gap-1.5 sm:gap-6 px-2">
+                <span>© {new Date().getFullYear()} KIS 통합 포털. All rights reserved.</span>
+                <Link href="/privacy" className="font-semibold text-primary hover:underline transition-all">
+                  개인정보처리방침 (Privacy Policy)
+                </Link>
+              </div>
+            </footer>
           </main>
         </div>
 

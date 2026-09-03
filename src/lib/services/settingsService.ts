@@ -32,6 +32,19 @@ export async function getDocConfig(): Promise<Partial<DocConfig>> {
   }
 }
 
+export async function getPeriodSchedules(): Promise<import('@/lib/types').ClassPeriodSchedule[]> {
+  try {
+    const config = await getDocConfig();
+    if (config.academicCalendar?.periodSchedules && config.academicCalendar.periodSchedules.length > 0) {
+      return config.academicCalendar.periodSchedules;
+    }
+  } catch (e) {
+    console.error("[SettingsService] getPeriodSchedules error:", e);
+  }
+  const { DEFAULT_PERIOD_SCHEDULES } = await import('@/lib/types');
+  return DEFAULT_PERIOD_SCHEDULES;
+}
+
 export function onDocConfigUpdate(callback: (config: Partial<DocConfig>) => void) {
   return onSnapshot(doc(getSettingsCol(), 'docConfig'), (snap) => {
     if (snap.exists()) {
@@ -1117,5 +1130,59 @@ export async function savePrivacyPolicy(
     return { success: false, error: e.message };
   }
 }
+
+// ─── Google Drive 중앙 저장소 설정 ─────────────────────────────────────
+const GOOGLE_DRIVE_DOC = 'googleDriveConfig';
+
+export const DEFAULT_GOOGLE_DRIVE_CONFIG: import('@/lib/types').GoogleDriveConfig = {
+  enabled: false,
+  rootFolderId: '',
+  rootFolderUrl: '',
+  sharedDriveName: 'KIS_학교행정_중앙저장소'
+};
+
+export async function getGoogleDriveConfig(): Promise<import('@/lib/types').GoogleDriveConfig> {
+  try {
+    const snap = await getDoc(doc(getSettingsCol(), GOOGLE_DRIVE_DOC));
+    if (snap.exists()) {
+      return { ...DEFAULT_GOOGLE_DRIVE_CONFIG, ...(snap.data() as import('@/lib/types').GoogleDriveConfig) };
+    }
+    return DEFAULT_GOOGLE_DRIVE_CONFIG;
+  } catch (e) {
+    console.error('[SettingsService] getGoogleDriveConfig error:', e);
+    return DEFAULT_GOOGLE_DRIVE_CONFIG;
+  }
+}
+
+export function onGoogleDriveConfigUpdate(callback: (config: import('@/lib/types').GoogleDriveConfig) => void): () => void {
+  return onSnapshot(doc(getSettingsCol(), GOOGLE_DRIVE_DOC), (snap) => {
+    if (snap.exists()) {
+      callback({ ...DEFAULT_GOOGLE_DRIVE_CONFIG, ...(snap.data() as import('@/lib/types').GoogleDriveConfig) });
+    } else {
+      callback(DEFAULT_GOOGLE_DRIVE_CONFIG);
+    }
+  }, (err) => {
+    console.warn('[SettingsService] onGoogleDriveConfigUpdate fallback:', err);
+    callback(DEFAULT_GOOGLE_DRIVE_CONFIG);
+  });
+}
+
+export async function saveGoogleDriveConfig(
+  payload: Partial<import('@/lib/types').GoogleDriveConfig>,
+  updaterEmail?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const data = cleanUndefined({
+      ...payload,
+      updatedBy: updaterEmail || '관리자',
+      updatedAt: new Date().toISOString(),
+    });
+    await setDoc(doc(getSettingsCol(), GOOGLE_DRIVE_DOC), data, { merge: true });
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+}
+
 
 

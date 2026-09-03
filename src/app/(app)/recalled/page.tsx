@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { ApprovalDoc } from "@/lib/types";
 import { 
     Undo2, Loader2, Trash2, Edit3, CheckSquare, Square, 
-    AlertTriangle, FileText, User, ChevronRight, RefreshCw 
+    AlertTriangle, FileText, User, ChevronRight, RefreshCw, ArrowLeft 
 } from "lucide-react";
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
@@ -169,20 +169,31 @@ export default function RecalledPage() {
         <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-6">
             {/* 1. 상단 타이틀 & 설명 (한 줄 표기 및 넓은 영역 확보) */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b pb-5">
-                <div>
-                    <h1 className="font-headline text-2xl sm:text-3xl font-extrabold flex items-center gap-3 text-slate-900">
-                        <Undo2 className="h-7 w-7 text-primary" />
-                        회수 문서함
-                    </h1>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        내가 상신 후 회수한 문서 목록입니다. 문서를 수정하여 재상신하거나 불필요한 문서를 삭제할 수 있습니다.
-                    </p>
+                <div className="flex items-center gap-3">
+                    <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={() => router.back()} 
+                        className="h-9 w-9 rounded-xl hover:bg-slate-100 shrink-0"
+                        title="뒤로 가기"
+                    >
+                        <ArrowLeft className="h-5 w-5 text-slate-600" />
+                    </Button>
+                    <div>
+                        <h1 className="font-headline text-2xl sm:text-3xl font-extrabold flex items-center gap-2.5 text-slate-900">
+                            <Undo2 className="h-6 w-6 text-primary" />
+                            회수 문서함
+                        </h1>
+                        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+                            내가 상신 후 회수한 문서 목록입니다. 문서를 수정하여 재상신하거나 불필요한 문서를 삭제할 수 있습니다.
+                        </p>
+                    </div>
                 </div>
                 <Button 
                     variant="outline" 
                     size="sm" 
                     onClick={loadDocuments} 
-                    className="self-start sm:self-auto h-9 gap-1.5 text-xs font-semibold"
+                    className="self-start sm:self-auto h-8 gap-1.5 text-xs font-semibold rounded-xl"
                 >
                     <RefreshCw className="h-3.5 w-3.5" />
                     새로고침
@@ -353,15 +364,17 @@ export default function RecalledPage() {
                             <AlertTriangle className="h-5 w-5 shrink-0" />
                             <span>회수 문서 삭제</span>
                         </AlertDialogTitle>
-                        <AlertDialogDescription className="text-xs text-slate-600 space-y-2">
-                            <p>
-                                {singleDeleteTargetId
-                                    ? "선택한 회수 문서를 영구적으로 삭제하시겠습니까?"
-                                    : `선택하신 ${selectedDocIds.size}건의 회수 문서를 영구적으로 일괄 삭제하시겠습니까?`}
-                            </p>
-                            <p className="text-red-500 font-medium">
-                                ※ 삭제된 문서는 복구할 수 없습니다.
-                            </p>
+                        <AlertDialogDescription asChild>
+                            <div className="text-xs text-slate-600 space-y-2">
+                                <div>
+                                    {singleDeleteTargetId
+                                        ? "선택한 회수 문서를 영구적으로 삭제하시겠습니까?"
+                                        : `선택하신 ${selectedDocIds.size}건의 회수 문서를 영구적으로 일괄 삭제하시겠습니까?`}
+                                </div>
+                                <div className="text-red-500 font-medium">
+                                    ※ 삭제된 문서는 복구할 수 없습니다.
+                                </div>
+                            </div>
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter className="gap-2">

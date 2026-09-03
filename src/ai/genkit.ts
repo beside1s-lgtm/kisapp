@@ -2,6 +2,7 @@ import {genkit} from 'genkit';
 import {googleAI} from '@genkit-ai/google-genai';
 
 export const ai = genkit({
-  plugins: [googleAI()],
-  model: 'googleai/gemini-2.5-flash',
+  plugins: [googleAI({ apiKey: process.env.GOOGLE_GENAI_API_KEY })],
+  // The model property is now set within each prompt definition
+  // model: 'googleai/gemini-3.0-flash-latest', 
 });

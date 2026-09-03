@@ -4,7 +4,8 @@ import { getRegistryDocuments } from "@/lib/services/documentService";
 import { DocumentList } from "@/components/document-list";
 import { useAuth } from "@/hooks/use-auth";
 import { ApprovalDoc } from "@/lib/types";
-import { ListFilter, Loader2, Search, X, ChevronDown } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ListFilter, Loader2, Search, X, ChevronDown, ArrowLeft } from "lucide-react";
 import { useEffect, useState, useMemo, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 
 export default function RegistryPage() {
+    const router = useRouter();
     const { user, profile } = useAuth();
     const [docs, setDocs] = useState<ApprovalDoc[]>([]);
     const [loading, setLoading] = useState(true);
@@ -124,12 +126,23 @@ export default function RegistryPage() {
     return (
         <div className="p-4 md:p-8 space-y-6">
             {/* 헤더 */}
-            <div>
-                <h1 className="font-headline text-3xl font-bold flex items-center gap-3">
-                    <ListFilter className="h-8 w-8 text-primary" />
-                    문서대장
-                </h1>
-                <p className="text-muted-foreground mt-1">결재 완료된 모든 문서의 기록입니다.</p>
+            <div className="flex items-center gap-3 border-b pb-4">
+                <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => router.back()} 
+                    className="h-9 w-9 rounded-xl hover:bg-slate-100 shrink-0"
+                    title="뒤로 가기"
+                >
+                    <ArrowLeft className="h-5 w-5 text-slate-600" />
+                </Button>
+                <div>
+                    <h1 className="font-headline text-2xl sm:text-3xl font-bold flex items-center gap-2.5 text-slate-900">
+                        <ListFilter className="h-6 w-6 text-primary" />
+                        문서대장
+                    </h1>
+                    <p className="text-muted-foreground mt-0.5 text-xs sm:text-sm">결재 완료된 모든 문서의 기록입니다.</p>
+                </div>
             </div>
 
             {/* 검색/필터 영역 */}

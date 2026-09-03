@@ -9,6 +9,7 @@ import { Loader2, Plus, BookOpen, Users, ClipboardCheck } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useTranslation } from '@/hooks/use-translation';
 import { MainLayout } from '@/components/layout/main-layout';
+import { cn } from '@/lib/utils';
 
 // 이식한 컴포넌트 임포트
 import { CourseManagement } from '@/components/afterschool/teacher/CourseManagement';
@@ -24,8 +25,11 @@ import {
   initialTimerConfig,
   initialPeriods,
 } from '@/lib/afterschool/mock/data';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Classroom, SubmittedApprovalDoc, SessionPeriod } from '@/lib/afterschool/types';
-import { onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsUpdate, onAttendanceRecordsUpdate, saveAttendanceRecordsBatch, onAfterschoolClassroomsUpdate, onAfterschoolApprovalDocsUpdate } from '@/lib/services/settingsService';
+import { onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsUpdate, onAttendanceRecordsUpdate, saveAttendanceRecordsBatch, onAfterschoolClassroomsUpdate, onAfterschoolApprovalDocsUpdate, getTeacherApplySettings, saveTeacherApplySettings, onTeacherApplySettingsUpdate } from '@/lib/services/settingsService';
+import { onMasterStudentsUpdate } from '@/lib/services/masterStudentService';
+import type { MasterStudent } from '@/lib/types/masterStudent';
 import { getUsersDirectory } from '@/lib/services/userService';
 import type { UserProfile } from '@/lib/types';
 
@@ -74,11 +78,11 @@ function AfterschoolConsole() {
   const [activeTab, setActiveTab] = useState<string>('course');
 
   // Shared States
-  const [courses, setCourses] = useState<import('@/lib/afterschool/types').Course[]>([]);
+  const [courses, setCourses] = useState<import('@/lib/afterschool/types').Course[]>(initialCourses);
   const [studentsList] = useState(initialStudents);
-  const [enrollments, setEnrollments] = useState<import('@/lib/afterschool/types').Enrollment[]>([]);
-  const [attendanceRecords, setAttendanceRecords] = useState<import('@/lib/afterschool/types').AttendanceRecord[]>([]);
-  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+  const [enrollments, setEnrollments] = useState<import('@/lib/afterschool/types').Enrollment[]>(initialEnrollments);
+  const [attendanceRecords, setAttendanceRecords] = useState<import('@/lib/afterschool/types').AttendanceRecord[]>(initialAttendance);
+  const [classrooms, setClassrooms] = useState<Classroom[]>(initialClassrooms);
   
   // 차시별 수강료 고정 금액 설정
   const [tuitionPerSession] = useState<number>(15000);
@@ -110,16 +114,16 @@ function AfterschoolConsole() {
   // Firestore DB 실시간 연동 (강좌, 수강신청, 출석)
   useEffect(() => {
     const unsubCourses = onAfterschoolCoursesUpdate((data) => {
-      setCourses(data);
+      if (data && data.length > 0) setCourses(data);
     });
     const unsubEnrollments = onAfterschoolEnrollmentsUpdate((data) => {
-      setEnrollments(data);
+      if (data && data.length > 0) setEnrollments(data);
     });
     const unsubAttendance = onAttendanceRecordsUpdate((data) => {
-      setAttendanceRecords(data);
+      if (data && data.length > 0) setAttendanceRecords(data);
     });
     const unsubClassrooms = onAfterschoolClassroomsUpdate((data) => {
-      setClassrooms(data);
+      if (data && data.length > 0) setClassrooms(data);
     });
     const unsubApprovalDocs = onAfterschoolApprovalDocsUpdate((data) => {
       setApprovalDocs(data);
@@ -160,23 +164,60 @@ function AfterschoolConsole() {
   // Submitted approval docs
   const [approvalDocs, setApprovalDocs] = useState<SubmittedApprovalDoc[]>([]);
 
+  // 서브탭 뷰 관리 (출석부 / 강사출근부 / 증빙 문서 관리 / 강좌 카드)
+  const [activeSubTab, setActiveSubTab] = useState<'studentSheet' | 'teacherAttendance' | 'batchApproval' | 'course'>('studentSheet');
+
+  // 진행 상태 & 마스터 학생 데이터 연동
+  const [stageStatus, setStageStatus] = useState<string>('RECRUITING');
+  const [masterStudents, setMasterStudents] = useState<MasterStudent[]>([]);
+
+  useEffect(() => {
+    getTeacherApplySettings().then(s => {
+      if (s?.afterschoolStageStatus) setStageStatus(s.afterschoolStageStatus);
+    });
+    const unsubStage = onTeacherApplySettingsUpdate(s => {
+      if (s?.afterschoolStageStatus) setStageStatus(s.afterschoolStageStatus);
+    });
+    const unsubMaster = onMasterStudentsUpdate(data => {
+      setMasterStudents(data);
+    });
+    return () => {
+      unsubStage();
+      unsubMaster();
+    };
+  }, []);
+
+  const handleToggleStageStatus = async () => {
+    const nextStatus = stageStatus === 'OPERATING' ? 'CLOSED' : stageStatus === 'CLOSED' ? 'RECRUITING' : 'OPERATING';
+    const nextLabel = nextStatus === 'OPERATING' ? '운영중' : nextStatus === 'CLOSED' ? '종료' : '대기중';
+    if (window.confirm(`방과후학교 진행 상태를 [${nextLabel}] (으)로 변경하시겠습니까?`)) {
+      await saveTeacherApplySettings({ afterschoolStageStatus: nextStatus });
+      setStageStatus(nextStatus);
+    }
+  };
+
   const handleSelectCourseForStudent = (courseId: string) => {
     setSelectedCourseId(courseId);
-    setActiveTab('student');
+    setActiveSubTab('studentSheet');
   };
 
   const myName = (profile?.name || user?.displayName || '').trim();
-  const myCourses = courses.filter(c => {
-    if (!myName) return true;
-    const instructors = [
-      c.instructorName,
-      c.instructor2,
-      c.instructor3,
-      c.instructor4,
-      ...(c.assistantTeachers || [])
-    ].filter(Boolean).map(s => String(s).trim());
-    return instructors.includes(myName);
-  });
+  const teacherCourses = useMemo(() => {
+    if (!myName) return courses;
+    const filtered = courses.filter(c => {
+      const instructors = [
+        c.instructorName,
+        c.instructor2,
+        c.instructor3,
+        c.instructor4,
+        ...(c.assistantTeachers || [])
+      ].filter(Boolean).map(s => String(s).trim());
+      return instructors.includes(myName);
+    });
+    return filtered.length > 0 ? filtered : courses;
+  }, [courses, myName]);
+
+  const myCourses = teacherCourses;
 
   // 교사 본인 강좌 ID 목록
   const myCourseIds = useMemo(() => myCourses.map(c => c.id), [myCourses]);
@@ -192,96 +233,187 @@ function AfterschoolConsole() {
   }, [attendanceRecords, myCourseIds]);
 
   useEffect(() => {
-    if (myCourses.length > 0 && !selectedCourseId) {
+    if (myCourses.length > 0 && (!selectedCourseId || !myCourses.some(c => c.id === selectedCourseId))) {
       setSelectedCourseId(myCourses[0].id);
     }
   }, [myCourses, selectedCourseId]);
 
   return (
-    <MainLayout>
-      <div className="max-w-7xl mx-auto p-2.5 sm:p-4 md:p-8 space-y-3 sm:space-y-6">
-        
-        {/* 상단 타이틀 & 설명 배너 */}
-        <div className="bg-white p-3.5 sm:p-6 rounded-xl sm:rounded-2xl border shadow-xs sm:shadow-sm flex items-center gap-2.5 sm:gap-3">
-          <div className="p-2 sm:p-3 bg-indigo-50 text-indigo-600 rounded-lg sm:rounded-xl shrink-0">
-            <BookOpen className="w-5 h-5 sm:w-7 sm:h-7" />
-          </div>
-          <div>
-            <h1 className="text-base sm:text-2xl font-bold font-headline flex items-center gap-2 text-slate-800">
-              {t('afterschool.teacher.title')}
-            </h1>
-            <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1">
-              {t('afterschool.teacher.desc')}
-            </p>
-          </div>
+    <MainLayout
+      title={
+        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-nowrap">
+          {/* 1. 강의 선택 드롭다운 버튼 (요청 1: 선생님 페이지 앞으로 이동!) */}
+          {myCourses.length > 0 && (
+            <Select
+              value={selectedCourseId}
+              onValueChange={(val) => {
+                setSelectedCourseId(val);
+                setActiveSubTab('course'); // 드롭다운 선택 시 해당 강좌 카드로 이동!
+              }}
+            >
+              <SelectTrigger className="h-7 text-xs bg-white border-slate-300 font-bold px-2 min-w-[105px] max-w-[160px] shrink-0 rounded-lg shadow-2xs text-slate-800">
+                <SelectValue placeholder="강좌 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {myCourses.map(c => (
+                  <SelectItem
+                    key={c.id}
+                    value={c.id}
+                    className="text-xs font-semibold cursor-pointer"
+                    onClick={() => {
+                      setSelectedCourseId(c.id);
+                      setActiveSubTab('course');
+                    }}
+                  >
+                    {c.title}
+                  </SelectItem>
+                ))}
+                <div
+                  className="px-2 py-1.5 border-t border-slate-100 text-[11px] font-extrabold text-indigo-600 hover:bg-indigo-50 cursor-pointer flex items-center gap-1 rounded-sm mt-1"
+                  onClick={() => setActiveSubTab('course')}
+                >
+                  <BookOpen className="w-3 h-3 shrink-0 text-indigo-600" />
+                  <span>강좌 상세/수업계획 카드</span>
+                </div>
+              </SelectContent>
+            </Select>
+          )}
+
+          {/* 2. 선생님 페이지 타이틀 */}
+          <span className="text-sm sm:text-base font-bold font-headline text-slate-800 shrink-0">
+            {t('page.title.teacher') || '선생님 페이지'}
+          </span>
+
+          {/* 3. 출석부/강사출근부/증빙 문서 관리 드롭다운 버튼 (요청 2: 최상단 헤더 선생님 페이지 오른쪽 자리로 이동!) */}
+          <Select value={activeSubTab} onValueChange={(val: any) => setActiveSubTab(val)}>
+            <SelectTrigger className="h-7 text-xs bg-indigo-50 text-indigo-900 border-indigo-300 font-extrabold px-2.5 min-w-[100px] max-w-[140px] shrink-0 rounded-lg shadow-2xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="studentSheet" className="text-xs font-bold">
+                📋 출석부
+              </SelectItem>
+              <SelectItem value="teacherAttendance" className="text-xs font-bold">
+                📝 강사출근부
+              </SelectItem>
+              <SelectItem value="batchApproval" className="text-xs font-bold">
+                📦 증빙 문서 관리
+              </SelectItem>
+              <SelectItem value="course" className="text-xs font-bold text-indigo-700">
+                📖 강좌 관리 & 수업계획
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-
-        {/* 탭 인터페이스 */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-3 sm:space-y-6">
-          <TabsList className="grid grid-cols-3 max-w-lg w-full h-auto p-1 bg-slate-100/80 rounded-xl border border-slate-200 gap-0.5">
-            <TabsTrigger value="course" className="py-1.5 sm:py-2.5 rounded-lg font-bold text-xs sm:text-sm gap-1 sm:gap-2 px-1 truncate">
-              <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-              <span className="truncate">{t('afterschool.teacher.my_courses')}</span>
-              <span className="text-[10px] sm:text-xs text-slate-500">({myCourses.length})</span>
-            </TabsTrigger>
-            <TabsTrigger value="student" className="py-1.5 sm:py-2.5 rounded-lg font-bold text-xs sm:text-sm gap-1 sm:gap-2 px-1 truncate">
-              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-              <span className="truncate">{t('afterschool.teacher.enrolled_students')}</span>
-              <span className="text-[10px] sm:text-xs text-slate-500">({myEnrollments.length})</span>
-            </TabsTrigger>
-            <TabsTrigger value="attendance" className="py-1.5 sm:py-2.5 rounded-lg font-bold text-xs sm:text-sm gap-1 sm:gap-2 px-1 truncate">
-              <ClipboardCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-              <span className="truncate">{t('afterschool.teacher.attendance_check')}</span>
-            </TabsTrigger>
-          </TabsList>
-
-          <Card className="border-slate-200/80 shadow-xs sm:shadow-md bg-white">
-            <CardContent className="p-3 sm:p-6">
-              <TabsContent value="course" className="m-0 focus-visible:outline-none">
-                <CourseManagement
-                  courses={myCourses}
-                  setCourses={setCourses}
-                  onSelectCourseForStudent={handleSelectCourseForStudent}
-                  classrooms={classrooms.length > 0 ? classrooms : initialClassrooms}
-                  role="teacher"
-                  tuitionPerSession={tuitionPerSession}
-                  currentUserName={myName}
-                  periods={periods}
-                  schoolTeachers={schoolTeachers}
-                />
-              </TabsContent>
-
-              <TabsContent value="student" className="m-0 focus-visible:outline-none">
-                <StudentManagement
-                  courses={myCourses}
-                  selectedCourseId={selectedCourseId}
-                  setSelectedCourseId={setSelectedCourseId}
-                  enrollments={myEnrollments}
-                  setEnrollments={setEnrollments}
-                  studentsList={studentsList}
-                />
-              </TabsContent>
-
-              <TabsContent value="attendance" className="m-0 focus-visible:outline-none">
-                <AttendanceManagement
-                  courses={myCourses}
-                  enrollments={myEnrollments}
-                  attendanceRecords={myAttendanceRecords}
-                  setAttendanceRecords={(updater) => {
-                    setAttendanceRecords(prev => {
-                      const next = typeof updater === 'function' ? updater(prev) : updater;
-                      handleSaveAttendance(next, prev);
-                      return next;
-                    });
-                  }}
-                  studentsList={studentsList}
-                  approvalDocs={approvalDocs}
-                  setApprovalDocs={setApprovalDocs}
-                />
-              </TabsContent>
-            </CardContent>
-          </Card>
-        </Tabs>
+      }
+      rightActions={
+        /* 진행 상태 뱃지 */
+        <button
+          type="button"
+          onClick={handleToggleStageStatus}
+          className={cn(
+            "px-2 py-0.5 rounded-full text-[11px] font-bold border flex items-center gap-1 transition-all cursor-pointer shadow-2xs shrink-0",
+            stageStatus === 'OPERATING'
+              ? "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
+              : stageStatus === 'CLOSED'
+              ? "bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100"
+              : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
+          )}
+          title="클릭 시 방과후학교 진행 상태 변경"
+        >
+          <span className={cn(
+            "w-1.5 h-1.5 rounded-full shrink-0",
+            stageStatus === 'OPERATING' ? "bg-emerald-500 animate-pulse" : stageStatus === 'CLOSED' ? "bg-rose-500" : "bg-amber-500"
+          )} />
+          <span>
+            {stageStatus === 'OPERATING' ? '운영중' : stageStatus === 'CLOSED' ? '종료' : '대기중'}
+          </span>
+        </button>
+      }
+      titleActions={
+        <div className="flex sm:hidden items-center w-full grid grid-cols-4 bg-slate-100/90 p-0.5 rounded-lg border border-slate-200 gap-0.5 text-[10.5px] font-bold text-center">
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('studentSheet')}
+            className={cn("py-1 rounded-md transition", activeSubTab === 'studentSheet' ? "bg-white text-indigo-600 shadow-2xs" : "text-slate-600")}
+          >
+            📋 출석
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('teacherAttendance')}
+            className={cn("py-1 rounded-md transition", activeSubTab === 'teacherAttendance' ? "bg-white text-indigo-600 shadow-2xs" : "text-slate-600")}
+          >
+            📝 출근
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('batchApproval')}
+            className={cn("py-1 rounded-md transition", activeSubTab === 'batchApproval' ? "bg-white text-indigo-600 shadow-2xs" : "text-slate-600")}
+          >
+            📦 증빙
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('course')}
+            className={cn("py-1 rounded-md transition", activeSubTab === 'course' ? "bg-white text-indigo-600 shadow-2xs" : "text-slate-600")}
+          >
+            📖 강좌
+          </button>
+        </div>
+      }
+      contentClassName="p-2 sm:p-3 pt-1.5 sm:pt-2"
+    >
+      <div className="max-w-7xl mx-auto space-y-2.5">
+        {activeSubTab === 'course' ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between bg-indigo-50/70 border border-indigo-200/80 px-3.5 py-2 rounded-xl text-xs text-indigo-900">
+              <span className="font-bold flex items-center gap-1.5">
+                📖 강좌 관리 & 수업계획 카드
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setActiveSubTab('studentSheet')}
+                className="h-6 px-2.5 text-xs bg-white text-indigo-700 font-bold border-indigo-300 hover:bg-indigo-50 cursor-pointer shadow-2xs"
+              >
+                📋 출석부로 이동
+              </Button>
+            </div>
+            <CourseManagement
+              courses={myCourses}
+              setCourses={setCourses}
+              onSelectCourseForStudent={handleSelectCourseForStudent}
+              classrooms={classrooms.length > 0 ? classrooms : initialClassrooms}
+              role="teacher"
+              tuitionPerSession={tuitionPerSession}
+              currentUserName={myName}
+              periods={periods}
+              schoolTeachers={schoolTeachers}
+            />
+          </div>
+        ) : (
+          <AttendanceManagement
+            courses={myCourses}
+            selectedCourseId={selectedCourseId}
+            setSelectedCourseId={setSelectedCourseId}
+            activeSubTab={activeSubTab}
+            setActiveSubTab={setActiveSubTab}
+            enrollments={myEnrollments}
+            attendanceRecords={myAttendanceRecords}
+            setAttendanceRecords={(updater) => {
+              setAttendanceRecords(prev => {
+                const next = typeof updater === 'function' ? updater(prev) : updater;
+                handleSaveAttendance(next, prev);
+                return next;
+              });
+            }}
+            studentsList={studentsList}
+            masterStudents={masterStudents}
+            approvalDocs={approvalDocs}
+            setApprovalDocs={setApprovalDocs}
+          />
+        )}
       </div>
     </MainLayout>
   );

@@ -9,9 +9,9 @@ import {
   deleteDoc as firestoreDeleteDoc,
 } from 'firebase/firestore';
 import { getDb } from '@/lib/firebase';
-import type { UserProfile, Approver } from '@/lib/types';
+import type { UserProfile, Approver, DelegationRule } from '@/lib/types';
 import * as xlsx from 'xlsx';
-import { getOrgStructure } from '@/lib/services/settingsService';
+import { getOrgStructure, getDelegationRules } from '@/lib/services/settingsService';
 
 const getUsersCol = () => collection(getDb(), 'users');
 
@@ -393,7 +393,7 @@ export async function getApproversByGradeClass(
 
   // 매칭되는 전결규정 탐색 (ID 일치, 완전 일치, 부분 일치, 키워드 포함 모두 지원)
   const isFieldTrip = targetDocName === '체험학습신청서';
-  const matchedRule = delegationRules.find(r => {
+  const matchedRule = (delegationRules || []).find((r: DelegationRule) => {
     if (isFieldTrip && (r.id === 'rule-fieldtrip' || r.subType?.includes('체험') || r.mainType?.includes('체험') || r.detailType?.includes('체험'))) {
       return true;
     }
@@ -413,7 +413,7 @@ export async function getApproversByGradeClass(
   // 교무부장 탐색 헬퍼 (1순위: org.academicHead, 2순위: departments 중 교무/기획 부서 부장)
   const getAcademicHeadEmail = () => {
     if (org.academicHead?.trim()) return org.academicHead.trim();
-    const academicDept = org.departments?.find(d => 
+    const academicDept = org.departments?.find((d: any) => 
       d.name?.includes('교무') || d.name?.includes('기획') || d.name?.includes('학적')
     );
     return academicDept?.headEmail?.trim() || null;

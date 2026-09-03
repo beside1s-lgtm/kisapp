@@ -8,16 +8,24 @@ import {
   Phone, CheckCircle2, UserPlus, UserMinus, Edit3, Trash2
 } from 'lucide-react';
 import { exportAttendanceToExcel } from '@/lib/afterschool/excel';
-import { getTeacherApplySettings, saveTeacherApplySettings, onTeacherApplySettingsUpdate, submitAfterschoolApprovalDoc, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord } from '@/lib/services/settingsService';
+import { getTeacherApplySettings, saveTeacherApplySettings, onTeacherApplySettingsUpdate, submitAfterschoolApprovalDoc, deleteAfterschoolApprovalDoc, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord } from '@/lib/services/settingsService';
 import { useTranslation } from '@/hooks/use-translation';
 import { useAuth } from '@/hooks/use-auth';
 
+import type { MasterStudent } from '@/lib/types/masterStudent';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+
 interface AttendanceManagementProps {
   courses: Course[];
+  selectedCourseId?: string;
+  setSelectedCourseId?: (id: string) => void;
+  activeSubTab?: 'studentSheet' | 'teacherAttendance' | 'batchApproval';
+  setActiveSubTab?: (tab: 'studentSheet' | 'teacherAttendance' | 'batchApproval') => void;
   enrollments: Enrollment[];
   attendanceRecords: AttendanceRecord[];
   setAttendanceRecords: React.Dispatch<React.SetStateAction<AttendanceRecord[]>>;
   studentsList?: Student[];
+  masterStudents?: MasterStudent[];
   approvalDocs: SubmittedApprovalDoc[];
   setApprovalDocs: React.Dispatch<React.SetStateAction<SubmittedApprovalDoc[]>>;
 }
@@ -185,30 +193,39 @@ const MobileMarkButton: React.FC<{
 // =========================================================
 export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   courses,
+  selectedCourseId: externalSelectedCourseId,
+  setSelectedCourseId: externalSetSelectedCourseId,
+  activeSubTab: externalActiveSubTab,
+  setActiveSubTab: externalSetActiveSubTab,
   enrollments,
   attendanceRecords,
   setAttendanceRecords,
   studentsList = [],
+  masterStudents = [],
   approvalDocs,
   setApprovalDocs,
 }) => {
   const { t } = useTranslation();
-  if (!courses || courses.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 px-4 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
-        <div className="p-3 bg-slate-100 rounded-full text-slate-400 mb-3">
-          <Users className="h-8 w-8" />
-        </div>
-        <p className="text-sm font-bold text-slate-800">배정된 수강 학생이 없습니다.</p>
-        <p className="text-xs text-slate-500 mt-1">담당하고 있는 나의 강좌에 등록된 수강생이 존재하지 않습니다.</p>
-      </div>
-    );
-  }
+  const [internalSelectedCourseId, setInternalSelectedCourseId] = useState<string>(courses?.[0]?.id || 'c1');
+  const selectedCourseId = externalSelectedCourseId || internalSelectedCourseId;
+  const setSelectedCourseId = externalSetSelectedCourseId || setInternalSelectedCourseId;
 
-  const [selectedCourseId, setSelectedCourseId] = useState<string>(courses[0]?.id || 'c1');
-  const [activeSubTab, setActiveSubTab] = useState<'studentSheet' | 'teacherAttendance' | 'batchApproval'>('studentSheet');
+  const [internalActiveSubTab, setInternalActiveSubTab] = useState<'studentSheet' | 'teacherAttendance' | 'batchApproval'>('studentSheet');
+  const activeSubTab = externalActiveSubTab || internalActiveSubTab;
+  const setActiveSubTab = externalSetActiveSubTab || setInternalActiveSubTab;
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [activeSessionNo, setActiveSessionNo] = useState<number>(1);
+
+  // 학생 카드 모달 팝업 상태 (요청 6: 학생 이름 클릭 시 사진/학년/반/이름/버스번호/학부모연락처 팝업)
+  const [modalStudent, setModalStudent] = useState<{
+    photoUrl: string;
+    name: string;
+    grade: string;
+    classNum: string;
+    studentNum: string;
+    busNo: string;
+    contact: string;
+  } | null>(null);
 
   const [stageStatus, setStageStatus] = useState<string>('RECRUITING');
   const [substituteRecords, setSubstituteRecords] = useState<SubstituteRecord[]>([]);
@@ -300,6 +317,31 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   );
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  const sessionScrollRef = useRef<HTMLDivElement>(null);
+
+  // 오늘 날짜("YYYY-MM-DD")와 가장 가까운 회차 자동 탐색
+  const findInitialDayIndex = (days: ScheduleDay[]): number => {
+    if (!days || days.length === 0) return 1;
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const todayStr = `${yyyy}-${mm}-${dd}`;
+
+    // 1) 오늘 날짜와 정확히 일치하는 회차 탐색
+    const exactMatch = days.find(d => d.fullDate === todayStr);
+    if (exactMatch) return exactMatch.dayIndex;
+
+    // 2) 오늘 이후 가장 빠른 다음 수업일 탐색
+    const upcoming = days.find(d => d.fullDate >= todayStr);
+    if (upcoming) return upcoming.dayIndex;
+
+    // 3) 모든 수업이 지난 경우 마지막 회차, 아직 개강 전이면 1회차
+    const past = [...days].reverse().find(d => d.fullDate <= todayStr);
+    if (past) return past.dayIndex;
+
+    return 1;
+  };
 
   // 강좌 설정 기반 달력 스케줄 자동 산우 ([이슈 4] 운영기간 연동)
   const sessionsPerClass = currentCourse?.sessionsPerClass || 2;
@@ -330,6 +372,26 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     return generateCalendarSchedule(startDateStr, operatingWeeks, effectiveDays, effectiveSessions);
   })();
 
+  // 최초 로드 및 강좌 변경 시 오늘 날짜 수업 회차로 자동 이동
+  useEffect(() => {
+    if (scheduleDays.length > 0) {
+      const targetIdx = findInitialDayIndex(scheduleDays);
+      setActiveSessionNo(targetIdx);
+      setTimeout(() => {
+        const btn = document.getElementById(`session-btn-${targetIdx}`);
+        if (btn) {
+          btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+        if (tableContainerRef.current) {
+          const thElem = document.getElementById(`day-th-${targetIdx}`);
+          if (thElem) {
+            thElem.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+          }
+        }
+      }, 150);
+    }
+  }, [selectedCourseId, scheduleDays.length]);
+
   const activeDay = scheduleDays.find((d) => d.dayIndex === activeSessionNo) || scheduleDays[0];
 
   // 엑셀 내보내기 및 호환용 sessions 맵핑
@@ -344,6 +406,10 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   const handleSelectDay = (dayIndex: number) => {
     setActiveSessionNo(dayIndex);
     setTimeout(() => {
+      const btn = document.getElementById(`session-btn-${dayIndex}`);
+      if (btn) {
+        btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
       if (!tableContainerRef.current) return;
       const thElem = document.getElementById(`day-th-${dayIndex}`);
       if (thElem) {
@@ -373,28 +439,35 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   };
 
   // 버스 시스템 결석/개별하교 연동 헬퍼 (날짜 단위)
-  // - 'X' (결석), 'V' (개별하교) → kisbus routes/attendance/{date} notBoarding 추가
+  // - 'X' (결석), 'V' (개별하교) → kisbus routes/{routeId}/attendance/{fullDate} notBoarding 추가
   // - 'O' (출석), '' (미체크) → notBoarding 해제
   const syncBusAbsenceForDay = async (studentId: string, dayIndex: number, mark: MarkSymbol) => {
     const day = scheduleDays.find((d) => d.dayIndex === dayIndex);
     if (!day) return;
     const student = courseStudents.find((s) => s.studentId === studentId);
     const studentName = student ? student.name : '학생';
-    const dateStr = day.dateStr; // 'YYYY-MM-DD'
 
-    const isAbsent = mark === 'X' || mark === 'V'; // 결석 or 개별하교 모두 버스 미탑승
+    // 정확한 YYYY-MM-DD 날짜 문자열 사용
+    const targetDateStr = day.fullDate || (day.dateStr?.includes('-') ? day.dateStr : new Date().toISOString().split('T')[0]);
+
+    const isAbsent = mark === 'X' || mark === 'V'; // 결석 or 개별하교 모두 버스 미탑승 ('오늘 안 탐')
 
     try {
       const { doc, setDoc, collection, getDocs, arrayUnion, arrayRemove } = await import('firebase/firestore');
       const { getKisbusDb } = await import('@/lib/kisbus/firebase');
       const kisbusDb = getKisbusDb();
 
-      // kisbus DB의 routes 컬렉션에서 해당 요일에 이 학생이 배정된 노선 찾기
+      // 한글 요일 파싱 및 타임존 오차 없는 요일 매핑
+      const koreanDayMap: Record<string, string> = {
+        '일': 'Sunday', '월': 'Monday', '화': 'Tuesday', '수': 'Wednesday',
+        '목': 'Thursday', '금': 'Friday', '토': 'Saturday'
+      };
       const dayOfWeekMap: Record<number, string> = {
         0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday'
       };
-      const fullDateObj = day.fullDate ? new Date(day.fullDate) : (day.dateStr ? new Date(day.dateStr) : null);
-      const targetDayOfWeek = fullDateObj ? dayOfWeekMap[fullDateObj.getDay()] : null;
+      const match = day.dateStr.match(/\(([월화수목금토일])\)/);
+      const korDay = match ? match[1] : '';
+      const targetDayOfWeek = korDay ? koreanDayMap[korDay] : dayOfWeekMap[new Date(day.fullDate + 'T12:00:00').getDay()];
       if (!targetDayOfWeek) return;
 
       const routesSnap = await getDocs(collection(kisbusDb, 'routes'));
@@ -406,7 +479,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
         const seating: any[] = routeData.seating || [];
         if (!seating.some((s: any) => s.studentId === studentId)) continue;
 
-        const attendanceRef = doc(kisbusDb, 'routes', routeDoc.id, 'attendance', dateStr);
+        const attendanceRef = doc(kisbusDb, 'routes', routeDoc.id, 'attendance', targetDateStr);
         await setDoc(attendanceRef, {
           notBoarding: isAbsent ? arrayUnion(studentId) : arrayRemove(studentId),
           ...(isAbsent ? { boarded: arrayRemove(studentId), disembarked: arrayRemove(studentId) } : {}),
@@ -415,8 +488,8 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
       }
 
       if (matchedCount > 0) {
-        const label = mark === 'V' ? '개별하교' : mark === 'X' ? '결석' : '출석(탑승 복구)';
-        console.log(`[BusSync] 🚌 ${studentName} ${dateStr} [${label}] → kisbus ${matchedCount}개 노선 동기화 완료`);
+        const label = mark === 'V' ? '개별하교 (버스 미탑승)' : mark === 'X' ? '결석 (버스 미탑승)' : '출석 (탑승 복구)';
+        console.log(`[BusSync] ${studentName} ${targetDateStr} [${label}] → kisbus ${matchedCount}개 노선 동기화 완료`);
       }
     } catch (err) {
       console.error('[BusSync] 버스 연동 오류:', err);
@@ -511,7 +584,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     { periodRange: '9-10', sessionNos: [9, 10] },
   ];
 
-  const getTeacherAttendanceRow = (sNos: number[]) => {
+const getTeacherAttendanceRow = (sNos: number[]) => {
     const records = attendanceRecords.filter(
       (r) => r.courseId === currentCourse.id && sNos.includes(r.sessionNo || 0)
     );
@@ -521,6 +594,34 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     return { hasChecked, dateStr: hasChecked ? `2026/${dateStr}` : '', signed: hasChecked };
   };
 
+  // 학생 프로필 사진 & 스쿨버스 번호 & 학부모 연락처 통합 연동 헬퍼
+  const getStudentInfo = (studentId: string, studentName: string, grade?: any, classNum?: any) => {
+    const m = (masterStudents || []).find(ms =>
+      ms.studentId === studentId ||
+      ms.studentEmail?.toLowerCase() === studentId?.toLowerCase() ||
+      (ms.name === studentName && String(ms.grade) === String(grade) && String(ms.classNum) === String(classNum)) ||
+      ms.name === studentName
+    );
+    const s = (studentsList || []).find(st => st.id === studentId || st.name === studentName);
+
+    const photoUrl = m?.photoUrl || (s as any)?.photoUrl || (s as any)?.photo || '';
+    let rawBus = m?.busSummary?.busName || m?.kisbusNo || (s as any)?.kisbusNo || (s as any)?.busNo || '';
+    if (rawBus && !rawBus.includes('호') && !rawBus.includes('버스') && !rawBus.includes('자율')) {
+      rawBus = `${rawBus}호차`;
+    }
+    const contact = m?.contact || (s as any)?.parentPhone || (s as any)?.phone || (s as any)?.contact || '';
+
+    return {
+      photoUrl,
+      busNo: rawBus || '미지정',
+      contact: contact ? contact.trim() : '',
+      grade: String(m?.grade || grade || '1'),
+      classNum: String(m?.classNum || classNum || '1'),
+      studentNum: String(m?.studentNum || (s as any)?.number || ''),
+      name: studentName
+    };
+  };
+
   const markDisplay = (mark: string) => {
     if (mark === 'O' || mark === '○') return { symbol: '○', color: 'text-emerald-600 font-black' };
     if (mark === 'V' || mark === '△') return { symbol: '△', color: 'text-purple-600 font-black' };
@@ -528,116 +629,39 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     return { symbol: '·', color: 'text-slate-300' };
   };
 
-  const pendingApprovals = approvalDocs.filter((d) => d.status === 'PENDING').length;
+  // 폐강(CANCELLED)되거나 삭제된 강좌의 서류는 제외하고 유효한 서류만 필터링
+  const validCourseIds = new Set(courses.filter((c) => c.status !== 'CANCELLED').map((c) => c.id));
+  const validApprovalDocs = approvalDocs.filter((d) => validCourseIds.has(d.courseId));
+  const pendingApprovals = validApprovalDocs.filter((d) => d.status === 'PENDING').length;
+
+  // 서류 회수/삭제 핸들러
+  const handleDeleteApprovalDoc = async (docId: string, courseTitle: string) => {
+    if (!window.confirm(`[${courseTitle}] 제출된 서류를 회수(삭제)하시겠습니까?\n삭제 시 관리자 검토 대기 목록 및 제출함에서 즉시 제거됩니다.`)) {
+      return;
+    }
+    const res = await deleteAfterschoolApprovalDoc(docId);
+    if (res.success) {
+      setApprovalDocs((prev) => prev.filter((d) => d.id !== docId));
+      alert('제출된 서류가 성공적으로 회수(삭제)되었습니다.');
+    } else {
+      alert(`서류 삭제 실패: ${res.error}`);
+    }
+  };
+
+  if (!courses || courses.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-4 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+        <div className="p-3 bg-slate-100 rounded-full text-slate-400 mb-3">
+          <Users className="h-8 w-8" />
+        </div>
+        <p className="text-sm font-bold text-slate-800">배정된 수강 학생이 없습니다.</p>
+        <p className="text-xs text-slate-500 mt-1">담당하고 있는 나의 강좌에 등록된 수강생이 존재하지 않습니다.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-3">
-      {/* ===== 운영 중이 아닐 때 표시되는 안내 배너 ===== */}
-      {stageStatus !== 'OPERATING' && (
-        <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-900 shadow-sm animate-in fade-in">
-          <div className="flex items-center gap-2.5">
-            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
-            <div>
-              <span className="font-extrabold text-sm block text-amber-950">
-                [안내] 현재 방과후학교 진행 상태: {
-                  stageStatus === 'RECRUITING' ? '강사 모집 진행 중' :
-                  stageStatus === 'APPLYING' ? '수강 신청 진행 중' :
-                  stageStatus === 'CLOSED' ? '방과후학교 운영 종료' : '대기 중'
-                }
-              </span>
-              <p className="text-amber-800 text-[11px] mt-0.5">
-                마스터 제어실에서 방과후학교 진행 상태를 <b>'운영 중'</b> 단계로 변경하면 출석부가 공식 활성화됩니다.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handleActivateOperating}
-            className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs shadow-xs transition shrink-0 flex items-center gap-1 cursor-pointer"
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            [운영 중] 상태로 즉시 전환
-          </button>
-        </div>
-      )}
-
-      {/* ===== HEADER ===== */}
-      <div className="bg-white p-3.5 md:p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-0.5 rounded font-bold shrink-0">{t('afterschool.teacher.attendance_table_title')}</span>
-            {/* Course Selector */}
-            <select
-              value={selectedCourseId}
-              onChange={(e) => setSelectedCourseId(e.target.value)}
-              className="text-xs font-bold text-slate-800 border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 focus:outline-none flex-1 min-w-0 max-w-xs"
-            >
-              {courses.map((c) => (<option key={c.id} value={c.id}>{c.title}</option>))}
-            </select>
-          </div>
-
-          {/* Action Buttons - Icons only on mobile */}
-          <div className="flex gap-1.5 md:gap-2 shrink-0">
-            <button
-              onClick={handleSendToDeptHead}
-              className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-2.5 py-2 rounded-xl shadow transition flex items-center gap-1"
-              title="담당 부장에게 서류 전송"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">부장 전송</span>
-            </button>
-            <button
-              onClick={() => exportAttendanceToExcel(currentCourse, enrollments, sessions, attendanceRecords)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-2.5 py-2 rounded-xl shadow transition flex items-center gap-1"
-              title="엑셀 다운로드"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">엑셀</span>
-            </button>
-            <button
-              onClick={() => setIsPrintModalOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-2.5 py-2 rounded-xl shadow transition flex items-center gap-1"
-              title="A4 인쇄"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">인쇄</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ===== SUB-TAB SWITCHER ===== */}
-      <div className="flex border-b border-slate-200 bg-white rounded-t-xl">
-        {[
-          { key: 'studentSheet', icon: <UserCheck className="w-3.5 h-3.5" />, label: '출석부', shortLabel: '출석' },
-          { key: 'teacherAttendance', icon: <FileText className="w-3.5 h-3.5 text-amber-500" />, label: '강사출근부', shortLabel: '출근' },
-          {
-            key: 'batchApproval',
-            icon: <Package className="w-3.5 h-3.5 text-blue-500" />,
-            label: '일괄결재',
-            shortLabel: '결재',
-            badge: pendingApprovals
-          },
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveSubTab(tab.key as any)}
-            className={`flex-1 py-2.5 text-xs font-bold border-b-2 transition flex items-center justify-center gap-1 relative ${
-              activeSubTab === tab.key
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            {tab.icon}
-            <span className="hidden sm:inline">{tab.label}</span>
-            <span className="sm:hidden">{tab.shortLabel}</span>
-            {tab.badge ? (
-              <span className="absolute top-1 right-2 w-4 h-4 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center">
-                {tab.badge}
-              </span>
-            ) : null}
-          </button>
-        ))}
-      </div>
+    <div className="space-y-2">
 
       {/* ===== TAB 1: STUDENT ATTENDANCE ===== */}
       {activeSubTab === 'studentSheet' && (
@@ -663,7 +687,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
                 <button
                   onClick={() => handleSelectDay(Math.max(1, activeSessionNo - 1))}
                   disabled={activeSessionNo <= 1}
-                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 transition"
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 transition cursor-pointer"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
@@ -673,7 +697,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
                 <button
                   onClick={() => handleSelectDay(Math.min(scheduleDays.length, activeSessionNo + 1))}
                   disabled={activeSessionNo >= scheduleDays.length}
-                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 transition"
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 transition cursor-pointer"
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
@@ -681,11 +705,11 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
             </div>
 
             {/* Session selector & Fixed Bulk Attend Button */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+            <div ref={sessionScrollRef} className="flex items-center gap-2 overflow-x-auto pb-0.5">
               {/* 맨 왼쪽에 전원출석 버튼 고정 */}
               <button
                 onClick={() => handleBulkAttendDay(activeSessionNo)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-sm shrink-0 flex items-center gap-1"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-sm shrink-0 flex items-center gap-1 cursor-pointer"
                 title="현재 선택한 날짜의 모든 수강 확정생을 출석(○) 처리합니다"
               >
                 <UserCheck className="w-3.5 h-3.5" />
@@ -696,16 +720,28 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
               {/* 날짜(회차) 중심 버튼 스크롤 */}
               {scheduleDays.map((day) => {
                 const isSelected = day.dayIndex === activeSessionNo;
+                const now = new Date();
+                const todayFormatted = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                const isToday = day.fullDate === todayFormatted;
+
                 return (
                   <button
                     key={day.dayIndex}
+                    id={`session-btn-${day.dayIndex}`}
                     onClick={() => handleSelectDay(day.dayIndex)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0 flex flex-col items-center ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0 flex flex-col items-center cursor-pointer ${
                       isSelected
                         ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-300'
+                        : isToday
+                        ? 'bg-amber-50/80 border-2 border-amber-400 text-slate-800 hover:bg-amber-100'
                         : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
                     }`}
                   >
+                    {isToday && (
+                      <span className={`text-[8.5px] font-black px-1 rounded-xs mb-0.5 ${isSelected ? 'bg-amber-300 text-amber-950' : 'bg-amber-500 text-white'}`}>
+                        오늘
+                      </span>
+                    )}
                     <span className="text-xs leading-none font-extrabold">{day.dateStr}</span>
                     <span className="text-[9px] opacity-90 font-normal mt-0.5">
                       {day.dayIndex}회차
@@ -722,35 +758,47 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
               <div className="py-12 text-center text-slate-400 text-sm">수강 등록된 학생이 없습니다.</div>
             ) : (
               courseStudents.map((enrollment) => {
-                const matchedStudent = studentsList.find((s) => s.id === enrollment.studentId);
-                const busNo = matchedStudent?.kisbusNo || enrollment.kisbusNo;
-                const parentPhone = enrollment.parentPhone || matchedStudent?.parentPhone || '';
+                const sInfo = getStudentInfo(enrollment.studentId, enrollment.name, enrollment.grade, enrollment.classNum);
                 const mark = getDayMark(enrollment.studentId, activeSessionNo);
 
                 return (
-                  <div key={enrollment.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                    {/* Student info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-slate-900 whitespace-nowrap">{enrollment.name}</span>
-                        <span className="text-[11px] text-slate-400">{enrollment.grade}-{enrollment.classNum}-{enrollment.studentNum}</span>
-                        {busNo && (
-                          <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded-full">
-                            버스 {busNo}
+                  <div key={enrollment.id} className="px-3.5 py-3 flex items-center justify-between gap-3 bg-white hover:bg-slate-50 transition">
+                    <button
+                      type="button"
+                      onClick={() => setModalStudent(sInfo)}
+                      className="flex items-center gap-2.5 flex-1 min-w-0 text-left cursor-pointer group"
+                    >
+                      <Avatar className="w-10 h-10 rounded-xl border border-slate-200 shrink-0 shadow-2xs">
+                        {sInfo.photoUrl ? (
+                          <AvatarImage src={sInfo.photoUrl} alt={sInfo.name} className="object-cover rounded-xl" />
+                        ) : (
+                          <AvatarFallback className="bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-xl">
+                            {sInfo.name.slice(0, 2)}
+                          </AvatarFallback>
+                        )}
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-extrabold text-slate-900 text-sm group-hover:text-indigo-600 transition">
+                            {sInfo.name}
                           </span>
+                          <span className="text-[11px] text-slate-500 font-semibold">
+                            {sInfo.grade}-{sInfo.classNum}
+                          </span>
+                          <span className="text-[10px] bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                            {sInfo.busNo}
+                          </span>
+                        </div>
+                        {sInfo.contact ? (
+                          <span className="text-[11px] text-indigo-600 flex items-center gap-0.5 mt-0.5 font-bold">
+                            <Phone className="w-3 h-3 shrink-0" />
+                            {sInfo.contact}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 block mt-0.5">연락처 없음 (클릭 시 상세보기)</span>
                         )}
                       </div>
-                      {parentPhone && (
-                        <a
-                          href={`tel:${parentPhone}`}
-                          className="text-[11px] text-indigo-600 flex items-center gap-0.5 mt-0.5"
-                        >
-                          <Phone className="w-3 h-3" />{parentPhone}
-                        </a>
-                      )}
-                    </div>
-
-                    {/* Mark selector */}
+                    </button>
                     <MobileMarkButton
                       studentId={enrollment.studentId}
                       sessionNo={activeSessionNo}
@@ -764,7 +812,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
 
             {/* Summary footer */}
             {courseStudents.length > 0 && (
-              <div className="px-4 py-3 bg-slate-50 flex gap-4 text-xs font-bold">
+              <div className="px-4 py-3 bg-slate-50 flex gap-4 text-xs font-bold border-t border-slate-200">
                 <span className="text-emerald-700">
                   출석 {courseStudents.filter(e => {
                     const m = getDayMark(e.studentId, activeSessionNo);
@@ -799,7 +847,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
                   <th className="p-2 border-r w-8">학년</th>
                   <th className="p-2 border-r w-8">반</th>
                   <th className="p-2 border-r w-8">번</th>
-                  <th className="p-2 border-r text-center whitespace-nowrap px-3 min-w-[90px]">이름</th>
+                  <th className="p-2 border-r text-center whitespace-nowrap px-3 min-w-[120px]">학생 (사진/성명)</th>
                   {scheduleDays.map((day) => (
                     <th
                       key={day.dayIndex}
@@ -813,8 +861,8 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
                       <div className="text-[9px] text-slate-500 font-normal mt-0.5">{day.dayIndex}회차</div>
                     </th>
                   ))}
-                  <th className="p-2 border-r w-14">버스</th>
-                  <th className="p-2 w-24">학부모</th>
+                  <th className="p-2 border-r w-16">탑승 버스</th>
+                  <th className="p-2 w-24">학부모 연락처</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -822,16 +870,39 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
                   <tr><td colSpan={scheduleDays.length + 7} className="py-8 text-center text-slate-400">수강 등록된 학생이 없습니다.</td></tr>
                 ) : (
                   courseStudents.map((enrollment, enrollIdx) => {
-                    const matchedStudent = studentsList.find((s) => s.id === enrollment.studentId);
-                    const busNo = matchedStudent?.kisbusNo || enrollment.kisbusNo;
-                    const parentPhone = enrollment.parentPhone || matchedStudent?.parentPhone || '-';
+                    const sInfo = getStudentInfo(enrollment.studentId, enrollment.name, enrollment.grade, enrollment.classNum);
                     return (
                       <tr key={enrollment.id} className="hover:bg-slate-50/80">
                         <td className="p-2 border-r font-mono text-slate-400">{enrollIdx + 1}</td>
-                        <td className="p-2 border-r font-bold">{enrollment.grade}</td>
-                        <td className="p-2 border-r">{enrollment.classNum}</td>
-                        <td className="p-2 border-r">{enrollment.studentNum}</td>
-                        <td className="p-2 border-r font-bold text-center text-slate-900 whitespace-nowrap px-3 min-w-[90px]">{enrollment.name}</td>
+                        <td className="p-2 border-r font-bold">{sInfo.grade}</td>
+                        <td className="p-2 border-r">{sInfo.classNum}</td>
+                        <td className="p-2 border-r">{sInfo.studentNum || '-'}</td>
+                        <td className="p-2 border-r text-center whitespace-nowrap px-3 min-w-[140px]">
+                          <button
+                            type="button"
+                            onClick={() => setModalStudent(sInfo)}
+                            className="inline-flex items-center gap-2.5 hover:bg-indigo-50/80 p-1.5 rounded-xl transition cursor-pointer group"
+                            title="학생 프로필 카드 보기"
+                          >
+                            <Avatar className="w-9 h-9 rounded-xl border border-slate-200 shrink-0 shadow-2xs">
+                              {sInfo.photoUrl ? (
+                                <AvatarImage src={sInfo.photoUrl} alt={sInfo.name} className="object-cover rounded-xl" />
+                              ) : (
+                                <AvatarFallback className="bg-indigo-100 text-indigo-700 font-black text-xs rounded-xl">
+                                  {sInfo.name.slice(0, 2)}
+                                </AvatarFallback>
+                              )}
+                            </Avatar>
+                            <div className="flex flex-col items-start leading-tight">
+                              <span className="font-extrabold text-slate-900 text-xs group-hover:text-indigo-600 transition">
+                                {sInfo.name}
+                              </span>
+                              <span className="text-[10px] bg-sky-100 text-sky-800 font-extrabold px-1.5 py-0.2 rounded-md mt-0.5 border border-sky-200">
+                                {sInfo.busNo}
+                              </span>
+                            </div>
+                          </button>
+                        </td>
                         {scheduleDays.map((day) => (
                           <AttendMarkCell
                             key={day.dayIndex}
@@ -840,9 +911,19 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
                             isActiveSession={activeSessionNo === day.dayIndex}
                           />
                         ))}
-                        <td className="p-2 border-r font-mono text-[11px] text-slate-600">{busNo || '-'}</td>
+                        <td className="p-2 border-r font-bold text-[11px] text-sky-800">
+                          <span className="bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200 inline-block">
+                            {sInfo.busNo}
+                          </span>
+                        </td>
                         <td className="p-2 text-[11px]">
-                          <a href={`tel:${parentPhone}`} className="text-indigo-600 hover:underline">{parentPhone}</a>
+                          {sInfo.contact ? (
+                            <a href={`tel:${sInfo.contact.replace(/\D/g, '')}`} className="text-indigo-600 hover:underline font-bold">
+                              {sInfo.contact}
+                            </a>
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -862,12 +943,6 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
               <span className="font-bold text-indigo-900">강사출근부 실시간 차시 연동 작동 중</span>
               <p className="text-indigo-700 mt-0.5">학생 출석부 체크 시 해당 날짜 회차에 강사 서명이 자동 연동되어 기입됩니다.</p>
             </div>
-            <button
-              onClick={handleSendToDeptHead}
-              className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1 shrink-0"
-            >
-              <Send className="w-3 h-3" />부장에게 전송
-            </button>
           </div>
 
           <div className="max-w-2xl mx-auto bg-white p-5 border border-slate-300 rounded-xl shadow space-y-4">
@@ -987,45 +1062,162 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
         </div>
       )}
 
-      {/* ===== TAB 3: BATCH APPROVAL ===== */}
+      {/* ===== TAB 3: BATCH APPROVAL / DOCUMENT MANAGEMENT (요청 3: 일괄결재 -> 증빙 문서 관리 및 3개 버튼 통합) ===== */}
       {activeSubTab === 'batchApproval' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
-          <div>
-            <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-              <Package className="w-4 h-4 text-blue-600" />강사 서류 제출함
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              부장에게 전송된 서류 목록입니다. 부장은 관리자 패널에서 일괄 결재 상신할 수 있습니다.
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <div>
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <Package className="w-4 h-4 text-emerald-600" />증빙 문서 관리 & 전자결재 제출함
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                출석부와 강사출근부 증빙 서류를 부장에게 전송하거나 엑셀/공식 A4 서식으로 인쇄할 수 있습니다.
+              </p>
+            </div>
+
+            {/* 증빙 서류 바로가기 버튼 3종 (요청 3: 일괄결재 탭으로 옮김) */}
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              <button
+                onClick={handleSendToDeptHead}
+                className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-3 py-2 rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                title="담당 부장에게 결재 서류 전송"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>증빙 서류 부장 전송</span>
+              </button>
+
+              <button
+                onClick={() => exportAttendanceToExcel(currentCourse, enrollments, sessions, attendanceRecords)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                title="엑셀 다운로드"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>엑셀 다운로드</span>
+              </button>
+
+              <button
+                onClick={() => setIsPrintModalOpen(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-2 rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                title="A4 인쇄"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>공식 출석부 인쇄</span>
+              </button>
+            </div>
           </div>
 
-          {approvalDocs.length === 0 ? (
-            <div className="py-12 text-center space-y-2">
+          {validApprovalDocs.length === 0 ? (
+            <div className="py-12 text-center space-y-2 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
               <AlertCircle className="w-8 h-8 text-slate-300 mx-auto" />
-              <p className="text-slate-400 text-sm">전송된 서류가 없습니다.</p>
+              <p className="text-slate-500 font-bold text-sm">전송된 증빙 서류가 없습니다.</p>
+              <p className="text-xs text-slate-400">상단의 [증빙 서류 부장 전송] 버튼을 눌러 서류를 기안함으로 전송하세요.</p>
             </div>
           ) : (
             <div className="space-y-2">
-              {approvalDocs.map((doc) => (
-                <div key={doc.id} className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              {validApprovalDocs.map((doc) => (
+                <div key={doc.id} className="flex items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-slate-900 text-sm truncate">{doc.courseTitle}</div>
                     <div className="text-[11px] text-slate-500">강사: {doc.instructorName} · {doc.submittedAt}</div>
                   </div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                    doc.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                  }`}>
-                    {doc.status === 'APPROVED' ? '결재완료' : '검토중'}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                      doc.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {doc.status === 'APPROVED' ? '결재완료' : '검토중'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteApprovalDoc(doc.id, doc.courseTitle)}
+                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 px-2 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                      title="제출 서류 회수(삭제)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>회수/삭제</span>
+                    </button>
+                  </div>
                 </div>
               ))}
 
               <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-xs text-blue-800">
                 <div className="font-bold flex items-center gap-1.5"><Users className="w-3.5 h-3.5" />결재 방법 안내</div>
-                <p className="mt-0.5">예체능방과후부장(관리자)이 관리자 패널 → [결재 서류 검토] 탭에서 kisapp으로 일괄 결재 상신합니다.</p>
+                <p className="mt-0.5">예체능방과후부장(관리자)이 [방과후학교 관리자] → [강좌 현황 & 승인] 탭(강좌별 서류 검토) 및 [전자결재 일괄 기안] 탭에서 kisapp으로 최종 일괄 결재 상신합니다.</p>
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ===== STUDENT CARD POPUP MODAL (요청 6: 학생 카드 팝업 모달) ===== */}
+      {modalStudent && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full border border-slate-200 p-5 space-y-4 relative animate-in zoom-in-95">
+            <button
+              type="button"
+              onClick={() => setModalStudent(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center space-y-3 pt-2">
+              {/* 대형 프로필 사진 (모서리 둥근 사각형 프레임) */}
+              <Avatar className="w-28 h-28 mx-auto rounded-2xl border-2 border-indigo-200 shadow-md">
+                {modalStudent.photoUrl ? (
+                  <AvatarImage src={modalStudent.photoUrl} alt={modalStudent.name} className="object-cover rounded-2xl" />
+                ) : (
+                  <AvatarFallback className="bg-indigo-100 text-indigo-800 font-black text-2xl rounded-2xl">
+                    {modalStudent.name.slice(0, 2)}
+                  </AvatarFallback>
+                )}
+              </Avatar>
+
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-900">{modalStudent.name}</h3>
+                <p className="text-xs font-bold text-slate-500 mt-0.5">
+                  {modalStudent.grade}학년 {modalStudent.classNum}반 {modalStudent.studentNum ? `${modalStudent.studentNum}번` : ''}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 pt-2 border-t border-slate-100">
+              {/* 버스 정보 */}
+              <div className="flex items-center justify-between bg-sky-50/70 p-3 rounded-2xl border border-sky-100">
+                <span className="text-xs font-bold text-sky-900 flex items-center gap-1.5">
+                  🚌 탑승 스쿨버스
+                </span>
+                <span className="text-xs font-extrabold text-sky-800 bg-white px-2.5 py-1 rounded-xl border border-sky-200 shadow-2xs">
+                  {modalStudent.busNo}
+                </span>
+              </div>
+
+              {/* 학부모 연락처 & 클릭 시 모바일 전화 연결 */}
+              <div className="bg-indigo-50/70 p-3 rounded-2xl border border-indigo-100 space-y-1.5">
+                <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-indigo-600" /> 학부모 연락처
+                </span>
+                {modalStudent.contact ? (
+                  <a
+                    href={`tel:${modalStudent.contact.replace(/\D/g, '')}`}
+                    className="flex items-center justify-center gap-2 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm rounded-xl transition shadow-sm cursor-pointer"
+                  >
+                    <Phone className="w-4 h-4" />
+                    <span>{modalStudent.contact} (전화 걸기)</span>
+                  </a>
+                ) : (
+                  <p className="text-xs text-slate-400 text-center py-1 font-semibold">등록된 연락처가 없습니다.</p>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setModalStudent(null)}
+              className="w-full py-2.5 font-bold text-xs rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer transition"
+            >
+              닫기
+            </button>
+          </div>
         </div>
       )}
 

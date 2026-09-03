@@ -20,8 +20,8 @@ import {
 import type { Bus, Student, Route, Destination, Teacher, DayOfWeek, RouteType, AfterSchoolClass } from '@/lib/kisbus/types';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Trash2, Check, CheckCheck, Bell, ChevronDown, ChevronsUpDown, UserCog, Bus as BusIcon, Users, GraduationCap, Activity, Settings, Download, Send, Upload, Database, FileText, FilePlus, ShieldCheck, CheckCircle2, ChevronRight, PlusCircle } from 'lucide-react';
+import { Trash2, Check, CheckCheck, Bell, ChevronDown, ChevronsUpDown, UserCog, Bus as BusIcon, Users, GraduationCap, Activity, Settings, Download, Send, Upload, Database, FileText, FilePlus, ShieldCheck, CheckCircle2, ChevronRight, PlusCircle, ArrowRightLeft, Loader2 } from 'lucide-react';
+import { executeTransferAfterschoolStudentsToBus } from '@/lib/kisbus/assignments';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MainLayout } from '@/components/layout/main-layout';
 import { onDocConfigUpdate, saveDocConfig } from '@/lib/services/settingsService';
@@ -89,6 +89,7 @@ const AdminPageContent: React.FC<{
     onSemesterModeChange: (mode: 'regular' | 'vacation') => void;
     onApplySystemMode: () => Promise<void>;
     onOpenBusDocModal?: () => void;
+    transferState?: { isTransferred?: boolean; lastDualAssignedAt?: string; transferredAt?: string; affectedCount?: number } | null;
 }> = ({
     buses,
     students,
@@ -105,6 +106,7 @@ const AdminPageContent: React.FC<{
     onSemesterModeChange,
     onApplySystemMode,
     onOpenBusDocModal,
+    transferState,
 }) => {
     const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
     const [selectedDay, setSelectedDay] = useState<DayOfWeek>('Monday');
@@ -118,6 +120,7 @@ const AdminPageContent: React.FC<{
     const [isClient, setIsClient] = useState(false);
 
     useEffect(() => {
+        setIsClient(true);
         const unsub = onDocConfigUpdate((cfg) => {
             setDocConfig(cfg);
         });
@@ -470,6 +473,7 @@ const AdminPageContent: React.FC<{
                             afterSchoolTeachers={afterSchoolTeachers}
                             saturdayTeachers={saturdayTeachers}
                             semesterMode={semesterMode}
+                            isTransferred={transferState?.isTransferred === true}
                         />
                     </div>
                 </TabsContent>
@@ -960,6 +964,51 @@ export default function AdminPage() {
         return () => unsubDuty();
     }, []);
 
+    const [transferState, setTransferState] = useState<{ isTransferred?: boolean; lastDualAssignedAt?: string; transferredAt?: string; affectedCount?: number } | null>(null);
+    const [isTransferring, setIsTransferring] = useState(false);
+
+    // 방과후 버스 노선 이동 상태 실시간 구독
+    useEffect(() => {
+        const unsubTransfer = onSnapshot(doc(db(), 'config', 'afterschool_bus_transfer_state'), (docSnap) => {
+            if (docSnap.exists()) {
+                setTransferState(docSnap.data() as any);
+            } else {
+                setTransferState(null);
+            }
+        });
+        return () => unsubTransfer();
+    }, []);
+
+    const handleExecuteTransfer = async () => {
+        if (!window.confirm("방과후 신청 학생들을 요일별 정규 하교 버스 좌석에서 제외하고, 방과후 버스 노선으로 이동하시겠습니까?\n\n(※ 방과후가 시작되는 날 실행하시면 됩니다.)")) {
+            return;
+        }
+        setIsTransferring(true);
+        try {
+            const res = await executeTransferAfterschoolStudentsToBus();
+            if (res.success) {
+                toast({
+                    title: "방과후 노선 이동 완료",
+                    description: res.message
+                });
+            } else {
+                toast({
+                    title: "알림",
+                    description: res.message,
+                    variant: "destructive"
+                });
+            }
+        } catch (e: any) {
+            toast({
+                title: "이동 실패",
+                description: e.message || "오류가 발생했습니다.",
+                variant: "destructive"
+            });
+        } finally {
+            setIsTransferring(false);
+        }
+    };
+
     const handleToggleBusApply = async (checked: boolean) => {
         try {
             await saveDocConfig({ isBusApplyActive: checked });
@@ -1066,8 +1115,23 @@ export default function AdminPage() {
             '목': 'Thursday', '금': 'Friday', '토': 'Saturday'
         };
 
+        const extractCourseDays = (course: any): string[] => {
+            if (Array.isArray(course.classDays) && course.classDays.length > 0) return course.classDays;
+            if (Array.isArray(course.days) && course.days.length > 0) return course.days;
+            const text = `${course.period || ''} ${course.title || ''} ${course.schedule || ''} ${course.day || ''} ${course.classTime || ''}`;
+            if (text.includes('토')) return ['토'];
+            const days: string[] = [];
+            if (text.includes('월')) days.push('월');
+            if (text.includes('화')) days.push('화');
+            if (text.includes('수')) days.push('수');
+            if (text.includes('목')) days.push('목');
+            if (text.includes('금')) days.push('금');
+            return days;
+        };
+
         const convertedClasses: AfterSchoolClass[] = afterschoolCourses.map(course => {
-            const dayOfWeek = dayMap[course.classDays?.[0]] || 'Saturday';
+            const days = extractCourseDays(course);
+            const dayOfWeek = days.length > 0 ? (dayMap[days[0]] || 'Saturday') : 'Monday';
             return {
                 id: course.id,
                 name: course.title,
@@ -1080,12 +1144,22 @@ export default function AdminPage() {
         setAfterSchoolClasses(convertedClasses);
 
         // 2. 학생 및 수강신청/버스 신청 정보 연동
+        const clean = (str: any) => String(str || '').replace(/\s+/g, '').toLowerCase();
+
         const merged = rawStudents.map(student => {
-            const studentEnrollments = afterschoolEnrollments.filter(e => 
-                e.name === student.name && 
-                Number(e.grade) === Number(student.grade) && 
-                Number(e.classNum) === Number(student.class)
-            );
+            const studentName = clean(student.nameKo || student.name || student.nameEn);
+            const studentGrade = Number(student.grade);
+            const studentClass = Number(student.class || student.classNum);
+
+            const studentEnrollments = afterschoolEnrollments.filter(e => {
+                const eName = clean(e.name || e.studentName);
+                const eGrade = Number(e.grade);
+                const eClass = Number(e.classNum);
+                const matchName = eName === studentName || studentName.includes(eName) || eName.includes(studentName);
+                const matchGrade = eGrade === studentGrade;
+                const matchClass = eClass === studentClass;
+                return matchName && (matchGrade ? matchClass : true);
+            });
 
             if (studentEnrollments.length === 0) {
                 return {
@@ -1097,25 +1171,53 @@ export default function AdminPage() {
                 };
             }
 
-            const afterSchoolClassIds: Record<string, string> = {};
-            const afterSchoolDestinations: Record<string, string> = {};
-            const vacationAfterSchoolClassIds: Record<string, string> = {};
-            const vacationAfterSchoolDestinations: Record<string, string> = {};
+            const afterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = {};
+            const afterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = {};
+            const vacationAfterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = {};
+            const vacationAfterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = {};
 
             studentEnrollments.forEach(enrollment => {
                 const course = afterschoolCourses.find(c => c.id === enrollment.courseId);
                 if (!course) return;
 
-                const dayOfWeek = dayMap[course.classDays?.[0]] || 'Saturday';
-                const busNo = enrollment.kisbusNo && enrollment.kisbusNo !== '-' ? enrollment.kisbusNo : null;
+                const classDays = extractCourseDays(course);
+                if (classDays.length === 0) return;
 
-                afterSchoolClassIds[dayOfWeek] = course.id;
-                vacationAfterSchoolClassIds[dayOfWeek] = course.id;
+                const isSat = classDays.includes('토') || Boolean(
+                    course.period?.includes('토') ||
+                    course.title?.includes('토요') ||
+                    course.title?.includes('토요일')
+                );
 
-                if (busNo) {
-                    afterSchoolDestinations[dayOfWeek] = busNo;
-                    vacationAfterSchoolDestinations[dayOfWeek] = busNo;
+                // 신청 여부 판별: 명시적 미신청('-' 또는 '미신청' 또는 needsBus === false)이면 제외
+                if (enrollment.kisbusNo === '-' || enrollment.kisbusNo === '미신청' || enrollment.needsBus === false) {
+                    return;
                 }
+                if (isSat && (!enrollment.kisbusNo || enrollment.kisbusNo === '-' || enrollment.kisbusNo === '미신청')) {
+                    return;
+                }
+
+                const targetDays = classDays.map((d: string) => dayMap[d]).filter(Boolean) as DayOfWeek[];
+
+                // 학생의 실제 정규 목적지 ID
+                let realDestId = (
+                    (isSat ? (student.satAfternoonDestinationId || student.satMorningDestinationId) : null) ||
+                    student.afternoonDestinationId ||
+                    student.suggestedAfternoonDestination ||
+                    student.morningDestinationId ||
+                    'UNSPECIFIED'
+                );
+
+                if (realDestId && (realDestId.includes('호차') || realDestId === '미배정' || realDestId === '방과후 미배정')) {
+                    realDestId = student.afternoonDestinationId || student.morningDestinationId || 'UNSPECIFIED';
+                }
+
+                targetDays.forEach(day => {
+                    afterSchoolClassIds[day] = course.id;
+                    vacationAfterSchoolClassIds[day] = course.id;
+                    afterSchoolDestinations[day] = realDestId;
+                    vacationAfterSchoolDestinations[day] = realDestId;
+                });
             });
 
             return {
@@ -1199,15 +1301,17 @@ export default function AdminPage() {
                 const isSecondSemester = sem.includes('2학기');
 
                 const attachmentHtml = isSecondSemester
-                    ? `<div style="margin-top: 24px; line-height: 1.8; font-weight: normal;">` +
-                      `<p style="margin-bottom: 4px; margin-left: 0px;">붙임 &nbsp;&nbsp;1. &nbsp;${year}학년도 ${sem} 등교 지도교사 배정표 1부.</p>` +
-                      `<p style="margin-bottom: 4px; margin-left: 54px;">2. &nbsp;${year}학년도 ${sem} 등하교 차량 지도교사 배정표 1부. &nbsp;&nbsp;끝.</p>` +
-                      `</div>`
-                    : `<div style="margin-top: 24px; line-height: 1.8; font-weight: normal;">` +
-                      `<p style="margin-bottom: 4px; margin-left: 0px;">붙임 &nbsp;&nbsp;1. &nbsp;${year}학년도 유·초등 등하교 차량 지도 계획 1부.</p>` +
-                      `<p style="margin-bottom: 4px; margin-left: 54px;">2. &nbsp;${year}학년도 ${sem} 등교 지도교사 배정표 1부.</p>` +
-                      `<p style="margin-bottom: 4px; margin-left: 54px;">3. &nbsp;${year}학년도 ${sem} 등하교 차량 지도교사 배정표 1부. &nbsp;&nbsp;끝.</p>` +
-                      `</div>`;
+                    ? `<table style="width: 100%; border-collapse: collapse; border: none; margin-top: 24px; margin-bottom: 6px; line-height: 1.8;" class="attachment-table">` +
+                      `<tbody>` +
+                      `<tr><td style="vertical-align: top; width: 36px; border: none; padding: 0 8px 3px 0; white-space: nowrap; font-weight: normal;">붙임</td><td style="vertical-align: top; border: none; padding: 0 0 3px 0; font-weight: normal;">1. &nbsp;${year}학년도 ${sem} 등교 지도교사 배정표 1부.</td></tr>` +
+                      `<tr><td style="border: none; padding: 0 8px 3px 0;"></td><td style="vertical-align: top; border: none; padding: 0 0 3px 0; font-weight: normal;">2. &nbsp;${year}학년도 ${sem} 등하교 차량 지도교사 배정표 1부. &nbsp;&nbsp;끝.</td></tr>` +
+                      `</tbody></table>`
+                    : `<table style="width: 100%; border-collapse: collapse; border: none; margin-top: 24px; margin-bottom: 6px; line-height: 1.8;" class="attachment-table">` +
+                      `<tbody>` +
+                      `<tr><td style="vertical-align: top; width: 36px; border: none; padding: 0 8px 3px 0; white-space: nowrap; font-weight: normal;">붙임</td><td style="vertical-align: top; border: none; padding: 0 0 3px 0; font-weight: normal;">1. &nbsp;${year}학년도 유·초등 등하교 차량 지도 계획 1부.</td></tr>` +
+                      `<tr><td style="border: none; padding: 0 8px 3px 0;"></td><td style="vertical-align: top; border: none; padding: 0 0 3px 0; font-weight: normal;">2. &nbsp;${year}학년도 ${sem} 등교 지도교사 배정표 1부.</td></tr>` +
+                      `<tr><td style="border: none; padding: 0 8px 3px 0;"></td><td style="vertical-align: top; border: none; padding: 0 0 3px 0; font-weight: normal;">3. &nbsp;${year}학년도 ${sem} 등하교 차량 지도교사 배정표 1부. &nbsp;&nbsp;끝.</td></tr>` +
+                      `</tbody></table>`;
 
                 return `<p style="line-height: 1.8; margin-bottom: 8px; font-weight: normal; margin-left: 0px;">1. &nbsp;${year}학년도 ${sem} 유·초등 등하교 차량 지도 계획을 붙임과 같이 실시하고자 합니다.</p>` +
 `<p style="line-height: 1.8; margin-bottom: 8px; font-weight: normal; margin-left: 16px;">가. &nbsp;운영 기간: ${opPeriodStr}</p>` +
@@ -2486,6 +2590,42 @@ ${leaderRowsHtml}
 
     const titleActions = (
         <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap shrink-0">
+            {/* 🌟 방과후 노선으로 이동 액션 버튼 */}
+            <Button
+                type="button"
+                variant="ghost"
+                onClick={handleExecuteTransfer}
+                disabled={isTransferring}
+                className={cn(
+                    "h-8 px-2 sm:px-2.5 font-bold text-xs rounded-lg shadow-none flex items-center gap-1 cursor-pointer transition whitespace-nowrap border",
+                    transferState?.isTransferred
+                        ? "bg-emerald-50 hover:bg-emerald-100/80 border-emerald-200 text-emerald-800"
+                        : "bg-amber-50 hover:bg-amber-100/80 border-amber-300 text-amber-900 animate-pulse"
+                )}
+                title={transferState?.isTransferred ? "방과후 노선 이동 완료됨 (정규 하교 좌석 제외 상태)" : "방과후 시작일에 클릭하여 정규 하교 좌석에서 방과후 노선으로 이동"}
+            >
+                {isTransferring ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-700 shrink-0" />
+                ) : (
+                    <ArrowRightLeft className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                )}
+                <span className="hidden sm:inline">
+                    {transferState?.isTransferred ? "방과후 노선 이동 완료" : "방과후 노선으로 이동"}
+                </span>
+                <span className="inline sm:hidden text-[11px]">
+                    {transferState?.isTransferred ? "이동완료" : "방과후 이동"}
+                </span>
+                {transferState?.isTransferred ? (
+                    <Badge className="bg-emerald-600 text-white text-[9px] px-1 py-0 font-bold ml-0.5">
+                        완료
+                    </Badge>
+                ) : (
+                    <Badge className="bg-amber-600 text-white text-[9px] px-1 py-0 font-bold ml-0.5">
+                        실행대기
+                    </Badge>
+                )}
+            </Button>
+
             {/* 0. 푸시 알림 관리 팝업 버튼 */}
             <Dialog open={isNotificationsModalOpen} onOpenChange={setIsNotificationsModalOpen}>
                 <DialogTrigger asChild>
@@ -2589,6 +2729,7 @@ ${leaderRowsHtml}
                 afterSchoolClasses={afterSchoolClasses}
                 semesterMode={adminViewMode}
                 activeSystemMode={activeSystemMode}
+                transferState={transferState}
                 onSemesterModeChange={(mode) => setAdminViewMode(mode)}
                 onApplySystemMode={async () => {
                     try {

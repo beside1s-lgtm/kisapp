@@ -10,23 +10,28 @@ import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/use-translation';
 import { LanguageSwitcher } from './language-switcher';
+import { cn } from '@/lib/utils';
 
 interface MainLayoutProps {
   children: ReactNode;
   headerContent?: ReactNode;
   titleActions?: ReactNode;
+  rightActions?: ReactNode;
   hideTitle?: boolean;
   mobileHeaderRow1?: ReactNode;
   title?: ReactNode;
+  contentClassName?: string;
 }
 
 export const MainLayout: FC<MainLayoutProps> = ({ 
   children, 
   headerContent, 
   titleActions, 
+  rightActions,
   hideTitle = false, 
   mobileHeaderRow1,
   title,
+  contentClassName,
 }) => {
   const pathname = usePathname();
   const router = useRouter();
@@ -57,8 +62,7 @@ export const MainLayout: FC<MainLayoutProps> = ({
   }
 
   const showHomeButton = pathname.startsWith('/admin') || pathname.startsWith('/teacher');
-  const isInsideAppGroup = pathname.startsWith('/admin') || pathname.startsWith('/inbox') || pathname.startsWith('/sent') || pathname.startsWith('/new') || pathname.startsWith('/recalled') || pathname.startsWith('/registry');
-  const headerStickyClass = isInsideAppGroup ? 'sticky top-14 sm:top-16 z-40' : 'sticky top-0 z-40';
+  const headerStickyClass = 'sticky top-0 z-30';
 
   return (
     <div className="flex flex-col min-h-screen bg-background w-full max-w-full min-w-0">
@@ -93,16 +97,17 @@ export const MainLayout: FC<MainLayoutProps> = ({
                       )}
 
                       {!hideTitle && (
-                        <div className="min-w-0 truncate">
-                            <h1 className="text-sm font-bold font-headline truncate text-slate-800 dark:text-slate-100">
+                        <div className={typeof title === 'string' ? "min-w-0 truncate" : "min-w-0 flex items-center"}>
+                            <div className={`text-sm font-bold font-headline text-slate-800 dark:text-slate-100 ${typeof title === 'string' ? 'truncate' : ''}`}>
                               {title || getPageTitle()}
-                            </h1>
+                            </div>
                         </div>
                       )}
                   </div>
 
-                  {/* Row 1 우측: LanguageSwitcher */}
+                  {/* Row 1 우측: rightActions + LanguageSwitcher */}
                   <div className="flex items-center gap-1 shrink-0">
+                      {rightActions}
                       <LanguageSwitcher />
                       {user && pathname.startsWith('/admin') && (
                           <Button variant="outline" size="sm" onClick={handleLogout} className="h-8 px-2 text-xs text-rose-600 border-rose-200 hover:bg-rose-50" title={t('logout.button')}>
@@ -123,7 +128,7 @@ export const MainLayout: FC<MainLayoutProps> = ({
           {/* 데스크탑 뷰 (hidden sm:flex): 1줄 레이아웃 */}
           <div className="hidden sm:flex w-full items-center justify-between gap-3 flex-nowrap min-w-0">
               {/* 좌측 영역: 뒤로가기/홈 + 타이틀 */}
-              <div className="flex items-center gap-2 min-w-0 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
                   {user ? (
                     <div className="flex items-center gap-1.5 shrink-0">
                       {pathname !== '/' && pathname !== '/inbox' && (
@@ -149,16 +154,16 @@ export const MainLayout: FC<MainLayoutProps> = ({
                   )}
 
                   {!hideTitle && (
-                    <div className="min-w-0 truncate">
-                        <h1 className="text-base md:text-lg font-bold font-headline truncate">
+                    <div className={typeof title === 'string' ? "min-w-0 truncate" : "min-w-0 flex items-center"}>
+                        <div className={`text-base md:text-lg font-bold font-headline ${typeof title === 'string' ? 'truncate' : ''}`}>
                           {title || getPageTitle()}
-                        </h1>
+                        </div>
                     </div>
                   )}
               </div>
 
-              {/* 우측 영역: titleActions + LanguageSwitcher + 로그아웃 */}
-              <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+              {/* 우측 영역: titleActions + rightActions + LanguageSwitcher + 로그아웃 */}
+              <div className="flex items-center gap-2 shrink-0 justify-end">
                   {titleActions && (
                       <div className="flex items-center gap-1.5 flex-nowrap min-w-0">
                           {titleActions}
@@ -166,6 +171,7 @@ export const MainLayout: FC<MainLayoutProps> = ({
                   )}
                   
                   <div className="flex items-center gap-1.5 shrink-0">
+                      {rightActions}
                       <LanguageSwitcher />
                       {user && pathname.startsWith('/admin') && (
                           <Button variant="outline" size="sm" onClick={handleLogout} className="h-8 px-2.5 text-xs text-rose-600 border-rose-200 hover:bg-rose-50">
@@ -182,17 +188,9 @@ export const MainLayout: FC<MainLayoutProps> = ({
             </div>
           )}
       </header>
-      <main className="flex-1 p-2 sm:p-4 md:p-6 lg:p-8 w-full max-w-full overflow-x-hidden min-w-0">
+      <main className={cn("flex-1 w-full max-w-full overflow-x-hidden min-w-0", contentClassName || "p-2 sm:p-4 md:p-6 lg:p-8")}>
         {children}
       </main>
-      <footer className="border-t py-4 text-center text-xs text-muted-foreground bg-card/30 backdrop-blur-sm no-print w-full overflow-x-hidden">
-        <div className="flex flex-col sm:flex-row justify-center items-center gap-2 sm:gap-6 px-2">
-          <span>© {new Date().getFullYear()} KIS School Bus. All rights reserved.</span>
-          <Link href="/privacy" className="font-semibold text-primary hover:underline transition-all">
-            개인정보처리방침 (Privacy Policy)
-          </Link>
-        </div>
-      </footer>
     </div>
   );
 };

@@ -1,19 +1,29 @@
 'use client';
 
+import { useRouter } from "next/navigation";
 import { getAttendanceDocuments } from "@/lib/services/documentService";
+import { getOrgStructure } from "@/lib/services/settingsService";
 import { DocumentList } from "@/components/document-list";
 import { useAuth } from "@/hooks/use-auth";
-import { ApprovalDoc } from "@/lib/types";
-import { FileText, Loader2, Search, X } from "lucide-react";
+import { ApprovalDoc, OrgStructure, DutyRolePermission } from "@/lib/types";
+import { FileText, Loader2, Search, X, ArrowLeft, Printer, CheckCircle2, Clock } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { BatchDocumentPrintModal } from "@/components/batch-document-print-modal";
 
 export default function FieldTripRegistryPage() {
+    const router = useRouter();
     const { user, profile } = useAuth();
     const [docs, setDocs] = useState<ApprovalDoc[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // 다중 선택 및 일괄 인쇄 상태
+    const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
+    const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
     // 필터 상태
     const [selectedYear, setSelectedYear] = useState<string>('전체');
@@ -22,9 +32,47 @@ export default function FieldTripRegistryPage() {
 
     useEffect(() => {
         if (user?.uid && profile?.email) {
-            getAttendanceDocuments(profile.email, !!profile.isAdmin).then(data => {
-                setDocs(data);
-                setLoading(false);
+            getOrgStructure().then(orgData => {
+                const org = (orgData || null) as OrgStructure | null;
+                const normalizedEmail = profile.email.toLowerCase();
+                const userPerms: DutyRolePermission[] = [];
+
+                if (org) {
+                    if (org.afterschoolManagers?.some(e => e.toLowerCase() === normalizedEmail)) {
+                        if (org.dutyRolePermissions?.['afterschool']) userPerms.push(org.dutyRolePermissions['afterschool']);
+                    }
+                    if (org.busManagers?.some(e => e.toLowerCase() === normalizedEmail)) {
+                        if (org.dutyRolePermissions?.['bus']) userPerms.push(org.dutyRolePermissions['bus']);
+                    }
+                    if (org.systemManagers?.some(e => e.toLowerCase() === normalizedEmail)) {
+                        if (org.dutyRolePermissions?.['system']) userPerms.push(org.dutyRolePermissions['system']);
+                    }
+                    if (org.healthTeachers?.some(e => e.toLowerCase() === normalizedEmail)) {
+                        if (org.dutyRolePermissions?.['health']) userPerms.push(org.dutyRolePermissions['health']);
+                    }
+                    if (org.specialTeachers?.some(e => e.toLowerCase() === normalizedEmail)) {
+                        if (org.dutyRolePermissions?.['special']) userPerms.push(org.dutyRolePermissions['special']);
+                    }
+                    (org.customDutyRoles || []).forEach(role => {
+                        if (role.teacherEmails?.some(e => e.toLowerCase() === normalizedEmail)) {
+                            if (role.permissions) userPerms.push(role.permissions);
+                            else if (org.dutyRolePermissions?.[role.id]) userPerms.push(org.dutyRolePermissions[role.id]);
+                        }
+                    });
+                }
+
+                getAttendanceDocuments(profile.email, !!profile.isAdmin, {
+                    orgStructure: org,
+                    permissions: userPerms,
+                }).then(data => {
+                    setDocs(data);
+                    setLoading(false);
+                });
+            }).catch(() => {
+                getAttendanceDocuments(profile.email, !!profile.isAdmin).then(data => {
+                    setDocs(data);
+                    setLoading(false);
+                });
             });
         } else if (!user || !profile) {
             setLoading(false);
@@ -82,10 +130,47 @@ export default function FieldTripRegistryPage() {
         });
     }, [docs, selectedYear, selectedGrade, studentNameQuery]);
 
+    // 체험학습 결과보고서 제출 여부 판별
+    const checkReportSubmitted = (doc: ApprovalDoc) => {
+        const pfd = doc.parentFormData as any;
+        return Boolean(
+            pfd?.reportSubmitted ||
+            (doc as any).reportSubmitted ||
+            pfd?.reportContent ||
+            (doc as any).reportContent ||
+            (doc.content && doc.content.includes('결과보고서'))
+        );
+    };
+
     const handleResetFilters = () => {
         setSelectedYear('전체');
         setSelectedGrade('전체');
         setStudentNameQuery('');
+        setSelectedDocIds([]);
+    };
+
+    // 출력 가능한 (결과보고서까지 완비된) 문서 목록
+    const printableDocs = useMemo(() => {
+        return filteredDocs.filter(checkReportSubmitted);
+    }, [filteredDocs]);
+
+    // 선택된 문서 목록
+    const selectedDocs = useMemo(() => {
+        return filteredDocs.filter(d => selectedDocIds.includes(d.id));
+    }, [filteredDocs, selectedDocIds]);
+
+    // 전체 선택 / 해제 핸들러 (보고서 완비 문서만 선택)
+    const handleSelectAll = (checked: boolean) => {
+        if (checked) {
+            setSelectedDocIds(printableDocs.map(d => d.id));
+        } else {
+            setSelectedDocIds([]);
+        }
+    };
+
+    // 개별 선택 토글 핸들러
+    const handleSelectDoc = (docId: string, checked: boolean) => {
+        setSelectedDocIds(prev => checked ? [...prev, docId] : prev.filter(id => id !== docId));
     };
 
     if (loading) {
@@ -98,12 +183,23 @@ export default function FieldTripRegistryPage() {
 
     return (
         <div className="p-4 md:p-8">
-            <div className="mb-6">
-                <h1 className="font-headline text-3xl font-bold flex items-center gap-3">
-                    <FileText className="h-8 w-8 text-primary" />
-                    체험학습 문서함
-                </h1>
-                <p className="text-muted-foreground mt-1">결재가 완료된 학부모 교외체험학습 신청서 및 결과보고서 결합 문서 기록입니다.</p>
+            <div className="mb-6 flex items-center gap-3 border-b pb-4">
+                <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => router.back()} 
+                    className="h-9 w-9 rounded-xl hover:bg-slate-100 shrink-0"
+                    title="뒤로 가기"
+                >
+                    <ArrowLeft className="h-5 w-5 text-slate-600" />
+                </Button>
+                <div>
+                    <h1 className="font-headline text-2xl sm:text-3xl font-bold flex items-center gap-2.5 text-slate-900">
+                        <FileText className="h-6 w-6 text-primary" />
+                        체험학습 문서함
+                    </h1>
+                    <p className="text-muted-foreground mt-0.5 text-xs sm:text-sm">결재가 완료된 학부모 출결 문서(체험학습 신청/보고서) 기록입니다.</p>
+                </div>
             </div>
 
             {/* 필터 바 */}
@@ -170,7 +266,88 @@ export default function FieldTripRegistryPage() {
                 </div>
             </div>
 
-            <DocumentList documents={filteredDocs} />
+            {/* 일괄 선택 및 인쇄 툴바 */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                        <Checkbox
+                            id="select-all-field-trip"
+                            checked={printableDocs.length > 0 && selectedDocIds.length === printableDocs.length}
+                            onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                            disabled={printableDocs.length === 0}
+                            className="w-4 h-4"
+                        />
+                        <label
+                            htmlFor="select-all-field-trip"
+                            className="text-xs font-bold text-slate-700 cursor-pointer select-none"
+                        >
+                            전체 선택
+                        </label>
+                    </div>
+                    <span className="text-xs text-slate-400">|</span>
+                    <span className="text-xs text-slate-600">
+                        출력 완비 <b className="text-emerald-700">{printableDocs.length}</b>건 중 <b className="text-primary">{selectedDocIds.length}</b>건 선택됨
+                        {filteredDocs.length > printableDocs.length && (
+                            <span className="text-amber-700 font-medium ml-1.5">
+                                (보고서 대기 {filteredDocs.length - printableDocs.length}건 제외)
+                            </span>
+                        )}
+                    </span>
+                    {selectedDocIds.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => setSelectedDocIds([])}
+                            className="text-[11px] text-slate-500 hover:text-slate-800 underline ml-1 cursor-pointer"
+                        >
+                            선택 해제
+                        </button>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <Button
+                        type="button"
+                        onClick={() => setIsPrintModalOpen(true)}
+                        disabled={selectedDocIds.length === 0}
+                        className="h-8 px-3.5 text-xs font-bold bg-primary hover:bg-primary/90 text-white flex items-center gap-1.5 shadow-2xs shrink-0"
+                    >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>선택 문서 일괄 인쇄 ({selectedDocIds.length}건 - 신청서+보고서 쌍)</span>
+                    </Button>
+                </div>
+            </div>
+
+            <DocumentList 
+                documents={filteredDocs} 
+                selectable={true}
+                selectedDocIds={selectedDocIds}
+                onSelectDoc={handleSelectDoc}
+                isDocSelectable={checkReportSubmitted}
+                nonSelectableReason={() => '결과보고서가 아직 제출되지 않아 출력이 불가합니다 (신청서+보고서 완비 시 출력 가능)'}
+                customBadges={(doc) => checkReportSubmitted(doc) ? (
+                    <Badge className="bg-emerald-50 text-emerald-800 border-emerald-300 gap-1 text-[11px]">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        신청서+보고서 완비 (출력 가능)
+                    </Badge>
+                ) : (
+                    <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 gap-1 text-[11px]">
+                        <Clock className="w-3 h-3 text-amber-600" />
+                        결과보고서 대기 (출력 불가)
+                    </Badge>
+                )}
+                onPrintSingleDoc={(doc) => {
+                    setSelectedDocIds([doc.id]);
+                    setIsPrintModalOpen(true);
+                }}
+            />
+
+            {/* 일괄 인쇄 모달 */}
+            <BatchDocumentPrintModal
+                isOpen={isPrintModalOpen}
+                onClose={() => setIsPrintModalOpen(false)}
+                documents={selectedDocs}
+                title="체험학습 신청서 및 결과보고서 일괄 인쇄"
+            />
         </div>
     );
 }

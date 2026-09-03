@@ -9,26 +9,35 @@ import {
   getOvertimeStatsByYear,
 } from "@/lib/services/documentService";
 import { saveUserProfile, getUsersDirectory } from "@/lib/services/userService";
-import { 
+import {
   getOrgStructure, 
   onAfterschoolCoursesUpdate, 
   onAfterschoolEnrollmentsUpdate, 
-  onAfterschoolTimerUpdate 
+  onAfterschoolTimerUpdate,
+  onDocConfigUpdate
 } from "@/lib/services/settingsService";
 import { 
   onDepartmentTasksUpdate 
 } from "@/lib/services/departmentTaskService";
+import {
+  onDepartmentWeeklySchedulesUpdate,
+  deleteDepartmentWeeklySchedule,
+  onWeeklyProposalsUpdate,
+  deleteWeeklyProposal
+} from "@/lib/services/departmentWeeklyScheduleService";
+import { formatToDateStr, DEFAULT_ACADEMIC_CALENDAR_CONFIG } from "@/lib/services/academicCalendarService";
 import { DocumentList } from "@/components/document-list";
 import { useAuth } from "@/hooks/use-auth";
-import { ApprovalDoc, DepartmentTask } from "@/lib/types";
+import { useToast } from "@/hooks/use-toast";
+import { ApprovalDoc, DepartmentTask, DepartmentWeeklySchedule, DepartmentWeeklyProposal, AcademicEvent } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Inbox, Send, Briefcase, Users, Loader2, Clock, BookOpen, Bus, 
-  ShieldAlert, Navigation, Calendar, ClipboardList, CheckCircle2, 
+  ShieldAlert, Navigation, Calendar, CalendarDays, CalendarPlus, ClipboardList, CheckCircle2, 
   Plus, Trash2, CheckSquare, Sparkles, Building2, School, FileUp, 
-  FileText, FolderOpen, ArrowRight, AlertCircle, CheckCircle, UserCheck
+  FileText, FolderOpen, ArrowRight, ArrowLeft, AlertCircle, CheckCircle, UserCheck, Lock, Eye, MessageSquare
 } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
@@ -44,9 +53,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { CreateDepartmentTaskDialog } from "@/components/tasks/create-department-task-dialog";
+import { CreateWeeklyScheduleDialog } from "@/components/tasks/create-weekly-schedule-dialog";
+import { CreateWeeklyProposalDialog } from "@/components/tasks/create-weekly-proposal-dialog";
+import { ReviewWeeklyProposalDialog } from "@/components/tasks/review-weekly-proposal-dialog";
 import { SubmitDepartmentTaskDialog } from "@/components/tasks/submit-department-task-dialog";
 import { TaskSubmissionsDialog } from "@/components/tasks/task-submissions-dialog";
-import { PwaInstallBanner } from "@/components/pwa-install-banner";
+import { WeeklyEducationPlanModal } from "@/components/tasks/weekly-education-plan-modal";
+import { MonthlyEducationPlanModal } from "@/components/tasks/monthly-education-plan-modal";
 
 // ─── 순수 SVG 막대 차트 컴포넌트 ─────────────────────────────────────
 function OvertimeBarChart({ data }: { data: { month: string; hours: number }[] }) {
@@ -134,6 +147,7 @@ function OvertimeBarChart({ data }: { data: { month: string; hours: number }[] }
 export default function InboxPage() {
     const { user, profile, isParent } = useAuth();
     const router = useRouter();
+    const { toast } = useToast();
     
     // 학생/학부모 계정 접근 차단 가드 (학생/학부모는 /parents 포털로 자동 안내)
     useEffect(() => {
@@ -170,6 +184,18 @@ export default function InboxPage() {
     const [viewingSubmissionsTask, setViewingSubmissionsTask] = useState<DepartmentTask | null>(null);
     const [activeTaskSubTab, setActiveTaskSubTab] = useState<'assigned' | 'created'>('assigned');
 
+    // 부서 주간 일정 및 학사 일정 연동 상태
+    const [weeklySchedules, setWeeklySchedules] = useState<DepartmentWeeklySchedule[]>([]);
+    const [academicEvents, setAcademicEvents] = useState<AcademicEvent[]>([]);
+    const [isCreateWeeklyScheduleOpen, setIsCreateWeeklyScheduleOpen] = useState(false);
+    const [isWeeklyPlanModalOpen, setIsWeeklyPlanModalOpen] = useState(false);
+    const [isMonthlyPlanModalOpen, setIsMonthlyPlanModalOpen] = useState(false);
+
+    // 부서원 주간 일정 제안 상태
+    const [weeklyProposals, setWeeklyProposals] = useState<DepartmentWeeklyProposal[]>([]);
+    const [isCreateProposalOpen, setIsCreateProposalOpen] = useState(false);
+    const [reviewingProposal, setReviewingProposal] = useState<DepartmentWeeklyProposal | null>(null);
+
     // 방과후학교 실시간 단계 연동 상태
     const [afterschoolCourses, setAfterschoolCourses] = useState<any[]>([]);
     const [afterschoolEnrollments, setAfterschoolEnrollments] = useState<any[]>([]);
@@ -187,10 +213,42 @@ export default function InboxPage() {
         return () => unsub();
     }, []);
 
-    // 2. 전체 교직원 목록 로드
+    // 1-1. 부서별 주간 일정 및 학사 일정 실시간 구독
+    useEffect(() => {
+        const unsubSched = onDepartmentWeeklySchedulesUpdate((list) => {
+            setWeeklySchedules(list);
+        });
+        const unsubDoc = onDocConfigUpdate((cfg) => {
+            if (cfg.academicCalendar?.events && cfg.academicCalendar.events.length > 0) {
+                setAcademicEvents(cfg.academicCalendar.events);
+            } else {
+                setAcademicEvents(DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || []);
+            }
+        });
+        return () => {
+            unsubSched();
+            unsubDoc();
+        };
+    }, []);
+
+    // 1-2. 부서원 주간 일정 제안 실시간 구독
+    useEffect(() => {
+        const unsub = onWeeklyProposalsUpdate((proposals) => {
+            setWeeklyProposals(proposals);
+        });
+        return () => unsub();
+    }, []);
+
+    // 2. 전체 교직원 목록 로드 (학생 및 학부모 계정 제외)
     useEffect(() => {
         getUsersDirectory().then(users => {
-            setAllFaculty(users.map(u => ({ email: u.email, name: u.name, dept: u.dept || u.role })));
+            const facultyOnly = users.filter(u => {
+                const roleLower = (u.role || '').toLowerCase();
+                const isStudent = roleLower.includes('student') || roleLower.includes('학생') || !!u.studentGrade || !!u.studentNumber;
+                const isParent = roleLower.includes('parent') || roleLower.includes('학부모') || !!u.parentName || !!u.parentPhone;
+                return !isStudent && !isParent && !!u.email && !!u.name;
+            });
+            setAllFaculty(facultyOnly.map(u => ({ email: u.email, name: u.name, dept: u.dept || u.role || '교직원' })));
         }).catch(err => {
             console.warn("Failed to load faculty directory:", err);
         });
@@ -355,8 +413,8 @@ export default function InboxPage() {
         }
 
         return {
-            belongs: belongsList.length > 0 ? belongsList.join(', ') : (profile.dept || '교직원'),
-            managers: managerList.length > 0 ? managerList.join(', ') : '업무 미지정',
+            belongs: belongsList.length > 0 ? belongsList.join(' · ') : (profile?.dept || '일반 교직원'),
+            managers: managerList.length > 0 ? managerList.join(', ') : '해당 없음',
             homeroom,
             department,
             isHead,
@@ -365,20 +423,168 @@ export default function InboxPage() {
         };
     }, [profile, orgData]);
 
+    // ── 주요 학교 일정 계산 (오늘 기준 앞 3일 ~ 뒤 1주일) ──
+    const mainSchoolSchedules = useMemo(() => {
+        const now = new Date();
+        const start = new Date(now);
+        start.setDate(start.getDate() - 3);
+        const end = new Date(now);
+        end.setDate(end.getDate() + 7);
+
+        const startDateStr = formatToDateStr(start);
+        const endDateStr = formatToDateStr(end);
+        const todayStr = formatToDateStr(now);
+
+        const emailLower = profile?.email?.toLowerCase() || '';
+        const isHeadOrAdmin = myBelongingInfo.isHead || profile?.isAdmin || (profile?.role && (profile.role.includes('부장') || profile.role === '교장' || profile.role === '교감'));
+        const myDept = myBelongingInfo.department || profile?.dept || '';
+
+        const results: Array<{
+            id: string;
+            title: string;
+            date: string;
+            endDate?: string;
+            deptName?: string;
+            isAcademic: boolean;
+            isMainSchool: boolean;
+            isPrivateDept: boolean;
+            isToday: boolean;
+            isPast: boolean;
+            isFuture: boolean;
+            diffDays: number;
+            canDelete: boolean;
+            creatorEmail?: string;
+            content?: string;
+        }> = [];
+
+        // 1. 학사일정 events
+        academicEvents.forEach((ev) => {
+            const evEnd = ev.endDate || ev.date;
+            if (ev.date <= endDateStr && evEnd >= startDateStr) {
+                const diffTime = new Date(ev.date).getTime() - new Date(todayStr).getTime();
+                const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
+                results.push({
+                    id: ev.id,
+                    title: ev.title,
+                    date: ev.date,
+                    endDate: ev.endDate,
+                    isAcademic: true,
+                    isMainSchool: true,
+                    isPrivateDept: false,
+                    isToday: ev.date <= todayStr && evEnd >= todayStr,
+                    isPast: evEnd < todayStr,
+                    isFuture: ev.date > todayStr,
+                    diffDays,
+                    canDelete: false
+                });
+            }
+        });
+
+        // 2. 부서별 주간 일정
+        weeklySchedules.forEach((sch) => {
+            if (sch.startDate <= endDateStr && sch.endDate >= startDateStr) {
+                const isCreator = sch.creatorEmail?.toLowerCase() === emailLower;
+                const isMyDept = sch.deptName === myDept || myBelongingInfo.belongsList.some(b => b.includes(sch.deptName));
+                const isPrivate = !sch.isMainSchoolSchedule && !sch.sendToAcademicCalendar;
+
+                // 권한 체크: 공개/학사일정은 모두에게 노출, 자체종료는 교장/교감/부장단/해당부서원/작성자에게만 노출
+                const canView = !isPrivate || isHeadOrAdmin || isMyDept || isCreator;
+                if (!canView) return;
+
+                const diffTime = new Date(sch.startDate).getTime() - new Date(todayStr).getTime();
+                const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
+
+                results.push({
+                    id: sch.id,
+                    title: sch.title,
+                    date: sch.startDate,
+                    endDate: sch.endDate,
+                    deptName: sch.deptName,
+                    isAcademic: sch.sendToAcademicCalendar,
+                    isMainSchool: sch.isMainSchoolSchedule,
+                    isPrivateDept: isPrivate,
+                    isToday: sch.startDate <= todayStr && sch.endDate >= todayStr,
+                    isPast: sch.endDate < todayStr,
+                    isFuture: sch.startDate > todayStr,
+                    diffDays,
+                    canDelete: isCreator || profile?.isAdmin === true,
+                    creatorEmail: sch.creatorEmail,
+                    content: sch.content
+                });
+            }
+        });
+
+        // 날짜 오름차순 정렬 (동일 날짜면 학사일정 우선)
+        return results.sort((a, b) => {
+            if (a.date !== b.date) return a.date.localeCompare(b.date);
+            if (a.isAcademic !== b.isAcademic) return a.isAcademic ? -1 : 1;
+            return a.title.localeCompare(b.title);
+        });
+    }, [academicEvents, weeklySchedules, profile, myBelongingInfo]);
+
+    // 내가 부장으로 있는 부서 목록
+    const myHeadDepartments = useMemo(() => {
+        if (!orgData?.departments || !profile?.email) return [];
+        const emailLower = profile.email.toLowerCase();
+        return orgData.departments
+            .filter((d: any) => d.headEmail?.toLowerCase() === emailLower)
+            .map((d: any) => d.name);
+    }, [orgData, profile]);
+
+    // 부장 또는 결재권자 권한 여부 (실제 부장 직책/조직도 부장 또는 교장/교감인 경우만 인정)
+    const isDepartmentHead = useMemo(() => {
+        return !!(
+            myHeadDepartments.length > 0 ||
+            myBelongingInfo.isHead ||
+            (profile?.role && (profile.role.includes('부장') || profile.role === '교장' || profile.role === '교감'))
+        );
+    }, [myHeadDepartments, myBelongingInfo, profile]);
+
+    // 부장/관리자가 검토해야 할 부서원 제안 목록 (pending)
+    const pendingProposalsForHead = useMemo(() => {
+        const isSuperAdmin = profile?.isAdmin || profile?.role === '교장' || profile?.role === '교감';
+        if (isSuperAdmin) {
+            return weeklyProposals.filter(p => p.status === 'pending');
+        }
+        if (myHeadDepartments.length === 0) return [];
+        return weeklyProposals.filter(p => myHeadDepartments.includes(p.deptName) && p.status === 'pending');
+    }, [weeklyProposals, myHeadDepartments, profile]);
+
+    // 내가 부원으로서 부장에게 제안한 목록
+    const mySubmittedProposals = useMemo(() => {
+        if (!profile?.email) return [];
+        const emailLower = profile.email.toLowerCase();
+        return weeklyProposals.filter(p => p.submitterEmail?.toLowerCase() === emailLower);
+    }, [weeklyProposals, profile]);
+
+    const handleDeleteProposal = async (proposalId: string, title: string) => {
+        if (!window.confirm(`제안하신 [${title}] 일정을 삭제하시겠습니까?`)) {
+            return;
+        }
+        try {
+            const res = await deleteWeeklyProposal(proposalId);
+            if (res.success) {
+                toast({ title: "제안 삭제 완료", description: "주간 일정 제안이 삭제되었습니다." });
+            } else {
+                toast({ title: "삭제 실패", description: res.error || "삭제 중 오류가 발생했습니다.", variant: "destructive" });
+            }
+        } catch (e: any) {
+            toast({ title: "삭제 실패", description: e.message || "삭제 중 오류가 발생했습니다.", variant: "destructive" });
+        }
+    };
+
     const handleBusClick = (e: React.MouseEvent) => {
-        if (isBusManager) {
+        if (!isBusManager) {
             e.preventDefault();
             setIsBusDialogOpen(true);
         }
-        // 담당자가 아니면 Link의 원래 href(/teacher/bus)로 기본 이동
     };
 
     const handleAfterschoolClick = (e: React.MouseEvent) => {
-        if (isAfterschoolManager) {
+        if (!isAfterschoolManager) {
             e.preventDefault();
             setIsAfterschoolDialogOpen(true);
         }
-        // 담당자가 아니면 Link의 원래 href(/teacher/afterschool)로 기본 이동
     };
 
     useEffect(() => {
@@ -421,10 +627,6 @@ export default function InboxPage() {
         }
     }, [user, profile]);
 
-    const pendingParentDocs = useMemo(() => {
-        return parentDocs.filter(d => d.status === 'pending');
-    }, [parentDocs]);
-
     if (loading) {
         return (
             <div className="flex h-full w-full items-center justify-center">
@@ -433,424 +635,505 @@ export default function InboxPage() {
         );
     }
 
-    const stats = [
-        {
-            id: "inbox",
-            title: "결재 대기 문서",
-            count: inboxDocs.length,
-            icon: Inbox,
-            color: "text-blue-500",
-            bgColor: "bg-blue-500/10",
-        },
-        {
-            id: "pending",
-            title: "진행 중인 상신 문서",
-            count: pendingDocs.length,
-            icon: Send,
-            color: "text-amber-500",
-            bgColor: "bg-amber-500/10",
-        },
-        {
-            id: "teacher",
-            title: "내 복무 신청 현황",
-            count: teacherDocs.length,
-            icon: Briefcase,
-            color: "text-emerald-500",
-            bgColor: "bg-emerald-500/10",
-        },
-        {
-            id: "parent",
-            title: "학부모 출결 문서",
-            count: pendingParentDocs.length,
-            icon: Users,
-            color: "text-purple-500",
-            bgColor: "bg-purple-500/10",
-        },
-    ];
-
     return (
-        <div className="space-y-6 p-4 md:p-8 font-body">
-            <div>
-                <h1 className="font-headline text-2xl sm:text-3xl font-bold">대시보드</h1>
-                <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">결재 문서 및 대내외 업무 진행 상황 요약입니다.</p>
-            </div>
+        <div className="p-3 sm:p-4 h-full max-h-full flex flex-col gap-3 font-body overflow-hidden">
+            {/* ── 2열 50:50 나란한 배치: [결재 대기 문서 + 주요 학교 일정] (좌) & [나의 업무] (우) ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0 items-stretch overflow-y-auto lg:overflow-hidden">
+                {/* 1. 좌측 (50%): [결재 대기 문서 목록] (상단) + [주요 학교 일정] (하단) */}
+                <div className="flex flex-col gap-3 flex-1 min-h-0 h-full">
+                    {/* 1-1. 상단 (절반): 결재 대기 문서 목록 카드 */}
+                    <Card className="rounded-2xl border bg-card shadow-xs flex flex-col flex-1 min-h-0 overflow-hidden">
+                        <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-2 shrink-0 bg-slate-50/70 rounded-t-2xl">
+                            <div className="flex items-center gap-2">
+                                <div className="p-1.5 bg-blue-500/10 rounded-xl text-blue-600">
+                                    <Inbox className="h-4 w-4" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-1.5">
+                                        <h2 className="text-sm sm:text-base font-bold text-slate-900 font-headline">
+                                            결재 대기 문서 목록
+                                        </h2>
+                                        <Badge className="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0 rounded-full">
+                                            {inboxDocs.length}
+                                        </Badge>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <Button asChild variant="outline" size="sm" className="h-7 text-xs font-semibold gap-1 px-2.5">
+                                    <Link href="/sent">
+                                        <Send className="w-3 h-3" /> 상신함
+                                    </Link>
+                                </Button>
+                                <Button asChild variant="outline" size="sm" className="h-7 text-xs font-semibold gap-1 text-primary border-primary/30 px-2.5">
+                                    <Link href="/registry">
+                                        대장 →
+                                    </Link>
+                                </Button>
+                            </div>
+                        </div>
 
-            {/* Stats Grid - 컴팩트 슬림 카드 (하단 설명 문구 제거 및 높이 50% 축소) */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                {stats.map((stat) => {
-                    const Icon = stat.icon;
-                    const isActive = activeTab === stat.id;
-                    return (
-                        <Card
-                            key={stat.id}
-                            className={cn(
-                                "cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md border p-3 sm:p-4 rounded-xl",
-                                isActive ? "ring-2 ring-primary border-primary shadow-xs bg-primary/[0.02]" : "hover:border-primary/30"
+                        <div className={cn("p-2.5 sm:p-3 flex-1 min-h-0", inboxDocs.length > 0 ? "overflow-y-auto scrollbar-thin" : "overflow-hidden flex flex-col")}>
+                            {inboxDocs.length === 0 ? (
+                                <div className="flex-1 w-full flex flex-col items-center justify-center text-center p-3 bg-slate-50/60 rounded-xl border border-dashed text-slate-400 space-y-1">
+                                    <Inbox className="w-7 h-7 text-slate-300 stroke-[1.5]" />
+                                    <p className="text-xs font-semibold text-slate-600">현재 결재 대기 중인 문서가 없습니다.</p>
+                                    <p className="text-[11px] text-slate-400">새로운 결재 문서가 상신되면 실시간으로 표시됩니다.</p>
+                                </div>
+                            ) : (
+                                <DocumentList documents={inboxDocs} />
                             )}
-                            onClick={() => setActiveTab(stat.id)}
-                        >
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="text-xs sm:text-sm font-semibold text-muted-foreground truncate whitespace-nowrap">
-                                    {stat.title}
-                                </span>
-                                <div className={cn("p-1.5 rounded-lg shrink-0", stat.bgColor)}>
-                                    <Icon className={cn("h-4 w-4 sm:h-4.5 sm:w-4.5", stat.color)} />
-                                </div>
-                            </div>
-                            <div className="text-2xl sm:text-3xl font-black text-foreground mt-1">
-                                {stat.count}
-                            </div>
-                        </Card>
-                    );
-                })}
-            </div>
+                        </div>
+                    </Card>
 
-            {/* Tabs Content */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="hidden">
-                    <TabsTrigger value="inbox">결재 대기 문서</TabsTrigger>
-                    <TabsTrigger value="pending">진행 중인 상신 문서</TabsTrigger>
-                    <TabsTrigger value="teacher">내 복무 신청 현황</TabsTrigger>
-                    <TabsTrigger value="parent">학부모 출결 문서</TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="inbox" className="space-y-4">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Inbox className="h-5 w-5 text-blue-500" />
-                        <h2 className="text-xl font-bold">결재 대기 문서 목록 ({inboxDocs.length})</h2>
-                    </div>
-                    <DocumentList documents={inboxDocs} />
-                </TabsContent>
-                
-                <TabsContent value="pending" className="space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-2">
-                            <Send className="h-5 w-5 text-amber-500" />
-                            <h2 className="text-xl font-bold">진행 중인 상신 문서 목록 ({pendingDocs.length})</h2>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs">
-                            <Button asChild variant="outline" size="sm" className="h-8 text-xs font-semibold gap-1">
-                                <Link href="/sent">
-                                    <Send className="w-3.5 h-3.5" /> 상신함 전체보기
-                                </Link>
-                            </Button>
-                            <Button asChild variant="outline" size="sm" className="h-8 text-xs font-semibold gap-1 text-primary border-primary/30">
-                                <Link href="/registry">
-                                    문서등록대장 바로가기 →
-                                </Link>
-                            </Button>
-                        </div>
-                    </div>
-                    {pendingDocs.length === 0 && (
-                        <div className="p-6 bg-slate-50 border rounded-xl text-center space-y-2">
-                            <p className="text-sm font-semibold text-slate-700">현재 결재가 진행 중인 상신 문서가 없습니다.</p>
-                            <p className="text-xs text-muted-foreground">
-                                결재가 최종 완료된 문서는 <Link href="/sent" className="text-primary underline font-bold">상신함</Link> 또는 <Link href="/registry" className="text-primary underline font-bold">문서등록대장</Link>에서 확인하실 수 있습니다.
-                            </p>
-                        </div>
-                    )}
-                    {pendingDocs.length > 0 && <DocumentList documents={pendingDocs} />}
-                </TabsContent>
-                
-                <TabsContent value="teacher" className="space-y-4">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Briefcase className="h-5 w-5 text-emerald-500" />
-                        <h2 className="text-xl font-bold">내 복무 및 초과근무 신청 목록 ({teacherDocs.length})</h2>
-                    </div>
-
-                    {/* ── 복무 통계 카드 ── */}
-                    {dutyStats && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-card border rounded-2xl p-6 shadow-sm mb-2">
-                            {/* 연가 현황 */}
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-sm font-medium text-muted-foreground">연가 사용 현황 (잔여 / 총)</span>
-                                    <span className="text-sm font-bold text-emerald-500">
-                                        {dutyStats.annualRemaining}일 / {dutyStats.annualLimit}일
-                                    </span>
+                    {/* 1-2. 하단 (절반): 주요 학교 일정 (앞 3일 ~ 뒤 1주일) */}
+                    <Card className="rounded-2xl border bg-card shadow-xs flex flex-col flex-1 min-h-0 overflow-hidden">
+                        <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-2 shrink-0 bg-blue-50/50 rounded-t-2xl">
+                            <div className="flex items-center gap-2">
+                                <div className="p-1.5 bg-blue-600/10 rounded-xl text-blue-600">
+                                    <CalendarDays className="h-4 w-4" />
                                 </div>
-                                <div className="space-y-2">
-                                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                                        <div 
-                                            className="h-full bg-emerald-500 transition-all duration-500"
-                                            style={{ width: `${Math.min((dutyStats.totalAnnualUsed / dutyStats.annualLimit) * 100, 100)}%` }}
-                                        />
+                                <div>
+                                    <div className="flex items-center gap-1.5">
+                                        <h2 className="text-sm sm:text-base font-bold text-slate-900 font-headline">
+                                            주요 학교 일정
+                                        </h2>
+                                        <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px] font-bold px-1.5 py-0">
+                                            D-3 ~ D+7
+                                        </Badge>
                                     </div>
-                                    <div className="flex justify-between text-xs text-muted-foreground">
-                                        <span>사용 {dutyStats.totalAnnualUsed}일 (연가 {dutyStats.annualUsed}일 + 조퇴 {dutyStats.earlyConvertedDays}일 환산)</span>
-                                        <span>잔여 {dutyStats.annualRemaining}일</span>
-                                    </div>
+                                    <p className="text-[11px] text-muted-foreground">오늘 기준 최근 3일 및 향후 1주일간의 일정입니다.</p>
                                 </div>
                             </div>
 
-                            {/* 조퇴/지참 시간 누계 */}
-                            <div className="space-y-3 md:border-l md:border-r md:px-6">
-                                <div className="text-sm font-medium text-muted-foreground">조퇴/지참 누계 시간</div>
-                                <div className="text-2xl font-black text-amber-500">{dutyStats.earlyUsedHours} 시간</div>
-                                <p className="text-xs text-muted-foreground">
-                                    누계 {dutyStats.earlyUsedHours}시간 중 {dutyStats.earlyConvertedDays}일은 연가로 차감 완료되었으며, 
-                                    현재 8시간 미만 잔여 분은 <strong>{dutyStats.remainingEarlyHours}시간</strong> 입니다.
-                                </p>
-                            </div>
-
-                            {/* 병결 및 기타 복무 */}
-                            <div className="space-y-3">
-                                <div className="text-sm font-medium text-muted-foreground">기타 복무 사용 내역</div>
-                                <div className="flex items-center gap-4 text-sm font-bold">
-                                    <div>병결: <span className="text-rose-500">{dutyStats.sickUsed}일</span></div>
-                                    <div>기타: <span className="text-blue-500">{dutyStats.otherUsed}일</span></div>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                    병결 및 특별휴가는 연가 일수에서 차감되지 않습니다.
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ── 월별 초과근무 차트 카드 ── */}
-                    <div className="bg-card border rounded-2xl p-6 shadow-sm mb-2">
-                        <div className="flex items-center gap-2 mb-4">
-                            <div className="p-2 rounded-lg bg-violet-500/10">
-                                <Clock className="h-4 w-4 text-violet-500" />
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-semibold">월별 초과근무 현황</h3>
-                                <p className="text-xs text-muted-foreground">{new Date().getFullYear()}년 · 결재 완료·진행중 기준</p>
-                            </div>
-                        </div>
-                        <OvertimeBarChart data={overtimeChart} />
-                    </div>
-
-                    <DocumentList documents={teacherDocs} />
-                </TabsContent>
-                
-                <TabsContent value="parent" className="space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-2">
-                            <Users className="h-5 w-5 text-purple-500" />
-                            <h2 className="text-xl font-bold">진행 중인 학부모 출결 문서 ({pendingParentDocs.length})</h2>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs">
-                            <Button asChild variant="outline" size="sm" className="h-8 text-xs font-semibold gap-1">
-                                <Link href="/attendance-registry">
-                                    <FileText className="w-3.5 h-3.5" /> 결석계 보관함
-                                </Link>
-                            </Button>
-                            <Button asChild variant="outline" size="sm" className="h-8 text-xs font-semibold gap-1">
-                                <Link href="/field-trip-registry">
-                                    <FolderOpen className="w-3.5 h-3.5" /> 체험학습 문서함
-                                </Link>
-                            </Button>
-                        </div>
-                    </div>
-                    <DocumentList documents={pendingParentDocs} />
-                </TabsContent>
-            </Tabs>
-
-            {/* ── 나의 업무 (My Tasks & Department Duties) ── */}
-            <div className="space-y-5 pt-6 border-t border-slate-200">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
-                        <div className="p-2 bg-indigo-500/10 rounded-xl text-indigo-600">
-                            <ClipboardList className="h-5 w-5" />
-                        </div>
-                        <div>
-                            <h2 className="text-xl font-bold text-slate-900 font-headline">나의 업무</h2>
-                            <p className="text-xs text-muted-foreground">소속 부서와 학급의 현행 운영 업무를 실시간으로 해결하고, 부서/학년 업무를 할당·제출합니다.</p>
-                        </div>
-                    </div>
-
-                    {/* 소속 / 담당 배지 요약 */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                        {myBelongingInfo.belongsList.map((b, idx) => (
-                            <Badge key={idx} variant="outline" className="bg-indigo-50/70 border-indigo-200 text-indigo-800 text-[11px] font-semibold">
-                                {b}
-                            </Badge>
-                        ))}
-                        {myBelongingInfo.managerList.map((m, idx) => (
-                            <Badge key={idx} variant="outline" className="bg-blue-50/70 border-blue-200 text-blue-800 text-[11px] font-semibold">
-                                담당: {m}
-                            </Badge>
-                        ))}
-                        <Badge variant="outline" className="bg-slate-100 border-slate-200 text-slate-700 text-[11px] font-semibold">
-                            {profile?.role || '교사'}
-                        </Badge>
-                    </div>
-                </div>
-
-                {/* ── 1. 소속 부서 및 학급 '실시간 현행 업무(Current Stage Operations)' 브리핑 카드 ── */}
-                <div className="space-y-2.5">
-                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                        소속 부서 & 학급 현행 단계별 실시간 업무
-                    </h3>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                        {/* 1) 방과후학교 현행 단계별 동적 카드 (담당자 / 부서원) */}
-                        {(isAfterschoolManager || myBelongingInfo.department?.includes('방과후') || myBelongingInfo.managerList.includes('방과후학교')) && (() => {
-                            const pendingCourses = afterschoolCourses.filter(c => c.status === 'PENDING');
-                            const openCourses = afterschoolCourses.filter(c => c.status === 'OPEN');
-                            const isTimerOpen = afterschoolTimer?.masterStatus === 'OPEN';
-
-                            let stageBadge = '운영 단계: 강좌 개설 및 심사';
-                            let stageTitle = '신규 강좌 개설 신청 현황';
-                            let stageDesc = `신규 개설 신청 강좌 ${pendingCourses.length}건이 심사 대기 중입니다.`;
-                            let actionText = '강좌 심사 및 승인 →';
-
-                            if (isTimerOpen) {
-                                stageBadge = '운영 단계: 수강 신청 접수 기간';
-                                stageTitle = '방과후 수강 신청 실시간 접수 현황';
-                                stageDesc = `현재 총 ${afterschoolEnrollments.length}건의 학생 수강 신청이 접수되었습니다.`;
-                                actionText = '수강 신청 현황 보기 →';
-                            } else if (pendingCourses.length > 0) {
-                                stageBadge = '운영 단계: 강좌 심사 기간';
-                                stageTitle = `강좌 신청 승인 대기 (${pendingCourses.length}건)`;
-                                stageDesc = `제출된 강좌 계획서 ${pendingCourses.length}건의 검토 및 승인이 필요합니다.`;
-                                actionText = '강좌 검토 바로가기 →';
-                            } else if (openCourses.length > 0) {
-                                stageBadge = '운영 단계: 학기 운영 및 출결 관리';
-                                stageTitle = '방과후 출석부 및 수강생 관리';
-                                stageDesc = `총 ${openCourses.length}개 강좌가 정상 개설되어 운영 중입니다.`;
-                                actionText = '출석부 관리 콘솔 →';
-                            } else {
-                                stageBadge = '운영 단계: 강사 모집 및 강좌 개설 기간';
-                                stageTitle = '방과후 신규 강사 모집 및 강좌 신청';
-                                stageDesc = '2026학년도 방과후학교 신규 강사 모집 및 개설 강좌를 접수·관리합니다.';
-                                actionText = '강좌 개설 및 관리 →';
-                            }
-
-                            return (
-                                <Link 
-                                    href={isAfterschoolManager ? "/admin/afterschool" : "/teacher/afterschool"} 
-                                    className="group" 
-                                    onClick={handleAfterschoolClick}
+                            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 flex-nowrap">
+                                <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    onClick={() => setIsWeeklyPlanModalOpen(true)}
+                                    className="h-7 px-2 sm:px-2.5 border-blue-200 text-blue-700 hover:bg-blue-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                    title="유초등 주간교육계획 조회 및 관리"
                                 >
-                                    <div className="p-4 rounded-2xl border border-teal-200 bg-linear-to-br from-teal-50/80 via-white to-white hover:border-teal-400 hover:shadow-md transition-all h-full flex flex-col justify-between">
-                                        <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                                <Badge className="bg-teal-600 text-white text-[10px] px-2 py-0.5 font-bold">
-                                                    {stageBadge}
-                                                </Badge>
-                                                <span className="text-xs font-bold text-teal-600 group-hover:translate-x-0.5 transition-transform">
-                                                    {actionText}
-                                                </span>
-                                            </div>
-                                            <h4 className="font-bold text-slate-900 text-sm mt-1">{stageTitle}</h4>
-                                            <p className="text-xs text-slate-600 leading-relaxed">
-                                                {stageDesc}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </Link>
-                            );
-                        })()}
-
-                        {/* 3) 스쿨버스 현행 운행 관리 카드 (담당자 / 교사) */}
-                        {(isBusManager || myBelongingInfo.managerList.includes('스쿨버스')) && (
-                            <Link href={isBusManager ? "/admin/bus" : "/teacher/bus"} className="group" onClick={handleBusClick}>
-                                <div className="p-4 rounded-2xl border border-blue-200 bg-linear-to-br from-blue-50/80 via-white to-white hover:border-blue-400 hover:shadow-md transition-all h-full flex flex-col justify-between">
-                                    <div className="space-y-1.5">
-                                        <div className="flex items-center justify-between">
-                                            <Badge className="bg-blue-600 text-white text-[10px] px-2 py-0.5 font-bold">
-                                                스쿨버스 현행 업무
-                                            </Badge>
-                                            <span className="text-xs font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform">
-                                                탑승 현황 관리 →
-                                            </span>
-                                        </div>
-                                        <h4 className="font-bold text-slate-900 text-sm mt-1">오늘의 스쿨버스 운행 및 승하차</h4>
-                                        <p className="text-xs text-slate-600 leading-relaxed">
-                                            호차별 탑승 명단 확인 및 실시간 탑승·하차 체크, 안전 운행을 관리합니다.
-                                        </p>
-                                    </div>
-                                </div>
-                            </Link>
-                        )}
-                    </div>
-                </div>
-
-                {/* ── 2. 부서·학년·선택 그룹 업무 할당 및 제출 관리 워크플로우 ── */}
-                <div className="space-y-3 pt-2">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-2">
-                        {/* Sub Tabs: 나에게 할당된 업무 vs 내가 요청한 업무 현황 */}
-                        <div className="flex items-center gap-2">
-                            {(() => {
-                                const myEmail = profile?.email?.toLowerCase() || '';
-                                const assignedCount = deptTasks.filter(t => t.targetEmails?.some(e => e.toLowerCase() === myEmail)).length;
-                                const createdCount = deptTasks.filter(t => t.creatorEmail?.toLowerCase() === myEmail || myBelongingInfo.isHead || profile?.isAdmin).length;
-
-                                return (
-                                    <>
-                                        <button
-                                            type="button"
-                                            onClick={() => setActiveTaskSubTab('assigned')}
-                                            className={cn(
-                                                "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
-                                                activeTaskSubTab === 'assigned'
-                                                    ? "bg-indigo-600 text-white shadow-xs"
-                                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                                            )}
-                                        >
-                                            <Inbox className="w-3.5 h-3.5" />
-                                            <span>나에게 할당된 업무</span>
-                                            <Badge className={cn("px-1.5 py-0 text-[10px] h-4 leading-none font-bold", activeTaskSubTab === 'assigned' ? "bg-white text-indigo-700" : "bg-slate-300 text-slate-800")}>
-                                                {assignedCount}
-                                            </Badge>
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => setActiveTaskSubTab('created')}
-                                            className={cn(
-                                                "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
-                                                activeTaskSubTab === 'created'
-                                                    ? "bg-indigo-600 text-white shadow-xs"
-                                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                                            )}
-                                        >
-                                            <Send className="w-3.5 h-3.5" />
-                                            <span>내가 요청한 업무 현황 (부서장/출제자)</span>
-                                            <Badge className={cn("px-1.5 py-0 text-[10px] h-4 leading-none font-bold", activeTaskSubTab === 'created' ? "bg-white text-indigo-700" : "bg-slate-300 text-slate-800")}>
-                                                {createdCount}
-                                            </Badge>
-                                        </button>
-                                    </>
-                                );
-                            })()}
+                                    <CalendarDays className="w-3 h-3 text-blue-600 shrink-0" />
+                                    <span>주간 일정</span>
+                                </Button>
+                                <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    onClick={() => setIsMonthlyPlanModalOpen(true)}
+                                    className="h-7 px-2 sm:px-2.5 border-blue-200 text-blue-700 hover:bg-blue-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                    title="유초등 월간 교육활동 계획 조회 및 관리"
+                                >
+                                    <Calendar className="w-3 h-3 text-blue-600 shrink-0" />
+                                    <span>월간 일정</span>
+                                </Button>
+                            </div>
                         </div>
 
-                        {/* 부서/학년 업무 신규 할당 버튼 */}
-                        <Button 
-                            size="sm" 
-                            onClick={() => setIsCreateTaskOpen(true)}
-                            className="h-8 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5"
-                        >
-                            <Plus className="w-3.5 h-3.5 text-amber-300" />
-                            <span>+ 새 부서 / 학년 업무 요청 생성</span>
-                        </Button>
+                        <div className={cn("p-2.5 sm:p-3 flex-1 min-h-0 space-y-1.5", mainSchoolSchedules.length > 0 ? "overflow-y-auto scrollbar-thin" : "overflow-hidden flex flex-col")}>
+                            {mainSchoolSchedules.length === 0 ? (
+                                <div className="flex-1 w-full flex flex-col items-center justify-center text-center p-3 bg-slate-50/60 rounded-xl border border-dashed text-slate-400 space-y-1">
+                                    <Calendar className="w-7 h-7 text-slate-300 stroke-[1.5]" />
+                                    <p className="text-xs font-semibold text-slate-600">해당 기간(앞 3일 ~ 뒤 1주일)에 예정된 학교 일정이 없습니다.</p>
+                                    <p className="text-[11px] text-slate-400">부서별 주간 일정이나 학사일정이 등록되면 이곳에 표시됩니다.</p>
+                                </div>
+                            ) : (
+                                mainSchoolSchedules.map((item) => {
+                                    const dateObj = new Date(item.date);
+                                    const month = dateObj.getMonth() + 1;
+                                    const day = dateObj.getDate();
+                                    const dayOfWeekNames = ['일', '월', '화', '수', '목', '금', '토'];
+                                    const dayName = dayOfWeekNames[dateObj.getDay()];
+
+                                    return (
+                                        <div 
+                                            key={item.id}
+                                            className={cn(
+                                                "p-2 sm:p-2.5 rounded-xl border text-xs transition-all flex items-center justify-between gap-2.5",
+                                                item.isToday 
+                                                    ? "bg-blue-50/80 border-blue-300 shadow-2xs ring-1 ring-blue-400/50" 
+                                                    : item.isPast 
+                                                        ? "bg-slate-50/80 border-slate-200 text-slate-500 opacity-80" 
+                                                        : "bg-white border-slate-200 hover:border-blue-200"
+                                            )}
+                                        >
+                                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                {/* 날짜 배지 */}
+                                                <div className={cn(
+                                                    "px-2 py-1 rounded-lg text-center shrink-0 flex flex-col items-center justify-center min-w-[52px]",
+                                                    item.isToday 
+                                                        ? "bg-blue-600 text-white font-black" 
+                                                        : "bg-slate-100 text-slate-700 font-bold"
+                                                )}>
+                                                    <span className="text-[11px] leading-none">{month}.{day}({dayName})</span>
+                                                    {item.isToday ? (
+                                                        <span className="text-[9px] text-amber-300 leading-none mt-0.5">오늘</span>
+                                                    ) : item.diffDays > 0 ? (
+                                                        <span className="text-[9px] text-slate-400 leading-none mt-0.5">D-{item.diffDays}</span>
+                                                    ) : (
+                                                        <span className="text-[9px] text-slate-400 leading-none mt-0.5">D+{Math.abs(item.diffDays)}</span>
+                                                    )}
+                                                </div>
+
+                                                {/* 일정 내용 및 태그 */}
+                                                <div className="space-y-0.5 min-w-0 flex-1">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        {item.isAcademic && (
+                                                            <Badge className="bg-indigo-600 text-white text-[9px] px-1 py-0 font-bold">
+                                                                학사일정
+                                                            </Badge>
+                                                        )}
+                                                        {item.deptName && (
+                                                            <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-[9px] px-1 py-0 font-semibold">
+                                                                {item.deptName}
+                                                            </Badge>
+                                                        )}
+                                                        {item.isPrivateDept && (
+                                                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-[9px] px-1 py-0 font-semibold flex items-center gap-0.5">
+                                                                <Lock className="w-2.5 h-2.5" /> 자체종료
+                                                            </Badge>
+                                                        )}
+                                                        {item.endDate && item.endDate !== item.date && (
+                                                            <span className="text-[10px] text-slate-400">
+                                                                (~{item.endDate.split('-').slice(1).join('.')})
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <h4 className={cn("font-bold text-xs truncate", item.isToday ? "text-blue-950 font-black" : "text-slate-900")}>
+                                                        {item.title}
+                                                    </h4>
+                                                </div>
+                                            </div>
+
+                                            {/* 삭제 버튼 (부서 일정 작성자/관리자) */}
+                                            {item.canDelete && (
+                                                <button
+                                                    onClick={async () => {
+                                                        if (confirm(`'${item.title}' 일정을 삭제하시겠습니까?`)) {
+                                                            await deleteDepartmentWeeklySchedule(item.id);
+                                                        }
+                                                    }}
+                                                    className="text-slate-300 hover:text-rose-500 p-1 transition-colors shrink-0"
+                                                    title="일정 삭제"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </Card>
+                </div>
+
+                {/* 2. 우측 (50%): 나의 업무 (부서/학급 현행 업무 + 워크플로우 + Todo) 카드 */}
+                <Card className="rounded-2xl border bg-card shadow-xs flex flex-col flex-1 min-h-0 h-full overflow-hidden">
+                    <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-2 shrink-0 bg-indigo-50/50 rounded-t-2xl min-w-0">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <div className="p-1.5 bg-indigo-500/10 rounded-xl text-indigo-600 shrink-0">
+                                <ClipboardList className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <h2 className="text-sm sm:text-base font-bold text-slate-900 font-headline">
+                                    나의 업무
+                                </h2>
+                                <p className="text-[11px] text-muted-foreground truncate">소속 부서 및 학급 현행 업무 관리</p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 flex-nowrap">
+                            {isDepartmentHead ? (
+                                <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    onClick={() => {
+                                        if (pendingProposalsForHead.length > 0) {
+                                            setReviewingProposal(pendingProposalsForHead[0]);
+                                        } else {
+                                            setIsCreateWeeklyScheduleOpen(true);
+                                        }
+                                    }}
+                                    className="relative h-7 px-2 sm:px-2.5 border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                    title={pendingProposalsForHead.length > 0 ? `부서원 건의 ${pendingProposalsForHead.length}건 검토 대기 중` : "부서 주간 일정 등록"}
+                                >
+                                    <CalendarDays className="w-3 h-3 text-indigo-600 shrink-0" />
+                                    <span>일정 등록</span>
+                                    {pendingProposalsForHead.length > 0 && (
+                                        <span className="min-w-4 h-4 px-1 rounded-full bg-red-500 text-white font-black text-[9px] flex items-center justify-center shadow-xs animate-pulse ml-0.5">
+                                            {pendingProposalsForHead.length}
+                                        </span>
+                                    )}
+                                </Button>
+                            ) : (
+                                <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    onClick={() => setIsCreateProposalOpen(true)}
+                                    className="h-7 px-2 sm:px-2.5 border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                    title="부장에게 주간 일정 건의"
+                                >
+                                    <CalendarPlus className="w-3 h-3 text-blue-600 shrink-0" />
+                                    <span>일정 건의</span>
+                                </Button>
+                            )}
+
+                            <Button 
+                                size="sm" 
+                                onClick={() => setIsCreateTaskOpen(true)}
+                                className="h-7 px-2 sm:px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-lg shadow-xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                title="새 업무 요청"
+                            >
+                                <Plus className="w-3 h-3 text-amber-300 shrink-0" />
+                                <span>새 업무 요청</span>
+                            </Button>
+                        </div>
                     </div>
 
-                    {/* 워크플로우 뷰 영역 + 우측 Todo 체크리스트 */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                        {/* 좌측 2열: 업무 카드 목록 */}
-                        <div className="lg:col-span-2 space-y-3">
-                            {/* [View 1] 나에게 할당된 업무 목록 (부서원 뷰) */}
+                    <div className="p-3 sm:p-3.5 flex-1 flex flex-col justify-between overflow-y-auto scrollbar-thin gap-2.5">
+                        {/* 2-0. 부장 전용: 부서원 주간 일정 제안 검토 대기 알림 배너 */}
+                        {pendingProposalsForHead.length > 0 && (
+                            <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200 shadow-2xs space-y-2 shrink-0">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5">
+                                        <div className="p-1 bg-amber-500/10 rounded-lg text-amber-700">
+                                            <MessageSquare className="w-3.5 h-3.5" />
+                                        </div>
+                                        <span className="font-bold text-xs text-amber-950">
+                                            부서원 주간 일정 제안 검토
+                                        </span>
+                                        <Badge className="bg-amber-600 text-white text-[9px] px-1.5 py-0 font-bold">
+                                            {pendingProposalsForHead.length}건 대기
+                                        </Badge>
+                                    </div>
+                                    <span className="text-[10px] text-amber-700 font-medium">부서 일정 반영 / 부서내 종결</span>
+                                </div>
+                                <div className="grid grid-cols-1 gap-1.5 max-h-28 overflow-y-auto scrollbar-thin">
+                                    {pendingProposalsForHead.map((p) => (
+                                        <div 
+                                            key={p.id}
+                                            onClick={() => setReviewingProposal(p)}
+                                            className="p-2 bg-white rounded-lg border border-amber-200 hover:border-amber-400 hover:shadow-2xs cursor-pointer flex items-center justify-between gap-2 transition-all"
+                                        >
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-1.5">
+                                                    <Badge variant="outline" className="text-[9px] px-1 py-0 bg-slate-50 text-slate-700 font-semibold">
+                                                        {p.deptName}
+                                                    </Badge>
+                                                    <span className="text-xs font-bold text-slate-900 truncate">
+                                                        {p.title}
+                                                    </span>
+                                                </div>
+                                                <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                                                    제안: <strong>{p.submitterName}</strong> 선생님 ({p.startDate} ~ {p.endDate})
+                                                </p>
+                                            </div>
+                                            <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 text-indigo-700 border-indigo-200 font-bold shrink-0">
+                                                검토 →
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 2-0-1. 일반 교사 전용: 내가 제안한 주간 일정 현황 (최근 제안이 있을 때) */}
+                        {mySubmittedProposals.length > 0 && !myBelongingInfo.isHead && (
+                            <div className="p-2.5 rounded-xl bg-indigo-50/50 border border-indigo-100 text-xs space-y-1.5 shrink-0">
+                                <div className="flex items-center justify-between">
+                                    <span className="font-bold text-indigo-950 flex items-center gap-1 text-[11px]">
+                                        <MessageSquare className="w-3 h-3 text-indigo-600" />
+                                        내가 제안한 주간 일정 ({mySubmittedProposals.length}건)
+                                    </span>
+                                    <button 
+                                        onClick={() => setIsCreateProposalOpen(true)}
+                                        className="text-[10px] text-indigo-600 font-bold hover:underline"
+                                    >
+                                        + 추가 제안
+                                    </button>
+                                </div>
+                                <div className="space-y-1">
+                                    {mySubmittedProposals.slice(0, 3).map((p) => (
+                                        <div key={p.id} className="p-1.5 bg-white rounded-lg border border-indigo-100 text-[11px] flex items-center justify-between gap-1.5 group/item">
+                                            <span className="font-medium text-slate-800 truncate flex-1" title={p.title}>{p.title}</span>
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                <Badge variant="outline" className={cn(
+                                                    "text-[9px] px-1 py-0 shrink-0 font-bold",
+                                                    p.status === 'approved' ? "bg-emerald-50 text-emerald-700 border-emerald-300" :
+                                                    p.status === 'closed_internal' ? "bg-amber-50 text-amber-700 border-amber-300" :
+                                                    p.status === 'rejected' ? "bg-rose-50 text-rose-700 border-rose-300" :
+                                                    "bg-blue-50 text-blue-700 border-blue-300"
+                                                )}>
+                                                    {p.status === 'approved' ? '승인반영' : p.status === 'closed_internal' ? '부서종결' : p.status === 'rejected' ? '반려' : '검토대기'}
+                                                </Badge>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDeleteProposal(p.id, p.title)}
+                                                    className="text-slate-400 hover:text-rose-600 p-0.5 rounded transition-colors"
+                                                    title="제안 삭제"
+                                                >
+                                                    <Trash2 className="w-3 h-3" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 2-1. 현행 학급/부서 업무 (한 줄 2~3개 나란히 배치) */}
+                        <div className="space-y-2">
+                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                                현행 학급/부서 업무
+                            </h3>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                {/* 방과후학교 동적 단계 컴팩트 카드 */}
+                                {(isAfterschoolManager || myBelongingInfo.department?.includes('방과후') || myBelongingInfo.managerList.includes('방과후학교')) && (() => {
+                                    const pendingCourses = afterschoolCourses.filter(c => c.status === 'PENDING');
+                                    const openCourses = afterschoolCourses.filter(c => c.status === 'OPEN');
+                                    const isTimerOpen = afterschoolTimer?.masterStatus === 'OPEN';
+
+                                    let stageBadge = '강좌 개설·심사';
+                                    let stageTitle = '방과후학교 관리자';
+                                    let stageDesc = `신규 강좌 ${pendingCourses.length}건 심사 대기 중`;
+
+                                    if (isTimerOpen) {
+                                        stageBadge = '수강신청 접수';
+                                        stageTitle = '방과후학교 관리자';
+                                        stageDesc = `학생 수강신청 총 ${afterschoolEnrollments.length}건 관리`;
+                                    } else if (pendingCourses.length > 0) {
+                                        stageBadge = '강좌 심사 기간';
+                                        stageTitle = '방과후학교 관리자';
+                                        stageDesc = `강좌 계획서 ${pendingCourses.length}건 검토·승인`;
+                                    } else if (openCourses.length > 0) {
+                                        stageBadge = '학기 운영 관리';
+                                        stageTitle = '방과후학교 관리자';
+                                        stageDesc = `총 ${openCourses.length}개 강좌 개설·수강생·정산 총괄`;
+                                    } else {
+                                        stageBadge = '방과후 총괄';
+                                        stageTitle = '방과후학교 관리자';
+                                        stageDesc = '강좌 개설, 수강 확정, 정산 및 운영 총괄';
+                                    }
+
+                                    return (
+                                        <Link 
+                                            href={isAfterschoolManager ? "/admin/afterschool" : "/teacher/afterschool"} 
+                                            className="group block" 
+                                            onClick={handleAfterschoolClick}
+                                        >
+                                            <div className="p-2.5 rounded-xl border border-teal-200 bg-linear-to-br from-teal-50/70 via-white to-white hover:border-teal-400 hover:shadow-xs transition-all h-full flex flex-col justify-between">
+                                                <div className="space-y-1">
+                                                    <div className="flex items-center justify-between">
+                                                        <Badge className="bg-teal-600 text-white text-[9px] px-1.5 py-0 font-bold">
+                                                            {stageBadge}
+                                                        </Badge>
+                                                        <span className="text-[11px] text-teal-600 font-bold group-hover:translate-x-0.5 transition-transform">
+                                                            →
+                                                        </span>
+                                                    </div>
+                                                    <h4 className="font-bold text-slate-900 text-xs truncate mt-0.5">{stageTitle}</h4>
+                                                    <p className="text-[11px] text-slate-500 truncate">
+                                                        {stageDesc}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </Link>
+                                    );
+                                })()}
+
+                                {/* 스쿨버스 관리 / 탑승 관리 컴팩트 카드 */}
+                                {(isBusManager || myBelongingInfo.managerList.includes('스쿨버스')) && (
+                                    <Link href={isBusManager ? "/admin/bus" : "/teacher/bus"} className="group block" onClick={handleBusClick}>
+                                        <div className="p-2.5 rounded-xl border border-blue-200 bg-linear-to-br from-blue-50/70 via-white to-white hover:border-blue-400 hover:shadow-xs transition-all h-full flex flex-col justify-between">
+                                            <div className="space-y-1">
+                                                <div className="flex items-center justify-between">
+                                                    <Badge className="bg-blue-600 text-white text-[9px] px-1.5 py-0 font-bold">
+                                                        {isBusManager ? '스쿨버스 관리' : '스쿨버스 탑승'}
+                                                    </Badge>
+                                                    <span className="text-[11px] text-blue-600 font-bold group-hover:translate-x-0.5 transition-transform">
+                                                        →
+                                                    </span>
+                                                </div>
+                                                <h4 className="font-bold text-slate-900 text-xs truncate mt-0.5">
+                                                    {isBusManager ? '스쿨버스 관리' : '스쿨버스 탑승 관리'}
+                                                </h4>
+                                                <p className="text-[11px] text-slate-500 truncate">
+                                                    {isBusManager ? '버스 등록, 노선, 좌석 및 탑승 관리' : '호차별 탑승 명단 확인 및 실시간 승하차 체크'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </Link>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* 2-2. 부서·학년 업무 할당/제출 워크플로우 탭 */}
+                        <div className="space-y-2 pt-1 border-t border-slate-100">
+                            <div className="flex items-center justify-between gap-1.5">
+                                {(() => {
+                                    const myEmail = profile?.email?.toLowerCase() || '';
+                                    // 내가 대상자(targetEmails)에 포함되어 있는 모든 업무를 '나에게 할당된 업무'로 표시 (본인이 직접 할당한 경우도 포함)
+                                    const assignedCount = deptTasks.filter(t => t.targetEmails?.some(e => e.toLowerCase() === myEmail)).length;
+                                    const createdCount = deptTasks.filter(t => t.creatorEmail?.toLowerCase() === myEmail || myBelongingInfo.isHead || profile?.isAdmin).length;
+
+                                    return (
+                                        <div className="flex items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveTaskSubTab('assigned')}
+                                                className={cn(
+                                                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                                                    activeTaskSubTab === 'assigned'
+                                                        ? "bg-indigo-600 text-white shadow-xs"
+                                                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                                )}
+                                            >
+                                                <Inbox className="w-3 h-3" />
+                                                <span>나에게 할당된 업무</span>
+                                                <Badge className={cn("px-1 py-0 text-[9px] h-3.5 leading-none font-bold", activeTaskSubTab === 'assigned' ? "bg-white text-indigo-700" : "bg-slate-300 text-slate-800")}>
+                                                    {assignedCount}
+                                                </Badge>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveTaskSubTab('created')}
+                                                className={cn(
+                                                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                                                    activeTaskSubTab === 'created'
+                                                        ? "bg-indigo-600 text-white shadow-xs"
+                                                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                                )}
+                                            >
+                                                <Send className="w-3 h-3" />
+                                                <span>요청 업무</span>
+                                                <Badge className={cn("px-1 py-0 text-[9px] h-3.5 leading-none font-bold", activeTaskSubTab === 'created' ? "bg-white text-indigo-700" : "bg-slate-300 text-slate-800")}>
+                                                    {createdCount}
+                                                </Badge>
+                                            </button>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
+                            {/* 업무 목록 뷰 (컴팩트 높이) */}
                             {activeTaskSubTab === 'assigned' && (() => {
                                 const myEmail = profile?.email?.toLowerCase() || '';
                                 const myAssignedList = deptTasks.filter(t => t.targetEmails?.some(e => e.toLowerCase() === myEmail));
 
                                 if (myAssignedList.length === 0) {
                                     return (
-                                        <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-8 text-center text-slate-400 space-y-2">
-                                            <ClipboardList className="w-8 h-8 mx-auto text-slate-300" />
-                                            <p className="text-xs font-semibold">현재 나에게 할당된 부서 및 학년 업무가 없습니다.</p>
-                                            <p className="text-[11px] text-slate-400">부서장이나 학년부장이 업무를 요청하면 이곳에 제출 버튼과 함께 표시됩니다.</p>
+                                        <div className="bg-slate-50/60 border border-dashed border-slate-200 rounded-xl py-2.5 px-3 text-center text-slate-400 flex items-center justify-center gap-2">
+                                            <ClipboardList className="w-4 h-4 text-slate-300 shrink-0" />
+                                            <span className="text-xs font-medium">할당된 부서 및 학년 업무가 없습니다.</span>
                                         </div>
                                     );
                                 }
 
                                 return (
-                                    <div className="space-y-2.5">
+                                    <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
                                         {myAssignedList.map((task) => {
                                             const sub = task.submissions?.[myEmail];
                                             const isSubmitted = !!sub;
@@ -858,61 +1141,45 @@ export default function InboxPage() {
                                             return (
                                                 <div 
                                                     key={task.id} 
-                                                    className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs hover:border-indigo-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3.5"
+                                                    className="p-2 rounded-xl border border-slate-200 bg-white shadow-xs hover:border-indigo-300 transition-all flex items-center justify-between gap-2"
                                                 >
-                                                    <div className="space-y-1.5 min-w-0 flex-1">
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            <Badge className="bg-indigo-600 text-white text-[10px] px-2 py-0.5 font-bold">
-                                                                {task.creatorDept || '부서 요청'}
+                                                    <div className="space-y-0.5 min-w-0 flex-1">
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <Badge className="bg-indigo-600 text-white text-[9px] px-1 py-0 font-bold">
+                                                                {task.creatorDept || '부서'}
                                                             </Badge>
-                                                            <span className="text-xs text-slate-500 font-medium">
-                                                                요청자: <strong>{task.creatorName}</strong>
+                                                            <span className="text-[10px] text-slate-500">
+                                                                {task.creatorName}
                                                             </span>
-                                                            <span className="text-xs text-rose-600 font-semibold flex items-center gap-0.5">
-                                                                <Calendar className="w-3 h-3" />
+                                                            <span className="text-[10px] text-rose-600 font-semibold">
                                                                 마감: {task.deadline}
                                                             </span>
                                                             {isSubmitted ? (
-                                                                <Badge className="bg-emerald-500 text-white text-[10px] px-1.5 py-0 h-4 leading-none font-bold">
-                                                                    ✓ 제출 완료
+                                                                <Badge className="bg-emerald-500 text-white text-[8px] px-1 py-0 font-bold">
+                                                                    ✓ 완료
                                                                 </Badge>
                                                             ) : (
-                                                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-[10px] px-1.5 py-0 h-4 leading-none font-semibold">
+                                                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-[8px] px-1 py-0 font-semibold">
                                                                     ⏳ 미제출
                                                                 </Badge>
                                                             )}
                                                         </div>
+                                                        <h4 className="font-bold text-slate-900 text-xs truncate">{task.title}</h4>
+                                                    </div>
 
-                                                        <h4 className="font-bold text-slate-900 text-sm">{task.title}</h4>
-                                                        {task.description && (
-                                                            <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                                                                {task.description}
-                                                            </p>
+                                                    <Button
+                                                        size="sm"
+                                                        onClick={() => setSubmittingTask(task)}
+                                                        className={cn(
+                                                            "h-6 px-2 text-[10px] font-extrabold rounded-lg shadow-xs flex items-center gap-1 shrink-0",
+                                                            isSubmitted 
+                                                                ? "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300" 
+                                                                : "bg-indigo-600 hover:bg-indigo-700 text-white"
                                                         )}
-                                                    </div>
-
-                                                    {/* 액션: OO문서 제출하기 버튼 */}
-                                                    <div className="shrink-0 flex items-center gap-2">
-                                                        <Button
-                                                            size="sm"
-                                                            onClick={() => setSubmittingTask(task)}
-                                                            className={cn(
-                                                                "h-9 px-4 text-xs font-extrabold rounded-xl shadow-xs flex items-center gap-1.5",
-                                                                isSubmitted 
-                                                                    ? "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300"
-                                                                    : "bg-indigo-600 hover:bg-indigo-700 text-white"
-                                                            )}
-                                                        >
-                                                            <FileUp className="w-3.5 h-3.5 text-amber-300" />
-                                                            <span>
-                                                                {isSubmitted 
-                                                                    ? '제출 내역 수정/확인' 
-                                                                    : task.taskType === 'file_submission' 
-                                                                    ? `${task.title.length > 12 ? '문서' : task.title} 제출하기` 
-                                                                    : '확인 완료하기'}
-                                                            </span>
-                                                        </Button>
-                                                    </div>
+                                                    >
+                                                        <FileUp className="w-2.5 h-2.5 text-amber-300" />
+                                                        <span>{isSubmitted ? '수정' : '제출'}</span>
+                                                    </Button>
                                                 </div>
                                             );
                                         })}
@@ -920,7 +1187,6 @@ export default function InboxPage() {
                                 );
                             })()}
 
-                            {/* [View 2] 내가 요청한 업무 현황 (부서장 뷰) */}
                             {activeTaskSubTab === 'created' && (() => {
                                 const myEmail = profile?.email?.toLowerCase() || '';
                                 const myCreatedList = deptTasks.filter(t => 
@@ -931,72 +1197,74 @@ export default function InboxPage() {
 
                                 if (myCreatedList.length === 0) {
                                     return (
-                                        <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-8 text-center text-slate-400 space-y-2">
-                                            <Send className="w-8 h-8 mx-auto text-slate-300" />
-                                            <p className="text-xs font-semibold">내가 생성하여 요청한 부서/학년 업무가 없습니다.</p>
-                                            <Button 
-                                                size="sm" 
-                                                variant="outline" 
-                                                onClick={() => setIsCreateTaskOpen(true)}
-                                                className="h-8 text-xs font-bold rounded-xl mt-2"
-                                            >
-                                                <Plus className="w-3.5 h-3.5 mr-1" />
-                                                첫 부서 업무 생성하기
-                                            </Button>
+                                        <div className="bg-slate-50/60 border border-dashed border-slate-200 rounded-xl py-2.5 px-3 text-center text-slate-400 flex items-center justify-center gap-2">
+                                            <Send className="w-4 h-4 text-slate-300 shrink-0" />
+                                            <span className="text-xs font-medium">요청한 부서/학년 업무가 없습니다.</span>
                                         </div>
                                     );
                                 }
 
                                 return (
-                                    <div className="space-y-2.5">
+                                    <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
                                         {myCreatedList.map((task) => {
+                                            const emails = task.targetEmails || [];
+                                            const targetNames = task.targetNames || {};
                                             const submissions = task.submissions || {};
-                                            const total = (task.targetEmails || []).length;
-                                            const submitted = Object.keys(submissions).length;
-                                            const percent = total > 0 ? Math.round((submitted / total) * 100) : 0;
+
+                                            // 학년별 배정 업무인 경우
+                                            const seenGrades = new Set<string>();
+                                            Object.entries(targetNames).forEach(([email, name]) => {
+                                                const match = name.match(/([1-6])학년/);
+                                                if (match) seenGrades.add(match[1]);
+                                            });
+
+                                            let total = 0;
+                                            let submittedCount = 0;
+
+                                            if (seenGrades.size > 0) {
+                                                total = seenGrades.size;
+                                                seenGrades.forEach(g => {
+                                                    const isSub = Object.entries(submissions).some(([k, s]) => String(s.grade) === g || k.endsWith(`_${g}`));
+                                                    if (isSub) submittedCount++;
+                                                });
+                                            } else {
+                                                const uniqueEmails = [...new Set(emails.map(e => e.toLowerCase()))];
+                                                total = uniqueEmails.length;
+                                                uniqueEmails.forEach(email => {
+                                                    const isSub = !!submissions[email] || Object.values(submissions).some(s => s.submitterEmail?.toLowerCase() === email);
+                                                    if (isSub) submittedCount++;
+                                                });
+                                            }
+
+                                            total = Math.max(total, 1);
+                                            submittedCount = Math.min(submittedCount, total);
+                                            const pct = Math.min(100, Math.round((submittedCount / total) * 100));
 
                                             return (
                                                 <div 
                                                     key={task.id} 
-                                                    className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs hover:border-indigo-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3.5"
+                                                    className="p-2 rounded-xl border border-slate-200 bg-white shadow-xs hover:border-indigo-300 transition-all flex items-center justify-between gap-2"
                                                 >
-                                                    <div className="space-y-1.5 min-w-0 flex-1">
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            <Badge className="bg-indigo-600 text-white text-[10px] px-2 py-0.5 font-bold">
-                                                                {task.creatorDept || '부서 업무'}
-                                                            </Badge>
-                                                            <span className="text-xs text-slate-500 font-medium">
-                                                                대상: <strong>{total}명</strong>
+                                                    <div className="space-y-0.5 min-w-0 flex-1">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-[10px] text-slate-500 font-semibold">
+                                                                제출: {submittedCount}/{total}명 ({pct}%)
                                                             </span>
-                                                            <span className="text-xs text-rose-600 font-semibold flex items-center gap-0.5">
-                                                                <Calendar className="w-3 h-3" />
+                                                            <span className="text-[10px] text-rose-600">
                                                                 마감: {task.deadline}
                                                             </span>
-                                                            <Badge variant="outline" className={percent === 100 ? "bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]" : "bg-slate-100 text-slate-700 text-[10px]"}>
-                                                                {percent === 100 ? '✓ 전원 제출 완료' : `${submitted}/${total}명 제출`}
-                                                            </Badge>
                                                         </div>
-
-                                                        <h4 className="font-bold text-slate-900 text-sm">{task.title}</h4>
-                                                        
-                                                        {/* 실시간 제출 진행률 바 */}
-                                                        <div className="flex items-center gap-2 max-w-sm pt-0.5">
-                                                            <Progress value={percent} className="h-2 bg-slate-100 flex-1" />
-                                                            <span className="text-[11px] font-bold text-indigo-600 shrink-0">{percent}%</span>
-                                                        </div>
+                                                        <h4 className="font-bold text-slate-900 text-xs truncate">{task.title}</h4>
                                                     </div>
 
-                                                    {/* 액션: 제출 현황 및 제출한 파일 확인하기 버튼 */}
-                                                    <div className="shrink-0 flex items-center gap-2">
-                                                        <Button
-                                                            size="sm"
-                                                            onClick={() => setViewingSubmissionsTask(task)}
-                                                            className="h-9 px-4 text-xs font-extrabold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl shadow-2xs flex items-center gap-1.5"
-                                                        >
-                                                            <FolderOpen className="w-3.5 h-3.5 text-indigo-600" />
-                                                            <span>제출 현황 및 제출 파일 확인하기</span>
-                                                        </Button>
-                                                    </div>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => setViewingSubmissionsTask(task)}
+                                                        className="h-6 px-2 text-[10px] font-bold rounded-lg border-indigo-200 text-indigo-700 hover:bg-indigo-50 shrink-0"
+                                                    >
+                                                        조회
+                                                    </Button>
                                                 </div>
                                             );
                                         })}
@@ -1005,84 +1273,108 @@ export default function InboxPage() {
                             })()}
                         </div>
 
-                        {/* 우측 1열: 나의 업무 할 일 (Todo Widget) */}
-                        <div className="bg-card border rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between">
-                            <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <CheckCircle2 className="w-4 h-4 text-primary" />
-                                        <h3 className="font-bold text-sm text-slate-900">업무 할 일 (Todo)</h3>
-                                    </div>
-                                    <span className="text-[11px] text-muted-foreground font-semibold">
-                                        {myTasks.filter(t => t.completed).length}/{myTasks.length} 완료
-                                    </span>
+                        {/* 2-3. 나의 빠른 업무 할 일 (Todo Widget) */}
+                        <div className="bg-slate-50/70 border rounded-xl p-3 shadow-2xs space-y-2">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+                                    <h3 className="font-bold text-xs text-slate-900">업무 할 일 (Todo)</h3>
                                 </div>
-
-                                {/* Task List */}
-                                <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
-                                    {myTasks.map((task) => (
-                                        <div 
-                                            key={task.id}
-                                            className={cn(
-                                                "flex items-start justify-between gap-2 p-2 rounded-lg border text-xs transition-all",
-                                                task.completed ? "bg-slate-50/80 border-slate-200 text-slate-400 line-through" : "bg-white border-slate-200 text-slate-800"
-                                            )}
-                                        >
-                                            <div 
-                                                className="flex items-start gap-2 cursor-pointer flex-1 min-w-0"
-                                                onClick={() => handleToggleTask(task.id)}
-                                            >
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={task.completed} 
-                                                    onChange={() => {}} 
-                                                    className="mt-0.5 rounded text-primary focus:ring-0 cursor-pointer"
-                                                />
-                                                <span className="leading-snug break-all">{task.text}</span>
-                                            </div>
-                                            <button 
-                                                onClick={() => handleDeleteTask(task.id)}
-                                                className="text-slate-300 hover:text-rose-500 transition-colors p-0.5"
-                                                title="삭제"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    ))}
-
-                                    {myTasks.length === 0 && (
-                                        <div className="text-center py-6 text-slate-400 text-xs">
-                                            등록된 할 일이 없습니다.
-                                        </div>
-                                    )}
-                                </div>
+                                <span className="text-[10px] text-muted-foreground font-semibold">
+                                    {myTasks.filter(t => t.completed).length}/{myTasks.length} 완료
+                                </span>
                             </div>
 
-                            {/* Add Task Form */}
-                            <form onSubmit={handleAddTask} className="flex gap-1.5 pt-3 border-t mt-3">
+                            <div className="space-y-1 max-h-[105px] overflow-y-auto pr-1">
+                                {myTasks.map((task) => (
+                                    <div 
+                                        key={task.id}
+                                        className={cn(
+                                            "flex items-start justify-between gap-2 p-1 rounded-lg border text-[11px] transition-all",
+                                            task.completed ? "bg-slate-100/80 border-slate-200 text-slate-400 line-through" : "bg-white border-slate-200 text-slate-800"
+                                        )}
+                                    >
+                                        <div 
+                                            className="flex items-start gap-1.5 cursor-pointer flex-1 min-w-0"
+                                            onClick={() => handleToggleTask(task.id)}
+                                        >
+                                            <input 
+                                                type="checkbox" 
+                                                checked={task.completed} 
+                                                onChange={() => {}} 
+                                                className="mt-0.5 rounded text-primary focus:ring-0 cursor-pointer"
+                                            />
+                                            <span className="leading-snug break-all text-[11px]">{task.text}</span>
+                                        </div>
+                                        <button 
+                                            onClick={() => handleDeleteTask(task.id)}
+                                            className="text-slate-300 hover:text-rose-500 transition-colors p-0.5"
+                                            title="삭제"
+                                        >
+                                            <Trash2 className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                ))}
+
+                                {myTasks.length === 0 && (
+                                    <div className="text-center py-2 text-slate-400 text-[11px]">
+                                        등록된 할 일이 없습니다.
+                                    </div>
+                                )}
+                            </div>
+
+                            <form onSubmit={handleAddTask} className="flex gap-1.5 pt-1 border-t">
                                 <input 
-                                    type="text"
-                                    placeholder="새 업무 할 일 입력..."
-                                    value={newTaskText}
-                                    onChange={(e) => setNewTaskText(e.target.value)}
-                                    className="flex-1 h-8 px-2.5 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                                    type="text" 
+                                    placeholder="새 할 일 입력..." 
+                                    value={newTaskText} 
+                                    onChange={(e) => setNewTaskText(e.target.value)} 
+                                    className="flex-1 h-7 px-2 rounded-lg border text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary" 
                                 />
-                                <Button type="submit" size="sm" className="h-8 px-2.5 text-xs font-bold shrink-0">
-                                    <Plus className="w-3.5 h-3.5 mr-0.5" /> 추가
+                                <Button type="submit" size="sm" className="h-7 px-2 text-xs font-bold shrink-0">
+                                    <Plus className="w-3 h-3 mr-0.5" /> 추가
                                 </Button>
                             </form>
                         </div>
                     </div>
-                </div>
+                </Card>
             </div>
 
             {/* ── 부서 업무 생성 / 제출 / 현황 다이얼로그 모달 ── */}
-            <CreateDepartmentTaskDialog 
-                open={isCreateTaskOpen}
-                onOpenChange={setIsCreateTaskOpen}
-                orgData={orgData}
-                allTeachers={allFaculty}
-            />
+            {isCreateTaskOpen && (
+                <CreateDepartmentTaskDialog 
+                    open={isCreateTaskOpen}
+                    onOpenChange={setIsCreateTaskOpen}
+                    orgData={orgData}
+                    allTeachers={allFaculty}
+                />
+            )}
+
+            {isCreateWeeklyScheduleOpen && (
+                <CreateWeeklyScheduleDialog 
+                    open={isCreateWeeklyScheduleOpen}
+                    onOpenChange={setIsCreateWeeklyScheduleOpen}
+                    orgData={orgData}
+                    userDept={myBelongingInfo.department || profile?.dept}
+                />
+            )}
+
+            {isCreateProposalOpen && (
+                <CreateWeeklyProposalDialog 
+                    open={isCreateProposalOpen}
+                    onOpenChange={setIsCreateProposalOpen}
+                    orgData={orgData}
+                    userDept={myBelongingInfo.department || profile?.dept}
+                />
+            )}
+
+            {reviewingProposal && (
+                <ReviewWeeklyProposalDialog 
+                    open={!!reviewingProposal}
+                    proposal={reviewingProposal}
+                    onOpenChange={(open) => !open && setReviewingProposal(null)}
+                />
+            )}
 
             <SubmitDepartmentTaskDialog 
                 task={submittingTask}
@@ -1095,126 +1387,6 @@ export default function InboxPage() {
                 open={!!viewingSubmissionsTask}
                 onOpenChange={(open) => !open && setViewingSubmissionsTask(null)}
             />
-
-            {/* 하단 교원 연계 서비스 바로가기 배너 */}
-            <div className="pt-6 border-t border-slate-200">
-                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <Briefcase className="h-5 w-5 text-primary" />
-                    교원 연계 서비스 바로가기
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* 방과후학교 배너 */}
-                    <Link href="/teacher/afterschool" className="group" onClick={handleAfterschoolClick}>
-                        <div className="p-6 rounded-2xl bg-gradient-to-br from-teal-500 via-emerald-600 to-teal-700 text-white shadow-lg shadow-teal-500/15 hover:shadow-teal-500/25 transition-all duration-300 hover:-translate-y-1 relative overflow-hidden flex flex-col justify-center min-h-[195px] border border-teal-400/20">
-                            <div className="absolute right-0 bottom-0 translate-x-6 translate-y-6 opacity-10 group-hover:scale-110 transition-transform duration-500 pointer-events-none">
-                                <BookOpen size={180} />
-                            </div>
-                            <div className="relative z-10 space-y-2.5">
-                                <div className="flex items-center justify-between">
-                                    <span className="bg-white/20 backdrop-blur-md text-white text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider whitespace-nowrap">
-                                        Afterschool Program
-                                    </span>
-                                    <span className="text-xs font-bold flex items-center gap-1 group-hover:translate-x-1 transition-transform whitespace-nowrap bg-white/10 px-2 py-0.5 rounded-full">
-                                        바로가기 &rarr;
-                                    </span>
-                                </div>
-                                <h4 className="text-xl font-bold font-headline whitespace-nowrap">방과후학교 콘솔</h4>
-                                <p className="text-xs text-teal-100/90 leading-relaxed">
-                                    강좌 개설 기안, 출석부 기록, 대기 신청자 및 환불 조회를 종합 관리합니다.
-                                </p>
-                            </div>
-                        </div>
-                    </Link>
-
-                    {/* 스쿨버스 배너 */}
-                    <Link href="/teacher/bus" className="group" onClick={handleBusClick}>
-                        <div className="p-6 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-600 to-blue-700 text-white shadow-lg shadow-blue-500/15 hover:shadow-blue-500/25 transition-all duration-300 hover:-translate-y-1 relative overflow-hidden flex flex-col justify-center min-h-[195px] border border-blue-400/20">
-                            <div className="absolute right-0 bottom-0 translate-x-6 translate-y-6 opacity-10 group-hover:scale-110 transition-transform duration-500 pointer-events-none">
-                                <Bus size={180} />
-                            </div>
-                            <div className="relative z-10 space-y-2.5">
-                                <div className="flex items-center justify-between">
-                                    <span className="bg-white/20 backdrop-blur-md text-white text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider whitespace-nowrap">
-                                        School Bus System
-                                    </span>
-                                    <span className="text-xs font-bold flex items-center gap-1 group-hover:translate-x-1 transition-transform whitespace-nowrap bg-white/10 px-2 py-0.5 rounded-full">
-                                        바로가기 &rarr;
-                                    </span>
-                                </div>
-                                <h4 className="text-xl font-bold font-headline whitespace-nowrap">스쿨버스 노선 & 출결</h4>
-                                <p className="text-xs text-blue-100/90 leading-relaxed">
-                                    차량별 매핑된 학생 현황 및 실시간 노선 조회, 도우미용 출결을 확인합니다.
-                                </p>
-                            </div>
-                        </div>
-                    </Link>
-
-                    {/* 통합 학생 마스터 계정 대시보드 배너 */}
-                    <Link href="/admin/students" className="group">
-                        <div className="p-6 rounded-2xl bg-gradient-to-br from-purple-600 via-indigo-700 to-slate-900 text-white shadow-lg shadow-indigo-500/15 hover:shadow-indigo-500/25 transition-all duration-300 hover:-translate-y-1 relative overflow-hidden flex flex-col justify-center min-h-[195px] border border-indigo-400/20">
-                            <div className="absolute right-0 bottom-0 translate-x-6 translate-y-6 opacity-10 group-hover:scale-110 transition-transform duration-500 pointer-events-none">
-                                <Users size={180} />
-                            </div>
-                            <div className="relative z-10 space-y-2.5">
-                                <div className="flex items-center justify-between">
-                                    <span className="bg-white/20 backdrop-blur-md text-white text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider whitespace-nowrap">
-                                        Master Student DB
-                                    </span>
-                                    <span className="text-xs font-bold flex items-center gap-1 group-hover:translate-x-1 transition-transform whitespace-nowrap bg-white/10 px-2 py-0.5 rounded-full">
-                                        대시보드 바로가기 &rarr;
-                                    </span>
-                                </div>
-                                <h4 className="text-xl font-bold font-headline whitespace-nowrap">통합 학생 계정 관리</h4>
-                                <p className="text-xs text-indigo-100/90 leading-relaxed">
-                                    이메일 단일 계정 기반으로 방과후, 스쿨버스, 출결, 체험학습을 한곳에서 통합 관리합니다.
-                                </p>
-                            </div>
-                        </div>
-                    </Link>
-                </div>
-            </div>
-
-            {/* 맨 하단: 2026학년도 학사 일정 & 등교지도 캘린더 동기화 배너 */}
-            <div className="pt-2">
-                <div 
-                    onClick={() => window.dispatchEvent(new CustomEvent('openAcademicCalendarSyncModal'))}
-                    className="group cursor-pointer p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-50/90 via-blue-50/70 to-sky-50/90 border border-indigo-200/80 hover:border-indigo-400 hover:shadow-md transition-all duration-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
-                >
-                    <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-xs shrink-0 group-hover:scale-105 transition-transform">
-                            <Calendar className="w-5 h-5" />
-                        </div>
-                        <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-extrabold text-slate-900 text-sm sm:text-base">
-                                    2026학년도 학사 일정 & 등교지도 캘린더 동기화
-                                </span>
-                                <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 text-[10px] font-bold border-indigo-200">
-                                    교직원 맞춤
-                                </Badge>
-                            </div>
-                            <p className="text-xs text-slate-600 mt-0.5">
-                                학기/방학 기간, 휴업일, 행사 및 <strong>나의 등교지도 근무일(07:40~08:20, 하루 전 알림)</strong>을 내 구글/스마트폰 캘린더에 연동합니다.
-                            </p>
-                        </div>
-                    </div>
-                    <Button 
-                        type="button" 
-                        size="sm" 
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            window.dispatchEvent(new CustomEvent('openAcademicCalendarSyncModal'));
-                        }}
-                        className="h-9 px-4 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs shrink-0 whitespace-nowrap self-stretch sm:self-auto"
-                    >
-                        <Calendar className="w-3.5 h-3.5 mr-1.5" />
-                        캘린더 동기화 열기
-                    </Button>
-                </div>
-            </div>
-
-            {/* 메인 대시보드 하단 KIS 전용 앱 설치 배너 */}
-            <PwaInstallBanner className="mt-6 mb-2" />
 
             {/* 스쿨버스 이동 분기 선택 다이얼로그 */}
             <Dialog open={isBusDialogOpen} onOpenChange={setIsBusDialogOpen}>
@@ -1303,6 +1475,24 @@ export default function InboxPage() {
                 </div>
               </DialogContent>
             </Dialog>
+
+            {/* 6. 유초등 주간교육계획 모달 다이얼로그 */}
+            <WeeklyEducationPlanModal 
+              open={isWeeklyPlanModalOpen}
+              onOpenChange={setIsWeeklyPlanModalOpen}
+              academicEvents={academicEvents}
+              weeklySchedules={weeklySchedules}
+              orgData={orgData}
+            />
+
+            {/* 7. 유초등 월간 교육활동 계획 모달 다이얼로그 */}
+            <MonthlyEducationPlanModal 
+              open={isMonthlyPlanModalOpen}
+              onOpenChange={setIsMonthlyPlanModalOpen}
+              academicEvents={academicEvents}
+              weeklySchedules={weeklySchedules}
+              orgData={orgData}
+            />
         </div>
     );
 }

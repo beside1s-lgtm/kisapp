@@ -68,7 +68,7 @@ const defaultApproversTemplate = [
     { name: '', email: '', role: '부장', type: 'normal' as const, status: 'pending' as const },
     { name: '', email: '', role: '교감', type: 'normal' as const, status: 'pending' as const },
     { name: '', email: '', role: '협조', type: 'normal' as const, status: 'pending' as const },
-    { name: '', email: '', role: '교장', type: 'final' as const, status: 'pending' as const },
+    { name: '', email: '', role: '교장', type: 'normal' as const, status: 'pending' as const },
 ];
 
 type DocumentFormProps = {
@@ -302,17 +302,18 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
 
   const handleApplyDelegationRule = (rule: DelegationRule) => {
     const currentApprovers = form.getValues('approvers') || [];
-    const isVpFinal = rule.finalApprover === 'VP' || rule.finalApprover === 'GRADE_HEAD' || rule.finalApprover === 'ACADEMIC_HEAD' || rule.finalApprover === 'DEPT_HEAD';
+    const isDeptFinal = rule.finalApprover === 'GRADE_HEAD' || rule.finalApprover === 'ACADEMIC_HEAD' || rule.finalApprover === 'DEPT_HEAD';
+    const isVpFinal = rule.finalApprover === 'VP';
     
     const updated = currentApprovers.map((ap: any) => {
       if (ap.role === '교장') {
-        return { ...ap, active: !isVpFinal, type: 'final' };
+        return { ...ap, active: !isDeptFinal && !isVpFinal, type: 'normal' };
       }
       if (ap.role === '교감') {
-        return { ...ap, active: true, type: isVpFinal ? 'final' : 'normal' };
+        return { ...ap, active: !isDeptFinal, type: isVpFinal ? 'final' : 'normal' };
       }
       if (ap.role === '부장') {
-        return { ...ap, active: true, type: 'normal' };
+        return { ...ap, active: true, type: isDeptFinal ? 'final' : 'normal' };
       }
       return ap;
     });
@@ -322,23 +323,26 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
     setSelectedDelegationId(rule.id);
     toast({ 
       title: "전결규정 적용 완료", 
-      description: `[${rule.subType || rule.mainType}] 전결규정(${rule.finalApprover === 'VP' ? '교감 전결' : '교장 결재'})에 따라 결재선이 설정되었습니다.` 
+      description: `[${rule.subType || rule.mainType}] 전결규정(${isDeptFinal ? '부장 전결' : isVpFinal ? '교감 전결' : '교장 결재'})에 따라 결재선이 설정되었습니다.` 
     });
   };
 
-  const handleQuickTemplate = (type: 'annual' | 'detail' | 'general') => {
+  const handleQuickTemplate = (type: 'annual' | 'detail' | 'dept' | 'general') => {
     let targetRuleName = '연간계획공문';
     let defaultTitlePrefix = '[연간계획] ';
     if (type === 'detail') {
       targetRuleName = '세부계획공문';
       defaultTitlePrefix = '[세부계획] ';
+    } else if (type === 'dept') {
+      targetRuleName = '부서계획공문';
+      defaultTitlePrefix = '[부서업무] ';
     } else if (type === 'general') {
       targetRuleName = '기본 기안문';
       defaultTitlePrefix = '';
     }
 
     const curTitle = form.getValues('title') || '';
-    const cleanTitle = curTitle.replace(/^\[(연간계획|세부계획|기안)\]\s*/, '');
+    const cleanTitle = curTitle.replace(/^\[(연간계획|세부계획|부서업무|기안)\]\s*/, '');
     if (defaultTitlePrefix) {
       form.setValue('title', defaultTitlePrefix + cleanTitle, { shouldDirty: true, shouldValidate: true });
     }
@@ -347,19 +351,20 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
     if (matchedRule) {
       handleApplyDelegationRule(matchedRule);
     } else {
+      const isDept = type === 'dept';
       const isVp = type === 'detail';
       const currentApprovers = form.getValues('approvers') || [];
       const updated = currentApprovers.map((ap: any) => {
-        if (ap.role === '교장') return { ...ap, active: !isVp, type: 'final' };
-        if (ap.role === '교감') return { ...ap, active: true, type: isVp ? 'final' : 'normal' };
-        if (ap.role === '부장') return { ...ap, active: true, type: 'normal' };
+        if (ap.role === '교장') return { ...ap, active: !isDept && !isVp, type: 'normal' };
+        if (ap.role === '교감') return { ...ap, active: !isDept, type: isVp ? 'final' : 'normal' };
+        if (ap.role === '부장') return { ...ap, active: true, type: isDept ? 'final' : 'normal' };
         return ap;
       });
       form.setValue('approvers', updated, { shouldDirty: true, shouldValidate: true });
       replaceApprovers(updated);
       toast({
         title: "템플릿 결재선 적용",
-        description: type === 'detail' ? '세부계획공문 (교감 전결) 결재선이 설정되었습니다.' : '연간계획공문 (교장 결재) 결재선이 설정되었습니다.'
+        description: isDept ? '부서업무공문 (부장 전결) 결재선이 설정되었습니다.' : isVp ? '세부계획공문 (교감 전결) 결재선이 설정되었습니다.' : '연간계획공문 (교장 결재) 결재선이 설정되었습니다.'
       });
     }
   };
@@ -504,7 +509,8 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
         }
 
         const busTemplate = searchParams.get('busTemplate');
-        if (busTemplate === 'true') {
+        const peTemplate = searchParams.get('peTemplate');
+        if (busTemplate === 'true' || peTemplate === 'true') {
             const draftJson = sessionStorage.getItem('pending_doc_draft');
             if (draftJson) {
                 try {
@@ -524,7 +530,8 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                     });
                     replaceApprovers(dynamicDefaultApprovers);
                     replaceAttachments(initialAttachments);
-                    toast({ title: "스쿨버스 기안 불러오기 완료", description: `[${draft.title}] 양식 및 첨부파일(${initialAttachments.length}건)이 탑재되었습니다.` });
+                    const templateName = peTemplate === 'true' ? '체육 행사' : '스쿨버스';
+                    toast({ title: `${templateName} 기안 불러오기 완료`, description: `[${draft.title}] 양식 및 첨부파일(${initialAttachments.length}건)이 탑재되었습니다.` });
                     return;
                 } catch (err) {
                     console.error("Draft Parse Error:", err);
@@ -1237,6 +1244,15 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
               className="h-7 text-xs px-2.5 bg-white hover:bg-slate-100 border-emerald-200 text-emerald-900 font-semibold"
             >
               세부계획공문 (교감 전결)
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleQuickTemplate('dept')}
+              className="h-7 text-xs px-2.5 bg-white hover:bg-slate-100 border-amber-200 text-amber-900 font-semibold"
+            >
+              부서업무공문 (부장 전결)
             </Button>
           </div>
         </div>

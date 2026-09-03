@@ -1,10 +1,10 @@
 'use client';
 
 import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache } from '@/lib/services/userService';
-import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES } from '@/lib/services/settingsService';
+import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES, getGoogleDriveConfig, saveGoogleDriveConfig, DEFAULT_GOOGLE_DRIVE_CONFIG } from '@/lib/services/settingsService';
 import { getAuditLogs } from '@/lib/services/documentService';
-import { DocConfig, UserProfile, OrgStructure, DelegationRule, AcademicCalendarConfig, AcademicEvent, AcademicSemesterPeriod, FieldTripBlackoutPeriod, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS } from '@/lib/types';
-import { compressImage, generateAcademicIcsFile } from '@/lib/utils';
+import { DocConfig, UserProfile, OrgStructure, DelegationRule, AcademicCalendarConfig, AcademicEvent, AcademicSemesterPeriod, FieldTripBlackoutPeriod, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, CustomDutyRole, DutyRolePermission, DutyRoleAttendanceScope, ClassPeriodSchedule, DEFAULT_PERIOD_SCHEDULES, GoogleDriveConfig } from '@/lib/types';
+import { cn, compressImage, generateAcademicIcsFile } from '@/lib/utils';
 import { ChangeEvent, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -30,11 +30,48 @@ import { Button } from './ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Loader2, Image as ImageIcon, Users, Settings as SettingsIcon, FileUp, Download, PlusCircle, Save, XCircle, Trash2, Network, FileText, Pencil, Calendar, Globe, Sparkles, RotateCcw } from 'lucide-react';
+import { 
+  Loader2, 
+  Image as ImageIcon, 
+  Users, 
+  Settings as SettingsIcon, 
+  FileUp, 
+  Download, 
+  PlusCircle, 
+  Save, 
+  XCircle, 
+  Trash2, 
+  Network, 
+  FileText, 
+  Pencil, 
+  Calendar, 
+  Globe, 
+  Sparkles, 
+  RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  Briefcase,
+  GraduationCap,
+  Building2,
+  UserCheck,
+  FolderKanban,
+  Tag,
+  ChevronsUpDown,
+  Search,
+  Check,
+  ShieldCheck,
+  X,
+  Clock,
+  HardDrive,
+  Folder,
+  ExternalLink
+} from 'lucide-react';
 import NextImage from 'next/image';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ScrollArea } from './ui/scroll-area';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from './ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './ui/command';
 import { Switch } from './ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import * as xlsx from 'xlsx';
@@ -67,6 +104,9 @@ function getUserDepartmentOrClass(email: string, orgStructure: OrgStructure): st
   if (orgStructure.busManagers?.map(m => m.toLowerCase()).includes(emailLower)) {
     roles.push('스쿨버스 담당');
   }
+  if (orgStructure.peTeachers?.map(m => m.toLowerCase()).includes(emailLower)) {
+    roles.push('학교 체육 담당');
+  }
 
   if (orgStructure.healthTeachers?.map(m => m.toLowerCase()).includes(emailLower)) {
     roles.push('보건교사');
@@ -81,6 +121,14 @@ function getUserDepartmentOrClass(email: string, orgStructure: OrgStructure): st
     for (const group of orgStructure.subjectTeacherGroups) {
       if (group.teacherEmails?.map(m => m.toLowerCase()).includes(emailLower)) {
         roles.push(`${group.categoryName} 교과전담`);
+      }
+    }
+  }
+
+  if (orgStructure.customDutyRoles) {
+    for (const duty of orgStructure.customDutyRoles) {
+      if (duty.teacherEmails?.map(m => m.toLowerCase()).includes(emailLower)) {
+        roles.push(duty.roleName);
       }
     }
   }
@@ -123,6 +171,486 @@ function getUserDepartmentOrClass(email: string, orgStructure: OrgStructure): st
   return roles.length > 0 ? roles.join(', ') : '미배정';
 }
 
+export interface DelegationCategoryStandard {
+  mainType: string;
+  subTypes: {
+    name: string;
+    detailTypes: string[];
+  }[];
+}
+
+export const DEFAULT_DELEGATION_STANDARDS: DelegationCategoryStandard[] = [
+  {
+    mainType: '학부모 출결',
+    subTypes: [
+      { name: '결석계', detailTypes: ['일반/질병/인정', '기타결석'] },
+      { name: '체험학습신청서', detailTypes: ['교외체험학습'] },
+    ]
+  },
+  {
+    mainType: '일반 공문',
+    subTypes: [
+      { name: '연간계획공문', detailTypes: ['연간 운영계획'] },
+      { name: '세부계획공문', detailTypes: ['세부 실행계획'] },
+      { name: '일반기안공문', detailTypes: ['일반 업무기안'] },
+    ]
+  },
+  {
+    mainType: '교원 복무',
+    subTypes: [
+      { name: '휴가', detailTypes: ['연가', '조퇴', '병가', '특별휴가', '지각'] },
+      { name: '출장', detailTypes: ['관내', '관외', '국외'] },
+    ]
+  },
+  {
+    mainType: '방과후학교 / 특기적성',
+    subTypes: [
+      { name: '방과후학교 운영계획', detailTypes: ['학기별 운영계획'] },
+    ]
+  },
+  {
+    mainType: '스쿨버스 운영',
+    subTypes: [
+      { name: '스쿨버스 운영계획', detailTypes: ['노선 및 운영계획'] },
+    ]
+  }
+];
+
+export const AVAILABLE_FEATURE_PERMISSIONS = [
+  { id: 'pe_admin', label: '학교 체육/PAPS 관리', desc: 'PAPS 측정 및 기록 입력, 성장 분석, 대회/리그 관리, AI 문제 출제' },
+  { id: 'health_admin', label: '학생 건강/보건실 관리', desc: '학생 건강기록부 작성/관리, 법정 서식 및 예방접종/검진 관리' },
+  { id: 'afterschool_admin', label: '방과후학교 총괄 관리', desc: '강좌 개설/폐강, 강사/수강생 관리, 출석부 총괄, 수강료 정산' },
+  { id: 'bus_admin', label: '스쿨버스 운영 관리', desc: '노선 및 호차 관리, 학생 탑승 배정, 탑승료 청구' },
+  { id: 'student_admin', label: '학생출결 및 학적 총괄 관리', desc: '전교생 마스터 DB 및 결석계/체험학습 전체 조회/출력 권한' },
+  { id: 'duty_admin', label: '교원 복무/근태 관리', desc: '교원 휴가/출장 복무 승인 대장, 초과근무, 보결 관리' },
+  { id: 'system_admin', label: '시스템 설정 관리', desc: '학사일정, 조직도, 전결규정, 사용자 관리 모달 접근' },
+];
+
+export const AVAILABLE_DOCUMENT_PERMISSIONS = [
+  { id: 'doc_absence', label: '결석계 문서함', desc: '결석 신고서 및 증빙 확인, 결석계 대장 일괄 인쇄' },
+  { id: 'doc_fieldtrip', label: '체험학습 문서함', desc: '교외체험학습 신청서 및 결과보고서 완비 검증, 일괄 인쇄' },
+  { id: 'doc_registry', label: '문서등록대장', desc: '학교 내 생산/결재 완료된 전체 전자결재 공문서 열람' },
+  { id: 'doc_approval', label: '전자결재 결재 권한', desc: '미결재함, 진행문서함 등 결재선 상의 문서 승인/전결' },
+  { id: 'doc_audit', label: '보안 감사 로그 열람', desc: '문서 열람, 승인, 반려, 삭제 등의 전체 보안 감사 기록 조회' },
+];
+
+export const DEFAULT_ROLE_PERMISSIONS: Record<string, DutyRolePermission> = {
+  pe: {
+    features: ['pe_admin'],
+    documents: []
+  },
+  afterschool: {
+    features: ['afterschool_admin'],
+    documents: ['doc_registry']
+  },
+  bus: {
+    features: ['bus_admin'],
+    documents: ['doc_registry']
+  },
+  system: {
+    features: ['system_admin'],
+    documents: ['doc_registry', 'doc_audit']
+  },
+  health: {
+    features: ['health_admin'],
+    documents: ['doc_absence'],
+    attendanceScope: { type: 'all' }
+  },
+  special: {
+    features: [],
+    documents: ['doc_absence', 'doc_fieldtrip'],
+    attendanceScope: { type: 'all' }
+  },
+  librarian: {
+    features: [],
+    documents: []
+  },
+};
+
+interface DutyRolePermissionModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  roleName: string;
+  permissions?: DutyRolePermission;
+  onSave: (newPerms: DutyRolePermission) => void;
+}
+
+function DutyRolePermissionModal({
+  open,
+  onOpenChange,
+  roleName,
+  permissions,
+  onSave,
+}: DutyRolePermissionModalProps) {
+  const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+  const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
+  const [scopeType, setScopeType] = useState<DutyRoleAttendanceScope['type']>('all');
+  const [selectedGrades, setSelectedGrades] = useState<number[]>([1, 2, 3, 4, 5, 6]);
+
+  useEffect(() => {
+    if (open) {
+      setSelectedFeatures(permissions?.features || []);
+      setSelectedDocs(permissions?.documents || []);
+      setScopeType(permissions?.attendanceScope?.type || 'all');
+      setSelectedGrades(permissions?.attendanceScope?.grades || [1, 2, 3, 4, 5, 6]);
+    }
+  }, [open, permissions]);
+
+  const toggleFeature = (id: string) => {
+    setSelectedFeatures(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleDoc = (id: string) => {
+    setSelectedDocs(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleGrade = (grade: number) => {
+    setSelectedGrades(prev =>
+      prev.includes(grade) ? prev.filter(g => g !== grade) : [...prev, grade].sort()
+    );
+  };
+
+  const hasAttendanceDocs = selectedDocs.includes('doc_absence') || selectedDocs.includes('doc_fieldtrip');
+
+  const handleSave = () => {
+    onSave({
+      features: selectedFeatures,
+      documents: selectedDocs,
+      attendanceScope: hasAttendanceDocs ? {
+        type: scopeType,
+        grades: scopeType === 'specific_grades' ? selectedGrades : undefined
+      } : undefined,
+    });
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent 
+        className="max-w-lg p-5"
+        onPointerDownOutside={(e) => e.preventDefault()}
+      >
+        <DialogHeader className="pb-3 border-b space-y-1">
+          <DialogTitle className="text-base font-bold text-slate-900 flex items-center justify-between">
+            <span>{roleName} 권한 설정</span>
+            <span className="text-xs font-normal text-slate-500">
+              기능 {selectedFeatures.length}개 / 문서 {selectedDocs.length}개 선택됨
+            </span>
+          </DialogTitle>
+          <DialogDescription className="text-xs text-slate-500">
+            해당 업무를 담당하는 교직원에게 부여할 업무 기능과 문서 접근 범위를 지정합니다.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-3 space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+          {/* 업무 기능 접근 권한 */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+              <span>업무 기능 접근 권한</span>
+            </h4>
+            <div className="grid grid-cols-1 gap-1.5">
+              {AVAILABLE_FEATURE_PERMISSIONS.map(f => {
+                const checked = selectedFeatures.includes(f.id);
+                return (
+                  <label
+                    key={f.id}
+                    onClick={() => toggleFeature(f.id)}
+                    className={cn(
+                      "flex items-start gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-colors",
+                      checked ? "bg-indigo-50/70 border-indigo-300" : "bg-white border-slate-200 hover:bg-slate-50"
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {}}
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div className="space-y-0.5 flex-1">
+                      <div className="font-bold text-slate-800">{f.label}</div>
+                      <div className="text-[11px] text-slate-500">{f.desc}</div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 문서 접근 권한 */}
+          <div className="space-y-2 pt-2 border-t">
+            <h4 className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+              <span>문서 접근 권한</span>
+            </h4>
+            <div className="grid grid-cols-1 gap-1.5">
+              {AVAILABLE_DOCUMENT_PERMISSIONS.map(d => {
+                const checked = selectedDocs.includes(d.id);
+                return (
+                  <label
+                    key={d.id}
+                    onClick={() => toggleDoc(d.id)}
+                    className={cn(
+                      "flex items-start gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-colors",
+                      checked ? "bg-purple-50/70 border-purple-300" : "bg-white border-slate-200 hover:bg-slate-50"
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {}}
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    <div className="space-y-0.5 flex-1">
+                      <div className="font-bold text-slate-800">{d.label}</div>
+                      <div className="text-[11px] text-slate-500">{d.desc}</div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            {/* 결석계/체험학습 선택 시 학년/학급별 문서 접근 범위(Scope) 설정 패널 */}
+            {hasAttendanceDocs && (
+              <div className="mt-3 p-3 rounded-xl border border-violet-200 bg-violet-50/50 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-violet-900 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-violet-600" />
+                    결석계 / 체험학습 문서 접근 대상 범위
+                  </Label>
+                  <span className="text-[10px] text-violet-600 font-semibold">
+                    {scopeType === 'all' && '전교생 전체'}
+                    {scopeType === 'assigned_grade' && '담당 학년 전체'}
+                    {scopeType === 'assigned_class' && '담당 학급만'}
+                    {scopeType === 'specific_grades' && `${selectedGrades.join(', ')}학년`}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {[
+                    { type: 'all' as const, label: '전교생 전체 (1~6학년)', desc: '학생출결담당자, 총괄 관리자' },
+                    { type: 'assigned_grade' as const, label: '담당 학년 전체', desc: '학년부장 및 학년 담당 교원' },
+                    { type: 'assigned_class' as const, label: '담당 학급만', desc: '담임교사 본인 학급' },
+                    { type: 'specific_grades' as const, label: '특정 학년 직접 지정', desc: '복수 지정 학년만 열람' },
+                  ].map(opt => (
+                    <label
+                      key={opt.type}
+                      onClick={() => setScopeType(opt.type)}
+                      className={cn(
+                        "flex items-start gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-all",
+                        scopeType === opt.type
+                          ? "bg-white border-violet-500 shadow-2xs text-violet-950 font-bold"
+                          : "bg-white/80 border-slate-200 text-slate-700 hover:bg-white"
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="attendanceScopeType"
+                        checked={scopeType === opt.type}
+                        onChange={() => setScopeType(opt.type)}
+                        className="mt-0.5 text-violet-600 focus:ring-violet-500"
+                      />
+                      <div className="space-y-0.5 min-w-0">
+                        <div className="text-xs">{opt.label}</div>
+                        <div className="text-[10px] text-slate-400 font-normal">{opt.desc}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+
+                {/* 특정 학년 직접 선택 시 1~6학년 토글 버튼 */}
+                {scopeType === 'specific_grades' && (
+                  <div className="pt-2 border-t border-violet-100 flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-bold text-violet-800 shrink-0">대상 학년 선택:</span>
+                    {[1, 2, 3, 4, 5, 6].map(grade => {
+                      const isSelected = selectedGrades.includes(grade);
+                      return (
+                        <button
+                          key={grade}
+                          type="button"
+                          onClick={() => toggleGrade(grade)}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md text-xs font-bold border transition-colors",
+                            isSelected
+                              ? "bg-violet-600 border-violet-600 text-white shadow-2xs"
+                              : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                          )}
+                        >
+                          {grade}학년
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-3 border-t">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} className="h-8 text-xs px-3">
+            취소
+          </Button>
+          <Button size="sm" onClick={handleSave} className="h-8 text-xs px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold">
+            권한 저장
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface SearchableUserSelectProps {
+  users: { name: string; email: string }[];
+  value?: string;
+  onSelect: (email: string) => void;
+  placeholder?: string;
+  triggerClassName?: string;
+  panelWidthClass?: string;
+  clearOnSelect?: boolean;
+  allowUnassign?: boolean;
+  unassignLabel?: string;
+  align?: 'start' | 'end';
+}
+
+function SearchableUserSelect({
+  users,
+  value,
+  onSelect,
+  placeholder = '교직원 선택...',
+  triggerClassName = 'h-8 text-xs bg-white',
+  panelWidthClass = 'w-56',
+  clearOnSelect = false,
+  allowUnassign = false,
+  unassignLabel = '선택 안됨',
+  align = 'start'
+}: SearchableUserSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return users;
+    const q = search.trim().toLowerCase();
+    return users.filter(u =>
+      (u.name && u.name.toLowerCase().includes(q)) ||
+      (u.email && u.email.toLowerCase().includes(q))
+    );
+  }, [users, search]);
+
+  const selectedUser = users.find(u => u.email?.toLowerCase() === value?.toLowerCase());
+
+  return (
+    <div ref={containerRef} className="relative inline-block w-full">
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => setOpen(prev => !prev)}
+        className={cn("w-full justify-between font-normal border-slate-300 hover:bg-slate-50 shadow-2xs", triggerClassName)}
+      >
+        <span className="truncate">
+          {clearOnSelect
+            ? placeholder
+            : (selectedUser ? `${selectedUser.name} (${selectedUser.email})` : (value || placeholder))}
+        </span>
+        <ChevronsUpDown className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
+      </Button>
+
+      {open && (
+        <div 
+          className={cn(
+            "absolute top-full mt-1 p-2 z-[9999] bg-white shadow-2xl border border-slate-200 rounded-xl space-y-1.5 animate-in fade-in-0 zoom-in-95",
+            panelWidthClass,
+            align === 'end' ? 'right-0' : 'left-0'
+          )}
+        >
+          <div className="relative flex items-center">
+            <Search className="absolute left-2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+            <Input
+              autoFocus
+              placeholder="이름/이메일 검색..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 pl-7 pr-6 text-xs bg-slate-50 border-slate-200 focus-visible:bg-white"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2 text-xs text-slate-400 hover:text-slate-600 font-bold"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          <div className="max-h-52 overflow-y-auto divide-y divide-slate-100 pr-0.5">
+            {allowUnassign && (
+              <button
+                type="button"
+                onClick={() => {
+                  onSelect('');
+                  setOpen(false);
+                  setSearch('');
+                }}
+                className="w-full text-left py-1.5 px-2 text-xs rounded-md text-slate-500 hover:bg-slate-100 font-medium"
+              >
+                {unassignLabel}
+              </button>
+            )}
+
+            {filtered.length === 0 ? (
+              <div className="text-xs py-4 text-center text-slate-400">
+                '{search}' 검색 결과 없음
+              </div>
+            ) : (
+              filtered.map(u => {
+                const isSelected = value?.toLowerCase() === u.email?.toLowerCase();
+                return (
+                  <button
+                    key={u.email}
+                    type="button"
+                    onClick={() => {
+                      onSelect(u.email);
+                      setOpen(false);
+                      setSearch('');
+                    }}
+                    className={`w-full text-left py-1.5 px-2 text-xs rounded-md transition-colors flex items-center justify-between hover:bg-indigo-50 ${
+                      isSelected ? 'bg-indigo-50/80 font-bold text-indigo-900' : 'text-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="font-semibold">{u.name}</span>
+                      <span className="text-[10px] text-slate-400 truncate max-w-[100px]">{u.email}</span>
+                    </div>
+                    {isSelected && (
+                      <Check className="h-3.5 w-3.5 text-indigo-600 shrink-0 ml-1" />
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SettingsModal() {
   const { profile } = useAuth();
   const { toast } = useToast();
@@ -141,6 +669,7 @@ export function SettingsModal() {
       sem2: { id: 'sem2', name: '2026학년도 2학기', startDate: '2026-08-24', endDate: '2026-12-31', type: 'regular' },
       vacationWinter: { id: 'vacationWinter', name: '2027학년도 겨울방학', startDate: '2027-01-01', endDate: '2027-02-28', type: 'vacation' }
     },
+    periodSchedules: DEFAULT_PERIOD_SCHEDULES,
     events: [
       { id: '1', date: '2026-03-01', title: '삼일절', type: 'PUBLIC_HOLIDAY', isSchoolDay: false },
       { id: '2', date: '2026-05-01', title: '근로자의 날 / 재량휴업일', type: 'HOLIDAY', isSchoolDay: false },
@@ -154,19 +683,73 @@ export function SettingsModal() {
 
   const [academicCal, setAcademicCal] = useState<AcademicCalendarConfig>(DEFAULT_ACADEMIC_CALENDAR);
   const [newEventDate, setNewEventDate] = useState('');
+  const [newEventEndDate, setNewEventEndDate] = useState('');
   const [newEventTitle, setNewEventTitle] = useState('');
   const [newEventType, setNewEventType] = useState<'HOLIDAY' | 'PUBLIC_HOLIDAY' | 'SCHOOL_EVENT'>('HOLIDAY');
   const [isNewEventParentPrivate, setIsNewEventParentPrivate] = useState(false);
 
+  // 수업 시간대(교시별 시간표) 관리 상태 및 핸들러
+  const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
+  const [newPeriodName, setNewPeriodName] = useState('');
+  const [newPeriodStart, setNewPeriodStart] = useState('08:30');
+  const [newPeriodEnd, setNewPeriodEnd] = useState('09:10');
+
+  const handleAddPeriodSchedule = () => {
+    if (!newPeriodName.trim() || !newPeriodStart || !newPeriodEnd) {
+      toast({ variant: 'destructive', title: '입력 오류', description: '교시명, 시작시간, 종료시간을 모두 입력해주세요.' });
+      return;
+    }
+    const newPeriod: ClassPeriodSchedule = {
+      id: `p-${Date.now()}`,
+      name: newPeriodName.trim(),
+      startTime: newPeriodStart,
+      endTime: newPeriodEnd,
+      type: newPeriodName.includes('점심') ? 'lunch' : newPeriodName.includes('방과후') ? 'afterschool' : 'class'
+    };
+    setAcademicCal(prev => ({
+      ...prev,
+      periodSchedules: [...(prev.periodSchedules || DEFAULT_PERIOD_SCHEDULES), newPeriod]
+    }));
+    setNewPeriodName('');
+    toast({ title: '수업 시간대 추가 완료', description: `${newPeriod.name} (${newPeriod.startTime}~${newPeriod.endTime})가 등록되었습니다.` });
+  };
+
+  const handleUpdatePeriodSchedule = (id: string, field: keyof ClassPeriodSchedule, val: any) => {
+    setAcademicCal(prev => ({
+      ...prev,
+      periodSchedules: (prev.periodSchedules || DEFAULT_PERIOD_SCHEDULES).map(p =>
+        p.id === id ? { ...p, [field]: val } : p
+      )
+    }));
+  };
+
+  const handleDeletePeriodSchedule = (id: string) => {
+    setAcademicCal(prev => ({
+      ...prev,
+      periodSchedules: (prev.periodSchedules || DEFAULT_PERIOD_SCHEDULES).filter(p => p.id !== id)
+    }));
+  };
+
+  const handleResetDefaultPeriodSchedules = () => {
+    if (!confirm('기본 초등 표준 일과 시간표(1~6교시, 점심, 방과후)로 복원하시겠습니까?')) return;
+    setAcademicCal(prev => ({
+      ...prev,
+      periodSchedules: DEFAULT_PERIOD_SCHEDULES
+    }));
+    toast({ title: '기본 시간표 복원 완료', description: '표준 초등학교 일과 시간표로 초기화되었습니다.' });
+  };
+
   const handleAddAcademicEvent = () => {
     if (!newEventDate || !newEventTitle.trim()) {
-      toast({ variant: 'destructive', title: '입력 오류', description: '날짜와 행사명을 입력해주세요.' });
+      toast({ variant: 'destructive', title: '입력 오류', description: '시작일과 행사명을 입력해주세요.' });
       return;
     }
     const isSchoolDay = newEventType === 'SCHOOL_EVENT';
+    const finalEndDate = newEventEndDate && newEventEndDate >= newEventDate ? newEventEndDate : undefined;
     const newEv: AcademicEvent = {
       id: Date.now().toString(),
       date: newEventDate,
+      endDate: finalEndDate,
       title: newEventTitle.trim(),
       type: newEventType,
       isSchoolDay,
@@ -174,12 +757,14 @@ export function SettingsModal() {
     };
     setAcademicCal(prev => ({
       ...prev,
-      events: [...prev.events.filter(e => e.date !== newEventDate), newEv].sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+      events: [...prev.events.filter(e => e.id !== newEv.id && !(e.date === newEventDate && e.title === newEventTitle.trim())), newEv].sort((a, b) => (a.date || '').localeCompare(b.date || ''))
     }));
+    const dateDesc = finalEndDate && finalEndDate !== newEventDate ? `${newEventDate} ~ ${finalEndDate}` : newEventDate;
     setNewEventDate('');
+    setNewEventEndDate('');
     setNewEventTitle('');
     setIsNewEventParentPrivate(false);
-    toast({ title: '학사 일정 추가', description: `${newEventDate} (${newEventTitle.trim()})가 추가되었습니다.` });
+    toast({ title: '학사 일정 추가', description: `${dateDesc} (${newEventTitle.trim()})가 추가되었습니다.` });
   };
 
   const handleBroadcastCalendarSync = async () => {
@@ -287,14 +872,112 @@ export function SettingsModal() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedHomeroomFile, setSelectedHomeroomFile] = useState<File | null>(null);
   const [selectedDeptFile, setSelectedDeptFile] = useState<File | null>(null);
-  const [org, setOrg] = useState<OrgStructure>({ principal: '', vicePrincipal: '', academicHead: '', gradeHeads: {}, homerooms: {}, gradeSubjects: {}, departments: [], afterschoolManager: '', busManager: '', afterschoolManagers: [], busManagers: [], systemManagers: [], healthTeachers: [], specialTeachers: [], librarianTeachers: [], subjectTeacherGroups: [] });
+  const [activeMainTab, setActiveMainTab] = useState<string>('general');
+  const [org, setOrg] = useState<OrgStructure>({ principal: '', vicePrincipal: '', academicHead: '', gradeHeads: {}, homerooms: {}, gradeSubjects: {}, departments: [], afterschoolManager: '', busManager: '', afterschoolManagers: [], busManagers: [], systemManagers: [], peTeachers: [], healthTeachers: [], specialTeachers: [], librarianTeachers: [], subjectTeacherGroups: [], customDutyRoles: [], dutyRoleDepts: {} });
+  const [orgSubTab, setOrgSubTab] = useState<'leadership' | 'duties' | 'grades' | 'departments'>('leadership');
+  const [isDutyRolesOpen, setIsDutyRolesOpen] = useState(true);
+  const [isSubjectGroupOpen, setIsSubjectGroupOpen] = useState(false);
+  const [newCustomDutyRoleName, setNewCustomDutyRoleName] = useState('');
+  const [newCustomDutyDept, setNewCustomDutyDept] = useState('unassigned');
+  const [selectedDeptId, setSelectedDeptId] = useState<string>('');
+  const [selectedGradeView, setSelectedGradeView] = useState<string>('all');
+  const [newDeptTaskNames, setNewDeptTaskNames] = useState<{ [deptId: string]: string }>({});
+
+  const activeDept = useMemo(() => {
+    if (!org.departments || org.departments.length === 0) return null;
+    return org.departments.find(d => d.id === selectedDeptId) || org.departments[0];
+  }, [org.departments, selectedDeptId]);
   const [newHomeroom, setNewHomeroom] = useState({ grade: '1', class: '1', email: '', isGradeHead: false, roleType: 'homeroom' as 'homeroom' | 'subject' });
+  const [teacherComboboxOpen, setTeacherComboboxOpen] = useState(false);
+  const [teacherSearchQuery, setTeacherSearchQuery] = useState('');
+
+  const filteredTeachers = useMemo(() => {
+    if (!teacherSearchQuery.trim()) return facultyUsers;
+    const q = teacherSearchQuery.trim().toLowerCase();
+    return facultyUsers.filter(u =>
+      (u.name && u.name.toLowerCase().includes(q)) ||
+      (u.email && u.email.toLowerCase().includes(q))
+    );
+  }, [facultyUsers, teacherSearchQuery]);
+
+  const teacherComboboxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!teacherComboboxOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (teacherComboboxRef.current && !teacherComboboxRef.current.contains(event.target as Node)) {
+        setTeacherComboboxOpen(false);
+        setTeacherSearchQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [teacherComboboxOpen]);
+
   const [newSubjectCategoryName, setNewSubjectCategoryName] = useState('');
   const [newDeptName, setNewDeptName] = useState('');
   // 동명이인 처리용: { grade, class, isHead, candidates: UserProfile[] }
   const [duplicatePendingRows, setDuplicatePendingRows] = useState<{ grade: string; class: string; isHead: boolean; candidates: UserProfile[] }[]>([]);
   const [duplicateResolvedEmails, setDuplicateResolvedEmails] = useState<{ [key: string]: string }>({});
   
+  // Google Drive 중앙 저장소 설정
+  const [googleDriveConfig, setGoogleDriveConfig] = useState<GoogleDriveConfig>(DEFAULT_GOOGLE_DRIVE_CONFIG);
+  const [isSavingGoogleDrive, setIsSavingGoogleDrive] = useState(false);
+  const [isSyncingFolders, setIsSyncingFolders] = useState(false);
+
+  useEffect(() => {
+    getGoogleDriveConfig().then(cfg => {
+      if (cfg) setGoogleDriveConfig(cfg);
+    });
+  }, []);
+
+  const handleSaveGoogleDrive = async () => {
+    setIsSavingGoogleDrive(true);
+    try {
+      const res = await saveGoogleDriveConfig(googleDriveConfig, profile?.email || '관리자');
+      if (res.success) {
+        toast({ title: 'Google Drive 중앙 저장소 설정 저장 완료', description: '학교 Google Drive 중앙 저장소 정보가 업데이트되었습니다.' });
+      } else {
+        toast({ variant: 'destructive', title: '저장 실패', description: res.error });
+      }
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: '오류 발생', description: e.message });
+    } finally {
+      setIsSavingGoogleDrive(false);
+    }
+  };
+
+  const handleSyncFolders = async () => {
+    if (!googleDriveConfig.rootFolderId) {
+      toast({ variant: 'destructive', title: '루트 폴더 ID 필요', description: '먼저 중앙 루트 폴더 링크 또는 ID를 입력해주세요.' });
+      return;
+    }
+
+    setIsSyncingFolders(true);
+    try {
+      const res = await fetch('/api/drive/sync-folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rootFolderId: googleDriveConfig.rootFolderId })
+      });
+      const data = await res.json();
+      if (data.success && data.subFolders) {
+        const nextCfg = { ...googleDriveConfig, subFolders: data.subFolders };
+        setGoogleDriveConfig(nextCfg);
+        await saveGoogleDriveConfig(nextCfg, profile?.email || '관리자');
+        toast({
+          title: '하위 폴더 4종 동기화 완료',
+          description: '결재완료, 업무작업, 결석계, 체험학습 전용 폴더가 성공적으로 연동되었습니다.'
+        });
+      } else {
+        toast({ variant: 'destructive', title: '동기화 실패', description: data.error });
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: '동기화 오류', description: err.message });
+    } finally {
+      setIsSyncingFolders(false);
+    }
+  };
+
   const [delegationRules, setDelegationRules] = useState<DelegationRule[]>([]);
   const [selectedDelegationFile, setSelectedDelegationFile] = useState<File | null>(null);
 
@@ -410,10 +1093,14 @@ export function SettingsModal() {
           afterschoolManagers: data.afterschoolManagers || [],
           busManagers: data.busManagers || [],
           systemManagers: data.systemManagers || [],
+          peTeachers: data.peTeachers || [],
           healthTeachers: data.healthTeachers || [],
           specialTeachers: data.specialTeachers || [],
           librarianTeachers: data.librarianTeachers || [],
-          subjectTeacherGroups: data.subjectTeacherGroups || []
+          subjectTeacherGroups: data.subjectTeacherGroups || [],
+          customDutyRoles: data.customDutyRoles || [],
+          dutyRoleDepts: data.dutyRoleDepts || {},
+          dutyRolePermissions: data.dutyRolePermissions || {}
         });
       });
       getDelegationRules().then(data => {
@@ -540,6 +1227,140 @@ export function SettingsModal() {
       ...prev,
       departments: (prev.departments || []).map(d => d.id === deptId ? { ...d, memberEmails: d.memberEmails.filter(e => e !== email) } : d)
     }), '부서원이 삭제 및 저장되었습니다.');
+  };
+
+  // 업무 권한 설정 모달 제어 상태
+  const [permissionModalState, setPermissionModalState] = useState<{
+    open: boolean;
+    roleKey: string;
+    roleName: string;
+    permissions?: DutyRolePermission;
+  }>({
+    open: false,
+    roleKey: '',
+    roleName: '',
+  });
+
+  const openPermissionModal = (roleKey: string, roleName: string, permissions?: DutyRolePermission) => {
+    setPermissionModalState({
+      open: true,
+      roleKey,
+      roleName,
+      permissions: permissions || org.dutyRolePermissions?.[roleKey] || DEFAULT_ROLE_PERMISSIONS[roleKey] || { features: [], documents: [] },
+    });
+  };
+
+  const handleSaveRolePermission = (roleKey: string, newPerms: DutyRolePermission) => {
+    updateAndSaveOrg(prev => {
+      const isCustom = (prev.customDutyRoles || []).some(r => r.id === roleKey);
+      if (isCustom) {
+        return {
+          ...prev,
+          customDutyRoles: (prev.customDutyRoles || []).map(r =>
+            r.id === roleKey ? { ...r, permissions: newPerms } : r
+          )
+        };
+      }
+      return {
+        ...prev,
+        dutyRolePermissions: {
+          ...(prev.dutyRolePermissions || {}),
+          [roleKey]: newPerms
+        }
+      };
+    }, '권한 설정이 저장되었습니다.');
+  };
+
+  // 부서 내 특정 교원에게 소관 업무 지정 (실시간 저장)
+  const assignDutyToMember = (dutyKeyOrId: string, email: string, deptName?: string) => {
+    updateAndSaveOrg(prev => {
+      let next = { ...prev };
+      if (deptName && ['afterschool', 'bus', 'system', 'pe', 'health', 'special', 'librarian'].includes(dutyKeyOrId)) {
+        next.dutyRoleDepts = { ...(next.dutyRoleDepts || {}), [dutyKeyOrId]: deptName };
+      }
+      if (dutyKeyOrId === 'afterschool') {
+        const cur = next.afterschoolManagers || [];
+        if (!cur.includes(email)) next.afterschoolManagers = [...cur, email];
+      } else if (dutyKeyOrId === 'bus') {
+        const cur = next.busManagers || [];
+        if (!cur.includes(email)) next.busManagers = [...cur, email];
+      } else if (dutyKeyOrId === 'system') {
+        const cur = next.systemManagers || [];
+        if (!cur.includes(email)) next.systemManagers = [...cur, email];
+      } else if (dutyKeyOrId === 'pe') {
+        const cur = next.peTeachers || [];
+        if (!cur.includes(email)) next.peTeachers = [...cur, email];
+      } else if (dutyKeyOrId === 'health') {
+        const cur = next.healthTeachers || [];
+        if (!cur.includes(email)) next.healthTeachers = [...cur, email];
+      } else if (dutyKeyOrId === 'special') {
+        const cur = next.specialTeachers || [];
+        if (!cur.includes(email)) next.specialTeachers = [...cur, email];
+      } else if (dutyKeyOrId === 'librarian') {
+        const cur = next.librarianTeachers || [];
+        if (!cur.includes(email)) next.librarianTeachers = [...cur, email];
+      } else {
+        next.customDutyRoles = (next.customDutyRoles || []).map(r => {
+          if (r.id === dutyKeyOrId || r.roleName === dutyKeyOrId) {
+            const cur = r.teacherEmails || [];
+            return {
+              ...r,
+              deptName: deptName || r.deptName,
+              teacherEmails: cur.includes(email) ? cur : [...cur, email]
+            };
+          }
+          return r;
+        });
+      }
+      return next;
+    }, '담당 업무 배정이 저장되었습니다.');
+  };
+
+  // 부서 내에서 새 담당 업무를 즉시 생성하고 교원에게 배정 (실시간 저장)
+  const createAndAssignCustomDuty = (roleName: string, deptName: string, email?: string) => {
+    if (!roleName.trim()) return;
+    const newId = `duty_${Date.now()}`;
+    const newRole: CustomDutyRole = {
+      id: newId,
+      roleName: roleName.trim(),
+      deptName: deptName,
+      teacherEmails: email ? [email] : [],
+      permissions: { features: [], documents: [] }
+    };
+    updateAndSaveOrg(prev => ({
+      ...prev,
+      customDutyRoles: [...(prev.customDutyRoles || []), newRole]
+    }), `"${newRole.roleName}" 업무가 등록 및 저장되었습니다.`);
+  };
+
+  // 부서 내 특정 교원의 소관 업무 해제 (실시간 저장)
+  const removeDutyFromMember = (dutyKeyOrId: string, email: string) => {
+    updateAndSaveOrg(prev => {
+      let next = { ...prev };
+      if (dutyKeyOrId === 'afterschool' || dutyKeyOrId === '방과후학교' || dutyKeyOrId === '방과후학교 담당') {
+        next.afterschoolManagers = (next.afterschoolManagers || []).filter(e => e !== email);
+      } else if (dutyKeyOrId === 'bus' || dutyKeyOrId === '스쿨버스' || dutyKeyOrId === '스쿨버스 담당') {
+        next.busManagers = (next.busManagers || []).filter(e => e !== email);
+      } else if (dutyKeyOrId === 'system' || dutyKeyOrId === '시스템설정' || dutyKeyOrId === '시스템 설정 담당') {
+        next.systemManagers = (next.systemManagers || []).filter(e => e !== email);
+      } else if (dutyKeyOrId === 'pe' || dutyKeyOrId === '체육교사' || dutyKeyOrId === '학교체육' || dutyKeyOrId === '학교 체육') {
+        next.peTeachers = (next.peTeachers || []).filter(e => e !== email);
+      } else if (dutyKeyOrId === 'health' || dutyKeyOrId === '보건교사') {
+        next.healthTeachers = (next.healthTeachers || []).filter(e => e !== email);
+      } else if (dutyKeyOrId === 'special' || dutyKeyOrId === '특수교사') {
+        next.specialTeachers = (next.specialTeachers || []).filter(e => e !== email);
+      } else if (dutyKeyOrId === 'librarian' || dutyKeyOrId === '사서교사') {
+        next.librarianTeachers = (next.librarianTeachers || []).filter(e => e !== email);
+      } else {
+        next.customDutyRoles = (next.customDutyRoles || []).map(r => {
+          if (r.id === dutyKeyOrId || r.roleName === dutyKeyOrId) {
+            return { ...r, teacherEmails: (r.teacherEmails || []).filter(e => e !== email) };
+          }
+          return r;
+        });
+      }
+      return next;
+    }, '담당 업무 배정이 해제되었습니다.');
   };
   
   const handleUserUpdate = async (uid: string, email: string, field: 'role' | 'isAdmin' | 'annualLeaveLimit', value: string | boolean | number) => {
@@ -1056,6 +1877,32 @@ export function SettingsModal() {
     });
   };
 
+  // 표준 분류 기준과 기존 등록된 전결규정의 분류 항목 통합
+  const delegationStandards = useMemo(() => {
+    const list: DelegationCategoryStandard[] = JSON.parse(JSON.stringify(DEFAULT_DELEGATION_STANDARDS));
+    
+    (delegationRules || []).forEach(r => {
+      if (!r.mainType) return;
+      let m = list.find(x => x.mainType === r.mainType);
+      if (!m) {
+        m = { mainType: r.mainType, subTypes: [] };
+        list.push(m);
+      }
+      if (r.subType) {
+        let s = m.subTypes.find(x => x.name === r.subType);
+        if (!s) {
+          s = { name: r.subType, detailTypes: [] };
+          m.subTypes.push(s);
+        }
+        if (r.detailType && !s.detailTypes.includes(r.detailType)) {
+          s.detailTypes.push(r.detailType);
+        }
+      }
+    });
+
+    return list;
+  }, [delegationRules]);
+
   const handleDelegationUpdate = (index: number, field: keyof DelegationRule, value: string) => {
     updateAndSaveDelegation(prev => {
       const next = [...prev];
@@ -1064,10 +1911,48 @@ export function SettingsModal() {
     });
   };
 
+  const handleMainTypeChange = (index: number, newMain: string) => {
+    updateAndSaveDelegation(prev => {
+      const next = [...prev];
+      const targetStandard = delegationStandards.find(x => x.mainType === newMain);
+      const firstSub = targetStandard?.subTypes[0];
+      const firstDetail = firstSub?.detailTypes[0] || '';
+
+      next[index] = {
+        ...next[index],
+        mainType: newMain,
+        subType: firstSub?.name || '',
+        detailType: firstDetail,
+      };
+      return next;
+    });
+  };
+
+  const handleSubTypeChange = (index: number, newSub: string) => {
+    updateAndSaveDelegation(prev => {
+      const next = [...prev];
+      const curMain = next[index]?.mainType;
+      const targetStandard = delegationStandards.find(x => x.mainType === curMain);
+      const subObj = targetStandard?.subTypes.find(x => x.name === newSub);
+      const firstDetail = subObj?.detailTypes[0] || '';
+
+      next[index] = {
+        ...next[index],
+        subType: newSub,
+        detailType: firstDetail,
+      };
+      return next;
+    });
+  };
+
   const addDelegationRule = () => {
+    const firstMain = delegationStandards[0]?.mainType || '학부모 출결';
+    const firstSub = delegationStandards[0]?.subTypes[0]?.name || '결석계';
+    const firstDetail = delegationStandards[0]?.subTypes[0]?.detailTypes[0] || '일반/질병/인정';
+
     updateAndSaveDelegation(prev => [
       ...prev, 
-      { id: Date.now().toString(), mainType: '학부모 출결', subType: '결석계', detailType: '', intermediateApprover: 'NONE', finalApprover: 'GRADE_HEAD' }
+      { id: Date.now().toString(), mainType: firstMain, subType: firstSub, detailType: firstDetail, intermediateApprover: 'NONE', finalApprover: 'GRADE_HEAD' }
     ], '새 전결규정이 추가되었습니다.');
   };
 
@@ -1149,22 +2034,25 @@ export function SettingsModal() {
           <SettingsIcon className="h-5 w-5 text-muted-foreground" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="w-[95vw] max-w-[95vw] h-[92vh] flex flex-col p-0 gap-0 overflow-hidden">
-        <DialogHeader className="shrink-0 px-6 pt-6 pb-3 border-b">
-          <DialogTitle>시스템 설정</DialogTitle>
-          <DialogDescription>
-            문서 템플릿, 번호 체계, 학사 일정, 사용자 권한을 관리합니다.
+      <DialogContent 
+        className="w-[95vw] max-w-[95vw] h-[92vh] flex flex-col p-0 gap-0 overflow-hidden"
+        onPointerDownOutside={(e) => e.preventDefault()}
+      >
+        <DialogHeader className="shrink-0 px-6 py-2.5 border-b flex flex-row items-baseline gap-3 space-y-0">
+          <DialogTitle className="text-base font-bold text-slate-900 shrink-0">시스템 설정</DialogTitle>
+          <DialogDescription className="text-xs text-slate-500 truncate mt-0">
+            문서 템플릿, 번호 체계, 학사 일정, 전결규정 및 사용자 권한을 관리합니다.
           </DialogDescription>
         </DialogHeader>
         
-        <Tabs defaultValue="general" className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <TabsList className="grid w-full grid-cols-6 shrink-0 rounded-none border-b bg-muted/30 h-11 text-xs md:text-sm">
-            <TabsTrigger value="general" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><SettingsIcon className="mr-2 h-4 w-4 hidden md:block"/>일반</TabsTrigger>
-            <TabsTrigger value="academicCalendar" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary font-medium"><Calendar className="mr-2 h-4 w-4 hidden md:block"/>학사 일정 관리</TabsTrigger>
-            <TabsTrigger value="org" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><Network className="mr-2 h-4 w-4 hidden md:block"/>조직도</TabsTrigger>
-            <TabsTrigger value="delegation" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><FileText className="mr-2 h-4 w-4 hidden md:block"/>전결규정</TabsTrigger>
-            <TabsTrigger value="users" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><Users className="mr-2 h-4 w-4 hidden md:block"/>사용자</TabsTrigger>
-            <TabsTrigger value="audit" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><FileText className="mr-2 h-4 w-4 hidden md:block"/>감사 로그</TabsTrigger>
+            <TabsTrigger value="general" onClick={() => setActiveMainTab('general')} className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><SettingsIcon className="mr-2 h-4 w-4 hidden md:block"/>일반</TabsTrigger>
+            <TabsTrigger value="academicCalendar" onClick={() => setActiveMainTab('academicCalendar')} className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary font-medium"><Calendar className="mr-2 h-4 w-4 hidden md:block"/>학사 일정 관리</TabsTrigger>
+            <TabsTrigger value="org" onClick={() => setActiveMainTab('org')} className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><Network className="mr-2 h-4 w-4 hidden md:block"/>조직도</TabsTrigger>
+            <TabsTrigger value="delegation" onClick={() => setActiveMainTab('delegation')} className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><FileText className="mr-2 h-4 w-4 hidden md:block"/>전결규정</TabsTrigger>
+            <TabsTrigger value="users" onClick={() => setActiveMainTab('users')} className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><Users className="mr-2 h-4 w-4 hidden md:block"/>사용자</TabsTrigger>
+            <TabsTrigger value="audit" onClick={() => setActiveMainTab('audit')} className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"><FileText className="mr-2 h-4 w-4 hidden md:block"/>감사 로그</TabsTrigger>
           </TabsList>
           
           <TabsContent value="general" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
@@ -1244,118 +2132,197 @@ export function SettingsModal() {
                   </div>
                 </div>
 
-                {/* 🚫 체험학습 불인정(신청 불가) 기간 관리 카드 */}
-                <div className="space-y-4 pt-4 border-t border-slate-200">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
-                      <h4 className="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-red-600 shrink-0" />
-                        체험학습 불인정 기간(신청 불가 기간) 관리
-                        <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200 font-bold">
-                          학부모 신청 자동 차단 & 서식 1 연동
+                {/* 🌐 Google Drive 중앙 저장소 연동 설정 카드 */}
+                <div className="space-y-4 pt-5 border-t border-slate-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-indigo-50/70 rounded-2xl border border-indigo-200 shadow-2xs">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <HardDrive className="w-5 h-5 text-indigo-600 shrink-0" />
+                        <h4 className="font-bold text-indigo-950 text-sm">
+                          학교 Google Drive 중앙 저장소 연동
+                        </h4>
+                        <Badge variant="outline" className={cn(
+                          "text-[10px] font-bold px-1.5 py-0 h-4",
+                          googleDriveConfig.enabled ? "bg-emerald-100 text-emerald-800 border-emerald-300" : "bg-slate-100 text-slate-500 border-slate-300"
+                        )}>
+                          {googleDriveConfig.enabled ? '연동 활성화됨' : '미연동'}
                         </Badge>
-                      </h4>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        개학식/방학 전후, 재량휴업일 등 체험학습이 불인정되는 기간을 설정합니다. 학부모가 이 기간에 신청 시 안내 및 차단됩니다.
+                      </div>
+                      <p className="text-xs text-indigo-800">
+                        학교 Google Workspace 공용 드라이브(Shared Drive) 또는 메인 공유 폴더를 KISAPP의 중앙 아카이브 저장소로 지정합니다.
                       </p>
                     </div>
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={handleResetDefaultBlackoutPeriods}
-                      className="h-8 text-xs font-bold text-slate-700 border-slate-300 hover:bg-slate-100 shrink-0"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 mr-1" />
-                      기본 8개 규정 복원
-                    </Button>
+                    <Switch
+                      id="enableGoogleDrive"
+                      checked={googleDriveConfig.enabled}
+                      onCheckedChange={(checked) => setGoogleDriveConfig(prev => ({ ...prev, enabled: checked }))}
+                    />
                   </div>
 
-                  {/* 새 기간 추가 폼 */}
-                  <div className="p-3 bg-red-50/40 rounded-xl border border-red-200 space-y-3">
-                    <span className="font-bold text-red-950 text-xs flex items-center gap-1.5">
-                      <PlusCircle className="w-4 h-4 text-red-600" />
-                      새 불인정 기간 추가
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-7 gap-2 items-end">
-                      <div className="sm:col-span-2">
-                        <Label className="text-[10px] text-slate-600 font-semibold mb-1 block">시작일</Label>
-                        <Input 
-                          type="date" 
-                          value={newBlackoutStart} 
-                          onChange={e => setNewBlackoutStart(e.target.value)} 
-                          className="h-8 text-xs bg-white"
-                        />
+                  {googleDriveConfig.enabled && (
+                    <div className="p-4 bg-white rounded-2xl border border-indigo-200/90 shadow-2xs space-y-4 text-xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <Folder className="w-3.5 h-3.5 text-indigo-600" />
+                            중앙 저장소 공유 드라이브 명칭
+                          </Label>
+                          <Input
+                            placeholder="예: KIS_학교행정_중앙저장소"
+                            value={googleDriveConfig.sharedDriveName || ''}
+                            onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, sharedDriveName: e.target.value }))}
+                            className="h-9 text-xs font-semibold"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label className="font-bold text-slate-800">중앙 루트 폴더 ID (자동 추출 지원)</Label>
+                          <Input
+                            placeholder="예: 1A2b3C4d5E... 또는 아래 링크 입력 시 자동 추출"
+                            value={googleDriveConfig.rootFolderId || ''}
+                            onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, rootFolderId: e.target.value.trim() }))}
+                            className="h-9 text-xs font-mono"
+                          />
+                        </div>
                       </div>
-                      <div className="sm:col-span-2">
-                        <Label className="text-[10px] text-slate-600 font-semibold mb-1 block">종료일</Label>
-                        <Input 
-                          type="date" 
-                          value={newBlackoutEnd} 
-                          onChange={e => setNewBlackoutEnd(e.target.value)} 
-                          className="h-8 text-xs bg-white"
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <Label className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <span>Google Drive 중앙 폴더 웹 링크 (URL) *</span>
+                          </Label>
+                          {googleDriveConfig.rootFolderUrl && (
+                            <a
+                              href={googleDriveConfig.rootFolderUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] text-indigo-600 hover:underline flex items-center gap-1 font-bold"
+                            >
+                              <span>드라이브 접속 확인</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
+                        <Input
+                          placeholder="https://drive.google.com/drive/folders/1A2b3C... 또는 공유 드라이브 URL"
+                          value={googleDriveConfig.rootFolderUrl || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const folderMatch = val.match(/\/folders\/([a-zA-Z0-9-_]+)/i);
+                            setGoogleDriveConfig(prev => ({
+                              ...prev,
+                              rootFolderUrl: val,
+                              rootFolderId: folderMatch ? folderMatch[1] : prev.rootFolderId
+                            }));
+                          }}
+                          className="h-9 text-xs font-medium"
                         />
+                        <p className="text-[11px] text-slate-500">
+                          * 구글 드라이브에서 해당 폴더의 공유 대상을 <strong>'호치민시한국국제학교(@kshcm.net)'</strong>로 설정한 뒤 링크를 입력해주세요.
+                        </p>
                       </div>
-                      <div className="sm:col-span-2">
-                        <Label className="text-[10px] text-slate-600 font-semibold mb-1 block">불인정 사유 (예: 개학식 후 7일)</Label>
-                        <Input 
-                          type="text" 
-                          placeholder="사유 입력" 
-                          value={newBlackoutReason} 
-                          onChange={e => setNewBlackoutReason(e.target.value)} 
-                          className="h-8 text-xs bg-white"
-                        />
+
+                      {/* 🔑 서비스 계정 공유 안내 박스 */}
+                      <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-amber-950 text-xs flex items-center gap-1.5">
+                            <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                            시스템 자동 생성용 Google 서비스 계정 (필수 공유)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText('firebase-adminsdk-fbsvc@studio-9153973571-7837c.iam.gserviceaccount.com');
+                              toast({ title: '이메일 복사 완료', description: '서비스 계정 이메일이 클립보드에 복사되었습니다.' });
+                            }}
+                            className="px-2 py-0.5 text-[10.5px] bg-white border border-amber-300 text-amber-800 font-bold rounded hover:bg-amber-100 cursor-pointer"
+                          >
+                            이메일 복사
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-amber-800 leading-tight">
+                          구글 드라이브 중앙 폴더의 [공유] 메뉴에서 아래 서비스 계정을 <strong>'편집자(Editor)'</strong>로 한 번만 추가해주시면, 시스템이 하위 폴더 자동 분류 및 업무 제목 Google Sheets 파일을 자동으로 생성할 수 있습니다:
+                        </p>
+                        <p className="text-[10.5px] font-mono text-amber-900 bg-white/80 p-1.5 rounded border border-amber-200 select-all">
+                          firebase-adminsdk-fbsvc@studio-9153973571-7837c.iam.gserviceaccount.com
+                        </p>
                       </div>
-                      <div className="sm:col-span-1">
-                        <Button 
-                          type="button" 
-                          size="sm" 
-                          onClick={handleAddBlackoutPeriod}
-                          className="h-8 w-full text-xs font-bold bg-red-600 hover:bg-red-700 text-white"
+
+                      {/* 📂 표준 하위 폴더 4종 자동 동기화 섹션 */}
+                      <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                              <Folder className="w-3.5 h-3.5 text-indigo-600" />
+                              중앙 저장소 표준 하위 폴더 4종 분류 체계
+                            </h5>
+                            <p className="text-[10.5px] text-slate-500">
+                              결재완료문서, 업무작업문서, 결석계, 체험학습 전용 폴더가 중앙 루트 폴더 내에 자동 구성됩니다.
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={handleSyncFolders}
+                            disabled={isSyncingFolders || !googleDriveConfig.rootFolderId}
+                            className="h-7 px-2.5 text-xs font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 shrink-0 cursor-pointer shadow-2xs"
+                          >
+                            {isSyncingFolders ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RotateCcw className="w-3 h-3 mr-1" />}
+                            표준 하위 폴더 4종 동기화
+                          </Button>
+                        </div>
+
+                        {/* 하위 폴더 상태 카드 그리드 */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                          {[
+                            { name: '01_결재완료문서', desc: '승인 완료된 공문서 아카이브', id: googleDriveConfig.subFolders?.approvalDoneId, url: googleDriveConfig.subFolders?.approvalDoneUrl },
+                            { name: '02_업무작업문서(시트_첨부파일)', desc: '업무용 Google 시트 자동 생성 저장소', id: googleDriveConfig.subFolders?.taskWorkId, url: googleDriveConfig.subFolders?.taskWorkUrl },
+                            { name: '03_결석계(완료)', desc: '전결 완료된 결석계 서류 보관', id: googleDriveConfig.subFolders?.absenceDoneId, url: googleDriveConfig.subFolders?.absenceDoneUrl },
+                            { name: '04_체험학습신청서(완료)', desc: '전결 완료된 체험학습 서류 보관', id: googleDriveConfig.subFolders?.fieldTripDoneId, url: googleDriveConfig.subFolders?.fieldTripDoneUrl },
+                          ].map((f, i) => (
+                            <div key={i} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+                              <div className="min-w-0 pr-2">
+                                <p className="font-bold text-slate-800 flex items-center gap-1.5 truncate">
+                                  <Folder className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                  <span className="truncate">{f.name}</span>
+                                </p>
+                                <p className="text-[10px] text-slate-400 truncate">{f.desc}</p>
+                              </div>
+                              {f.url ? (
+                                <a
+                                  href={f.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-2 py-0.5 text-[10.5px] bg-white border border-slate-300 text-indigo-600 hover:text-indigo-800 font-bold rounded flex items-center gap-1 shrink-0 shadow-2xs"
+                                >
+                                  <span>열기</span>
+                                  <ExternalLink className="w-2.5 h-2.5" />
+                                </a>
+                              ) : (
+                                <Badge variant="secondary" className="text-[9.5px] px-1.5 py-0 text-slate-400 font-medium shrink-0">
+                                  미생성
+                                </Badge>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end pt-2 border-t border-slate-100">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleSaveGoogleDrive}
+                          disabled={isSavingGoogleDrive}
+                          className="h-8 px-4 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-2xs cursor-pointer"
                         >
-                          추가
+                          {isSavingGoogleDrive ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Save className="w-3 h-3 mr-1" />}
+                          Google Drive 저장소 설정 저장
                         </Button>
                       </div>
                     </div>
-                  </div>
-
-                  {/* 등록된 불인정 기간 테이블 */}
-                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-                    <Table>
-                      <TableHeader className="bg-slate-50">
-                        <TableRow>
-                          <TableHead className="w-12 text-center text-xs font-bold">No</TableHead>
-                          <TableHead className="text-xs font-bold w-48">불인정 기간</TableHead>
-                          <TableHead className="text-xs font-bold">불인정 사유</TableHead>
-                          <TableHead className="w-16 text-center text-xs font-bold">삭제</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(config.fieldTripBlackoutPeriods || DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS).map((period, idx) => (
-                          <TableRow key={period.id || idx} className="hover:bg-slate-50/80">
-                            <TableCell className="text-center font-mono text-xs text-slate-500">{idx + 1}</TableCell>
-                            <TableCell className="font-mono text-xs font-bold text-red-700">
-                              {period.startDate} ~ {period.endDate}
-                            </TableCell>
-                            <TableCell className="text-xs font-medium text-slate-800">
-                              {period.reason}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <Button 
-                                type="button" 
-                                variant="ghost" 
-                                size="icon" 
-                                onClick={() => handleDeleteBlackoutPeriod(period.id)}
-                                className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1382,7 +2349,7 @@ export function SettingsModal() {
                       </Badge>
                     </h4>
                     <p className="text-slate-500 text-xs mt-0.5">
-                      학교 전체 표준 학기 기간, 연간 총 수업일수, 휴업일/공휴일/학교행사를 통합 설정합니다.
+                      학교 전체 표준 학기 기간, 연간 총 수업일수, 표준 수업 시간대, 휴업일/공휴일/학교행사를 통합 설정합니다.
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 flex-wrap">
@@ -1411,22 +2378,64 @@ export function SettingsModal() {
                   </div>
                 </div>
 
-                {/* 1. 연간 총 수업일수 */}
-                <div className="space-y-1.5 bg-white p-4 rounded-xl border border-slate-200">
-                  <Label htmlFor="annualSchoolDays" className="font-bold text-slate-800 text-xs sm:text-sm">
-                    연간 총 수업일수 (일)
-                  </Label>
-                  <Input 
-                    id="annualSchoolDays" 
-                    type="number" 
-                    value={academicCal.annualSchoolDays || 190} 
-                    onChange={e => setAcademicCal(prev => ({ ...prev, annualSchoolDays: parseInt(e.target.value) || 190 }))} 
-                    className="text-xs font-bold w-full sm:w-48 bg-white"
-                    placeholder="기본값: 190"
-                  />
-                  <p className="text-[11px] text-slate-500">
-                    학부모 체험학습 허용 한도(10%) 및 출석인정 수업일수(2/3 수료 기준)의 원천 계산 기준입니다.
-                  </p>
+                {/* 1. 연간 총 수업일수 & 표준 일과 수업 시간대 설정 (2열 그리드) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* 좌측: 연간 총 수업일수 */}
+                  <div className="space-y-2 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="annualSchoolDays" className="font-bold text-slate-800 text-xs sm:text-sm block">
+                        연간 총 수업일수 (일)
+                      </Label>
+                      <Input 
+                        id="annualSchoolDays" 
+                        type="number" 
+                        value={academicCal.annualSchoolDays || 190} 
+                        onChange={e => setAcademicCal(prev => ({ ...prev, annualSchoolDays: parseInt(e.target.value) || 190 }))} 
+                        className="text-xs font-bold w-full sm:w-48 bg-white"
+                        placeholder="기본값: 190"
+                      />
+                    </div>
+                    <p className="text-[11px] text-slate-500 pt-1">
+                      학부모 체험학습 허용 한도(10%) 및 출석인정 수업일수(2/3 수료 기준)의 원천 계산 기준입니다.
+                    </p>
+                  </div>
+
+                  {/* 우측: 표준 일과 수업 시간대 설정 */}
+                  <div className="space-y-2.5 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label className="font-bold text-slate-800 text-xs sm:text-sm flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-indigo-600" />
+                        수업 시간대 설정 (교시별 시간표)
+                      </Label>
+                      <Badge variant="outline" className="text-[10px] bg-indigo-50 text-indigo-700 border-indigo-200 font-bold shrink-0">
+                        배정표·방과후 프리셋 연동
+                      </Badge>
+                    </div>
+
+                    {/* 교시 목록 요약 칩 */}
+                    <div className="flex flex-wrap gap-1.5 py-0.5 max-h-[85px] overflow-y-auto">
+                      {(academicCal.periodSchedules || DEFAULT_PERIOD_SCHEDULES).map((p) => (
+                        <span key={p.id} className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
+                          {p.name}: <span className="font-mono ml-1 text-indigo-600">{p.startTime}~{p.endTime}</span>
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                      <p className="text-[11px] text-slate-500 truncate">
+                        체육대회 배정표, 방과후 등 전 기능 기준 프리셋
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => setIsPeriodModalOpen(true)}
+                        className="h-7 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 ml-2"
+                      >
+                        <Pencil className="w-3 h-3 mr-1" />
+                        시간대 편집
+                      </Button>
+                    </div>
+                  </div>
                 </div>
 
                 {/* 2. 학기 및 방학 운영 기간 4개 Grid */}
@@ -1498,8 +2507,8 @@ export function SettingsModal() {
                     </div>
 
                     {/* 2학기 */}
-                    <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-2">
-                      <span className="font-bold text-emerald-900 text-xs block">🏫 2026학년도 2학기</span>
+                    <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-200 space-y-2">
+                      <span className="font-bold text-indigo-900 text-xs block">🏫 2026학년도 2학기</span>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <span className="text-[10px] text-slate-500 font-semibold block">시작일</span>
@@ -1529,8 +2538,8 @@ export function SettingsModal() {
                     </div>
 
                     {/* 겨울방학 */}
-                    <div className="p-3 bg-sky-50/60 rounded-xl border border-sky-200 space-y-2">
-                      <span className="font-bold text-sky-900 text-xs block">☃️ 2026학년도 겨울방학</span>
+                    <div className="p-3 bg-cyan-50/60 rounded-xl border border-cyan-200 space-y-2">
+                      <span className="font-bold text-cyan-900 text-xs block">❄️ 2027학년도 겨울방학</span>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <span className="text-[10px] text-slate-500 font-semibold block">시작일</span>
@@ -1575,15 +2584,25 @@ export function SettingsModal() {
                   {/* 등록 폼 */}
                   <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                      <div className="sm:col-span-3">
+                      <div className="sm:col-span-4 flex items-center gap-1">
                         <Input 
                           type="date" 
                           value={newEventDate} 
                           onChange={e => setNewEventDate(e.target.value)} 
-                          className="text-[11px] h-8 bg-white" 
+                          className="text-[11px] h-8 bg-white flex-1" 
+                          title="시작일"
+                        />
+                        <span className="text-xs text-slate-400 font-bold shrink-0">~</span>
+                        <Input 
+                          type="date" 
+                          value={newEventEndDate} 
+                          min={newEventDate}
+                          onChange={e => setNewEventEndDate(e.target.value)} 
+                          className="text-[11px] h-8 bg-white flex-1" 
+                          title="종료일 (기간 일정인 경우 입력, 당일 일정이면 비워둠)"
                         />
                       </div>
-                      <div className="sm:col-span-4">
+                      <div className="sm:col-span-3">
                         <Input 
                           type="text" 
                           placeholder="행사/휴업일 명칭..." 
@@ -1638,7 +2657,9 @@ export function SettingsModal() {
                       academicCal.events.map(ev => (
                         <div key={ev.id} className="flex items-center justify-between px-3 py-2 text-xs">
                           <div className="flex items-center gap-2 font-mono flex-wrap">
-                            <span className="font-bold text-slate-800">{ev.date}</span>
+                            <span className="font-bold text-slate-800">
+                              {ev.endDate && ev.endDate !== ev.date ? `${ev.date} ~ ${ev.endDate}` : ev.date}
+                            </span>
                             <span className="font-semibold text-slate-700">{ev.title}</span>
                             <Badge 
                               variant="outline" 
@@ -1668,10 +2689,124 @@ export function SettingsModal() {
                         </div>
                       ))
                     ) : (
-                      <div className="py-6 text-center text-slate-400 text-xs">
-                        등록된 휴업일 / 학교 행사가 없습니다.
+                      <div className="p-4 text-center text-slate-400 text-xs">
+                        등록된 휴업일/공휴일/행사가 없습니다.
                       </div>
                     )}
+                  </div>
+                </div>
+
+                {/* 4. 🚫 체험학습 불인정(신청 불가 기간) 관리 (학사 일정 관리 탭 맨 아래로 이동) */}
+                <div className="space-y-3 bg-white p-4 rounded-xl border border-red-200 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-xs sm:text-sm flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-red-600 shrink-0" />
+                        체험학습 불인정 기간(신청 불가 기간) 관리
+                        <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200 font-bold">
+                          학부모 신청 자동 차단 & 서식 1 연동
+                        </Badge>
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        개학식/방학 전후, 재량휴업일 등 체험학습이 불인정되는 기간을 설정합니다. 학부모가 이 기간에 신청 시 안내 및 차단됩니다.
+                      </p>
+                    </div>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={handleResetDefaultBlackoutPeriods}
+                      className="h-8 text-xs font-bold text-slate-700 border-slate-300 hover:bg-slate-100 shrink-0"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                      기본 8개 규정 복원
+                    </Button>
+                  </div>
+
+                  {/* 새 기간 추가 폼 */}
+                  <div className="p-3 bg-red-50/40 rounded-xl border border-red-200 space-y-2">
+                    <span className="font-bold text-red-950 text-xs flex items-center gap-1.5">
+                      <PlusCircle className="w-4 h-4 text-red-600" />
+                      새 불인정 기간 추가
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-7 gap-2 items-end">
+                      <div className="sm:col-span-2">
+                        <Label className="text-[10px] text-slate-600 font-semibold mb-1 block">시작일</Label>
+                        <Input 
+                          type="date" 
+                          value={newBlackoutStart} 
+                          onChange={e => setNewBlackoutStart(e.target.value)} 
+                          className="h-8 text-xs bg-white"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <Label className="text-[10px] text-slate-600 font-semibold mb-1 block">종료일</Label>
+                        <Input 
+                          type="date" 
+                          value={newBlackoutEnd} 
+                          onChange={e => setNewBlackoutEnd(e.target.value)} 
+                          className="h-8 text-xs bg-white"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <Label className="text-[10px] text-slate-600 font-semibold mb-1 block">불인정 사유 (예: 개학식 후 7일)</Label>
+                        <Input 
+                          type="text" 
+                          placeholder="사유 입력" 
+                          value={newBlackoutReason} 
+                          onChange={e => setNewBlackoutReason(e.target.value)} 
+                          className="h-8 text-xs bg-white"
+                        />
+                      </div>
+                      <div className="sm:col-span-1">
+                        <Button 
+                          type="button" 
+                          size="sm" 
+                          onClick={handleAddBlackoutPeriod}
+                          className="h-8 w-full text-xs font-bold bg-red-600 hover:bg-red-700 text-white"
+                        >
+                          추가
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 등록된 불인정 기간 테이블 */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs max-h-[160px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="bg-slate-50">
+                        <TableRow>
+                          <TableHead className="w-12 text-center text-xs font-bold">No</TableHead>
+                          <TableHead className="text-xs font-bold w-48">불인정 기간</TableHead>
+                          <TableHead className="text-xs font-bold">불인정 사유</TableHead>
+                          <TableHead className="w-16 text-center text-xs font-bold">삭제</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(config.fieldTripBlackoutPeriods || DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS).map((period, idx) => (
+                          <TableRow key={period.id || idx} className="hover:bg-slate-50/80">
+                            <TableCell className="text-center font-mono text-xs text-slate-500">{idx + 1}</TableCell>
+                            <TableCell className="font-mono text-xs font-bold text-red-700">
+                              {period.startDate} ~ {period.endDate}
+                            </TableCell>
+                            <TableCell className="text-xs font-medium text-slate-800">
+                              {period.reason}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Button 
+                                type="button" 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => handleDeleteBlackoutPeriod(period.id)}
+                                className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
               </div>
@@ -1685,355 +2820,626 @@ export function SettingsModal() {
           </TabsContent>
 
           <TabsContent value="org" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
-            <div className="flex-1 overflow-y-auto px-6 py-4">
-              <div className="space-y-6">
+            {/* 상단 3개 하위 서브탭 네비게이션 */}
+            <div className="shrink-0 px-6 pt-3.5 pb-2.5 border-b bg-slate-50/70">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 p-1 bg-slate-200/80 rounded-xl border border-slate-300/60">
+                  <button
+                    type="button"
+                    onClick={() => setOrgSubTab('leadership')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      orgSubTab === 'leadership'
+                        ? 'bg-white text-indigo-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5" />
+                    학교 리더십
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrgSubTab('duties')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      orgSubTab === 'duties'
+                        ? 'bg-white text-indigo-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Briefcase className="w-3.5 h-3.5" />
+                    업무 담당 설정
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrgSubTab('grades')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      orgSubTab === 'grades'
+                        ? 'bg-white text-indigo-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <GraduationCap className="w-3.5 h-3.5" />
+                    학년별 담임 및 교과
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrgSubTab('departments')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      orgSubTab === 'departments'
+                        ? 'bg-white text-indigo-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <FolderKanban className="w-3.5 h-3.5" />
+                    부서 관리
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-3">
+              {/* ========================================================================= */}
+              {/* 1. 하위 탭: 학교 리더십                                                   */}
+              {/* ========================================================================= */}
+              {orgSubTab === 'leadership' && (
                 <div className="space-y-4">
-                  <h4 className="font-semibold text-lg border-b pb-2">학교 리더십 및 업무 담당자</h4>
-                  
-                  {/* 교장/교감/교무부장은 3열 구성 */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-2xl">
-                    <div className="space-y-2">
-                      <Label>학교장 (교장)</Label>
-                      <Select value={org.principal} onValueChange={(val) => updateAndSaveOrg(p => ({ ...p, principal: val }), '학교장(교장) 설정이 저장되었습니다.')}>
-                        <SelectTrigger><SelectValue placeholder="선택 안됨" /></SelectTrigger>
-                        <SelectContent>
-                          {facultyUsers.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                  {/* 학교 리더십 (교장, 교감, 교무부장) */}
+                  <div className="space-y-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-indigo-600" />
+                        <h4 className="font-bold text-base text-slate-900">학교 리더십 (학교장 / 교감 / 교무부장)</h4>
+                      </div>
+                      <span className="text-xs text-slate-400">최종 결재선 및 학교 총괄 관리자</span>
                     </div>
-                    <div className="space-y-2">
-                      <Label>교감</Label>
-                      <Select value={org.vicePrincipal} onValueChange={(val) => updateAndSaveOrg(p => ({ ...p, vicePrincipal: val }), '교감 설정이 저장되었습니다.')}>
-                        <SelectTrigger><SelectValue placeholder="선택 안됨" /></SelectTrigger>
-                        <SelectContent>
-                          {facultyUsers.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="font-bold text-indigo-700">교무부장</Label>
-                      <Select value={org.academicHead} onValueChange={(val) => updateAndSaveOrg(p => ({ ...p, academicHead: val }), '교무부장 설정이 저장되었습니다.')}>
-                        <SelectTrigger className="border-indigo-200 bg-indigo-50/40"><SelectValue placeholder="선택 안됨" /></SelectTrigger>
-                        <SelectContent>
-                          {facultyUsers.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-bold text-slate-700">학교장 (교장)</Label>
+                        <SearchableUserSelect
+                          users={facultyUsers}
+                          value={org.principal}
+                          onSelect={(val) => updateAndSaveOrg(p => ({ ...p, principal: val }), '학교장(교장) 설정이 저장되었습니다.')}
+                          placeholder="선택 안됨"
+                          allowUnassign={true}
+                          unassignLabel="선택 안됨 (해제)"
+                          triggerClassName="h-9 text-xs"
+                          panelWidthClass="w-64"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-bold text-slate-700">교감</Label>
+                        <SearchableUserSelect
+                          users={facultyUsers}
+                          value={org.vicePrincipal}
+                          onSelect={(val) => updateAndSaveOrg(p => ({ ...p, vicePrincipal: val }), '교감 설정이 저장되었습니다.')}
+                          placeholder="선택 안됨"
+                          allowUnassign={true}
+                          unassignLabel="선택 안됨 (해제)"
+                          triggerClassName="h-9 text-xs"
+                          panelWidthClass="w-64"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-bold text-indigo-700">교무부장</Label>
+                        <SearchableUserSelect
+                          users={facultyUsers}
+                          value={org.academicHead}
+                          onSelect={(val) => updateAndSaveOrg(p => ({ ...p, academicHead: val }), '교무부장 설정이 저장되었습니다.')}
+                          placeholder="선택 안됨"
+                          allowUnassign={true}
+                          unassignLabel="선택 안됨 (해제)"
+                          triggerClassName="h-9 text-xs border-indigo-200 bg-indigo-50/40"
+                          panelWidthClass="w-64"
+                        />
+                      </div>
                     </div>
                   </div>
+                </div>
+              )}
 
-                  {/* 각 업무 담당자 복수 지정은 3열 구성 */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                    {/* 방과후학교 담당자 */}
-                    <div className="space-y-2 border p-3 rounded-lg bg-slate-50/50">
-                      <Label className="font-bold text-violet-700">방과후학교 담당자 (복수)</Label>
-                      <div className="flex flex-wrap gap-1 p-2 border rounded-md min-h-[50px] bg-white">
-                        {(org.afterschoolManagers || []).length === 0 ? (
-                          <span className="text-xs text-muted-foreground self-center">지정된 담당자 없음</span>
-                        ) : (
-                          (org.afterschoolManagers || []).map(email => {
-                            const u = users.find(x => x.email === email);
+              {/* ========================================================================= */}
+              {/* 2. 하위 탭: 업무 담당 설정                                                */}
+              {/* ========================================================================= */}
+              {orgSubTab === 'duties' && (
+                <div className="space-y-4">
+                  {/* 새 업무 담당 직책 추가 바 (소속 부서 선택 연동) */}
+                  <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-2 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-bold text-indigo-950 flex items-center gap-1">
+                              <PlusCircle className="w-3.5 h-3.5 text-indigo-600" />
+                              새 업무 담당 직책 추가
+                            </span>
+                            <p className="text-[11px] text-indigo-700">학교 내 업무/직책을 직접 생성하고, 어느 부서의 소관 업무인지 연결합니다.</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5 w-full lg:w-auto">
+                            <Input 
+                              placeholder="직책명 (예: 영재교육, 정보보안)" 
+                              value={newCustomDutyRoleName} 
+                              onChange={e => setNewCustomDutyRoleName(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  if (!newCustomDutyRoleName.trim()) return;
+                                  const newRole: CustomDutyRole = { 
+                                    id: Date.now().toString(), 
+                                    roleName: newCustomDutyRoleName.trim(), 
+                                    deptName: newCustomDutyDept !== 'unassigned' ? newCustomDutyDept : undefined,
+                                    teacherEmails: [] 
+                                  };
+                                  updateAndSaveOrg(p => ({ ...p, customDutyRoles: [...(p.customDutyRoles || []), newRole] }), `"${newRole.roleName}" 직책이 추가되었습니다.`);
+                                  setNewCustomDutyRoleName('');
+                                }
+                              }}
+                              className="h-8 text-xs bg-white border-indigo-200 w-40 sm:w-48"
+                            />
+
+                            {/* 소속 부서 선택 드롭다운 */}
+                            <Select value={newCustomDutyDept} onValueChange={setNewCustomDutyDept}>
+                              <SelectTrigger className="h-8 text-xs bg-white border-indigo-200 w-36">
+                                <SelectValue placeholder="소속 부서 선택" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="unassigned" className="text-xs font-semibold text-slate-500">소속 부서 없음 (직속)</SelectItem>
+                                {(org.departments || []).map(d => (
+                                  <SelectItem key={d.id} value={d.name} className="text-xs font-medium">
+                                    {d.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+
+                            <Button 
+                              type="button" 
+                              size="sm" 
+                              onClick={() => {
+                                if (!newCustomDutyRoleName.trim()) {
+                                  toast({ variant: 'destructive', title: '직책명 입력', description: '추가할 직책명을 입력하세요.' });
+                                  return;
+                                }
+                                const newRole: CustomDutyRole = { 
+                                  id: Date.now().toString(), 
+                                  roleName: newCustomDutyRoleName.trim(), 
+                                  deptName: newCustomDutyDept !== 'unassigned' ? newCustomDutyDept : undefined,
+                                  teacherEmails: [] 
+                                };
+                                updateAndSaveOrg(p => ({ ...p, customDutyRoles: [...(p.customDutyRoles || []), newRole] }), `"${newRole.roleName}" 직책이 추가되었습니다.`);
+                                setNewCustomDutyRoleName('');
+                              }}
+                              className="h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
+                            >
+                              <PlusCircle className="w-3.5 h-3.5 mr-1" />
+                              직책 추가
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* 기본 7종 업무 직책 카드 그리드 (소속 부서 지정 + 권한 설정) */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          {[
+                            {
+                              key: 'pe',
+                              title: '학교 체육 / 체육교사',
+                              colorClass: 'text-indigo-700',
+                              borderClass: 'border-indigo-200',
+                              bgClass: 'bg-indigo-50/40',
+                              badgeClass: 'bg-indigo-100 text-indigo-800',
+                            },
+                            {
+                              key: 'health',
+                              title: '보건교사 / 학생 건강',
+                              colorClass: 'text-emerald-800',
+                              borderClass: 'border-emerald-200',
+                              bgClass: 'bg-emerald-50/40',
+                              badgeClass: 'bg-emerald-100 text-emerald-800',
+                            },
+                            {
+                              key: 'afterschool',
+                              title: '방과후학교 담당자',
+                              colorClass: 'text-violet-700',
+                              borderClass: 'border-violet-200',
+                              bgClass: 'bg-violet-50/40',
+                              badgeClass: 'bg-violet-100 text-violet-800',
+                            },
+                            {
+                              key: 'bus',
+                              title: '스쿨버스 담당자',
+                              colorClass: 'text-amber-700',
+                              borderClass: 'border-amber-200',
+                              bgClass: 'bg-amber-50/40',
+                              badgeClass: 'bg-amber-100 text-amber-800',
+                            },
+                            {
+                              key: 'system',
+                              title: '시스템 설정 담당자',
+                              colorClass: 'text-sky-700',
+                              borderClass: 'border-sky-200',
+                              bgClass: 'bg-sky-50/40',
+                              badgeClass: 'bg-sky-100 text-sky-800',
+                            },
+                            {
+                              key: 'special',
+                              title: '특수교사 / 도움반',
+                              colorClass: 'text-teal-800',
+                              borderClass: 'border-teal-200',
+                              bgClass: 'bg-teal-50/40',
+                              badgeClass: 'bg-teal-100 text-teal-800',
+                            },
+                            {
+                              key: 'librarian',
+                              title: '사서교사',
+                              colorClass: 'text-slate-800',
+                              borderClass: 'border-slate-200',
+                              bgClass: 'bg-slate-50/40',
+                              badgeClass: 'bg-slate-100 text-slate-800',
+                            },
+                          ].map(item => {
+                            const assignedDept = org.dutyRoleDepts?.[item.key];
+                            const rolePerms = org.dutyRolePermissions?.[item.key] || DEFAULT_ROLE_PERMISSIONS[item.key] || { features: [], documents: [] };
+                            const featureCount = (rolePerms.features || []).length;
+                            const docCount = (rolePerms.documents || []).length;
+
                             return (
-                              <span key={email} className="inline-flex items-center gap-1 bg-violet-100 text-violet-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                                {u ? u.name : email}
-                                <button 
-                                  type="button" 
-                                  onClick={() => updateAndSaveOrg(p => ({ ...p, afterschoolManagers: (p.afterschoolManagers || []).filter(x => x !== email) }), '방과후 담당자가 삭제되었습니다.')}
-                                  className="text-violet-500 hover:text-violet-700 font-bold ml-1"
+                              <div key={item.key} className={cn("space-y-2.5 border p-3 rounded-xl flex flex-col justify-between shadow-2xs", item.bgClass)}>
+                                <div className="space-y-2">
+                                  {/* 헤더: 직책명 + 소속 부서 드롭다운 */}
+                                  <div className="flex items-center justify-between gap-1">
+                                    <Label className={cn("font-bold text-xs", item.colorClass)}>{item.title}</Label>
+                                    <Select 
+                                      value={assignedDept || 'unassigned'} 
+                                      onValueChange={(val) => {
+                                        updateAndSaveOrg(p => {
+                                          const nextDepts = { ...(p.dutyRoleDepts || {}) };
+                                          if (val === 'unassigned') {
+                                            delete nextDepts[item.key];
+                                          } else {
+                                            nextDepts[item.key] = val;
+                                          }
+                                          return { ...p, dutyRoleDepts: nextDepts };
+                                        }, `${item.title}의 소속 부서가 설정되었습니다.`);
+                                      }}
+                                    >
+                                      <SelectTrigger className={cn("h-6 text-[10px] w-28 bg-white font-medium", item.borderClass)}>
+                                        <SelectValue placeholder="소속 부서" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="unassigned" className="text-[11px]">소속 부서 없음</SelectItem>
+                                        {(org.departments || []).map(d => (
+                                          <SelectItem key={d.id} value={d.name} className="text-[11px] font-medium">{d.name}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+
+                                  {/* 소속 부서 안내 및 권한 상태 */}
+                                  <div className="p-2 border rounded-lg bg-white/95 space-y-1.5 min-h-[54px] shadow-2xs">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span className="text-slate-500 font-medium">배속 부서:</span>
+                                      <span className={cn("font-bold", assignedDept && assignedDept !== 'unassigned' ? "text-indigo-700" : "text-slate-400")}>
+                                        {assignedDept && assignedDept !== 'unassigned' ? assignedDept : '소속 부서 없음 (직속)'}
+                                      </span>
+                                    </div>
+
+                                    {/* 권한 요약 */}
+                                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-100">
+                                      <span className="text-slate-500 font-medium">부여 권한:</span>
+                                      <span className="text-indigo-600 font-bold text-[10px]">
+                                        기능 {featureCount}개 · 문서 {docCount}개
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* 권한 설정 버튼 */}
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openPermissionModal(item.key, item.title, rolePerms)}
+                                  className="h-7 text-xs font-bold w-full bg-white hover:bg-slate-50 border-slate-200 text-slate-700"
                                 >
-                                  ×
-                                </button>
-                              </span>
+                                  <ShieldCheck className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+                                  권한 설정
+                                </Button>
+                              </div>
                             );
-                          })
+                          })}
+                        </div>
+
+                        {/* 추가된 커스텀 업무 직책 카드 목록 */}
+                        {(org.customDutyRoles || []).length > 0 && (
+                          <div className="space-y-2 pt-2 border-t">
+                            <Label className="text-xs font-bold text-slate-700">추가된 업무 담당 직책 ({(org.customDutyRoles || []).length}개)</Label>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              {(org.customDutyRoles || []).map(role => {
+                                const rolePerms = role.permissions || { features: [], documents: [] };
+                                const featureCount = (rolePerms.features || []).length;
+                                const docCount = (rolePerms.documents || []).length;
+
+                                return (
+                                  <div key={role.id} className="space-y-2.5 border border-indigo-200 p-3 rounded-xl bg-indigo-50/30 flex flex-col justify-between shadow-2xs">
+                                    <div className="space-y-2">
+                                      <div className="flex items-center justify-between gap-1">
+                                        <Label className="font-bold text-xs text-indigo-900 flex items-center gap-1 truncate">
+                                          <Tag className="w-3 h-3 text-indigo-600 shrink-0" />
+                                          <span className="truncate">{role.roleName}</span>
+                                        </Label>
+                                        
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <Select 
+                                            value={role.deptName || 'unassigned'} 
+                                            onValueChange={(val) => {
+                                              updateAndSaveOrg(p => ({
+                                                ...p,
+                                                customDutyRoles: (p.customDutyRoles || []).map(r => 
+                                                  r.id === role.id ? { ...r, deptName: val !== 'unassigned' ? val : undefined } : r
+                                                )
+                                              }), `"${role.roleName}" 직책의 소속 부서가 설정되었습니다.`);
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-6 text-[10px] w-28 bg-white border-indigo-200 font-medium">
+                                              <SelectValue placeholder="소속 부서" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="unassigned" className="text-[11px]">소속 부서 없음</SelectItem>
+                                              {(org.departments || []).map(d => (
+                                                <SelectItem key={d.id} value={d.name} className="text-[11px] font-medium">{d.name}</SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (confirm(`"${role.roleName}" 직책을 삭제하시겠습니까?`)) {
+                                                updateAndSaveOrg(p => ({ ...p, customDutyRoles: (p.customDutyRoles || []).filter(r => r.id !== role.id) }), `"${role.roleName}" 직책이 삭제되었습니다.`);
+                                              }
+                                            }}
+                                            className="text-slate-400 hover:text-rose-600 text-xs font-bold p-0.5 ml-0.5"
+                                            title="직책 삭제"
+                                          >
+                                            ×
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div className="p-2 border rounded-lg bg-white/95 space-y-1.5 min-h-[54px] shadow-2xs">
+                                        <div className="flex items-center justify-between text-[11px]">
+                                          <span className="text-slate-500 font-medium">배속 부서:</span>
+                                          <span className={cn("font-bold", role.deptName ? "text-indigo-700" : "text-slate-400")}>
+                                            {role.deptName || '소속 부서 없음 (직속)'}
+                                          </span>
+                                        </div>
+
+                                        <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-100">
+                                          <span className="text-slate-500 font-medium">부여 권한:</span>
+                                          <span className="text-indigo-600 font-bold text-[10px]">
+                                            기능 {featureCount}개 · 문서 {docCount}개
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => openPermissionModal(role.id, role.roleName, rolePerms)}
+                                      className="h-7 text-xs font-bold w-full bg-white hover:bg-slate-50 border-slate-200 text-slate-700"
+                                    >
+                                      <ShieldCheck className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+                                      권한 설정
+                                    </Button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
                         )}
                       </div>
-                      <Select 
-                        value="" 
-                        onValueChange={(val) => {
-                          if (val && !(org.afterschoolManagers || []).includes(val)) {
-                            updateAndSaveOrg(p => ({ ...p, afterschoolManagers: [...(p.afterschoolManagers || []), val] }), '방과후 담당자가 추가되었습니다.');
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="교직원 선택..." /></SelectTrigger>
+                  )}
+
+              {/* ========================================================================= */}
+              {/* 2. 하위 탭: 학년별 담임 및 교과                                            */}
+              {/* ========================================================================= */}
+              {orgSubTab === 'grades' && (
+                <div className="space-y-5">
+                  {/* 상단 통합 제어 바: 학년 조회 (좌측) + 담임/교과 추가/배정 (우측) */}
+                  <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-indigo-50/60 p-3 rounded-xl border border-indigo-100">
+                    {/* 1. 학년 조회 (좌측) */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <GraduationCap className="w-4 h-4 text-indigo-700 shrink-0" />
+                      <Label className="text-xs font-bold text-indigo-950 whitespace-nowrap">학년 조회:</Label>
+                      <Select value={selectedGradeView} onValueChange={setSelectedGradeView}>
+                        <SelectTrigger className="w-28 sm:w-32 h-8 text-xs font-bold bg-white border-indigo-200">
+                          <SelectValue placeholder="학년 선택" />
+                        </SelectTrigger>
                         <SelectContent>
-                          {facultyUsers.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
+                          <SelectItem value="all" className="text-xs font-bold">전체 학년</SelectItem>
+                          <SelectItem value="유치원" className="text-xs font-medium">유치원</SelectItem>
+                          {[1, 2, 3, 4, 5, 6].map(g => (
+                            <SelectItem key={g} value={String(g)} className="text-xs font-medium">{g}학년</SelectItem>
+                          ))}
+                          <SelectItem value="중등" className="text-xs font-medium">중등</SelectItem>
                         </SelectContent>
                       </Select>
+                      <Badge variant="outline" className="text-[11px] font-bold text-indigo-700 bg-white border-indigo-200 shrink-0">
+                        {selectedGradeView === 'all' ? '전체' : `${selectedGradeView}${selectedGradeView.endsWith('학년') || selectedGradeView === '유치원' || selectedGradeView === '중등' ? '' : '학년'}`} 담임/교과
+                      </Badge>
                     </div>
 
-                    {/* 스쿨버스 담당자 */}
-                    <div className="space-y-2 border p-3 rounded-lg bg-slate-50/50">
-                      <Label className="font-bold text-amber-700">스쿨버스 담당자 (복수)</Label>
-                      <div className="flex flex-wrap gap-1 p-2 border rounded-md min-h-[50px] bg-white">
-                        {(org.busManagers || []).length === 0 ? (
-                          <span className="text-xs text-muted-foreground self-center">지정된 담당자 없음</span>
-                        ) : (
-                          (org.busManagers || []).map(email => {
-                            const u = users.find(x => x.email === email);
-                            return (
-                              <span key={email} className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                                {u ? u.name : email}
-                                <button 
-                                  type="button" 
-                                  onClick={() => updateAndSaveOrg(p => ({ ...p, busManagers: (p.busManagers || []).filter(x => x !== email) }), '스쿨버스 담당자가 삭제되었습니다.')}
-                                  className="text-amber-500 hover:text-amber-700 font-bold ml-1"
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            );
-                          })
-                        )}
+                    {/* 구분선 (데스크탑 이상) */}
+                    <div className="hidden xl:block h-6 w-px bg-indigo-200/80" />
+
+                    {/* 2. 추가 / 배정 기능 (우측) */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* 학년 선택 */}
+                      <div className="flex items-center gap-1">
+                        <Select value={newHomeroom.grade} onValueChange={val => setNewHomeroom({ ...newHomeroom, grade: val })}>
+                          <SelectTrigger className="w-20 h-8 bg-white text-xs font-medium"><SelectValue placeholder="학년" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="유치원" className="text-xs">유치원</SelectItem>
+                            {[1, 2, 3, 4, 5, 6].map(g => (
+                              <SelectItem key={g} value={String(g)} className="text-xs">{g}학년</SelectItem>
+                            ))}
+                            <SelectItem value="중등" className="text-xs">중등</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <Select 
-                        value="" 
-                        onValueChange={(val) => {
-                          if (val && !(org.busManagers || []).includes(val)) {
-                            updateAndSaveOrg(p => ({ ...p, busManagers: [...(p.busManagers || []), val] }), '스쿨버스 담당자가 추가되었습니다.');
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="교직원 선택..." /></SelectTrigger>
-                        <SelectContent>
-                          {facultyUsers.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
 
-                    {/* 시스템 설정 담당자 */}
-                    <div className="space-y-2 border p-3 rounded-lg bg-slate-50/50">
-                      <Label className="font-bold text-sky-700">시스템 설정 담당자 (복수)</Label>
-                      <div className="flex flex-wrap gap-1 p-2 border rounded-md min-h-[50px] bg-white">
-                        {(org.systemManagers || []).length === 0 ? (
-                          <span className="text-xs text-muted-foreground self-center">지정된 담당자 없음</span>
-                        ) : (
-                          (org.systemManagers || []).map(email => {
-                            const u = users.find(x => x.email === email);
-                            return (
-                              <span key={email} className="inline-flex items-center gap-1 bg-sky-100 text-sky-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                                {u ? u.name : email}
-                                <button 
-                                  type="button" 
-                                  onClick={() => updateAndSaveOrg(p => ({ ...p, systemManagers: (p.systemManagers || []).filter(x => x !== email) }), '시스템 설정 담당자가 삭제되었습니다.')}
-                                  className="text-sky-500 hover:text-sky-700 font-bold ml-1"
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            );
-                          })
-                        )}
+                      {/* 구분: 담임 / 교과 토글 */}
+                      <div className="flex bg-slate-200/80 p-0.5 rounded-lg border border-slate-300/60 h-8 items-center">
+                        <button
+                          type="button"
+                          onClick={() => setNewHomeroom(prev => ({ ...prev, roleType: 'homeroom' }))}
+                          className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
+                            newHomeroom.roleType !== 'subject'
+                              ? 'bg-white text-indigo-700 shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          담임
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewHomeroom(prev => ({ ...prev, roleType: 'subject' }))}
+                          className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
+                            newHomeroom.roleType === 'subject'
+                              ? 'bg-sky-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          교과
+                        </button>
                       </div>
-                      <Select 
-                        value="" 
-                        onValueChange={(val) => {
-                          if (val && !(org.systemManagers || []).includes(val)) {
-                            updateAndSaveOrg(p => ({ ...p, systemManagers: [...(p.systemManagers || []), val] }), '시스템 설정 담당자가 추가되었습니다.');
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="교직원 선택..." /></SelectTrigger>
-                        <SelectContent>
-                          {facultyUsers.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
 
-                  {/* 보건교사, 특수교사, 사서교사 지정 카드 (3열 구성) */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                    {/* 보건교사 */}
-                    <div className="space-y-2 border p-3 rounded-lg bg-emerald-50/50">
-                      <Label className="font-bold text-emerald-800">보건교사 (복수)</Label>
-                      <div className="flex flex-wrap gap-1 p-2 border rounded-md min-h-[50px] bg-white">
-                        {(org.healthTeachers || []).length === 0 ? (
-                          <span className="text-xs text-muted-foreground self-center">지정된 교사 없음</span>
-                        ) : (
-                          (org.healthTeachers || []).map(email => {
-                            const u = users.find(x => x.email === email);
-                            return (
-                              <span key={email} className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                                {u ? u.name : email}
-                                <button 
-                                  type="button" 
-                                  onClick={() => updateAndSaveOrg(p => ({ ...p, healthTeachers: (p.healthTeachers || []).filter(x => x !== email) }), '보건교사가 삭제되었습니다.')}
-                                  className="text-emerald-600 hover:text-emerald-800 font-bold ml-1"
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            );
-                          })
-                        )}
+                      {/* 담임일 때만 반 입력 및 학년부장 스위치 */}
+                      {newHomeroom.roleType !== 'subject' ? (
+                        <>
+                          <Input 
+                            type="number" 
+                            min="1" 
+                            max="20" 
+                            placeholder="반" 
+                            value={newHomeroom.class} 
+                            onChange={e => setNewHomeroom({ ...newHomeroom, class: e.target.value })} 
+                            className="w-14 h-8 bg-white text-center font-bold text-xs" 
+                          />
+                          <Label className="text-xs flex items-center gap-1 cursor-pointer select-none px-1">
+                            <Switch 
+                              className="scale-75 origin-left"
+                              checked={newHomeroom.isGradeHead}
+                              onCheckedChange={(checked) => setNewHomeroom({ ...newHomeroom, isGradeHead: checked })}
+                            />
+                            <span className="text-[11px] font-semibold text-slate-700">부장</span>
+                          </Label>
+                        </>
+                      ) : (
+                        <span className="text-xs font-semibold text-sky-700 bg-sky-100/70 border border-sky-200 px-2 py-1 rounded-md">
+                          {newHomeroom.grade}학년 교과
+                        </span>
+                      )}
+
+                      {/* 담당 교사 검색 콤보박스 */}
+                      <div className="w-32 sm:w-36 shrink-0">
+                        <SearchableUserSelect
+                          users={facultyUsers}
+                          value={newHomeroom.email}
+                          onSelect={(email) => setNewHomeroom(prev => ({ ...prev, email }))}
+                          placeholder="교사 선택"
+                          triggerClassName="w-32 sm:w-36 h-8 text-xs px-2 font-normal border-slate-300 hover:bg-slate-50 shadow-2xs"
+                          panelWidthClass="w-56"
+                        />
                       </div>
-                      <Select 
-                        value="" 
-                        onValueChange={(val) => {
-                          if (val && !(org.healthTeachers || []).includes(val)) {
-                            updateAndSaveOrg(p => ({ ...p, healthTeachers: [...(p.healthTeachers || []), val] }), '보건교사가 추가되었습니다.');
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="교직원 선택..." /></SelectTrigger>
-                        <SelectContent>
-                          {facultyUsers.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
 
-                    {/* 특수교사 (도움반) */}
-                    <div className="space-y-2 border p-3 rounded-lg bg-teal-50/50">
-                      <Label className="font-bold text-teal-800">특수교사 / 도움반 (복수)</Label>
-                      <div className="flex flex-wrap gap-1 p-2 border rounded-md min-h-[50px] bg-white">
-                        {(org.specialTeachers || []).length === 0 ? (
-                          <span className="text-xs text-muted-foreground self-center">지정된 교사 없음</span>
-                        ) : (
-                          (org.specialTeachers || []).map(email => {
-                            const u = users.find(x => x.email === email);
-                            return (
-                              <span key={email} className="inline-flex items-center gap-1 bg-teal-100 text-teal-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                                {u ? u.name : email}
-                                <button 
-                                  type="button" 
-                                  onClick={() => updateAndSaveOrg(p => ({ ...p, specialTeachers: (p.specialTeachers || []).filter(x => x !== email) }), '특수교사가 삭제되었습니다.')}
-                                  className="text-teal-600 hover:text-teal-800 font-bold ml-1"
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            );
-                          })
-                        )}
-                      </div>
-                      <Select 
-                        value="" 
-                        onValueChange={(val) => {
-                          if (val && !(org.specialTeachers || []).includes(val)) {
-                            updateAndSaveOrg(p => ({ ...p, specialTeachers: [...(p.specialTeachers || []), val] }), '특수교사가 추가되었습니다.');
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="교직원 선택..." /></SelectTrigger>
-                        <SelectContent>
-                          {facultyUsers.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* 사서교사 */}
-                    <div className="space-y-2 border p-3 rounded-lg bg-indigo-50/50">
-                      <Label className="font-bold text-indigo-800">사서교사 (복수)</Label>
-                      <div className="flex flex-wrap gap-1 p-2 border rounded-md min-h-[50px] bg-white">
-                        {(org.librarianTeachers || []).length === 0 ? (
-                          <span className="text-xs text-muted-foreground self-center">지정된 교사 없음</span>
-                        ) : (
-                          (org.librarianTeachers || []).map(email => {
-                            const u = users.find(x => x.email === email);
-                            return (
-                              <span key={email} className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                                {u ? u.name : email}
-                                <button 
-                                  type="button" 
-                                  onClick={() => updateAndSaveOrg(p => ({ ...p, librarianTeachers: (p.librarianTeachers || []).filter(x => x !== email) }), '사서교사가 삭제되었습니다.')}
-                                  className="text-indigo-600 hover:text-indigo-800 font-bold ml-1"
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            );
-                          })
-                        )}
-                      </div>
-                      <Select 
-                        value="" 
-                        onValueChange={(val) => {
-                          if (val && !(org.librarianTeachers || []).includes(val)) {
-                            updateAndSaveOrg(p => ({ ...p, librarianTeachers: [...(p.librarianTeachers || []), val] }), '사서교사가 추가되었습니다.');
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="교직원 선택..." /></SelectTrigger>
-                        <SelectContent>
-                          {facultyUsers.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* 교과전담교사 등록 카드 (과목명 커스텀 등록 및 교원 지정) */}
-                  <div className="space-y-3 border p-4 rounded-xl bg-purple-50/40 border-purple-200 mt-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h5 className="font-bold text-sm text-purple-900">교과전담교사 등록 및 담당 지정</h5>
-                        <p className="text-xs text-purple-700/80">체육전담, 영어전담 등 과목 명칭을 관리자가 직접 등록하고 담당 교원을 배정합니다.</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 max-w-md">
-                      <Input 
-                        placeholder="새 과목 명칭 입력 (예: 체육전담, 영어전담)" 
-                        value={newSubjectCategoryName} 
-                        onChange={e => setNewSubjectCategoryName(e.target.value)}
-                        className="h-8 text-xs bg-white border-purple-200"
-                      />
-                      <Button 
-                        type="button"
-                        size="sm"
-                        onClick={() => {
-                          if (!newSubjectCategoryName.trim()) {
-                            toast({ variant: 'destructive', title: '과목명 입력', description: '추가할 과목 명칭을 입력하세요.' });
-                            return;
-                          }
-                          const newGrp = {
-                            id: Date.now().toString(),
-                            categoryName: newSubjectCategoryName.trim(),
-                            teacherEmails: []
-                          };
-                          setOrg(p => ({ ...p, subjectTeacherGroups: [...(p.subjectTeacherGroups || []), newGrp] }));
-                          setNewSubjectCategoryName('');
-                          toast({ title: '과목 등록 완료', description: `"${newGrp.categoryName}" 카테고리가 추가되었습니다.` });
-                        }}
-                        className="h-8 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shrink-0"
-                      >
-                        <PlusCircle className="w-3.5 h-3.5 mr-1" />
-                        과목 추가
+                      {/* 추가 / 배정 버튼 */}
+                      <Button onClick={() => {
+                        if (!newHomeroom.email) return toast({ variant: 'destructive', description: '교사를 선택해주세요.'});
+                        const grade = newHomeroom.grade;
+                        if (newHomeroom.roleType === 'subject') {
+                          updateAndSaveOrg(prev => {
+                            const prevList = prev.gradeSubjects?.[grade] || [];
+                            const updatedList = Array.from(new Set([...prevList, newHomeroom.email]));
+                            const newGradeSubjects = { ...(prev.gradeSubjects || {}), [grade]: updatedList };
+                            return { ...prev, gradeSubjects: newGradeSubjects };
+                          }, `${grade}학년 교과 교사 배정이 즉시 저장되었습니다.`);
+                          setNewHomeroom(prev => ({ ...prev, email: '', isGradeHead: false }));
+                        } else {
+                          const clazz = (newHomeroom.class || '1').trim();
+                          if (!clazz) return toast({ variant: 'destructive', description: '반 번호를 입력해주세요.' });
+                          const key = `${grade}-${clazz}`;
+                          updateAndSaveOrg(prev => {
+                            const newHomerooms = { ...prev.homerooms, [key]: newHomeroom.email };
+                            const newGradeHeads = { ...prev.gradeHeads };
+                            if (newHomeroom.isGradeHead) {
+                              newGradeHeads[grade] = newHomeroom.email;
+                            }
+                            return { ...prev, homerooms: newHomerooms, gradeHeads: newGradeHeads };
+                          }, `${grade}학년 ${clazz}반 담임 배정이 즉시 저장되었습니다.`);
+                          setNewHomeroom(prev => ({ ...prev, email: '', isGradeHead: false }));
+                        }
+                      }} className="h-8 px-3 font-bold bg-indigo-600 hover:bg-indigo-700 text-white text-xs shrink-0">
+                        추가 / 배정
                       </Button>
                     </div>
+                  </div>
 
-                    {/* 등록된 교과전담 과목 및 담당 교사 태그 목록 */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
-                      {(org.subjectTeacherGroups || []).length === 0 ? (
-                        <div className="col-span-full py-4 text-center text-xs text-slate-400">
-                          등록된 교과전담 과목이 없습니다. 위에서 과목 명칭을 입력하여 추가하세요.
-                        </div>
-                      ) : (
-                        (org.subjectTeacherGroups || []).map(group => (
-                          <div key={group.id} className="border border-purple-200 rounded-lg p-2.5 bg-white space-y-2">
-                            <div className="flex items-center justify-between border-b pb-1.5">
-                              <span className="font-bold text-xs text-purple-900">{group.categoryName}</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOrg(p => ({
-                                    ...p,
-                                    subjectTeacherGroups: (p.subjectTeacherGroups || []).filter(g => g.id !== group.id)
-                                  }));
-                                }}
-                                className="text-slate-400 hover:text-rose-600 text-xs font-bold p-0.5"
-                              >
-                                삭제
-                              </button>
-                            </div>
+                  {/* 교과전담교사 등록 및 담당 지정 (자잘한 설명 없이 한 줄 컴팩트 바) */}
+                  <div className="bg-purple-50/50 border border-purple-200/80 rounded-xl p-2.5 sm:p-3 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2 shrink-0">
+                        <UserCheck className="w-4 h-4 text-purple-600" />
+                        <span className="font-bold text-xs text-purple-950">교과전담교사 등록 및 담당 지정</span>
+                        <Badge variant="outline" className="text-[10px] font-bold text-purple-700 bg-purple-100/80 border-purple-300">
+                          과목 {(org.subjectTeacherGroups || []).length}개
+                        </Badge>
+                      </div>
 
-                            <div className="flex flex-wrap gap-1 min-h-[36px] items-center p-1 border border-dashed rounded bg-slate-50">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Input 
+                          placeholder="새 과목 명칭 (예: 체육전담, 영어전담)" 
+                          value={newSubjectCategoryName} 
+                          onChange={e => setNewSubjectCategoryName(e.target.value)}
+                          className="w-48 sm:w-56 h-8 text-xs bg-white border-purple-200"
+                        />
+                        <Button 
+                          type="button"
+                          size="sm"
+                          onClick={() => {
+                            if (!newSubjectCategoryName.trim()) {
+                              toast({ variant: 'destructive', title: '과목명 입력', description: '추가할 과목 명칭을 입력하세요.' });
+                              return;
+                            }
+                            const newGrp = {
+                              id: Date.now().toString(),
+                              categoryName: newSubjectCategoryName.trim(),
+                              teacherEmails: []
+                            };
+                            setOrg(p => ({ ...p, subjectTeacherGroups: [...(p.subjectTeacherGroups || []), newGrp] }));
+                            setNewSubjectCategoryName('');
+                            toast({ title: '과목 등록 완료', description: `"${newGrp.categoryName}" 과목이 추가되었습니다.` });
+                          }}
+                          className="h-8 px-3 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shrink-0"
+                        >
+                          <PlusCircle className="w-3.5 h-3.5 mr-1" />
+                          과목 추가
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* 등록된 교과전담 과목 및 담당 교사 인라인 태그 목록 */}
+                    {(org.subjectTeacherGroups || []).length > 0 ? (
+                      <div className="flex flex-wrap gap-2 pt-1.5 border-t border-purple-200/50">
+                        {(org.subjectTeacherGroups || []).map(group => (
+                          <div key={group.id} className="flex items-center gap-1.5 bg-white border border-purple-200 rounded-lg px-2.5 py-1 shadow-2xs">
+                            <span className="font-bold text-xs text-purple-900 shrink-0">{group.categoryName}</span>
+                            <div className="flex items-center gap-1 flex-wrap">
                               {group.teacherEmails.length === 0 ? (
-                                <span className="text-[11px] text-slate-400">담당 교사 없음</span>
+                                <span className="text-[10px] text-slate-400">교사 미배정</span>
                               ) : (
                                 group.teacherEmails.map(email => {
                                   const u = users.find(x => x.email === email);
                                   return (
-                                    <span key={email} className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                    <span key={email} className="inline-flex items-center gap-0.5 bg-purple-100 text-purple-800 text-[10px] font-semibold px-1.5 py-0.5 rounded">
                                       {u ? u.name : email}
                                       <button 
                                         type="button" 
@@ -2047,7 +3453,7 @@ export function SettingsModal() {
                                             )
                                           }));
                                         }}
-                                        className="text-purple-600 hover:text-purple-800 font-bold ml-0.5"
+                                        className="text-purple-600 hover:text-purple-900 font-bold ml-0.5"
                                       >
                                         ×
                                       </button>
@@ -2057,178 +3463,54 @@ export function SettingsModal() {
                               )}
                             </div>
 
-                            <Select 
-                              value="" 
-                              onValueChange={(val) => {
-                                if (val && !group.teacherEmails.includes(val)) {
-                                  setOrg(p => ({
-                                    ...p,
-                                    subjectTeacherGroups: (p.subjectTeacherGroups || []).map(g => 
-                                      g.id === group.id 
-                                        ? { ...g, teacherEmails: [...g.teacherEmails, val] }
-                                        : g
-                                    )
-                                  }));
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="h-7 text-[11px]"><SelectValue placeholder="담당 교사 지정..." /></SelectTrigger>
-                              <SelectContent>
-                                {facultyUsers.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-2 gap-2">
-                    <h4 className="font-semibold text-lg text-gray-900">학년별 담임 및 교과(전담) 교사 배정</h4>
-                    <span className="text-xs text-muted-foreground">각 학년의 학년부장, 학급 담임교사 및 학년 소속 교과 교사를 배정합니다.</span>
-                  </div>
-                  
-                  {/* 담임 및 교과 배정 일괄 등록 카드 */}
-                  <Card className="border shadow-sm bg-muted/20">
-                      <CardHeader className="p-4 pb-2">
-                          <CardTitle className="text-sm font-bold">담임 및 학년 교과 일괄 등록</CardTitle>
-                          <CardDescription className="text-xs">
-                              엑셀 파일(.xlsx)로 여러 반의 담임 및 학년 교과(반 컬럼에 '교과' 입력) 교사를 일괄 등록합니다.
-                          </CardDescription>
-                      </CardHeader>
-                      <CardContent className="p-4 pt-0 flex flex-col sm:flex-row items-center gap-2">
-                          <Input type="file" accept=".xlsx, .xls" onChange={handleHomeroomFileSelect} className="h-9 flex-grow text-xs bg-white"/>
-                          <div className="flex gap-1.5 w-full sm:w-auto shrink-0">
-                              <Button onClick={handleDownloadHomeroomTemplate} variant="outline" size="sm" className="h-9 text-xs">
-                                  <Download className="mr-1.5 h-3.5 w-3.5"/>
-                                  양식
-                              </Button>
-                              <Button onClick={handleHomeroomUpload} disabled={isUploading || !selectedHomeroomFile} size="sm" className="h-9 text-xs">
-                                  {isUploading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> : <FileUp className="mr-1.5 h-3.5 w-3.5"/>}
-                                  업로드
-                              </Button>
-                          </div>
-                      </CardContent>
-                  </Card>
-                  
-                  <div className="flex flex-col lg:flex-row gap-3 items-end bg-muted/30 p-4 rounded-lg border border-border/50 space-y-3 lg:space-y-0">
-                    <div className="flex flex-wrap items-end gap-2.5 w-full lg:w-auto">
-                      {/* 학년 선택 */}
-                      <div className="space-y-1.5 w-24">
-                        <Label className="text-xs font-bold text-slate-700">학년</Label>
-                        <Select value={newHomeroom.grade} onValueChange={val => setNewHomeroom({ ...newHomeroom, grade: val })}>
-                          <SelectTrigger className="h-9 bg-white font-medium"><SelectValue placeholder="학년" /></SelectTrigger>
-                          <SelectContent>
-                            {[1, 2, 3, 4, 5, 6].map(g => (
-                              <SelectItem key={g} value={String(g)}>{g}학년</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {/* 구분: 담임 / 교과 토글 버튼 */}
-                      <div className="space-y-1.5">
-                        <Label className="text-xs font-bold text-slate-700">구분</Label>
-                        <div className="flex bg-slate-200/80 p-0.5 rounded-lg border border-slate-300/60 h-9">
-                          <button
-                            type="button"
-                            onClick={() => setNewHomeroom(prev => ({ ...prev, roleType: 'homeroom' }))}
-                            className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1 ${
-                              newHomeroom.roleType !== 'subject'
-                                ? 'bg-white text-primary shadow-sm'
-                                : 'text-slate-600 hover:text-slate-900'
-                            }`}
-                          >
-                            담임
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setNewHomeroom(prev => ({ ...prev, roleType: 'subject' }))}
-                            className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1 ${
-                              newHomeroom.roleType === 'subject'
-                                ? 'bg-sky-600 text-white shadow-sm'
-                                : 'text-slate-600 hover:text-slate-900'
-                            }`}
-                          >
-                            교과
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* 담임일 때만 반 입력 및 학년부장 스위치 표시 */}
-                      {newHomeroom.roleType !== 'subject' ? (
-                        <>
-                          <div className="space-y-1.5 w-20">
-                            <Label className="text-xs font-bold text-slate-700">반</Label>
-                            <Input 
-                              type="number" 
-                              min="1" 
-                              max="20" 
-                              placeholder="1" 
-                              value={newHomeroom.class} 
-                              onChange={e => setNewHomeroom({ ...newHomeroom, class: e.target.value })} 
-                              className="h-9 bg-white text-center font-bold" 
-                            />
-                          </div>
-                          <div className="space-y-1.5 flex items-center justify-center pb-2 px-1">
-                            <Label className="text-xs flex items-center gap-1.5 cursor-pointer">
-                              <Switch 
-                                checked={newHomeroom.isGradeHead}
-                                onCheckedChange={(checked) => setNewHomeroom({ ...newHomeroom, isGradeHead: checked })}
+                            <div className="w-24 shrink-0">
+                              <SearchableUserSelect
+                                users={facultyUsers}
+                                placeholder="+ 교사 지정"
+                                clearOnSelect={true}
+                                triggerClassName="h-6 w-24 text-[10px] bg-slate-50 border-purple-200"
+                                panelWidthClass="w-56"
+                                align="end"
+                                onSelect={(val) => {
+                                  if (val && !group.teacherEmails.includes(val)) {
+                                    setOrg(p => ({
+                                      ...p,
+                                      subjectTeacherGroups: (p.subjectTeacherGroups || []).map(g => 
+                                        g.id === group.id 
+                                          ? { ...g, teacherEmails: [...g.teacherEmails, val] }
+                                          : g
+                                      )
+                                    }));
+                                  }
+                                }}
                               />
-                              <span className="font-semibold text-xs text-slate-700">학년부장</span>
-                            </Label>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOrg(p => ({
+                                  ...p,
+                                  subjectTeacherGroups: (p.subjectTeacherGroups || []).filter(g => g.id !== group.id)
+                                }));
+                              }}
+                              className="text-slate-400 hover:text-rose-600 text-[11px] font-bold ml-1"
+                              title="과목 삭제"
+                            >
+                              ×
+                            </button>
                           </div>
-                        </>
-                      ) : (
-                        <div className="flex items-center pb-2 px-2">
-                          <span className="text-xs font-semibold text-sky-700 bg-sky-100/70 border border-sky-200 px-2.5 py-1 rounded-md">
-                            {newHomeroom.grade}학년 교과 배정
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="space-y-1.5 flex-1 w-full">
-                      <Label className="text-xs font-bold text-slate-700">담당 교사</Label>
-                      <Select value={newHomeroom.email} onValueChange={(val) => setNewHomeroom({ ...newHomeroom, email: val })}>
-                        <SelectTrigger className="h-9 bg-white"><SelectValue placeholder="교사 선택" /></SelectTrigger>
-                        <SelectContent>
-                          {facultyUsers.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Button onClick={() => {
-                      if (!newHomeroom.email) return toast({ variant: 'destructive', description: '교사를 선택해주세요.'});
-                      const grade = newHomeroom.grade;
-                      if (newHomeroom.roleType === 'subject') {
-                        updateAndSaveOrg(prev => {
-                          const prevList = prev.gradeSubjects?.[grade] || [];
-                          const updatedList = Array.from(new Set([...prevList, newHomeroom.email]));
-                          const newGradeSubjects = { ...(prev.gradeSubjects || {}), [grade]: updatedList };
-                          return { ...prev, gradeSubjects: newGradeSubjects };
-                        }, `${grade}학년 교과 교사 배정이 즉시 저장되었습니다.`);
-                        setNewHomeroom(prev => ({ ...prev, email: '', isGradeHead: false }));
-                      } else {
-                        const clazz = (newHomeroom.class || '1').trim();
-                        if (!clazz) return toast({ variant: 'destructive', description: '반 번호를 입력해주세요.' });
-                        const key = `${grade}-${clazz}`;
-                        updateAndSaveOrg(prev => {
-                          const newHomerooms = { ...prev.homerooms, [key]: newHomeroom.email };
-                          const newGradeHeads = { ...prev.gradeHeads };
-                          if (newHomeroom.isGradeHead) {
-                            newGradeHeads[grade] = newHomeroom.email;
-                          }
-                          return { ...prev, homerooms: newHomerooms, gradeHeads: newGradeHeads };
-                        }, `${grade}학년 ${clazz}반 담임 배정이 즉시 저장되었습니다.`);
-                        setNewHomeroom(prev => ({ ...prev, email: '', isGradeHead: false }));
-                      }
-                    }} className="h-9 w-full lg:w-auto font-bold bg-primary hover:bg-primary/90 text-white">추가/변경</Button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-purple-700/60 pt-0.5">
+                        등록된 교과전담 과목이 없습니다. 우측에서 과목을 입력하여 추가하세요.
+                      </div>
+                    )}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mt-4">
+                  {/* 배정된 담임 및 교과 교사 카드 그리드 (선택된 학년 필터링 - 가로폭 축소 및 다열 배치) */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
                     {(() => {
                       // 1. Homeroom items
                       const homeroomItems = Object.entries(org.homerooms || {}).map(([gradeClass, email]) => {
@@ -2260,36 +3542,41 @@ export function SettingsModal() {
                         });
                       });
 
-                      // 3. Combined & sorted by grade, then by classNum
-                      const allGradeItems = [...homeroomItems, ...subjectItems].sort((a, b) => {
+                      // 3. Combined & Filtered by selectedGradeView
+                      const filteredItems = [...homeroomItems, ...subjectItems].filter(item => {
+                        if (selectedGradeView === 'all') return true;
+                        return item.gradeStr === selectedGradeView;
+                      }).sort((a, b) => {
                         if (a.grade !== b.grade) return a.grade - b.grade;
                         return a.classNum - b.classNum;
                       });
 
-                      if (allGradeItems.length === 0) {
+                      if (filteredItems.length === 0) {
                         return (
-                          <div className="col-span-full py-8 text-center text-sm text-muted-foreground bg-muted/20 rounded-lg border border-dashed">
-                            배정된 학년 담임 및 교과 교사가 없습니다. 위에서 추가하거나 엑셀로 일괄 등록하세요.
+                          <div className="col-span-full py-8 text-center text-xs text-muted-foreground bg-slate-50 rounded-xl border border-dashed border-slate-300">
+                            {selectedGradeView === 'all' 
+                              ? '배정된 학년 담임 및 교과 교사가 없습니다. 위에서 추가하거나 엑셀로 일괄 등록하세요.'
+                              : `${selectedGradeView}에 배정된 담임 및 교과 교사가 없습니다. 위에서 교사를 추가하세요.`}
                           </div>
                         );
                       }
 
-                      return allGradeItems.map((item) => {
+                      return filteredItems.map((item) => {
                         const user = users.find(u => u.email?.toLowerCase() === item.email?.toLowerCase());
                         const isGradeHead = item.type === 'homeroom' && org.gradeHeads[item.gradeStr] === item.email;
 
                         if (item.type === 'subject') {
                           return (
-                            <div key={item.key} className="flex flex-col bg-sky-50/40 border border-sky-200/80 p-3 rounded-lg shadow-sm space-y-3 justify-between">
-                              <div className="flex justify-between items-start">
-                                <div className="flex flex-col overflow-hidden">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-bold text-sm text-sky-950">{item.gradeStr}학년 교과</span>
-                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-sky-100/70 text-sky-700 border-sky-300">교과</Badge>
+                            <div key={item.key} className="flex flex-col bg-sky-50/50 border border-sky-200/80 p-2 sm:p-2.5 rounded-xl shadow-2xs space-y-2 justify-between">
+                              <div className="flex justify-between items-start gap-1">
+                                <div className="flex flex-col overflow-hidden min-w-0">
+                                  <div className="flex items-center gap-1">
+                                    <span className="font-bold text-xs text-sky-950 truncate">{item.gradeStr} 교과</span>
+                                    <Badge variant="outline" className="text-[9px] px-1 py-0 bg-sky-100 text-sky-700 border-sky-300 font-bold shrink-0">교과</Badge>
                                   </div>
-                                  <span className="text-xs text-muted-foreground truncate">{user ? user.name : item.email}</span>
+                                  <span className="text-xs text-slate-700 font-medium truncate mt-0.5">{user ? user.name : item.email}</span>
                                 </div>
-                                <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0 hover:bg-red-50 hover:text-red-600 rounded" onClick={() => {
+                                <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive shrink-0 hover:bg-red-50 hover:text-red-600 rounded p-0" onClick={() => {
                                   updateAndSaveOrg(prev => {
                                     const prevList = prev.gradeSubjects?.[item.gradeStr] || [];
                                     const updatedList = prevList.filter(e => e.toLowerCase() !== item.email.toLowerCase());
@@ -2297,24 +3584,29 @@ export function SettingsModal() {
                                     return { ...prev, gradeSubjects: newGradeSubjects };
                                   }, `${item.gradeStr}학년 교과 배정이 삭제되었습니다.`);
                                 }}>
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <Trash2 className="h-3 w-3" />
                                 </Button>
                               </div>
-                              <div className="flex items-center justify-between border-t border-sky-200/50 pt-2 mt-1">
-                                <span className="text-[11px] text-sky-700 font-medium">{item.gradeStr}학년 소속 교과 교사</span>
+                              <div className="flex items-center justify-between border-t border-sky-200/50 pt-1.5 mt-0.5">
+                                <span className="text-[10px] text-sky-700 font-medium truncate">{item.gradeStr}학년 교과</span>
                               </div>
                             </div>
                           );
                         }
 
                         return (
-                          <div key={item.key} className="flex flex-col bg-card border p-3 rounded-lg shadow-sm space-y-3 justify-between">
-                            <div className="flex justify-between items-start">
-                              <div className="flex flex-col overflow-hidden">
-                                <span className="font-bold text-sm text-gray-900">{item.gradeStr}학년 {item.classStr}반</span>
-                                <span className="text-xs text-muted-foreground truncate">{user ? user.name : item.email}</span>
+                          <div key={item.key} className="flex flex-col bg-white border border-slate-200 p-2 sm:p-2.5 rounded-xl shadow-2xs space-y-2 justify-between hover:border-indigo-200 transition-colors">
+                            <div className="flex justify-between items-start gap-1">
+                              <div className="flex flex-col overflow-hidden min-w-0">
+                                <div className="flex items-center gap-1">
+                                  <span className="font-bold text-xs text-slate-900 truncate">{item.gradeStr}학년 {item.classStr}반</span>
+                                  {isGradeHead && (
+                                    <Badge className="text-[9px] px-1 py-0 bg-indigo-600 text-white font-bold shrink-0">부장</Badge>
+                                  )}
+                                </div>
+                                <span className="text-xs text-slate-700 font-medium truncate mt-0.5">{user ? user.name : item.email}</span>
                               </div>
-                              <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0 hover:bg-red-50 hover:text-red-600 rounded" onClick={() => {
+                              <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive shrink-0 hover:bg-red-50 hover:text-red-600 rounded p-0" onClick={() => {
                                 updateAndSaveOrg(prev => {
                                   const newHomerooms = { ...prev.homerooms };
                                   delete newHomerooms[`${item.gradeStr}-${item.classStr}`];
@@ -2325,12 +3617,13 @@ export function SettingsModal() {
                                   return { ...prev, homerooms: newHomerooms, gradeHeads: newGradeHeads };
                                 }, `${item.gradeStr}학년 ${item.classStr}반 담임 배정이 삭제되었습니다.`);
                               }}>
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Trash2 className="h-3 w-3" />
                               </Button>
                             </div>
-                            <div className="flex items-center justify-between border-t pt-2 mt-1">
-                              <Label className="text-xs flex items-center gap-1.5 cursor-pointer">
+                            <div className="flex items-center justify-between border-t border-slate-100 pt-1.5 mt-0.5">
+                              <Label className="text-[11px] flex items-center gap-1 cursor-pointer select-none">
                                 <Switch 
+                                  className="scale-75 origin-left"
                                   checked={isGradeHead}
                                   onCheckedChange={(checked) => {
                                     updateAndSaveOrg(prev => {
@@ -2344,7 +3637,7 @@ export function SettingsModal() {
                                     }, `${item.gradeStr}학년 학년부장 설정이 저장되었습니다.`);
                                   }}
                                 />
-                                <span className={`text-[11px] font-bold transition-colors ${isGradeHead ? 'text-primary' : 'text-muted-foreground'}`}>학년부장</span>
+                                <span className={`text-[10px] font-bold transition-colors ${isGradeHead ? 'text-indigo-600' : 'text-muted-foreground'}`}>부장</span>
                               </Label>
                             </div>
                           </div>
@@ -2352,267 +3645,706 @@ export function SettingsModal() {
                       });
                     })()}
                   </div>
-                </div>
 
-                {/* 동명이인 처리 UI */}
-                {duplicatePendingRows.length > 0 && (
-                  <div className="space-y-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                    <div className="flex items-center justify-between">
-                      <h5 className="font-bold text-amber-800 text-sm">⚠️ 동명이인 발생 — 교사 선택 필요</h5>
-                      <span className="text-xs text-amber-600">{duplicatePendingRows.length}건</span>
-                    </div>
-                    <p className="text-xs text-amber-700">아래 반에 배정하려는 이름의 교사가 여러 명입니다. 정확한 교사를 직접 선택해 주세요.</p>
-                    <div className="space-y-2">
-                      {duplicatePendingRows.map(row => {
-                        const key = `${row.grade}-${row.class}`;
-                        return (
-                          <div key={key} className="flex items-center gap-3 bg-white rounded-lg border border-amber-200 px-3 py-2">
-                            <span className="text-sm font-bold text-gray-900 shrink-0 w-20">{row.grade}학년 {row.class}반</span>
-                            <Select
-                              value={duplicateResolvedEmails[key] || ''}
-                              onValueChange={(val) => setDuplicateResolvedEmails(prev => ({ ...prev, [key]: val }))}
-                            >
-                              <SelectTrigger className="h-8 flex-1 text-xs">
-                                <SelectValue placeholder="교사를 선택해 주세요" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {row.candidates.map(c => (
-                                  <SelectItem key={c.email} value={c.email}>
-                                    {c.name} ({c.email}) — {c.role}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            {row.isHead && (
-                              <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded shrink-0">학년부장</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="flex gap-2 justify-end pt-1">
-                      <Button variant="outline" size="sm" onClick={() => { setDuplicatePendingRows([]); setDuplicateResolvedEmails({}); }}>
-                        취소
-                      </Button>
-                      <Button size="sm" onClick={handleResolveDuplicates} className="bg-amber-600 hover:bg-amber-700 text-white">
-                        선택 완료 ({Object.keys(duplicateResolvedEmails).length}/{duplicatePendingRows.length}건)
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-lg border-b pb-2">부서 관리</h4>
-                  
-                  {/* 부서 일괄 등록 카드 */}
-                  <Card className="border shadow-sm bg-muted/20">
+                  {/* 담임 및 교과 배정 일괄 등록 카드 */}
+                  <Card className="border shadow-2xs bg-slate-50/50 mt-4 rounded-xl">
                     <CardHeader className="p-4 pb-2">
-                      <CardTitle className="text-sm font-bold">부서 일괄 등록</CardTitle>
-                      <CardDescription className="text-xs">
-                        엑셀 파일로 부서를 일괄 등록합니다. 한 행에 한 명씩 (부서명 / 이름 / 직책) 입력하세요. 같은 부서명끼리 자동 그룹핑됩니다.
+                      <CardTitle className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <FileUp className="w-3.5 h-3.5 text-indigo-600" />
+                        담임 및 학년 교과 엑셀 일괄 등록
+                      </CardTitle>
+                      <CardDescription className="text-[11px]">
+                        엑셀 파일(.xlsx)로 여러 반의 담임 및 학년 교과(반 컬럼에 '교과' 입력) 교사를 한 번에 업로드합니다.
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="p-4 pt-0 flex flex-col sm:flex-row items-center gap-2">
-                      <Input type="file" accept=".xlsx, .xls" onChange={handleDeptFileSelect} className="h-9 flex-grow text-xs bg-white"/>
+                      <Input type="file" accept=".xlsx, .xls" onChange={handleHomeroomFileSelect} className="h-8 flex-grow text-xs bg-white rounded-lg"/>
                       <div className="flex gap-1.5 w-full sm:w-auto shrink-0">
-                        <Button onClick={handleDownloadDeptTemplate} variant="outline" size="sm" className="h-9 text-xs">
+                        <Button onClick={handleDownloadHomeroomTemplate} variant="outline" size="sm" className="h-8 text-xs font-semibold rounded-lg">
                           <Download className="mr-1.5 h-3.5 w-3.5"/>
                           양식
                         </Button>
-                        <Button onClick={handleDeptUpload} disabled={isUploading || !selectedDeptFile} size="sm" className="h-9 text-xs">
+                        <Button onClick={handleHomeroomUpload} disabled={isUploading || !selectedHomeroomFile} size="sm" className="h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg">
                           {isUploading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> : <FileUp className="mr-1.5 h-3.5 w-3.5"/>}
                           업로드
                         </Button>
                       </div>
                     </CardContent>
                   </Card>
-                  
-                  <div className="flex gap-2 items-center mb-4">
-                    <Input 
-                      placeholder="새 부서명 (예: 문예방과후부)" 
-                      value={newDeptName} 
-                      onChange={e => setNewDeptName(e.target.value)} 
-                      onKeyDown={e => e.key === 'Enter' && addDepartment()}
-                      className="max-w-[300px]"
-                    />
-                    <Button onClick={addDepartment} variant="secondary">부서 추가</Button>
-                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {(org.departments || []).map(dept => (
-                      <Card key={dept.id} className="border shadow-sm">
-                        <CardHeader className="p-4 pb-2 flex flex-row items-center justify-between">
-                          <CardTitle className="text-base font-bold">{dept.name}</CardTitle>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => deleteDepartment(dept.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0 space-y-4">
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">부장 교사</Label>
-                            <Select value={dept.headEmail || ''} onValueChange={(val) => updateDeptHead(dept.id, val)}>
-                              <SelectTrigger className="h-8"><SelectValue placeholder="부장 선택" /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="unassigned">선택 안됨</SelectItem>
-                                {facultyUsers.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">부원 배정 (다중 추가 가능)</Label>
-                            <div className="flex gap-2">
-                              <Select onValueChange={(val) => addDeptMember(dept.id, val)} value="">
-                                <SelectTrigger className="h-8 flex-1">
-                                  <SelectValue placeholder="부원 추가..." />
+                  {/* 동명이인 발생 시 선택 UI */}
+                  {duplicatePendingRows.length > 0 && (
+                    <div className="space-y-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                      <div className="flex items-center justify-between">
+                        <h5 className="font-bold text-amber-800 text-xs">⚠️ 동명이인 발생 — 교사 선택 필요</h5>
+                        <span className="text-xs text-amber-600 font-bold">{duplicatePendingRows.length}건</span>
+                      </div>
+                      <p className="text-[11px] text-amber-700">아래 반에 배정하려는 이름의 교사가 여러 명입니다. 정확한 교사를 직접 선택해 주세요.</p>
+                      <div className="space-y-2">
+                        {duplicatePendingRows.map(row => {
+                          const key = `${row.grade}-${row.class}`;
+                          return (
+                            <div key={key} className="flex items-center gap-3 bg-white rounded-lg border border-amber-200 px-3 py-2">
+                              <span className="text-xs font-bold text-gray-900 shrink-0 w-20">{row.grade}학년 {row.class}반</span>
+                              <Select
+                                value={duplicateResolvedEmails[key] || ''}
+                                onValueChange={(val) => setDuplicateResolvedEmails(prev => ({ ...prev, [key]: val }))}
+                              >
+                                <SelectTrigger className="h-8 flex-1 text-xs">
+                                  <SelectValue placeholder="교사를 선택해 주세요" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {facultyUsers.map(u => <SelectItem key={u.email} value={u.email}>{u.name} ({u.email})</SelectItem>)}
+                                  {row.candidates.map(c => (
+                                    <SelectItem key={c.email} value={c.email} className="text-xs">
+                                      {c.name} ({c.email}) — {c.role}
+                                    </SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
+                              {row.isHead && (
+                                <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded shrink-0">학년부장</span>
+                              )}
                             </div>
-                            {dept.memberEmails.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mt-2">
-                                {dept.memberEmails.map(email => {
-                                  const u = users.find(user => user.email === email);
-                                  return (
-                                    <div key={email} className="flex items-center gap-1 bg-secondary/50 text-secondary-foreground text-xs px-2 py-1 rounded-full">
-                                      <span className="truncate max-w-[120px]">{u ? u.name : email}</span>
-                                      <button onClick={() => removeDeptMember(dept.id, email)} className="text-muted-foreground hover:text-destructive">
-                                        <XCircle className="h-3 w-3" />
-                                      </button>
-                                    </div>
-                                  );
-                                })}
+                          );
+                        })}
+                      </div>
+                      <div className="flex gap-2 justify-end pt-1">
+                        <Button variant="outline" size="sm" onClick={() => { setDuplicatePendingRows([]); setDuplicateResolvedEmails({}); }} className="h-7 text-xs">
+                          취소
+                        </Button>
+                        <Button size="sm" onClick={handleResolveDuplicates} className="h-7 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white">
+                          선택 완료 ({Object.keys(duplicateResolvedEmails).length}/{duplicatePendingRows.length}건)
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ========================================================================= */}
+              {/* 3. 하위 탭: 부서 관리 (부서 선택 탭 + 집중형 와이드 관리 카드)               */}
+              {/* ========================================================================= */}
+              {orgSubTab === 'departments' && (
+                <div className="space-y-2.5">
+                  {/* 상단 제어 바: 부서 드롭다운 선택 + 새 부서 추가 폼 */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-indigo-50/60 p-2 px-3 rounded-xl border border-indigo-100 shadow-2xs">
+                    {/* 좌측: 부서 선택 드롭다운 */}
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <FolderKanban className="w-4 h-4 text-indigo-700 shrink-0" />
+                      <Label className="text-xs font-bold text-indigo-950 whitespace-nowrap shrink-0">부서 선택:</Label>
+                      
+                      {(org.departments || []).length === 0 ? (
+                        <span className="text-xs text-slate-400 font-medium">등록된 부서가 없습니다. 우측에서 부서를 추가하세요.</span>
+                      ) : (
+                        <Select 
+                          value={activeDept?.id || ''} 
+                          onValueChange={(val) => setSelectedDeptId(val)}
+                        >
+                          <SelectTrigger className="w-48 sm:w-56 h-8 text-xs font-bold bg-white border-indigo-200 text-slate-900 shadow-2xs">
+                            <SelectValue placeholder="부서 선택" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-72">
+                            {(org.departments || []).map(dept => (
+                              <SelectItem key={dept.id} value={dept.id} className="text-xs font-semibold">
+                                <div className="flex items-center justify-between gap-3 w-full">
+                                  <span>{dept.name}</span>
+                                  <span className="text-[10px] text-slate-400 font-normal">
+                                    (부원 {dept.memberEmails.length}명)
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+
+                      {activeDept && (
+                        <Badge variant="outline" className="hidden sm:inline-flex text-[10px] font-bold bg-white text-indigo-700 border-indigo-200 px-2 py-0.5 shadow-2xs shrink-0">
+                          전체 {(org.departments || []).length}개 부서 중 선택됨
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* 우측: 새 부서 추가 인라인 폼 */}
+                    <div className="flex items-center gap-1.5 shrink-0 pt-1 sm:pt-0 sm:border-l sm:border-indigo-100 sm:pl-3">
+                      <Input 
+                        placeholder="새 부서명 (예: 교무기획부)" 
+                        value={newDeptName} 
+                        onChange={e => setNewDeptName(e.target.value)} 
+                        onKeyDown={e => e.key === 'Enter' && addDepartment()}
+                        className="h-8 text-xs w-full sm:w-40 bg-white border-indigo-200"
+                      />
+                      <Button onClick={addDepartment} size="sm" className="h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 px-2.5 shadow-2xs">
+                        <PlusCircle className="w-3.5 h-3.5 mr-1" />
+                        부서 추가
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* 선택된 부서 단일 와이드 관리 카드 */}
+                  {(() => {
+                    if (!activeDept) {
+                      return (
+                        <div className="p-6 text-center bg-slate-50 border border-dashed rounded-xl space-y-1">
+                          <FolderKanban className="w-6 h-6 mx-auto text-slate-300" />
+                          <p className="text-xs font-bold text-slate-600">등록된 부서가 없습니다.</p>
+                          <p className="text-[11px] text-slate-400">상단에서 부서명을 입력하여 부서를 생성해 주세요.</p>
+                        </div>
+                      );
+                    }
+
+                    const dept = activeDept;
+
+                    // 교원의 담당 업무 목록을 계산하는 헬퍼 함수
+                    const getStaffDutyRoles = (email: string): string[] => {
+                      if (!email) return [];
+                      const emailLower = email.toLowerCase();
+                      const matchedDuties: string[] = [];
+
+                      if (org.peTeachers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('학교체육');
+                      if (org.afterschoolManagers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('방과후학교');
+                      if (org.busManagers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('스쿨버스');
+                      if (org.systemManagers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('시스템설정');
+                      if (org.healthTeachers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('보건교사');
+                      if (org.specialTeachers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('특수교사');
+                      if (org.librarianTeachers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('사서교사');
+
+                      (org.customDutyRoles || []).forEach(duty => {
+                        if (duty.teacherEmails?.some(m => m.toLowerCase() === emailLower)) {
+                          matchedDuties.push(duty.roleName);
+                        }
+                      });
+
+                      return matchedDuties;
+                    };
+
+                    // 1. 학교 전체의 업무 직책 목록 (기본 7종 + 커스텀 직책)
+                    const allSystemDuties: { id: string; name: string; deptName?: string }[] = [
+                      { id: 'pe', name: '학교체육', deptName: org.dutyRoleDepts?.['pe'] },
+                      { id: 'health', name: '보건교사', deptName: org.dutyRoleDepts?.['health'] },
+                      { id: 'afterschool', name: '방과후학교', deptName: org.dutyRoleDepts?.['afterschool'] },
+                      { id: 'bus', name: '스쿨버스', deptName: org.dutyRoleDepts?.['bus'] },
+                      { id: 'system', name: '시스템설정', deptName: org.dutyRoleDepts?.['system'] },
+                      { id: 'special', name: '특수교사', deptName: org.dutyRoleDepts?.['special'] },
+                      { id: 'librarian', name: '사서교사', deptName: org.dutyRoleDepts?.['librarian'] },
+                      ...(org.customDutyRoles || []).map(duty => ({
+                        id: duty.id,
+                        name: duty.roleName,
+                        deptName: duty.deptName
+                      }))
+                    ];
+
+                    // 2. 해당 부서 소관으로 연결된 업무 직책 목록
+                    const deptDuties = allSystemDuties.filter(d => d.deptName === dept.name);
+                    const otherDuties = allSystemDuties.filter(d => d.deptName !== dept.name);
+
+                    const headDutyList = dept.headEmail ? getStaffDutyRoles(dept.headEmail) : [];
+
+                    return (
+                      <Card className="border border-slate-200 shadow-2xs rounded-xl overflow-hidden bg-white">
+                        {/* 컴팩트 단일 헤더 바: 부서명 + 소관업무 요약 + 소관업무 배속 드롭다운 + 삭제 버튼 */}
+                        <div className="px-3 py-1.5 bg-slate-50 border-b flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            <FolderKanban className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                            <span className="text-xs font-bold text-slate-900">{dept.name}</span>
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-white text-indigo-700 border-indigo-200 font-bold">
+                              소속 부원 {dept.memberEmails.length}명
+                            </Badge>
+
+                            {/* 소관 업무 배지 목록 */}
+                            {deptDuties.length > 0 ? (
+                              <div className="flex items-center gap-1 ml-1 flex-wrap">
+                                <span className="text-[10px] text-slate-400 font-semibold">소관:</span>
+                                {deptDuties.map(duty => (
+                                  <Badge key={duty.id} variant="outline" className="text-[9px] font-bold bg-indigo-50 text-indigo-700 border-indigo-200 px-1.5 py-0">
+                                    {duty.name}
+                                  </Badge>
+                                ))}
                               </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-medium ml-1">소관 업무 미배속</span>
                             )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {/* 부서 소관 업무 추가/가져오기 드롭다운 */}
+                            <Select onValueChange={(val) => {
+                              if (val === '__CREATE_DEPT_DUTY__') {
+                                const customName = window.prompt('이 부서에 새로 등록할 소관 업무명을 입력해 주세요:');
+                                if (customName?.trim()) {
+                                  createAndAssignCustomDuty(customName.trim(), dept.name);
+                                }
+                              } else {
+                                if (['afterschool', 'bus', 'system', 'health', 'special', 'librarian'].includes(val)) {
+                                  setOrg(prev => ({
+                                    ...prev,
+                                    dutyRoleDepts: { ...(prev.dutyRoleDepts || {}), [val]: dept.name }
+                                  }));
+                                } else {
+                                  setOrg(prev => ({
+                                    ...prev,
+                                    customDutyRoles: (prev.customDutyRoles || []).map(r => r.id === val ? { ...r, deptName: dept.name } : r)
+                                  }));
+                                }
+                              }
+                            }}>
+                              <SelectTrigger className="h-6 px-2 text-[10px] bg-white hover:bg-slate-100 border-slate-200 text-slate-700 font-bold">
+                                <SelectValue placeholder="+ 소관 업무 추가" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {otherDuties.length > 0 && (
+                                  <SelectGroup>
+                                    <SelectLabel className="text-[10px] text-slate-500 font-bold">학교 업무 직책 가져오기</SelectLabel>
+                                    {otherDuties.map(d => (
+                                      <SelectItem key={d.id} value={d.id} className="text-xs">
+                                        {d.name} {d.deptName ? `(${d.deptName})` : '(미배속)'}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                )}
+                                <SelectSeparator />
+                                <SelectItem value="__CREATE_DEPT_DUTY__" className="text-xs font-bold text-indigo-600">
+                                  + 새 소관 업무 직접 등록...
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-6 text-[11px] text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded px-1.5" 
+                              onClick={() => deleteDepartment(dept.id)} 
+                              title="부서 삭제"
+                            >
+                              <Trash2 className="h-3 w-3 mr-1" />
+                              삭제
+                            </Button>
+                          </div>
+                        </div>
+
+                        <CardContent className="p-2.5 space-y-2">
+                          {/* 2단 그리드: 좌측 부장 교사 관리 / 우측 소속 부원 관리 (가로 병렬 배치) */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                            {/* 1. 좌측 (1열): 부장 교사 관리 카드 */}
+                            <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 space-y-2 flex flex-col justify-between">
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between gap-1.5">
+                                  <Label className="text-xs font-bold text-slate-800 shrink-0 whitespace-nowrap">
+                                    부장 교사
+                                  </Label>
+
+                                  {/* 부장 교사 업무 배정 드롭다운 (항상 표시) */}
+                                  {dept.headEmail && (
+                                    <Select onValueChange={(val) => {
+                                      if (val === '__CREATE_HEAD_DUTY__') {
+                                        const customName = window.prompt('부장 교사에게 새로 부여할 담당 업무명을 입력해 주세요:');
+                                        if (customName?.trim()) {
+                                          createAndAssignCustomDuty(customName.trim(), dept.name, dept.headEmail!);
+                                        }
+                                      } else {
+                                        assignDutyToMember(val, dept.headEmail!, dept.name);
+                                      }
+                                    }}>
+                                      <SelectTrigger className="h-5 w-28 px-1.5 text-[10px] bg-indigo-50 hover:bg-indigo-100 border-indigo-200 rounded-md text-indigo-700 font-bold shrink-0">
+                                        <SelectValue placeholder="+ 업무 배정" />
+                                      </SelectTrigger>
+                                      <SelectContent className="max-h-60">
+                                        {deptDuties.length > 0 && (
+                                          <SelectGroup>
+                                            <SelectLabel className="text-[10px] text-indigo-900 font-bold">부서 소관 업무</SelectLabel>
+                                            {deptDuties.filter(d => !headDutyList.includes(d.name)).map(d => (
+                                              <SelectItem key={d.id} value={d.id} className="text-xs font-semibold">
+                                                {d.name}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectGroup>
+                                        )}
+                                        {otherDuties.filter(d => !headDutyList.includes(d.name)).length > 0 && (
+                                          <SelectGroup>
+                                            <SelectLabel className="text-[10px] text-slate-500 font-bold">학교 전체 업무</SelectLabel>
+                                            {otherDuties.filter(d => !headDutyList.includes(d.name)).map(d => (
+                                              <SelectItem key={d.id} value={d.id} className="text-xs">
+                                                {d.name} {d.deptName ? `(${d.deptName})` : ''}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectGroup>
+                                        )}
+                                        <SelectSeparator />
+                                        <SelectItem value="__CREATE_HEAD_DUTY__" className="text-xs font-bold text-indigo-600">
+                                          + 새 업무 직접 입력...
+                                        </SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                </div>
+
+                                <SearchableUserSelect
+                                  users={facultyUsers}
+                                  value={dept.headEmail || ''}
+                                  onSelect={(val) => updateDeptHead(dept.id, val)}
+                                  placeholder="부장 교사 선택"
+                                  allowUnassign={true}
+                                  unassignLabel="선택 안됨 (해제)"
+                                  triggerClassName="h-7 text-xs bg-white font-medium border-slate-200 w-full"
+                                  panelWidthClass="w-64"
+                                />
+
+                                {/* 부장 교사의 담당 업무 배지 목록 */}
+                                {headDutyList.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 pt-0.5">
+                                    {headDutyList.map(duty => (
+                                      <span key={duty} className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+                                        {duty}
+                                        <button
+                                          type="button"
+                                          onClick={() => removeDutyFromMember(duty, dept.headEmail!)}
+                                          className="text-indigo-500 hover:text-indigo-800 font-bold ml-0.5"
+                                          title="업무 해제"
+                                        >
+                                          ×
+                                        </button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 2. 우측 (2열): 소속 부원 배정 및 소관 업무 지정 카드 */}
+                            <div className="md:col-span-2 border border-slate-200 rounded-lg p-2.5 bg-white space-y-2 flex flex-col justify-between">
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <Label className="text-xs font-bold text-slate-800 shrink-0">
+                                    소속 부원 배정 ({dept.memberEmails.length}명)
+                                  </Label>
+                                  <div className="w-48 sm:w-56">
+                                    <SearchableUserSelect
+                                      users={facultyUsers}
+                                      placeholder="부원 추가 선택..."
+                                      clearOnSelect={true}
+                                      triggerClassName="h-7 text-xs bg-slate-50 border-slate-200"
+                                      panelWidthClass="w-56"
+                                      onSelect={(val) => addDeptMember(dept.id, val)}
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* 소속 부원 카드 목록 (2열 그리드) */}
+                                {dept.memberEmails.length === 0 ? (
+                                  <div className="p-4 text-center bg-slate-50 rounded-lg border border-dashed text-slate-400 text-xs">
+                                    소속된 부원이 없습니다. 우측 상단에서 부원을 추가해 주세요.
+                                  </div>
+                                ) : (
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 max-h-[340px] overflow-y-auto pr-0.5">
+                                    {dept.memberEmails.map(email => {
+                                      const u = users.find(user => user.email === email);
+                                      const staffDuties = getStaffDutyRoles(email);
+
+                                      return (
+                                        <div key={email} className="flex items-center justify-between gap-1.5 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 p-1.5 px-2 rounded-md transition-colors">
+                                          <div className="space-y-0.5 min-w-0 flex-1">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="font-bold text-xs text-slate-900 truncate">{u ? u.name : email}</span>
+                                              <span className="text-[10px] text-slate-400 truncate">{u ? u.role : ''}</span>
+                                            </div>
+                                            
+                                            {/* 담당 업무 배지 */}
+                                            <div className="flex items-center gap-1 flex-wrap">
+                                              {staffDuties.length > 0 ? (
+                                                staffDuties.map(duty => (
+                                                  <span key={duty} className="inline-flex items-center gap-1 bg-white text-indigo-700 border border-indigo-200 text-[9px] font-bold px-1.5 py-0 rounded shadow-2xs">
+                                                    {duty}
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => removeDutyFromMember(duty, email)}
+                                                      className="text-indigo-500 hover:text-indigo-800 font-bold ml-0.5"
+                                                      title="업무 해제"
+                                                    >
+                                                      ×
+                                                    </button>
+                                                  </span>
+                                                ))
+                                              ) : (
+                                                <span className="text-[10px] text-slate-400 font-normal">업무 미지정</span>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            {/* 소관 업무 배정 드롭다운 (항상 선명하게 노출) */}
+                                            <Select onValueChange={(val) => {
+                                              if (val === '__CREATE_MEMBER_DUTY__') {
+                                                const customName = window.prompt(`${u ? u.name : email} 교사에게 새로 부여할 담당 업무명을 입력해 주세요 (예: 방과후 강사 관리, 출결 관리):`);
+                                                if (customName?.trim()) {
+                                                  createAndAssignCustomDuty(customName.trim(), dept.name, email);
+                                                }
+                                              } else {
+                                                assignDutyToMember(val, email, dept.name);
+                                              }
+                                            }}>
+                                              <SelectTrigger className="h-5.5 w-22 px-1 text-[9px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 rounded font-bold">
+                                                <SelectValue placeholder="+ 업무 배정" />
+                                              </SelectTrigger>
+                                              <SelectContent className="max-h-60">
+                                                {deptDuties.length > 0 && (
+                                                  <SelectGroup>
+                                                    <SelectLabel className="text-[10px] text-indigo-900 font-bold">부서 소관 업무</SelectLabel>
+                                                    {deptDuties.filter(d => !staffDuties.includes(d.name)).map(d => (
+                                                      <SelectItem key={d.id} value={d.id} className="text-xs font-semibold">
+                                                        {d.name}
+                                                      </SelectItem>
+                                                    ))}
+                                                  </SelectGroup>
+                                                )}
+                                                {otherDuties.filter(d => !staffDuties.includes(d.name)).length > 0 && (
+                                                  <SelectGroup>
+                                                    <SelectLabel className="text-[10px] text-slate-500 font-bold">학교 전체 업무 직책</SelectLabel>
+                                                    {otherDuties.filter(d => !staffDuties.includes(d.name)).map(d => (
+                                                      <SelectItem key={d.id} value={d.id} className="text-xs">
+                                                        {d.name} {d.deptName ? `(${d.deptName})` : ''}
+                                                      </SelectItem>
+                                                    ))}
+                                                  </SelectGroup>
+                                                )}
+                                                <SelectSeparator />
+                                                <SelectItem value="__CREATE_MEMBER_DUTY__" className="text-xs font-bold text-indigo-600">
+                                                  + 새 업무 직접 입력...
+                                                </SelectItem>
+                                              </SelectContent>
+                                            </Select>
+
+                                            <button 
+                                              onClick={() => removeDeptMember(dept.id, email)} 
+                                              className="text-slate-400 hover:text-rose-600 font-bold p-0.5 rounded hover:bg-white" 
+                                              title="부원 제외"
+                                            >
+                                              <X className="w-3.5 h-3.5" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </CardContent>
                       </Card>
-                    ))}
-                  </div>
+                    );
+                  })()}
+
+                  {/* 부서 일괄 등록 엑셀 카드 */}
+                  <Card className="border shadow-2xs bg-slate-50/50 rounded-xl">
+                    <CardHeader className="p-4 pb-2">
+                      <CardTitle className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <FileUp className="w-3.5 h-3.5 text-indigo-600" />
+                        부서 엑셀 일괄 등록
+                      </CardTitle>
+                      <CardDescription className="text-[11px]">
+                        엑셀 파일로 부서 목록과 부장/부원을 일괄 등록합니다. (부서명 / 이름 / 직책)
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0 flex flex-col sm:flex-row items-center gap-2">
+                      <Input type="file" accept=".xlsx, .xls" onChange={handleDeptFileSelect} className="h-8 flex-grow text-xs bg-white rounded-lg"/>
+                      <div className="flex gap-1.5 w-full sm:w-auto shrink-0">
+                        <Button onClick={handleDownloadDeptTemplate} variant="outline" size="sm" className="h-8 text-xs font-semibold rounded-lg">
+                          <Download className="mr-1.5 h-3.5 w-3.5"/>
+                          양식
+                        </Button>
+                        <Button onClick={handleDeptUpload} disabled={isUploading || !selectedDeptFile} size="sm" className="h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg">
+                          {isUploading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> : <FileUp className="mr-1.5 h-3.5 w-3.5"/>}
+                          업로드
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
-              </div>
+              )}
             </div>
-            <div className="shrink-0 px-6 py-4 border-t flex justify-end">
-              <Button onClick={handleOrgSave} disabled={isSaving}>
-                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+
+            <div className="shrink-0 px-6 py-3.5 border-t flex justify-end bg-slate-50/70">
+              <Button onClick={handleOrgSave} disabled={isSaving} className="h-9 px-4 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs">
+                {isSaving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
                 조직도 저장
               </Button>
             </div>
           </TabsContent>
 
           <TabsContent value="delegation" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
-            <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-4">
-            <Card className="border-slate-200 shadow-2xs">
-                <CardHeader className="pb-3">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <FileText className="w-5 h-5 text-indigo-600" />
-                      위임전결규정 일괄 등록 및 양식
-                    </CardTitle>
-                    <CardDescription>
-                        결석계, 체험학습신청서, 연간계획공문, 세부계획공문, 복무 등의 학교별 전결규정을 등록 및 관리합니다.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-col sm:flex-row items-center gap-4">
-                    <Input type="file" accept=".xlsx, .xls" onChange={handleDelegationFileSelect} className="flex-grow"/>
-                    <div className="flex gap-2 w-full sm:w-auto">
-                        <Button onClick={handleDownloadDelegationTemplate} variant="outline" size="sm">
-                            <Download className="mr-2 h-4 w-4"/>
-                            표준 양식 다운로드
-                        </Button>
-                        <Button onClick={handleDelegationUpload} disabled={isUploading || !selectedDelegationFile} size="sm">
-                            {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileUp className="mr-2 h-4 w-4"/>}
-                            엑셀 업로드
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
-
-            <div className="flex flex-wrap justify-between items-center px-1 gap-2">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-semibold">전결규정 목록 ({delegationRules.length})</h3>
-                  <Badge variant="outline" className="text-xs text-muted-foreground">변경 시 실시간 자동 저장</Badge>
+            <div className="flex-1 min-h-0 px-6 py-3 flex flex-col gap-2.5">
+              {/* 위임전결규정 엑셀 일괄 등록 - 컴팩트 슬림 바 */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 px-3 bg-slate-50 border rounded-lg shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <FileText className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="text-xs font-bold text-slate-800">위임전결규정 엑셀 일괄 등록</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={handleResetDefaultDelegation}>
-                      <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                      기본 규정 초기화 (8종)
+                <div className="flex items-center gap-1.5 flex-1 max-w-xl">
+                  <Input type="file" accept=".xlsx, .xls" onChange={handleDelegationFileSelect} className="h-7 text-xs bg-white flex-grow"/>
+                  <Button onClick={handleDownloadDelegationTemplate} variant="outline" size="sm" className="h-7 text-xs shrink-0 px-2.5">
+                    <Download className="mr-1.5 h-3.5 w-3.5"/>
+                    양식 다운로드
                   </Button>
-                  <Button variant="outline" size="sm" onClick={addDelegationRule} className="bg-primary/5 hover:bg-primary/10 text-primary border-primary/20">
-                      <PlusCircle className="mr-1.5 h-3.5 w-3.5" />
-                      새 규정 추가
+                  <Button onClick={handleDelegationUpload} disabled={isUploading || !selectedDelegationFile} size="sm" className="h-7 text-xs shrink-0 px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium">
+                    {isUploading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> : <FileUp className="mr-1.5 h-3.5 w-3.5"/>}
+                    엑셀 업로드
                   </Button>
                 </div>
-            </div>
+              </div>
 
-            <div className="border rounded-md flex-1 overflow-y-auto">
-              <Table>
-                  <TableHeader className="sticky top-0 bg-slate-50 z-10">
-                  <TableRow>
-                      <TableHead className="w-[120px]">대분류</TableHead>
-                      <TableHead className="w-[150px]">문서명(중분류)</TableHead>
-                      <TableHead className="w-[130px]">소분류/조건</TableHead>
-                      <TableHead className="w-[150px]">중간 결재자</TableHead>
-                      <TableHead className="w-[160px]">최종 결재권자 (전결)</TableHead>
-                      <TableHead className="min-w-[220px]">결재선 미리보기</TableHead>
-                      <TableHead className="w-[60px] text-right">삭제</TableHead>
-                  </TableRow>
+              {/* 전결규정 목록 헤더 툴바 */}
+              <div className="flex justify-between items-center px-0.5 shrink-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-800">전결규정 목록 ({delegationRules.length})</h3>
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground py-0">변경 시 실시간 자동 저장</Badge>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button variant="outline" size="sm" onClick={handleResetDefaultDelegation} className="h-7 text-xs px-2.5">
+                    <RotateCcw className="mr-1.5 h-3 w-3" />
+                    기본 규정 초기화 (8종)
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={addDelegationRule} className="h-7 text-xs px-2.5 bg-primary/5 hover:bg-primary/10 text-primary border-primary/20">
+                    <PlusCircle className="mr-1.5 h-3 w-3" />
+                    새 규정 추가
+                  </Button>
+                </div>
+              </div>
+
+              {/* 전결규정 목록 테이블 (남은 모달 전체 영역 확보) */}
+              <div className="border rounded-md flex-1 min-h-0 overflow-auto bg-white shadow-2xs">
+                <Table className="min-w-[860px]">
+                  <TableHeader className="sticky top-0 bg-slate-50 z-10 shadow-2xs">
+                    <TableRow>
+                      <TableHead className="w-[100px] py-2 text-xs">대분류</TableHead>
+                      <TableHead className="w-[150px] py-2 text-xs">문서명(중분류)</TableHead>
+                      <TableHead className="w-[130px] py-2 text-xs">소분류/조건</TableHead>
+                      <TableHead className="w-[135px] py-2 text-xs">중간 결재자</TableHead>
+                      <TableHead className="w-[150px] py-2 text-xs">최종 결재권자 (전결)</TableHead>
+                      <TableHead className="min-w-[160px] py-2 text-xs">결재선 미리보기</TableHead>
+                      <TableHead className="w-[45px] py-2 text-right text-xs">삭제</TableHead>
+                    </TableRow>
                   </TableHeader>
                   <TableBody>
-                  {delegationRules.map((rule, index) => (
-                  <TableRow key={rule.id || index}>
-                      <TableCell>
-                        <Input value={rule.mainType} onChange={e => handleDelegationUpdate(index, 'mainType', e.target.value)} className="h-8 text-xs font-medium" placeholder="대분류" />
-                      </TableCell>
-                      <TableCell>
-                        <Input value={rule.subType} onChange={e => handleDelegationUpdate(index, 'subType', e.target.value)} className="h-8 text-xs font-bold text-slate-800" placeholder="결석계, 연간계획 등" />
-                      </TableCell>
-                      <TableCell>
-                        <Input value={rule.detailType} onChange={e => handleDelegationUpdate(index, 'detailType', e.target.value)} className="h-8 text-xs" placeholder="조건/세부구분" />
-                      </TableCell>
-                      <TableCell>
-                        <Select value={rule.intermediateApprover || 'NONE'} onValueChange={(val) => handleDelegationUpdate(index, 'intermediateApprover', val)}>
-                            <SelectTrigger className="h-8 text-xs bg-white"><SelectValue /></SelectTrigger>
+                    {delegationRules.map((rule, index) => (
+                      <TableRow key={rule.id || index} className="hover:bg-slate-50/70">
+                        {/* 1. 대분류 드롭다운 */}
+                        <TableCell className="py-1.5 px-2">
+                          <Select 
+                            value={rule.mainType || ''} 
+                            onValueChange={(val) => handleMainTypeChange(index, val)}
+                          >
+                            <SelectTrigger className="h-7 text-xs bg-white px-2 font-semibold text-slate-800 border-slate-200">
+                              <SelectValue placeholder="대분류 선택" />
+                            </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="NONE">없음 (바로 최종결재)</SelectItem>
-                                <SelectItem value="GRADE_HEAD">학년부장</SelectItem>
-                                <SelectItem value="ACADEMIC_HEAD">교무부장</SelectItem>
-                                <SelectItem value="DEPT_HEAD">담당부장</SelectItem>
+                              {delegationStandards.map(std => (
+                                <SelectItem key={std.mainType} value={std.mainType} className="text-xs font-medium">
+                                  {std.mainType}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Select value={rule.finalApprover} onValueChange={(val) => handleDelegationUpdate(index, 'finalApprover', val)}>
-                            <SelectTrigger className="h-8 text-xs bg-white font-semibold text-primary"><SelectValue /></SelectTrigger>
+                          </Select>
+                        </TableCell>
+
+                        {/* 2. 문서명(중분류) 드롭다운 (선택된 대분류 기반 필터링) */}
+                        <TableCell className="py-1.5 px-2">
+                          {(() => {
+                            const curStandard = delegationStandards.find(x => x.mainType === rule.mainType) || 
+                                                delegationStandards.find(x => x.subTypes.some(s => s.name === rule.subType));
+                            const subOptions = curStandard?.subTypes || [];
+
+                            return (
+                              <Select 
+                                value={rule.subType || ''} 
+                                onValueChange={(val) => handleSubTypeChange(index, val)}
+                                disabled={subOptions.length === 0}
+                              >
+                                <SelectTrigger className="h-7 text-xs bg-white px-2 font-bold text-slate-800 border-slate-200">
+                                  <SelectValue placeholder="문서명 선택" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {subOptions.map(sub => (
+                                    <SelectItem key={sub.name} value={sub.name} className="text-xs font-bold">
+                                      {sub.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            );
+                          })()}
+                        </TableCell>
+
+                        {/* 3. 소분류/조건 드롭다운 (선택된 문서명 기반 세부조건 연동) */}
+                        <TableCell className="py-1.5 px-2">
+                          {(() => {
+                            const curStandard = delegationStandards.find(x => x.mainType === rule.mainType) || 
+                                                delegationStandards.find(x => x.subTypes.some(s => s.name === rule.subType));
+                            const curSub = curStandard?.subTypes.find(x => x.name === rule.subType);
+                            const detailOptions = curSub?.detailTypes || (rule.detailType ? [rule.detailType] : []);
+
+                            return (
+                              <Select 
+                                value={rule.detailType || ''} 
+                                onValueChange={(val) => handleDelegationUpdate(index, 'detailType', val)}
+                                disabled={detailOptions.length === 0}
+                              >
+                                <SelectTrigger className="h-7 text-xs bg-white px-2 text-slate-700 border-slate-200">
+                                  <SelectValue placeholder="조건 선택" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {detailOptions.map(d => (
+                                    <SelectItem key={d} value={d} className="text-xs font-medium">
+                                      {d}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            );
+                          })()}
+                        </TableCell>
+                        <TableCell className="py-1.5 px-2">
+                          <Select value={rule.intermediateApprover || 'NONE'} onValueChange={(val) => handleDelegationUpdate(index, 'intermediateApprover', val)}>
+                            <SelectTrigger className="h-7 text-xs bg-white px-2"><SelectValue /></SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="GRADE_HEAD">학년부장 (전결)</SelectItem>
-                                <SelectItem value="ACADEMIC_HEAD">교무부장 (전결)</SelectItem>
-                                <SelectItem value="DEPT_HEAD">담당부장 (전결)</SelectItem>
-                                <SelectItem value="VP">교감 (전결)</SelectItem>
-                                <SelectItem value="PRINCIPAL">교장 (결재)</SelectItem>
+                              <SelectItem value="NONE">없음 (바로 최종결재)</SelectItem>
+                              <SelectItem value="GRADE_HEAD">학년부장</SelectItem>
+                              <SelectItem value="ACADEMIC_HEAD">교무부장</SelectItem>
+                              <SelectItem value="DEPT_HEAD">담당부장</SelectItem>
                             </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="font-sans text-[11px] bg-slate-100 text-slate-700 border border-slate-200 py-1 px-2">
-                          {renderApprovalLinePreview(rule)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive/90" onClick={() => deleteDelegationRule(index)}>
-                              <Trash2 className="h-4 w-4" />
+                          </Select>
+                        </TableCell>
+                        <TableCell className="py-1.5 px-2">
+                          <Select value={rule.finalApprover} onValueChange={(val) => handleDelegationUpdate(index, 'finalApprover', val)}>
+                            <SelectTrigger className="h-7 text-xs bg-white px-2 font-semibold text-primary"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="GRADE_HEAD">학년부장 (전결)</SelectItem>
+                              <SelectItem value="ACADEMIC_HEAD">교무부장 (전결)</SelectItem>
+                              <SelectItem value="DEPT_HEAD">담당부장 (전결)</SelectItem>
+                              <SelectItem value="VP">교감 (전결)</SelectItem>
+                              <SelectItem value="PRINCIPAL">교장 (결재)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="py-1.5 px-2">
+                          <Badge variant="secondary" className="font-sans text-[11px] bg-slate-100 text-slate-700 border border-slate-200 py-0.5 px-2 whitespace-nowrap">
+                            {renderApprovalLinePreview(rule)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-1.5 px-2 text-right">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive/90" onClick={() => deleteDelegationRule(index)}>
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
-                      </TableCell>
-                  </TableRow>
-                  ))}
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
-              </Table>
+                </Table>
+              </div>
             </div>
-            </div>
-            <div className="shrink-0 px-6 py-4 border-t flex justify-end">
-              <Button onClick={handleDelegationSave} disabled={isSaving}>
-                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+
+            <div className="shrink-0 px-6 py-2.5 border-t flex justify-end bg-slate-50/70">
+              <Button onClick={handleDelegationSave} disabled={isSaving} className="h-8 px-4 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg">
+                {isSaving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1.5 h-3.5 w-3.5" />}
                 전결규정 저장
               </Button>
             </div>
@@ -3165,6 +4897,145 @@ export function SettingsModal() {
                 </AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog>
+
+        {/* 업무 역할별 기능 및 문서 접근 권한 설정 모달 */}
+        <DutyRolePermissionModal
+          open={permissionModalState.open}
+          onOpenChange={(open) => setPermissionModalState(prev => ({ ...prev, open }))}
+          roleName={permissionModalState.roleName}
+          permissions={permissionModalState.permissions}
+          onSave={(newPerms) => handleSaveRolePermission(permissionModalState.roleKey, newPerms)}
+        />
+
+        {/* 표준 일과 수업 시간대(교시별 시간표) 설정 모달 */}
+        <Dialog open={isPeriodModalOpen} onOpenChange={setIsPeriodModalOpen}>
+          <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto p-5 sm:p-6 rounded-2xl">
+            <DialogHeader className="border-b pb-3">
+              <div className="flex items-center justify-between">
+                <DialogTitle className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-indigo-600" />
+                  표준 일과 수업 시간대 설정
+                </DialogTitle>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetDefaultPeriodSchedules}
+                  className="h-7 text-xs font-bold text-slate-600 border-slate-300 hover:bg-slate-100"
+                >
+                  <RotateCcw className="w-3 h-3 mr-1" />
+                  기본 9개 시간표 복원
+                </Button>
+              </div>
+              <DialogDescription className="text-xs text-slate-500">
+                1교시~6교시, 점심시간, 방과후 등 교내 표준 일과 시간표를 설정합니다. 체육행사, 방과후수업 등 모든 배정표 프리셋으로 연동됩니다.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2 text-xs">
+              {/* 새 교시 추가 폼 */}
+              <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-200 space-y-2">
+                <span className="font-bold text-indigo-950 text-xs flex items-center gap-1.5">
+                  <PlusCircle className="w-4 h-4 text-indigo-600" />
+                  새 교시 / 시간대 추가
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+                  <div className="sm:col-span-5">
+                    <Label className="text-[10px] text-slate-600 font-semibold mb-1 block">교시 / 활동 명칭</Label>
+                    <Input
+                      placeholder="예: 1교시, 점심시간, 방과후 1차시"
+                      value={newPeriodName}
+                      onChange={e => setNewPeriodName(e.target.value)}
+                      className="h-8 text-xs bg-white font-bold"
+                    />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <Label className="text-[10px] text-slate-600 font-semibold mb-1 block">시작 시간</Label>
+                    <Input
+                      type="time"
+                      value={newPeriodStart}
+                      onChange={e => setNewPeriodStart(e.target.value)}
+                      className="h-8 text-xs bg-white font-mono"
+                    />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <Label className="text-[10px] text-slate-600 font-semibold mb-1 block">종료 시간</Label>
+                    <Input
+                      type="time"
+                      value={newPeriodEnd}
+                      onChange={e => setNewPeriodEnd(e.target.value)}
+                      className="h-8 text-xs bg-white font-mono"
+                    />
+                  </div>
+                  <div className="sm:col-span-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleAddPeriodSchedule}
+                      className="h-8 w-full text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white"
+                    >
+                      추가
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 등록된 교시 시간표 목록 */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs divide-y divide-slate-100 bg-white">
+                {(academicCal.periodSchedules || DEFAULT_PERIOD_SCHEDULES).map((period, idx) => (
+                  <div key={period.id} className="p-2.5 flex items-center justify-between gap-2 hover:bg-slate-50/50 text-xs">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0 bg-slate-50 text-slate-600 shrink-0">
+                        #{idx + 1}
+                      </Badge>
+                      <Input
+                        value={period.name}
+                        onChange={e => handleUpdatePeriodSchedule(period.id, 'name', e.target.value)}
+                        className="h-7 text-xs font-bold w-36 bg-white shrink-0"
+                        placeholder="교시명"
+                      />
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="time"
+                          value={period.startTime}
+                          onChange={e => handleUpdatePeriodSchedule(period.id, 'startTime', e.target.value)}
+                          className="h-7 text-xs font-mono w-24 bg-white"
+                        />
+                        <span className="text-slate-400 font-bold text-xs">~</span>
+                        <Input
+                          type="time"
+                          value={period.endTime}
+                          onChange={e => handleUpdatePeriodSchedule(period.id, 'endTime', e.target.value)}
+                          className="h-7 text-xs font-mono w-24 bg-white"
+                        />
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeletePeriodSchedule(period.id)}
+                      className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <DialogFooter className="border-t pt-3 flex items-center justify-end">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setIsPeriodModalOpen(false)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs"
+              >
+                완료 (설정 적용)
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

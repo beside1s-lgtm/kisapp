@@ -21,25 +21,40 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Users, GraduationCap, Bus, Calendar, Plus, Upload, Download, Search, 
-  UserCheck, Mail, Phone, MapPin, CreditCard, ShieldCheck, Trash2, Edit3, FileText, CheckCircle2, ArrowUpRight, Sparkles, CheckSquare, Square, Filter 
+  UserCheck, Mail, Phone, MapPin, CreditCard, ShieldCheck, Trash2, Edit3, FileText, CheckCircle2, ArrowUpRight, Sparkles, CheckSquare, Square, Filter, Camera, Image as ImageIcon 
 } from 'lucide-react';
 import { cn } from '@/lib/kisbus/utils';
+import { resizeStudentPhoto } from '@/lib/imageResize';
+import { BatchPhotoModal } from './batch-photo-modal';
 
 export default function AdminMasterStudentsPage() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const promoteFileInputRef = useRef<HTMLInputElement>(null);
+  const editPhotoInputRef = useRef<HTMLInputElement>(null);
+  const addPhotoInputRef = useRef<HTMLInputElement>(null);
 
   const [students, setStudents] = useState<MasterStudent[]>([]);
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 필터 및 검색
+  // 필터 및 검색 (엔터 키 입력 시에만 실행되도록 분리)
+  const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
+
+  const handleExecuteSearch = () => {
+    setSearchQuery(searchInput.trim());
+  };
+
+  const handleResetSearch = () => {
+    setSearchInput('');
+    setSearchQuery('');
+  };
 
   // 모달 상태
   const [selectedStudent, setSelectedStudent] = useState<MasterStudent | null>(null);
@@ -48,6 +63,7 @@ export default function AdminMasterStudentsPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPromoteDialogOpen, setIsPromoteDialogOpen] = useState(false);
   const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false);
+  const [isBatchPhotoOpen, setIsBatchPhotoOpen] = useState(false);
 
   // 명단 다운로드 시 선택된 학년/반 목록 (Set or array of "grade-classNum")
   const [selectedClassesForDownload, setSelectedClassesForDownload] = useState<string[]>([]);
@@ -150,24 +166,78 @@ export default function AdminMasterStudentsPage() {
       await createMasterStudent({
         name: newStudent.name!,
         studentEmail: cleanEmail,
-        grade: newStudent.grade || '1',
-        classNum: newStudent.classNum || '1',
-        studentNum: newStudent.studentNum || '1',
+        grade: String(newStudent.grade || '1'),
+        classNum: String(newStudent.classNum || '1'),
+        studentNum: String(newStudent.studentNum || '1'),
         gender: newStudent.gender || 'Male',
         contact: newStudent.contact || '',
         parentEmail: newStudent.parentEmail || '',
         address: newStudent.address || '',
-        kisbusNo: newStudent.kisbusNo || ''
+        kisbusNo: newStudent.kisbusNo || '',
+        photoUrl: newStudent.photoUrl || ''
       });
       setIsAddDialogOpen(false);
       setNewStudent({
-        name: '', studentEmail: '', grade: '1', classNum: '1', studentNum: '1',
-        gender: 'Male', contact: '', parentEmail: '', address: '', kisbusNo: ''
+        name: '', 
+        studentEmail: '', 
+        grade: '1', 
+        classNum: '1', 
+        studentNum: '1',
+        gender: 'Male', 
+        contact: '', 
+        parentEmail: '', 
+        address: '', 
+        kisbusNo: '',
+        photoUrl: ''
       });
       toast({ title: '등록 완료', description: '통합 학생 마스터 계정이 성공적으로 등록되었습니다.' });
     } catch (err) {
       console.error(err);
       toast({ title: '오류', description: '학생 계정 생성 중 오류가 발생했습니다.', variant: 'destructive' });
+    }
+  };
+
+  // 학생 정보 수정 시 사진 업로드 및 2cm 최적화 리사이징 핸들러
+  const handleEditPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const resizedDataUrl = await resizeStudentPhoto(file);
+      setEditStudentForm(prev => ({ ...prev, photoUrl: resizedDataUrl }));
+      toast({
+        title: '사진 최적화 완료',
+        description: '학생 사진이 가로세로 2cm 최적 해상도(160x160)로 변환되었습니다.'
+      });
+    } catch (err: any) {
+      toast({
+        title: '사진 처리 실패',
+        description: err.message || '사진을 처리할 수 없습니다.',
+        variant: 'destructive'
+      });
+    } finally {
+      if (editPhotoInputRef.current) editPhotoInputRef.current.value = '';
+    }
+  };
+
+  // 신규 학생 등록 시 사진 업로드 핸들러
+  const handleAddPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const resizedDataUrl = await resizeStudentPhoto(file);
+      setNewStudent(prev => ({ ...prev, photoUrl: resizedDataUrl }));
+      toast({
+        title: '사진 최적화 완료',
+        description: '학생 사진이 가로세로 2cm 최적 해상도(160x160)로 변환되었습니다.'
+      });
+    } catch (err: any) {
+      toast({
+        title: '사진 처리 실패',
+        description: err.message || '사진을 처리할 수 없습니다.',
+        variant: 'destructive'
+      });
+    } finally {
+      if (addPhotoInputRef.current) addPhotoInputRef.current.value = '';
     }
   };
 
@@ -188,7 +258,8 @@ export default function AdminMasterStudentsPage() {
         gender: editStudentForm.gender || 'Male',
         contact: editStudentForm.contact || '',
         address: editStudentForm.address || '',
-        kisbusNo: editStudentForm.kisbusNo || ''
+        kisbusNo: editStudentForm.kisbusNo || '',
+        photoUrl: editStudentForm.photoUrl || ''
       });
       setIsEditDialogOpen(false);
       if (selectedStudent?.studentId === editStudentForm.studentId) {
@@ -723,14 +794,70 @@ export default function AdminMasterStudentsPage() {
                       <Plus className="mr-1.5 h-3.5 w-3.5" /> 개별 계정 추가
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-w-md">
-                    <DialogHeader>
+                  <DialogContent className="sm:max-w-[680px] w-[96vw] max-h-[88vh] overflow-y-auto overflow-x-hidden p-6 sm:p-7 rounded-2xl">
+                    <DialogHeader className="pb-1">
                       <DialogTitle className="text-lg font-bold">새 학생 마스터 계정 등록</DialogTitle>
-                      <DialogDescription className="text-xs">
+                      <DialogDescription className="text-xs text-slate-500">
                         학생 이메일 계정(2023kangdongyun@kshcm.net) 기반으로 등록합니다.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-3 py-2 text-sm">
+                      {/* 학생 사진 등록 섹션 (가로세로 2cm 최적화) */}
+                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                        <div className="flex items-center justify-between flex-wrap gap-1">
+                          <span className="font-bold text-slate-800 text-xs">학생 사진 등록 (가로세로 2cm 최적화)</span>
+                          <Badge variant="outline" className="text-[10px] bg-indigo-50 border-indigo-200 text-indigo-700 font-medium px-1.5 py-0">
+                            PC 최적 해상도 160x160 자동 압축
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-3.5">
+                          <Avatar className="rounded-2xl border-2 border-indigo-200 shadow-2xs shrink-0 bg-white" style={{ width: '2cm', height: '2cm' }}>
+                            {newStudent.photoUrl ? (
+                              <AvatarImage src={newStudent.photoUrl} alt={newStudent.name || '학생'} className="object-cover rounded-2xl" />
+                            ) : (
+                              <AvatarFallback className="bg-indigo-50 text-indigo-700 font-bold text-xs rounded-2xl">
+                                사진 없음
+                              </AvatarFallback>
+                            )}
+                          </Avatar>
+                          <div className="space-y-1.5 flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <input
+                                type="file"
+                                ref={addPhotoInputRef}
+                                onChange={handleAddPhotoChange}
+                                accept="image/*"
+                                className="hidden"
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => addPhotoInputRef.current?.click()}
+                                className="h-7 text-xs px-2.5 bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold cursor-pointer"
+                              >
+                                <Camera className="w-3.5 h-3.5 mr-1" />
+                                사진 선택
+                              </Button>
+                              {newStudent.photoUrl && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setNewStudent(prev => ({ ...prev, photoUrl: '' }))}
+                                  className="h-7 text-xs px-2 text-rose-600 hover:bg-rose-50 cursor-pointer"
+                                >
+                                  삭제
+                                </Button>
+                              )}
+                            </div>
+                            <p className="text-[10.5px] text-slate-500 leading-snug">
+                              선택한 사진을 2cm 정사각형으로 리사이징하여 용량을 최소화합니다.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="space-y-1">
                         <Label className="text-xs font-bold">학생 이메일 계정 (학부모 겸용)</Label>
                         <Input 
@@ -784,6 +911,15 @@ export default function AdminMasterStudentsPage() {
                   </DialogContent>
                 </Dialog>
 
+                {/* 2-2. 학생 사진 스마트 일괄 등록 */}
+                <Button 
+                  size="sm" 
+                  onClick={() => setIsBatchPhotoOpen(true)}
+                  className="h-8 text-xs px-2.5 font-bold whitespace-nowrap bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer"
+                >
+                  <Camera className="mr-1.5 h-3.5 w-3.5" /> 사진 일괄 등록
+                </Button>
+
                 {/* 3. 엑셀 일괄 등록 */}
                 <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="h-8 text-xs px-2.5 font-bold whitespace-nowrap">
                   <Upload className="mr-1.5 h-3.5 w-3.5" /> 엑셀 일괄 등록
@@ -801,16 +937,42 @@ export default function AdminMasterStudentsPage() {
               </div>
             </div>
 
-            {/* 필터 및 검색 바 */}
-            <div className="flex flex-col sm:flex-row items-center gap-3 pt-3">
-              <div className="relative flex-1 w-full">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                <Input
-                  placeholder="학생 이름, 이메일(2023kangdongyun...), 학년 반으로 검색..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="pl-9 h-9 text-xs"
-                />
+            {/* 필터 및 검색 바 (엔터 키 또는 검색 버튼 클릭 시에만 필터링) */}
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-3">
+              <div className="relative flex-1 w-full flex items-center gap-1.5">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="학생 이름, 이메일, 학년 반 검색 후 [Enter] 또는 [검색] 버튼 클릭..."
+                    value={searchInput}
+                    onChange={e => setSearchInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleExecuteSearch();
+                      }
+                    }}
+                    className="pl-9 pr-8 h-9 text-xs"
+                  />
+                  {searchInput && (
+                    <button
+                      type="button"
+                      onClick={handleResetSearch}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                      title="검색어 지우기"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                <Button 
+                  type="button" 
+                  size="sm" 
+                  onClick={handleExecuteSearch} 
+                  className="h-9 px-3 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 shadow-xs"
+                >
+                  <Search className="w-3.5 h-3.5 mr-1" /> 검색
+                </Button>
               </div>
               <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
                 <span className="text-xs font-bold text-slate-600 whitespace-nowrap">학년 필터:</span>
@@ -857,16 +1019,27 @@ export default function AdminMasterStudentsPage() {
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           <button 
-                            className="font-bold text-indigo-700 hover:text-indigo-900 hover:underline flex items-center gap-1.5 text-sm"
+                            className="font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-2.5 text-sm text-left group"
                             onClick={() => {
                               setSelectedStudent(student);
                               setIsDetailDialogOpen(true);
                             }}
                           >
-                            {student.name}
-                            <Badge variant="outline" className="text-[10px] bg-indigo-50 border-indigo-200 text-indigo-700 font-normal">
-                              통합 프로필
-                            </Badge>
+                            <Avatar className="w-9 h-9 rounded-xl border border-slate-200 shrink-0 shadow-2xs bg-white">
+                              {student.photoUrl ? (
+                                <AvatarImage src={student.photoUrl} alt={student.name} className="object-cover rounded-xl" />
+                              ) : (
+                                <AvatarFallback className="bg-indigo-50 text-indigo-700 font-extrabold text-xs rounded-xl">
+                                  {student.name.slice(0, 2)}
+                                </AvatarFallback>
+                              )}
+                            </Avatar>
+                            <div className="flex flex-col items-start leading-tight">
+                              <span className="font-extrabold text-slate-900 group-hover:underline">{student.name}</span>
+                              <Badge variant="outline" className="text-[9.5px] bg-indigo-50 border-indigo-200 text-indigo-700 font-normal px-1 py-0 mt-0.5">
+                                통합 프로필
+                              </Badge>
+                            </div>
                           </button>
                         </TableCell>
                         <TableCell className="whitespace-nowrap font-mono text-xs text-slate-600">
@@ -926,9 +1099,9 @@ export default function AdminMasterStudentsPage() {
           </CardContent>
         </Card>
 
-        {/* 4. 학생 정보 수정 모달 */}
+        {/* 4. 학생 정보 수정 모달 (너비 120% 확대: 680px) */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent className="sm:max-w-[480px] w-[95vw] max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl">
+          <DialogContent className="sm:max-w-[680px] w-[96vw] max-h-[88vh] overflow-y-auto overflow-x-hidden p-6 sm:p-7 rounded-2xl">
             <DialogHeader className="pb-1">
               <DialogTitle className="text-base font-bold flex items-center gap-2">
                 <Edit3 className="h-4 w-4 text-indigo-600 shrink-0" /> 학생 마스터 정보 수정
@@ -937,7 +1110,63 @@ export default function AdminMasterStudentsPage() {
                 {editStudentForm.studentEmail} 학생의 계정 인적사항을 수정합니다.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-2.5 py-1 text-xs">
+            <div className="space-y-3 py-1 text-xs">
+              {/* 학생 사진 등록 및 2cm 최적화 섹션 */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="font-bold text-slate-800 text-xs">학생 프로필 사진 (가로세로 2cm 규격)</span>
+                  <Badge variant="outline" className="text-[10px] bg-indigo-50 border-indigo-200 text-indigo-700 font-medium px-2 py-0.5">
+                    PC 최적 해상도 160x160 자동 압축 (초경량)
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-4">
+                  <Avatar className="rounded-2xl border-2 border-indigo-200 shadow-2xs shrink-0 bg-white" style={{ width: '2cm', height: '2cm' }}>
+                    {editStudentForm.photoUrl ? (
+                      <AvatarImage src={editStudentForm.photoUrl} alt={editStudentForm.name || '학생'} className="object-cover rounded-2xl" />
+                    ) : (
+                      <AvatarFallback className="bg-indigo-50 text-indigo-700 font-bold text-xs rounded-2xl">
+                        사진 없음
+                      </AvatarFallback>
+                    )}
+                  </Avatar>
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <input
+                        type="file"
+                        ref={editPhotoInputRef}
+                        onChange={handleEditPhotoChange}
+                        accept="image/*"
+                        className="hidden"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => editPhotoInputRef.current?.click()}
+                        className="h-8 text-xs px-3 bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold cursor-pointer shadow-2xs"
+                      >
+                        <Camera className="w-3.5 h-3.5 mr-1" />
+                        사진 업로드 / 변경
+                      </Button>
+                      {editStudentForm.photoUrl && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditStudentForm(prev => ({ ...prev, photoUrl: '' }))}
+                          className="h-8 text-xs px-2 text-rose-600 hover:bg-rose-50 cursor-pointer"
+                        >
+                          사진 삭제
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed break-words whitespace-normal">
+                      사진 등록 시 자동으로 가로세로 2cm 정사각형으로 리사이징되며, 최적 해상도로 용량이 최소화됩니다.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-700">학생 이메일 계정</Label>
                 <Input value={editStudentForm.studentEmail || ''} disabled className="h-8 bg-slate-100 font-mono text-xs text-slate-600" />
@@ -1011,9 +1240,15 @@ export default function AdminMasterStudentsPage() {
                 <DialogHeader className="pb-2 border-b border-slate-200">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="p-3 bg-indigo-100 text-indigo-700 rounded-2xl shrink-0">
-                        <UserCheck className="h-6 w-6" />
-                      </div>
+                      <Avatar className="rounded-2xl border-2 border-indigo-200 shadow-sm shrink-0 bg-white" style={{ width: '2cm', height: '2cm' }}>
+                        {selectedStudent.photoUrl ? (
+                          <AvatarImage src={selectedStudent.photoUrl} alt={selectedStudent.name} className="object-cover rounded-2xl" />
+                        ) : (
+                          <AvatarFallback className="bg-indigo-100 text-indigo-700 font-extrabold text-sm rounded-2xl">
+                            {selectedStudent.name.slice(0, 2)}
+                          </AvatarFallback>
+                        )}
+                      </Avatar>
                       <div>
                         <DialogTitle className="text-xl font-bold text-slate-900 flex items-center gap-2 flex-wrap">
                           <span>{selectedStudent.name} 학생 통합 마스터 프로필</span>
@@ -1290,6 +1525,13 @@ export default function AdminMasterStudentsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* 7. 학생 사진 스마트 일괄 등록 모달 */}
+        <BatchPhotoModal
+          isOpen={isBatchPhotoOpen}
+          onClose={() => setIsBatchPhotoOpen(false)}
+          students={students}
+        />
       </div>
     </MainLayout>
   );

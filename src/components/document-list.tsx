@@ -5,11 +5,20 @@ import { ApprovalDoc } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
-import { FileText, User, EyeOff, Paperclip, CheckCircle2, Circle, XCircle } from 'lucide-react';
+import { FileText, User, EyeOff, Paperclip, CheckCircle2, Circle, XCircle, Printer } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Button } from '@/components/ui/button';
 
 interface DocumentListProps {
   documents: ApprovalDoc[];
+  selectable?: boolean;
+  selectedDocIds?: string[];
+  onSelectDoc?: (docId: string, checked: boolean) => void;
+  isDocSelectable?: (doc: ApprovalDoc) => boolean;
+  nonSelectableReason?: (doc: ApprovalDoc) => string;
+  customBadges?: (doc: ApprovalDoc) => React.ReactNode;
+  onPrintSingleDoc?: (doc: ApprovalDoc) => void;
 }
 
 // ─── 결재선 프로그레스 바 ─────────────────────────────────────────────
@@ -84,7 +93,16 @@ function ApprovalStepBar({ doc }: { doc: ApprovalDoc }) {
 }
 // ─────────────────────────────────────────────────────────────────────
 
-export function DocumentList({ documents }: DocumentListProps) {
+export function DocumentList({
+  documents,
+  selectable = false,
+  selectedDocIds = [],
+  onSelectDoc,
+  isDocSelectable,
+  nonSelectableReason,
+  customBadges,
+  onPrintSingleDoc,
+}: DocumentListProps) {
   if (!documents || documents.length === 0) {
     return (
       <div className="text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg">
@@ -132,8 +150,6 @@ export function DocumentList({ documents }: DocumentListProps) {
     );
   };
 
-  // 결재선 프로그레스 바를 표시할지 여부 판단
-  // pending(진행중), rejected(반려)일 때만 표시 (approved/recalled는 생략)
   const showStepBar = (doc: ApprovalDoc) =>
     (doc.status === 'pending' || doc.status === 'rejected') &&
     doc.approvers &&
@@ -141,49 +157,104 @@ export function DocumentList({ documents }: DocumentListProps) {
 
   return (
     <div className="space-y-3">
-      {documents.map((doc) => (
-        <Link key={doc.id} href={`/documents/${doc.id}`} className="block group">
-          <Card className="transition-all duration-200 hover:shadow-md border hover:border-primary/50">
-            <CardContent className="p-4 sm:p-5">
-              <div className="space-y-1.5 overflow-hidden">
-                {/* 배지 영역 */}
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {getStatusBadge(doc.status)}
-                  <span className="text-xs text-muted-foreground font-mono">
-                    {doc.docNo || '문서번호 없음'}
-                  </span>
-                  {doc.docType === 'external' && <Badge variant="outline" className="text-xs shrink-0">대외</Badge>}
-                  {doc.category === 'family' && <Badge variant="outline" className="text-xs border-green-500 text-green-600 shrink-0">가정통신문</Badge>}
-                  {getPublishBadge(doc.publishStatus)}
-                </div>
+      {documents.map((doc) => {
+        const isSelectable = isDocSelectable ? isDocSelectable(doc) : true;
+        const isSelected = selectedDocIds.includes(doc.id);
+        const reasonText = !isSelectable && nonSelectableReason ? nonSelectableReason(doc) : '';
 
-                {/* 제목 */}
-                <h3 className="font-bold text-base truncate group-hover:text-primary transition-colors">
-                  {doc.title}
-                </h3>
-
-                {/* 하단 메타 정보 */}
-                <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
-                  <div className="flex items-center gap-1">
-                    <User className="h-3 w-3" />
-                    <span>{doc.requesterName}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <FileText className="h-3 w-3" />
-                    <span>
-                      {doc.createdAt ? format(new Date(doc.createdAt), 'yyyy-MM-dd') : '-'}
-                    </span>
-                  </div>
-                  {getStepBadge(doc)}
-                </div>
-
-                {/* 결재선 프로그레스 바 (진행중·반려 문서에만 표시) */}
-                {showStepBar(doc) && <ApprovalStepBar doc={doc} />}
+        return (
+          <div key={doc.id} className="relative flex items-start gap-2.5 sm:gap-3 group">
+            {/* 체크박스 (선택 모드일 때만 표시) */}
+            {selectable && (
+              <div 
+                className="pt-4 sm:pt-5 pl-1 shrink-0" 
+                onClick={(e) => e.stopPropagation()}
+                title={reasonText || (isSelectable ? '문서 선택' : '선택 불가')}
+              >
+                <Checkbox
+                  checked={isSelected}
+                  disabled={!isSelectable}
+                  onCheckedChange={(checked) => {
+                    if (onSelectDoc) {
+                      onSelectDoc(doc.id, !!checked);
+                    }
+                  }}
+                  className={cn(
+                    "w-5 h-5 transition-transform duration-100",
+                    !isSelectable ? "opacity-30 cursor-not-allowed" : "cursor-pointer"
+                  )}
+                />
               </div>
-            </CardContent>
-          </Card>
-        </Link>
-      ))}
+            )}
+
+            {/* 카드 본체 */}
+            <Link href={`/documents/${doc.id}`} className="block flex-1 min-w-0">
+              <Card className={cn(
+                "transition-all duration-200 hover:shadow-md border",
+                isSelected ? "border-primary bg-primary/[0.02] ring-1 ring-primary/20" : "hover:border-primary/50"
+              )}>
+                <CardContent className="p-4 sm:p-5">
+                  <div className="space-y-1.5 overflow-hidden">
+                    {/* 배지 영역 */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {getStatusBadge(doc.status)}
+                      <span className="text-xs text-muted-foreground font-mono">
+                        {doc.docNo || '문서번호 없음'}
+                      </span>
+                      {doc.docType === 'external' && <Badge variant="outline" className="text-xs shrink-0">대외</Badge>}
+                      {doc.category === 'family' && <Badge variant="outline" className="text-xs border-green-500 text-green-600 shrink-0">가정통신문</Badge>}
+                      {getPublishBadge(doc.publishStatus)}
+                      {customBadges && customBadges(doc)}
+                    </div>
+
+                    {/* 제목 */}
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-bold text-base truncate group-hover:text-primary transition-colors">
+                        {doc.title}
+                      </h3>
+                      {onPrintSingleDoc && isSelectable && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onPrintSingleDoc(doc);
+                          }}
+                          className="h-7 px-2 text-xs text-slate-500 hover:text-primary hover:bg-primary/5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hidden sm:flex items-center gap-1"
+                          title="이 문서 바로 인쇄"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>인쇄</span>
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* 하단 메타 정보 */}
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
+                      <div className="flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        <span>{doc.requesterName}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <FileText className="h-3 w-3" />
+                        <span>
+                          {doc.createdAt ? format(new Date(doc.createdAt), 'yyyy-MM-dd') : '-'}
+                        </span>
+                      </div>
+                      {getStepBadge(doc)}
+                    </div>
+
+                    {/* 결재선 프로그레스 바 (진행중·반려 문서에만 표시) */}
+                    {showStepBar(doc) && <ApprovalStepBar doc={doc} />}
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          </div>
+        );
+      })}
     </div>
   );
 }

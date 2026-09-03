@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { downloadClassroomTemplateExcel, parseClassroomExcel, downloadCourseTemplateExcel, parseCourseExcel } from '@/lib/afterschool/excel';
-import { defaultTeacherApplySettings, getTeacherApplySettings, onTeacherApplySettingsUpdate, saveTeacherApplySettings, updateAfterschoolCourse, deleteAfterschoolCourse, saveAfterschoolCoursesBatch, addAfterschoolClassroom, deleteAfterschoolClassroom, saveAfterschoolClassroomsBatch, onMaterialRequestsUpdate, onExpenseProofsUpdate, sendSubmissionReminder, purgeAfterschoolOperationalData, onAttendanceRecordsUpdate, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord, onDocConfigUpdate } from '@/lib/services/settingsService';
+import { defaultTeacherApplySettings, getTeacherApplySettings, onTeacherApplySettingsUpdate, saveTeacherApplySettings, updateAfterschoolCourse, deleteAfterschoolCourse, saveAfterschoolCoursesBatch, addAfterschoolClassroom, deleteAfterschoolClassroom, saveAfterschoolClassroomsBatch, onMaterialRequestsUpdate, onExpenseProofsUpdate, sendSubmissionReminder, purgeAfterschoolOperationalData, onAttendanceRecordsUpdate, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord, onDocConfigUpdate, deleteAfterschoolApprovalDoc } from '@/lib/services/settingsService';
 import { countOperatingDays, getCourseSessionsPerClass, generateCalendarSchedule, generateCalendarScheduleByDateRange, ScheduleDay } from '@/lib/afterschool/schedule';
 import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
 import type { DocConfig } from '@/lib/types';
@@ -170,7 +170,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         '• 수강 명단(ENROLLED) 및 대기 명단(WAITING)이 최종 확정됩니다.\n' +
         (isVacationSem
           ? '• [방학 중]: 버스 신청 학생이 [방학 중 등/하교 버스 미배정 명단]으로 자동 전송됩니다.\n'
-          : '• [학기 중]: 버스 신청 학생이 요일별 정규 하교 버스에서 일시 제외되어 [방과후 하교 버스 미배정 명단]으로 자동 전송됩니다. (등교 버스는 영향 없음)\n') +
+          : '• [학기 중]: 버스 신청 학생이 [방과후 하교 버스] 명단에 2중 배정되어 스쿨버스 관리자가 사전 좌석 배정을 진행할 수 있습니다.\n  (※ 방과후 시작 전까지 기존 정규 하교 버스 좌석은 그대로 유지되며, 스쿨버스 관리자가 [방과후 노선으로 이동] 버튼을 누르면 정규 하교 좌석에서 자동 제외됩니다.)\n') +
         '• 학부모 서비스 접속 시 수강신청 확정 결과 팝업 알림이 전송됩니다.'
       );
       if (!confirmResult) return;
@@ -2095,7 +2095,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           )}
 
           {/* Tab: 전자결재 일괄 기안 */}
-          {tab === 'approval' && (
+          {/* Tab: 전자결재 일괄 기안 */}
+          {tab === 'approval' && (() => {
+            const currentYear = teacherApplySettings?.year || '2026';
+            const currentSemester = teacherApplySettings?.semester || '2학기';
+            const formattedSemester = currentSemester.endsWith('학기') && !currentSemester.startsWith('제') 
+              ? `제${currentSemester}` 
+              : currentSemester;
+            const planDocTitle = `[계획] ${currentYear}학년도 ${formattedSemester} 방과후학교 운영 계획 승인의 건`;
+            const resultDocTitle = `[결과] ${currentYear}학년도 ${formattedSemester} 방과후학교 운영 결과 보고 및 수당 지급 청구의 건`;
+
+            return (
             <div className="space-y-6">
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 space-y-1">
                 <div className="font-bold flex items-center gap-1.5 text-amber-900 text-sm">
@@ -2131,14 +2141,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                 <div className="bg-slate-50 rounded-xl p-3 text-xs space-y-1 font-mono text-slate-600">
                   <div>• 취합 대상 강좌: <b>{courses.filter(c => c.status === 'OPEN').length}개</b></div>
-                  <div>• 기안 문서명: [계획] 2026학년도 제1학기 방과후학교 운영 계획 승인의 건</div>
+                  <div>• 기안 문서명: {planDocTitle}</div>
                   <div>• 결재 단계: 담당부장 기안 ➡️ 교감 검토 ➡️ 교장 전결</div>
                 </div>
 
                 {isPlanDrafted ? (
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 text-center text-xs text-emerald-800 font-bold flex items-center justify-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    kisapp 전자결재 문서 번호 [AFTER-PLAN-2026] 결재 대기 중
+                    kisapp 전자결재 문서 번호 [AFTER-PLAN-{currentYear}] 결재 대기 중
                   </div>
                 ) : (
                   <button
@@ -2180,14 +2190,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                 <div className="bg-slate-50 rounded-xl p-3 text-xs space-y-1 font-mono text-slate-600">
                   <div>• 취합 대상 학생: <b>{courses.filter(c => c.status === 'OPEN' || c.status === 'CLOSED').reduce((sum, c) => sum + c.currentStudents, 0)}명</b></div>
-                  <div>• 기안 문서명: [결과] 2026학년도 제1학기 방과후학교 운영 결과 보고 및 수당 지급 청구의 건</div>
+                  <div>• 기안 문서명: {resultDocTitle}</div>
                   <div>• 결재 단계: 담당부장 기안 ➡️ 행정실 확인 ➡️ 교감 검토 ➡️ 교장 결재</div>
                 </div>
 
                 {isResultDrafted ? (
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 text-center text-xs text-emerald-800 font-bold flex items-center justify-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    kisapp 전자결재 문서 번호 [AFTER-RES-2026] 결재 대기 중
+                    kisapp 전자결재 문서 번호 [AFTER-RES-{currentYear}] 결재 대기 중
                   </div>
                 ) : (
                   <button
@@ -2204,7 +2214,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 )}
               </div>
             </div>
-          )}
+            );
+          })()}
 
 
 
@@ -2818,14 +2829,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               {/* Modal Footer */}
-              <div className="border-t border-slate-200 px-6 py-4 flex justify-end gap-2 bg-white shrink-0">
-                <button
-                  type="button"
-                  onClick={() => { setViewingDocCourse(null); setViewingDocType(null); }}
-                  className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow cursor-pointer"
-                >
-                  확인 (닫기)
-                </button>
+              <div className="border-t border-slate-200 px-6 py-4 flex justify-between items-center bg-white shrink-0">
+                <div>
+                  {targetDoc && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!window.confirm(`[${c.title}] 제출된 결재 서류를 반려(삭제)하시겠습니까?\n삭제 시 강사 서류 제출함 및 관리자 검토 대기 목록에서 즉시 제거됩니다.`)) {
+                          return;
+                        }
+                        const res = await deleteAfterschoolApprovalDoc(targetDoc.id);
+                        if (res.success) {
+                          setApprovalDocs((prev) => prev.filter((d) => d.id !== targetDoc.id));
+                          setViewingDocCourse(null);
+                          setViewingDocType(null);
+                          alert('제출된 서류가 성공적으로 반려(삭제)되었습니다.');
+                        } else {
+                          alert(`서류 삭제 실패: ${res.error}`);
+                        }
+                      }}
+                      className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 text-xs font-bold px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>제출 서류 반려 및 삭제</span>
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setViewingDocCourse(null); setViewingDocType(null); }}
+                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow cursor-pointer"
+                  >
+                    확인 (닫기)
+                  </button>
+                </div>
               </div>
             </div>
           </div>

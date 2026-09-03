@@ -1,8 +1,59 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
+import * as XLSX from 'xlsx';
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
+}
+
+const universalKeyMap: Record<string, string> = {
+  '학교': 'school',
+  '학년': 'grade',
+  '반': 'classNum',
+  '번호': 'studentNum',
+  '이름': 'name',
+  '성별': 'gender',
+  '접속코드': 'accessCode',
+  '주민등록번호': 'residentRegistrationNumber',
+  '보호자명': 'guardianName',
+  '혈액형': 'bloodType',
+  '정식학교명': 'officialSchoolName',
+  '담임교사명': 'teacherName',
+  '새 정식학교명': 'newOfficialSchoolName',
+  '새 담임교사명': 'newTeacherName',
+  '새 학년': 'newGrade',
+  '새 반': 'newClassNum',
+  '새 번호': 'newStudentNum',
+  '측정종목': 'item',
+  '기록': 'value',
+  '측정일': 'date'
+};
+
+export async function parseExcel<T>(file: File): Promise<T[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const data = new Uint8Array(e.target?.result as ArrayBuffer);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[];
+      
+      const parsed = jsonData.map(row => {
+        return Object.entries(row).reduce((obj, [key, value]) => {
+          const newKey = universalKeyMap[key.trim()] || key.trim();
+          if (newKey !== 'accessCode') {
+            (obj as any)[newKey] = String(value).trim();
+          }
+          return obj;
+        }, {} as T);
+      });
+      resolve(parsed);
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
 }
 
 export const compressImage = (base64Str: string, maxWidth = 200): Promise<string> => {

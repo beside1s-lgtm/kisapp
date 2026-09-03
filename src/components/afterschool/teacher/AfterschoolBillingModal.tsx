@@ -263,15 +263,17 @@ export function AfterschoolBillingModal({
                         <Send className="w-5 h-5 text-purple-600" />
                         방과후학교 수강 확정 및 수강료 알림 발송
                       </AlertDialogTitle>
-                      <AlertDialogDescription className="text-xs text-slate-600 space-y-2 pt-1">
-                        <p>
-                          <b>≪ {semesterName} ≫</b> 총 <b>{fareResult.bills.length}명</b>의 수강생 학부모 포털로 <b>수강 확정 안내 및 수강료 고지</b>를 전달합니다.
-                        </p>
-                        <div className="bg-slate-50 p-3 rounded-lg border text-[11px] text-slate-700 space-y-1">
-                          <div>• <b>전달 방식:</b> 학부모가 로그인 시 팝업 형태로 수업 안내(강좌명, 장소, 시간, 강사명)가 전달됩니다.</div>
-                          <div>• <b>스쿨버스:</b> 버스를 신청한 학생에게만 버스 호차 및 정류장이 안내되며, 미신청 학생에게는 버스 항목이 표시되지 않습니다.</div>
-                          <div>• <b>수강료:</b> 0원인 부가비용(교재/재료비)은 미표시되며, 무료강좌는 '무료강좌'로 표시됩니다.</div>
-                          <div>• <b>납부 방식:</b> 스쿨뱅킹 자동 출금 또는 가상계좌 납부 안내가 포함됩니다.</div>
+                      <AlertDialogDescription asChild>
+                        <div className="text-xs text-slate-600 space-y-2 pt-1">
+                          <div>
+                            <b>≪ {semesterName} ≫</b> 총 <b>{fareResult.bills.length}명</b>의 수강생 학부모 포털로 <b>수강 확정 안내 및 수강료 고지</b>를 전달합니다.
+                          </div>
+                          <div className="bg-slate-50 p-3 rounded-lg border text-[11px] text-slate-700 space-y-1">
+                            <div>• <b>전달 방식:</b> 학부모가 로그인 시 팝업 형태로 수업 안내(강좌명, 장소, 시간, 강사명)가 전달됩니다.</div>
+                            <div>• <b>스쿨버스:</b> 버스를 신청한 학생에게만 버스 호차 및 정류장이 안내되며, 미신청 학생에게는 버스 항목이 표시되지 않습니다.</div>
+                            <div>• <b>수강료:</b> 0원인 부가비용(교재/재료비)은 미표시되며, 무료강좌는 '무료강좌'로 표시됩니다.</div>
+                            <div>• <b>납부 방식:</b> 스쿨뱅킹 자동 출금 또는 가상계좌 납부 안내가 포함됩니다.</div>
+                          </div>
                         </div>
                       </AlertDialogDescription>
                     </AlertDialogHeader>

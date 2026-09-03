@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -18,6 +19,7 @@ import {
 import { cn } from '@/lib/utils';
 
 export function PwaInstallPrompt() {
+    const { user, loading } = useAuth();
     const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
     const [isInstallable, setIsInstallable] = useState(false);
     const [isIos, setIsIos] = useState(false);
@@ -128,7 +130,7 @@ export function PwaInstallPrompt() {
         }
     };
 
-    if (!isMounted || isStandalone || dismissed) {
+    if (!isMounted || isStandalone || dismissed || loading || !user) {
         return null;
     }
 

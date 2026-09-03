@@ -990,14 +990,16 @@ export function BusFareManagementTab({
                                             <Send className="w-5 h-5 text-indigo-600" />
                                             평일 스쿨버스 요금 청구서 학부모 발송
                                         </AlertDialogTitle>
-                                        <AlertDialogDescription className="text-xs text-slate-600 space-y-2 pt-1">
-                                            <p>
-                                                <b>≪ {currentQuarter.name} ≫</b> <b>평일(월~금) 정규 등하교 버스 신청 학생 (총 {fareCalculationResult.summary.ridingStudents}명)</b>에게만 청구서가 발송됩니다.
-                                            </p>
-                                            <div className="bg-slate-50 p-3 rounded-lg border text-[11px] text-slate-700 space-y-1">
-                                                <div>• <b>전달 대상:</b> 평일 목적지가 배정된 탑승 신청 학생 계정으로만 개별 전달됩니다. (미탑승 학생 미발송)</div>
-                                                <div>• <b>방학/토요 버스 제외:</b> 방학 및 토요 방과후학교 버스요금은 방과후 수강료와 함께 별도 청구됩니다.</div>
-                                                <div>• <b>전달 방식:</b> 해당 학부모가 서비스 로그인 시 팝업(모달)으로 산출 내역이 즉시 전달됩니다.</div>
+                                        <AlertDialogDescription asChild>
+                                            <div className="text-xs text-slate-600 space-y-2 pt-1">
+                                                <div>
+                                                    <b>≪ {currentQuarter.name} ≫</b> <b>평일(월~금) 정규 등하교 버스 신청 학생 (총 {fareCalculationResult.summary.ridingStudents}명)</b>에게만 청구서가 발송됩니다.
+                                                </div>
+                                                <div className="bg-slate-50 p-3 rounded-lg border text-[11px] text-slate-700 space-y-1">
+                                                    <div>• <b>전달 대상:</b> 평일 목적지가 배정된 탑승 신청 학생 계정으로만 개별 전달됩니다. (미탑승 학생 미발송)</div>
+                                                    <div>• <b>방학/토요 버스 제외:</b> 방학 및 토요 방과후학교 버스요금은 방과후 수강료와 함께 별도 청구됩니다.</div>
+                                                    <div>• <b>전달 방식:</b> 해당 학부모가 서비스 로그인 시 팝업(모달)으로 산출 내역이 즉시 전달됩니다.</div>
+                                                </div>
                                             </div>
                                         </AlertDialogDescription>
                                     </AlertDialogHeader>

@@ -102,6 +102,7 @@ interface StudentManagementTabProps {
     afterSchoolTeachers: Teacher[];
     saturdayTeachers: Teacher[];
     semesterMode?: 'regular' | 'vacation';
+    isTransferred?: boolean;
 }
 
 export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
@@ -119,7 +120,8 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
     teachers,
     afterSchoolTeachers,
     saturdayTeachers,
-    semesterMode = 'regular'
+    semesterMode = 'regular',
+    isTransferred = false,
 }) => {
     const { toast } = useToast();
     const { t, i18n } = useTranslation();
@@ -165,12 +167,32 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
     const afterSchoolDestField = semesterMode === 'vacation' ? 'vacationAfterSchoolDestinations' : 'afterSchoolDestinations';
     const afterSchoolClassField = semesterMode === 'vacation' ? 'vacationAfterSchoolClassIds' : 'afterSchoolClassIds';
 
-    // 학생의 현재 모드에 해당하는 방과후 목적지 반환
+    // 학생의 현재 모드에 해당하는 방과후 목적지 반환 (해당 요일에 실제 방과후가 있는 경우만 반환)
     const getAfterSchoolDest = (s: Student, day: DayOfWeek): string | null => {
-        if (semesterMode === 'vacation') {
-            return s.vacationAfterSchoolDestinations?.[day] || null;
+        const destMap = semesterMode === 'vacation' 
+            ? (s.vacationAfterSchoolDestinations || {})
+            : (s.afterSchoolDestinations || {});
+        const classMap = semesterMode === 'vacation'
+            ? (s.vacationAfterSchoolClassIds || {})
+            : (s.afterSchoolClassIds || {});
+
+        // [요청 2] 해당 day에 수업(classId)이나 목적지(dest)가 실제로 등록되어 있지 않다면 null 반환!
+        const hasClassOnDay = Boolean(classMap[day]);
+        const hasDestOnDay = Boolean(destMap[day]);
+        if (!hasClassOnDay && !hasDestOnDay) {
+            return null;
         }
-        return s.afterSchoolDestinations?.[day] || null;
+
+        let dest = destMap[day] || null;
+
+        // 호차 번호('1호차' 등)나 임시 텍스트가 들어있거나 없을 때만 학생의 실제 하교 목적지로 매칭
+        if (!dest || dest.includes('호차') || dest === '미배정' || dest === '방과후 미배정' || dest === 'UNSPECIFIED') {
+            dest = day === 'Saturday'
+                ? (s.satAfternoonDestinationId || s.satMorningDestinationId || s.afternoonDestinationId || s.morningDestinationId || null)
+                : (s.afternoonDestinationId || s.morningDestinationId || null);
+        }
+
+        return dest;
     };
 
     // 학생의 현재 모드에 해당하는 방과후 목적지 맵 전체 반환
@@ -313,17 +335,37 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
         const targetStopIds = new Set<string>();
         if (selectedBusId === 'all') routes.filter(r => r.dayOfWeek === selectedDay && r.type === selectedRouteType).forEach(r => r.stops.forEach(s => targetStopIds.add(s)));
         else if (currentRoute) currentRoute.stops.forEach(s => targetStopIds.add(s));
+
+        const allValidStopIds = new Set<string>();
+        routes.filter(r => r.dayOfWeek === selectedDay && r.type === selectedRouteType).forEach(r => r.stops.forEach(s => allValidStopIds.add(s)));
+
         let unassigned = students.filter(s => {
             if (allAssignedIds.has(s.id)) return false;
-            if (semesterMode !== 'vacation' && selectedRouteType === 'Afternoon' && getAfterSchoolDest(s, selectedDay)) return false;
+
+            // 학기 중 정규 하교(Afternoon) 필터링: 방과후 노선 이동(isTransferred === true)이 완료된 경우에만 하교 미배정에서 제외
+            if (semesterMode !== 'vacation' && selectedRouteType === 'Afternoon') {
+                if (isTransferred && getAfterSchoolDest(s, selectedDay)) return false;
+            }
+
             const destId = getStudentDestId(s);
             if (!destId) return false;
+
             // 방학 중 방과후 모드: 등록 학생은 노선 stop 매칭 무관하게 표시
             if (semesterMode === 'vacation' && selectedRouteType === 'Afternoon') {
                 if (destId === 'VACATION_CLASS_ENROLLED') return true;
                 return unassignedView === 'current' ? targetStopIds.has(destId) : true;
             }
-            return unassignedView === 'current' ? targetStopIds.has(destId) : true;
+
+            // [사용자 요청 3] 전체 버스 선택(selectedBusId === 'all') 또는 전체 보기 탭(unassignedView === 'all')일 때 모든 미배정 학생 표시
+            if (selectedBusId === 'all' || unassignedView === 'all') return true;
+
+            // 개별 버스 선택 시(selectedBusId !== 'all'):
+            // 1) 현재 버스의 stops에 포함된 학생
+            // 2) 어떤 버스 노선에도 정류장이 없어 수동 배정이 필요한 학생(목적지 오류/미경유 학생)도 관리자가 근방 버스에 배정할 수 있도록 노출!
+            const isMatchCurrentStop = targetStopIds.has(destId) || targetStopIds.size === 0;
+            const isUnmatchedInAnyRoute = !allValidStopIds.has(destId) || destId === 'UNSPECIFIED';
+
+            return isMatchCurrentStop || isUnmatchedInAnyRoute;
         });
         if (unassignedSearchQuery) {
             const lq = normalizeString(unassignedSearchQuery);

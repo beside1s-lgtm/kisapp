@@ -47,7 +47,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { LostAndFound } from '@/components/bus/lost-and-found';
 import { AfterSchoolInquiryDialog } from '@/components/bus/after-school-inquiry-dialog';
 import { MorningGateDutyDialog } from '@/components/bus/morning-gate-duty-dialog';
-import { onTeacherApplySettingsUpdate } from '@/lib/services/settingsService';
+import { onTeacherApplySettingsUpdate, onAttendanceRecordsUpdate } from '@/lib/services/settingsService';
 import { useTranslation } from '@/hooks/use-translation';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -80,7 +80,7 @@ const getGradeValue = (grade: string): number => {
   return isNaN(num) ? 999 : num;
 };
 
-const AllStudentsBoardingStatus = ({ relevantRoutes, students, buses, allAttendance, formatStudentName, t }: { relevantRoutes: Route[]; students: Student[]; buses: Bus[]; allAttendance: Record<string, AttendanceRecord | null>; formatStudentName: (student: Student) => string; t: any; }) => {
+const AllStudentsBoardingStatus = ({ relevantRoutes, students, buses, allAttendance, formatStudentName, t, afterschoolAbsentStudentIds }: { relevantRoutes: Route[]; students: Student[]; buses: Bus[]; allAttendance: Record<string, AttendanceRecord | null>; formatStudentName: (student: Student) => string; t: any; afterschoolAbsentStudentIds?: Set<string>; }) => {
     const { toast } = useToast();
     const { i18n } = useTranslation();
 
@@ -94,9 +94,10 @@ const AllStudentsBoardingStatus = ({ relevantRoutes, students, buses, allAttenda
                 const student = students.find(s => s.id === seat.studentId);
                 if (student) {
                     const record = allAttendance[route.id];
+                    const isAfterschoolAbsent = route.type === 'AfterSchool' && afterschoolAbsentStudentIds?.has(student.id);
                     let status: any = 'not_boarded';
                     if (record?.boarded?.includes(student.id)) status = 'boarded';
-                    else if (record?.notBoarding?.includes(student.id)) status = 'notRiding';
+                    else if (record?.notBoarding?.includes(student.id) || isAfterschoolAbsent) status = 'notRiding';
                     else if (record?.disembarked?.includes(student.id)) status = 'disembarked';
                     if (!studentsList.some(s => s.id === student.id)) studentsList.push({ ...student, busName: bus.name, status });
                 }
@@ -117,7 +118,7 @@ const AllStudentsBoardingStatus = ({ relevantRoutes, students, buses, allAttenda
             if (a.class !== b.class) return a.class.localeCompare(b.class, undefined, { numeric: true });
             return getStudentName(a, i18n.language).localeCompare(getStudentName(b, i18n.language), 'ko');
         });
-    }, [relevantRoutes, students, buses, allAttendance, i18n.language]);
+    }, [relevantRoutes, students, buses, allAttendance, i18n.language, afterschoolAbsentStudentIds]);
 
     const handleCopyNotBoarded = () => {
         const notBoardedStudents = allStudentsOnDay.filter(s => s.status === 'not_boarded');
@@ -1389,8 +1390,12 @@ export default function TeacherPage() {
       ((lastRouteTypeRef.current === 'AfterSchool' && selectedRouteType !== 'AfterSchool') ||
        (lastRouteTypeRef.current !== 'AfterSchool' && selectedRouteType === 'AfterSchool'));
 
-    if ((selectedBusId === '' || isTypeChanged) && defaultBusId) {
-      setSelectedBusId(defaultBusId);
+    if (selectedBusId === '' || isTypeChanged) {
+      if (defaultBusId) {
+        setSelectedBusId(defaultBusId);
+      } else if (selectedBusId === '') {
+        setSelectedBusId('all');
+      }
     }
 
     lastRouteTypeRef.current = selectedRouteType;
@@ -1543,10 +1548,45 @@ export default function TeacherPage() {
     return () => unsubs.forEach(u => u());
   }, [selectedBusId, relevantRoutesForDay, selectedDate]);
 
+  // 방과후 출석 레코드 실시간 구독 (방과후 결석/개별하교 실시간 연동)
+  const [afterschoolAttendanceRecords, setAfterschoolAttendanceRecords] = useState<any[]>([]);
+
+  useEffect(() => {
+    const unsub = onAttendanceRecordsUpdate((records) => {
+      setAfterschoolAttendanceRecords(records || []);
+    });
+    return () => unsub();
+  }, []);
+
+  // 방과후 수업 결석 or 개별하교 학생 ID 추출 (해당 날짜 기준)
+  const afterschoolAbsentStudentIds = useMemo(() => {
+    if (selectedRouteType !== 'AfterSchool') return new Set<string>();
+    const absentSet = new Set<string>();
+    
+    (afterschoolAttendanceRecords || []).forEach((r) => {
+      const isDateMatch = r.date === selectedDate || (r.date && selectedDate.endsWith(r.date.split('(')[0].replace('/', '-')));
+      if (isDateMatch) {
+        if (r.status === 'ABSENT' || r.markSymbol === 'X' || r.isIndividualDismissal === true || r.markSymbol === 'V') {
+          absentSet.add(r.studentId);
+        }
+      }
+    });
+    return absentSet;
+  }, [selectedRouteType, selectedDate, afterschoolAttendanceRecords]);
+
   const boardedStudentIds = attendance?.boarded || [], 
-        notBoardingStudentIds = attendance?.notBoarding || [], 
+        rawNotBoardingStudentIds = attendance?.notBoarding || [], 
         disembarkedStudentIds = attendance?.disembarked || [], 
         completedDestinations = attendance?.completedDestinations || [];
+
+  // 최종 notBoarding: 버스 출석부 notBoarding + 방과후 결석/개별하교 학생 자동 포함
+  const notBoardingStudentIds = useMemo(() => {
+    if (selectedRouteType !== 'AfterSchool' || afterschoolAbsentStudentIds.size === 0) {
+      return rawNotBoardingStudentIds;
+    }
+    const combined = new Set([...rawNotBoardingStudentIds, ...Array.from(afterschoolAbsentStudentIds)]);
+    return Array.from(combined);
+  }, [rawNotBoardingStudentIds, selectedRouteType, afterschoolAbsentStudentIds]);
 
   useEffect(() => {
     if (lastClickedStudentId) {
@@ -2206,7 +2246,7 @@ updates.disembarked = arrayUnion(student.id);
         <div onContextMenu={(e) => { e.preventDefault(); setSwapSourceSeat(null); }} className="min-h-full">
         {selectedBusId === 'all' ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start w-full">
-                <AllStudentsBoardingStatus relevantRoutes={relevantRoutesForDay} students={students} buses={filteredBuses} allAttendance={allAttendance} formatStudentName={formatStudentName} t={t}/>
+                <AllStudentsBoardingStatus relevantRoutes={relevantRoutesForDay} students={students} buses={filteredBuses} allAttendance={allAttendance} formatStudentName={formatStudentName} t={t} afterschoolAbsentStudentIds={afterschoolAbsentStudentIds}/>
                 <AllGroupLeadersStatus relevantRoutes={relevantRoutesForDay} students={students} buses={filteredBuses} formatStudentName={formatStudentName} t={t}/>
             </div>
         ) : (

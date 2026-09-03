@@ -162,18 +162,42 @@ export function calculateAllStudentsAfterschoolFare(params: {
     }
 
     // 버스비 산정 규칙:
-    // - 토요/방학 버스는 saturdayBusFareSettings 기준 거리별 요금 책정
-    // - 평일 하교 버스는 정규 버스 연동이므로 0원 또는 방과후 설정에 따름
+    // - 토요/방학 버스는 saturdayBusFareSettings 기준 거리별 요금 책정 (7군 90만VND, 7군외 160만VND 등)
+    // - 평일 하교 버스는 정규 버스 연동이므로 0원
     let calculatedFare = 0;
     if (hasSaturdayCourse || (teacherApplySettings as any)?.semester?.includes('방학')) {
-      calculatedFare =
-        saturdayBusFareSettings[zone] !== undefined
-          ? saturdayBusFareSettings[zone]
-          : zone.includes('A')
-          ? 30000
-          : zone.includes('B')
-          ? 50000
-          : 70000;
+      const keys = Object.keys(saturdayBusFareSettings || {});
+      if (zone && saturdayBusFareSettings[zone] !== undefined) {
+        calculatedFare = saturdayBusFareSettings[zone];
+      } else if (destinationName && saturdayBusFareSettings[destinationName] !== undefined) {
+        calculatedFare = saturdayBusFareSettings[destinationName];
+      } else if (keys.length > 0) {
+        const isDistrict7 = (
+          (destinationName && destinationName.includes('7군') && !destinationName.includes('7군 외')) ||
+          (zone && zone.includes('7군') && !zone.includes('7군 외')) ||
+          (zone && zone.includes('Zone A')) ||
+          (destinationName && (destinationName.includes('Midtown') || destinationName.includes('Scenic') || destinationName.includes('Happy') || destinationName.includes('Sky') || destinationName.includes('Parkview') || destinationName.includes('Green') || destinationName.includes('Riverpark') || destinationName.includes('Grand View') || destinationName.includes('Panorama') || destinationName.includes('Star Hill') || destinationName.includes('Hung Vang') || destinationName.includes('My Khanh') || destinationName.includes('My Phuc') || destinationName.includes('Garden Court') || destinationName.includes('Garden Plaza') || destinationName.includes('Oakwood') || destinationName.includes('Sunrise') || destinationName.includes('Eco Green') || destinationName.includes('Richlane')))
+        );
+
+        const d7Key = keys.find(k => k.includes('7군') && !k.includes('7군 외') && !k.includes('기타'));
+        const nonD7Key = keys.find(k => k.includes('7군 외') || k.includes('기타') || k.includes('원거리') || k.includes('Zone B') || k.includes('Zone C'));
+
+        if (isDistrict7 && d7Key && saturdayBusFareSettings[d7Key]) {
+          calculatedFare = saturdayBusFareSettings[d7Key];
+          zone = d7Key;
+        } else if (!isDistrict7 && nonD7Key && saturdayBusFareSettings[nonD7Key]) {
+          calculatedFare = saturdayBusFareSettings[nonD7Key];
+          zone = nonD7Key;
+        } else if (isDistrict7) {
+          calculatedFare = saturdayBusFareSettings[keys[0]] || 900000;
+          zone = keys[0] || '7군';
+        } else {
+          calculatedFare = saturdayBusFareSettings[keys[1]] || saturdayBusFareSettings[keys[0]] || 1600000;
+          zone = keys[1] || '7군 외, 기타 지역';
+        }
+      } else {
+        calculatedFare = 900000;
+      }
     }
 
     return {

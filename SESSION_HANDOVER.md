@@ -1,38 +1,32 @@
-# SESSION HANDOVER & CONTINUATION SUMMARY
-
----
+# KISAPP Development Session Handover
 
 ## 1. Current Status (현재 상태)
-
-### 1) 학부모 서식 A4 규격 및 레이아웃 최적화 완료
-- **교외체험학습 계획 셀 세로 높이 축소**: 기존 `245px` → `170px` (약 20mm 축소)로 최적화하여 하단 바닥글 및 유의사항, 원본대조필 직인이 A4 1페이지 내에 100% 안전하게 안착되도록 조정.
-- **불인정 기간 표 여백 및 정렬**: 표 외곽 `padding: 2mm` 및 상단 안내문구 `marginBottom: 2mm` 적용으로 외곽선과 텍스트의 2mm 간격 확보.
-- **모든 표 셀 수직 중앙 정렬**: 모든 단일행 셀에 `display: flex; align-items: center;` 컨테이너를 적용하여 텍스트가 셀 바닥에 가라앉지 않고 수직 정중앙에 정렬되도록 개선.
-
-### 2) PDF 내보내기 엔진 1:1 화면 캡처(`html-to-image`)로 전면 교체
-- 기존 `html2canvas`의 가상 뷰포트 재렌더링에 따른 폰트/레이아웃 밀림 및 잘림 문제를 근본적으로 해결.
-- 브라우저의 실제 렌더링 픽셀(Computed Style 및 폰트)을 그대로 캡처하는 `html-to-image` 기반으로 `src/lib/pdf-export.ts`를 교체하여, 사용자가 브라우저에서 보는 모습과 1:1로 일치하는 고해상도 PDF 다운로드 구현.
-- 브라우저 네이티브 인쇄 및 'PDF로 저장'을 위한 `[인쇄 / 브라우저 저장]` 버튼 추가.
-
-### 3) 원본대조필 직인 노출 권한 및 경로 격리 (학부모 전용)
-- **[학교 보관용 원본 (교직원/관리자 문서함)]**: 원본대조필 직인이 표시되지 않음 (`isParentPortal = false`).
-- **[학부모 포털 & 학부모 출력물]**: 결재 완료(`approved`) 시 하단 우측 여백에 교감 원본대조필 직인 날인 (`isParentPortal = true`).
+- **단순 확인 완료형 의견 첨부(선택) 기능 및 업무 해결 방식 3종 명칭 개편/설문지 지원 완료**:
+  1. **단순 확인 완료형 (`acknowledgment`) 개선**:
+     - 피할당 교사가 업무 확인 시 불필요한 복잡한 폼(타임테이블/PPT 첨부) 대신, 지침 확인 안내 카드와 **`의견 첨부 (선택)`** 텍스트에어리어를 제공.
+     - 의견이 있을 경우 작성하여 제출하고, 없으면 단순 원클릭으로 확인 완료 처리.
+     - 제출 다이얼로그 및 취합 다이얼로그(`task-submissions-dialog.tsx`)에서 `✓ 확인 완료` 뱃지 및 첨부된 의견 실시간 표시 연동.
+  2. **업무 해결 방식 명칭 개편 및 설문지(Forms) 지원**:
+     - `[시트 1] 사용자 지정 시트 링크형` -> **`사용자 문서 링크형`** (Google Sheets, Docs, Slides 또는 Google Forms 설문지 링크 등록 및 새 설문지/새 시트 바로가기 버튼 제공).
+     - `[시트 2] 표준 템플릿 자동 로드형` -> **`표준 시트 양식 배포`** (중앙 드라이브 자동 생성 연동).
+     - `[서식 3] 기안문 직행 HTML 표 취합형 (강력 추천)` -> **`기안문 붙임 문서 자동 생성형`**.
+     - 피할당자/취합 화면 배너도 링크 성격(구글 폼인지 시트인지)에 따라 동적으로 알맞은 명칭과 바로가기 버튼(`Google 설문지 바로 열기` / `Google Sheets 바로 열기`) 제공.
 
 ---
 
-## 2. Modified Files (수정된 주요 파일)
-
-| 구분 | 파일 경로 | 변경 사유 |
-|:---|:---|:---|
-| **수정** | `src/lib/pdf-export.ts` | `html2canvas` 대신 `html-to-image` 기반으로 교체하여 화면 렌더링 100% 일치 PDF 생성 |
-| **수정** | `src/components/parent-form-view.tsx` | 교외체험학습 계획 셀 높이 2cm 축소, 불인정기간 표 외곽 2mm 여백, Flex 기반 수직 중앙 정렬 |
-| **수정** | `src/components/document-view.tsx` | `[인쇄 / 브라우저 저장]` 버튼 추가 및 `ParentFormView` 연동 |
-| **수정** | `package.json` | `html-to-image` 의존성 추가 |
-| **수정** | `SESSION_HANDOVER.md` | 세션 인수인계 정보 갱신 |
+## 2. Modified & Created Files (수정 및 생성된 파일)
+1. `src/components/tasks/create-department-task-dialog.tsx` [MODIFY]
+   - 업무 해결 방식 카드 3종 명칭 및 설명 수정.
+   - `사용자 문서 링크형` 옵션 패널에 설문지(Forms)/시트/문서 지원 및 새 설문지(`forms.new`) 바로가기 추가.
+2. `src/components/tasks/submit-department-task-dialog.tsx` [MODIFY]
+   - 단순 확인 완료형 전용 뷰 및 `의견 첨부 (선택)` 입력창 구현.
+   - 링크 유형(Forms vs Sheets)에 맞춘 배너 및 열기 버튼 분기.
+   - `MessageSquare` import 누락 수정.
+3. `src/components/tasks/task-submissions-dialog.tsx` [MODIFY]
+   - 단순 확인형 교원별 상태 뱃지(`✓ 확인 완료` / `⏳ 미확인`) 및 첨부 의견 말풍선 연동.
+   - 설문지/시트 배너 명칭 및 바로가기 버튼 연동.
 
 ---
 
 ## 3. Next Steps (다음 작업 목표)
-
-1. 배포 후 프로덕션 환경에서 학부모 신청서/결과보고서/결석계의 PDF 다운로드 및 브라우저 인쇄 검증.
-2. 필요 시 다국어 지원 및 기타 학부모 포털 기능 모니터링.
+- 사용자 추가 피드백 대응.

@@ -15,78 +15,118 @@ export function formatOfficialDocumentHtml(html: string): string {
   }
 
   // 2. <ol>, <ul>, <table>, <blockquote> 등 컨테이너 태그는 보존하고, <p> 태그에 공문서 표준 스타일 적용
-  // DOM 파싱 대신 안전한 정규식으로 <ol>, <ul>, <table>에 공문서 표준 CSS 주입
+  // 붙임 전용 표(attachment-table)는 선 없는 표(border: none)로 보존하고 일반 표만 테두리 적용
   processed = processed
-    .replace(/<ol(\s*[^>]*)>/gi, (_, attrs) => {
-      return `<ol style="list-style-type: decimal !important; padding-left: 24px; margin: 8px 0; line-height: 1.8;">`;
-    })
-    .replace(/<ul(\s*[^>]*)>/gi, (_, attrs) => {
-      return `<ul style="list-style-type: disc !important; padding-left: 24px; margin: 8px 0; line-height: 1.8;">`;
-    })
-    .replace(/<li(\s*[^>]*)>/gi, (_, attrs) => {
-      return `<li style="margin-bottom: 4px; line-height: 1.8; word-break: keep-all;">`;
-    })
-    .replace(/<table(\s*[^>]*)>/gi, (_, attrs) => {
+    .replace(/<ol(\s*[^>]*)>/gi, () => `<ol style="list-style-type: decimal !important; padding-left: 24px; margin: 8px 0; line-height: 1.8;">`)
+    .replace(/<ul(\s*[^>]*)>/gi, () => `<ul style="list-style-type: disc !important; padding-left: 24px; margin: 8px 0; line-height: 1.8;">`)
+    .replace(/<li(\s*[^>]*)>/gi, () => `<li style="margin-bottom: 4px; line-height: 1.8; word-break: keep-all;">`)
+    .replace(/<table(\s*[^>]*)>/gi, (match, attrs) => {
+      if (attrs.includes('attachment-table') || attrs.includes('border: none') || attrs.includes('border: 0') || attrs.includes('border="0"')) {
+        return `<table style="width: 100%; border-collapse: collapse; border: none; margin: 16px 0 6px 0; line-height: 1.8; font-size: inherit;" class="attachment-table">`;
+      }
       return `<table style="width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 11pt;" border="1">`;
     })
-    .replace(/<th(\s*[^>]*)>/gi, (_, attrs) => {
+    .replace(/<th(\s*[^>]*)>/gi, (match, attrs) => {
+      if (attrs.includes('border: none') || attrs.includes('border: 0')) return match;
       return `<th style="border: 1px solid #334155; padding: 6px 8px; background-color: #f1f5f9; font-weight: 700; text-align: center;">`;
     })
-    .replace(/<td(\s*[^>]*)>/gi, (_, attrs) => {
+    .replace(/<td(\s*[^>]*)>/gi, (match, attrs) => {
+      if (attrs.includes('border: none') || attrs.includes('border: 0')) return match;
       return `<td style="border: 1px solid #334155; padding: 6px 8px; text-align: center;">`;
     });
 
-  // 3. <p> 태그 항목별 공문서 표준 들여쓰기 계산
-  // <p>...</p> 블록 매칭
-  let isInsideAttachmentSection = false;
+  // 3. <p> 태그 항목별 공문서 표준 들여쓰기 계산 및 붙임 항목의 '선 없는 표' 자동 구조화
+  // 연속된 붙임 <p> 태그들을 추출하여 선 없는 2열 테이블(1열: 붙임, 2열: 1. / 2.)로 변환
+  const pRegex = /<p([^>]*)>([\s\S]*?)<\/p>/gi;
+  const pList: { full: string; attrs: string; inner: string; text: string }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = pRegex.exec(processed)) !== null) {
+    const inner = m[2];
+    const text = inner.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\u00a0/g, ' ').trim();
+    pList.push({ full: m[0], attrs: m[1], inner, text });
+  }
 
+  // 본문 내 붙임 p 태그들을 찾아서 선 없는 표로 일괄 치환
+  let attachmentItems: { isFirst: boolean; content: string }[] = [];
+  let attachmentStartIndex = -1;
+
+  for (let i = 0; i < pList.length; i++) {
+    const item = pList[i];
+    if (/^붙임\s*/.test(item.text)) {
+      attachmentStartIndex = i;
+      // '붙임' 텍스트 뒤에 오는 1. ... 내용 추출
+      const cleanContent = item.inner.replace(/<[^>]*>/g, '').replace(/^붙임\s*/, '').replace(/^(&nbsp;|\s|\u00a0)+/, '').trim();
+      attachmentItems.push({ isFirst: true, content: cleanContent });
+    } else if (attachmentStartIndex !== -1 && (/^[2-9]\.\s*/.test(item.text) || /^끝\./.test(item.text))) {
+      const cleanContent = item.inner.replace(/<[^>]*>/g, '').replace(/^(&nbsp;|\s|\u00a0)+/, '').trim();
+      attachmentItems.push({ isFirst: false, content: cleanContent });
+    } else if (attachmentStartIndex !== -1) {
+      break;
+    }
+  }
+
+  if (attachmentItems.length > 0 && attachmentStartIndex !== -1) {
+    const tableRows = attachmentItems.map((att, idx) => `
+      <tr>
+        <td style="vertical-align: top; width: 36px; border: none; padding: 0 8px 3px 0; white-space: nowrap; font-weight: normal; color: inherit;">${att.isFirst ? '붙임' : ''}</td>
+        <td style="vertical-align: top; border: none; padding: 0 0 3px 0; font-weight: normal; color: inherit; word-break: keep-all;">${att.content}</td>
+      </tr>
+    `).join('');
+
+    const attachmentTableHtml = `
+      <table style="width: 100%; border-collapse: collapse; border: none; margin-top: 18px; margin-bottom: 6px; line-height: 1.8; font-size: inherit;" class="attachment-table">
+        <tbody>${tableRows}</tbody>
+      </table>
+    `.trim();
+
+    // 해당 p 태그들을 attachmentTableHtml 로 치환
+    const toReplace = pList.slice(attachmentStartIndex, attachmentStartIndex + attachmentItems.length).map(p => p.full).join('');
+    // processed 에서 해당 영역을 attachmentTableHtml 로 변경
+    if (toReplace && processed.includes(toReplace)) {
+      processed = processed.replace(toReplace, attachmentTableHtml);
+    } else {
+      // 분산되어 있을 경우 개별 치환
+      pList.slice(attachmentStartIndex, attachmentStartIndex + attachmentItems.length).forEach((p, idx) => {
+        if (idx === 0) {
+          processed = processed.replace(p.full, attachmentTableHtml);
+        } else {
+          processed = processed.replace(p.full, '');
+        }
+      });
+    }
+  }
+
+  // 4. 나머지 <p> 태그에 일반 공문서 들여쓰기 적용
   processed = processed.replace(/<p([^>]*)>([\s\S]*?)<\/p>/gi, (fullMatch, attrs, innerContent) => {
-    // 텍스트 내용 추출
-    const textContent = innerContent.replace(/<[^>]*>/g, '').trim();
+    const textContent = innerContent.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\u00a0/g, ' ').trim();
 
     let marginLeft = '0px';
     let marginTop = '0px';
     let marginBottom = '6px';
 
     if (textContent) {
-      // A. 붙임 첫째 줄 (붙임  1. ...)
-      if (/^붙임\s*/.test(textContent)) {
-        isInsideAttachmentSection = true;
-        marginTop = '18px'; // 본문과 붙임 사이 간격
-        marginLeft = '0px';
-      } 
-      // B. 붙임 둘째 줄 이하 (2. ..., 3. ...)
-      else if (isInsideAttachmentSection && /^[2-9]\.\s*/.test(textContent)) {
-        marginLeft = '54px'; // 붙임 1.의 번호 위치 직하 정렬
+      // 둘째 항목 기호 (가., 나., 다., 라...)
+      if (/^[가-하]\.\s*/.test(textContent)) {
+        marginLeft = '18px';
       }
-      // C. 둘째 항목 기호 (가., 나., 다., 라...)
-      else if (/^[가-하]\.\s*/.test(textContent)) {
-        isInsideAttachmentSection = false;
-        marginLeft = '18px'; // 오른쪽으로 2타 이동
-      }
-      // D. 셋째 항목 기호 (1), 2), 3), 4)...)
+      // 셋째 항목 기호 (1), 2), 3), 4)...)
       else if (/^\d+\)\s*/.test(textContent)) {
-        isInsideAttachmentSection = false;
-        marginLeft = '36px'; // 오른쪽으로 4타 이동
+        marginLeft = '36px';
       }
-      // E. 넷째 항목 기호 ((가), (나), (다)...)
+      // 넷째 항목 기호 ((가), (나), (다)...)
       else if (/^\([가-하]\)\s*/.test(textContent)) {
-        isInsideAttachmentSection = false;
         marginLeft = '54px';
       }
-      // F. 다섯째 항목 기호 ((1), (2), (3)...)
+      // 다섯째 항목 기호 ((1), (2), (3)...)
       else if (/^\(\d+\)\s*/.test(textContent)) {
-        isInsideAttachmentSection = false;
         marginLeft = '72px';
       }
-      // G. 첫째 항목 기호 (1., 2., 3....)
+      // 첫째 항목 기호 (1., 2., 3....)
       else if (/^\d+\.\s*/.test(textContent)) {
-        isInsideAttachmentSection = false;
         marginLeft = '0px';
       }
     }
 
-    // 기존 style 속성이 있으면 margin-left와 line-height 등을 병합
     let cleanAttrs = attrs || '';
     if (/style=["'][^"']*["']/i.test(cleanAttrs)) {
       cleanAttrs = cleanAttrs.replace(/style=["']([^"']*)["']/i, (_: string, styleContent: string) => {

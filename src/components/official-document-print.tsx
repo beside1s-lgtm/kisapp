@@ -26,13 +26,24 @@ export const OfficialDocumentPrint = React.forwardRef<HTMLDivElement, OfficialDo
       };
     });
 
+    const isPrincipalRole = (role?: string) => {
+      if (!role) return false;
+      const r = role.trim();
+      return r === '교장' || r === '학교장' || r === '원장' || r === '대표';
+    };
+
+    const getTypeText = (type: string, role?: string) => {
+      if (isPrincipalRole(role)) return '';
+      return type === 'final' ? '전결' : type === 'proxy' ? '대결' : '';
+    };
+
     return (
       <div
         ref={ref}
         style={{
           width: '210mm',
-          minHeight: '295mm',
-          padding: '12mm 15mm 12mm 15mm',
+          minHeight: '297mm',
+          padding: '16mm 20mm 15mm 20mm',
           boxSizing: 'border-box' as const,
           display: 'flex' as const,
           flexDirection: 'column' as const,
@@ -112,6 +123,9 @@ export const OfficialDocumentPrint = React.forwardRef<HTMLDivElement, OfficialDo
                 <div key={idx} style={{ display: 'flex' as const, alignItems: 'center' as const, gap: '8px' }}>
                   <div style={{ display: 'flex' as const, flexDirection: 'column' as const, alignItems: 'flex-start' as const, lineHeight: 1.2 }}>
                     <span style={{ fontWeight: 'bold' }}>{ap.role}</span>
+                    {ap.type !== 'normal' && getTypeText(ap.type, ap.role) && (
+                      <span style={{ fontSize: '9pt', color: '#4338ca', fontWeight: 'bold' }}>{getTypeText(ap.type, ap.role)}</span>
+                    )}
                   </div>
                   <div style={{ display: 'flex' as const, alignItems: 'center' as const, gap: '4px' }}>
                     <span style={{ fontWeight: 600 }}>{ap.approverName}</span>

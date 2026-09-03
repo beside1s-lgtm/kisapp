@@ -21,6 +21,71 @@ export const isStudentEmail = (email?: string | null): boolean => {
   return /^\d{4}[a-zA-Z0-9._-]+@kshcm\.net$/i.test(lower);
 };
 
+export const getAllMasterStudents = async (): Promise<MasterStudent[]> => {
+  try {
+    const [masterSnap, userSnap] = await Promise.all([
+      getDocs(collection(getDb(), COLLECTION_NAME)),
+      getDocs(collection(getDb(), 'users')),
+    ]);
+    
+    const map = new Map<string, MasterStudent>();
+    
+    userSnap.docs.forEach(doc => {
+      const u = doc.data();
+      const email = (u.email || doc.id || '').trim().toLowerCase();
+      if (email && isStudentEmail(email)) {
+        const studentName = u.studentName || u.name || u.nameKo || '';
+        map.set(email, {
+          studentEmail: email,
+          studentId: doc.id,
+          name: studentName,
+          nameKo: studentName,
+          grade: String(u.grade || u.studentGrade || '1'),
+          classNum: String(u.classNum || u.class || u.studentClass || '1'),
+          studentNum: String(u.studentNum || u.number || u.studentNumber || ''),
+          gender: u.gender === 'Female' || u.gender === 'female' || u.gender === '여' ? 'Female' : 'Male',
+          contact: u.phone || u.parentPhone || u.contact || '',
+          parentEmail: u.parentEmail || '',
+          address: u.address || u.residenceDestinationId || '',
+          kisbusNo: u.kisbusNo || '',
+          photoUrl: u.photoUrl || '',
+          peStudentId: u.peStudentId || '',
+        } as MasterStudent);
+      }
+    });
+
+    masterSnap.docs.forEach(doc => {
+      const s = doc.data();
+      const email = (s.studentEmail || s.email || '').trim().toLowerCase();
+      const key = email || doc.id;
+      const existing = email ? map.get(email) : map.get(doc.id);
+      const studentName = s.nameKo || s.name || s.studentName || existing?.nameKo || existing?.name || '';
+      
+      map.set(key, {
+        ...existing,
+        ...s,
+        id: doc.id,
+        studentId: doc.id,
+        studentEmail: email || existing?.studentEmail || '',
+        name: studentName || '학생',
+        nameKo: studentName || '학생',
+        grade: String(s.grade || s.studentGrade || existing?.grade || '1'),
+        classNum: String(s.classNum || s.class || s.studentClass || existing?.classNum || '1'),
+        studentNum: String(s.studentNum || s.number || s.studentNumber || existing?.studentNum || ''),
+        gender: s.gender === 'Female' || s.gender === 'female' || s.gender === '여' ? 'Female' : 'Male',
+        photoUrl: s.photoUrl || (existing as any)?.photoUrl || '',
+        peStudentId: (s as any).peStudentId || (existing as any)?.peStudentId || '',
+      } as MasterStudent);
+    });
+
+    // 이름이 없는 학생 데이터 필터링 또는 정리
+    return Array.from(map.values()).filter(s => s.name && s.name !== '학생');
+  } catch (err) {
+    console.error('getAllMasterStudents error:', err);
+    return [];
+  }
+};
+
 // 1. 실시간 전체 통합 학생 마스터 구독 (입학년도 규칙을 만족하는 실제 등록 학생만 수신)
 export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => void) => {
   let masterList: MasterStudent[] = [];
@@ -224,7 +289,8 @@ export const createMasterStudent = async (studentData: NewMasterStudent): Promis
         class: studentData.classNum,
         number: studentData.studentNum,
         phone: studentData.contact,
-        address: studentData.address || ''
+        address: studentData.address || '',
+        photoUrl: studentData.photoUrl || ''
       });
     } else {
       const userRef = doc(collection(getDb(), 'users'));
@@ -237,6 +303,7 @@ export const createMasterStudent = async (studentData: NewMasterStudent): Promis
         number: studentData.studentNum,
         phone: studentData.contact,
         address: studentData.address || '',
+        photoUrl: studentData.photoUrl || '',
         role: 'student'
       });
     }
@@ -260,7 +327,7 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
   });
 
   // users 컬렉션 동시 업데이트
-  if (updateData.studentEmail || updateData.name || updateData.grade || updateData.address) {
+  if (updateData.studentEmail || updateData.name || updateData.grade || updateData.address || updateData.photoUrl !== undefined) {
     const emailToSearch = updateData.studentEmail || studentId;
     const q = query(collection(getDb(), 'users'), where("email", "==", emailToSearch.trim()));
     const snapshot = await getDocs(q);
@@ -273,6 +340,7 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
       if (updateData.studentNum) payload.number = updateData.studentNum;
       if (updateData.contact) payload.phone = updateData.contact;
       if (updateData.address !== undefined) payload.address = updateData.address;
+      if (updateData.photoUrl !== undefined) payload.photoUrl = updateData.photoUrl;
       await updateDoc(doc(getDb(), 'users', userDoc.id), payload);
     }
   }
@@ -325,7 +393,7 @@ export const syncAddressToKisbusStudent = async (
         afternoonDestinationId: destIdToSet,
         suggestedMorningDestination: destIdToSet,
         suggestedAfternoonDestination: destIdToSet,
-        contact: contact ? contact.replace(/\D/g, '') : targetStudent.contact
+        contact: contact ? contact.replace(/\D/g, '') : (targetStudent as any).contact
       });
     }
   } catch (err) {

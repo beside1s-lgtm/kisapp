@@ -24,6 +24,8 @@ import type {
   ApprovalDocPayload,
   DocConfig,
   UserProfile,
+  OrgStructure,
+  DutyRolePermission,
 } from '@/lib/types';
 import { getUserProfileByEmail, saveUserProfile } from '@/lib/services/userService';
 
@@ -362,11 +364,37 @@ export async function getRegistryDocuments(lastDoc?: DocumentSnapshot) {
   }
 }
 
-export async function getAttendanceDocuments(userEmail: string, isAdmin: boolean) {
+export async function getAttendanceDocuments(
+  userEmail: string, 
+  isAdmin: boolean,
+  options?: {
+    permissions?: DutyRolePermission[];
+    orgStructure?: OrgStructure | null;
+  }
+) {
   if (!userEmail) return [];
+  const normalizedEmail = userEmail.toLowerCase();
   
   try {
-    if (isAdmin) {
+    const org = options?.orgStructure;
+    const permissions = options?.permissions || [];
+
+    // 1. 최고 결재권자 판정: 관리자, 학교장, 교감, 교무부장
+    const isLeadership = !!(
+      isAdmin ||
+      (org?.principal && org.principal.toLowerCase() === normalizedEmail) ||
+      (org?.vicePrincipal && org.vicePrincipal.toLowerCase() === normalizedEmail) ||
+      (org?.academicHead && org.academicHead.toLowerCase() === normalizedEmail)
+    );
+
+    // 2. 학생출결/학적 총괄 관리자(student_admin) 또는 전교생 범위('all') 권한 판정
+    const hasAllScope = isLeadership || permissions.some(p => 
+      p.features?.includes('student_admin') || 
+      p.attendanceScope?.type === 'all'
+    );
+
+    // 전교생 전체 권한자인 경우: 모든 승인된 결석/체험학습 문서 즉시 반환
+    if (hasAllScope) {
       const q = query(
         getApprovalsCol(),
         where('status', '==', 'approved'),
@@ -374,47 +402,114 @@ export async function getAttendanceDocuments(userEmail: string, isAdmin: boolean
       );
       const snapshot = await getDocs(q);
       return serializeDocs(snapshot.docs, 'completedAt');
-    } else {
-      const normalizedEmail = userEmail.toLowerCase();
-      
-      // 1. 기안자 쿼리
-      const q1 = query(
-        getApprovalsCol(),
-        where('status', '==', 'approved'),
-        where('docType', '==', 'parent'),
-        where('requesterEmail', '==', normalizedEmail)
-      );
-      
-      // 2. 결재자 쿼리
-      const q2 = query(
-        getApprovalsCol(),
-        where('status', '==', 'approved'),
-        where('docType', '==', 'parent'),
-        where('approverEmails', 'array-contains', normalizedEmail)
-      );
-      
-      const [snap1, snap2] = await Promise.all([
-        getDocs(q1),
-        getDocs(q2)
-      ]);
-      
-      const docMap = new Map<string, any>();
-      
-      const addDocsToMap = (docs: any[]) => {
-        docs.forEach(doc => {
-          docMap.set(doc.id, doc);
-        });
-      };
-      
-      addDocsToMap(serializeDocs(snap1.docs, 'completedAt'));
-      addDocsToMap(serializeDocs(snap2.docs, 'completedAt'));
-      
-      return Array.from(docMap.values()).sort((a, b) => {
-        const dateA = a.completedAt ? new Date(a.completedAt).getTime() : 0;
-        const dateB = b.completedAt ? new Date(b.completedAt).getTime() : 0;
-        return dateB - dateA;
+    }
+
+    // 3. 학년/학급별 문서 접근 권한 범위 계산
+    const allowedGrades = new Set<string>();
+    const allowedClasses = new Set<string>(); // "3-1" 형식
+
+    // (1) 학년부장 여부 확인 (소속 학년 전체)
+    if (org?.gradeHeads) {
+      Object.entries(org.gradeHeads).forEach(([grade, email]) => {
+        if (email && email.toLowerCase() === normalizedEmail) {
+          allowedGrades.add(grade);
+        }
       });
     }
+
+    // (2) 담임교사 여부 확인 (소속 학급 전체)
+    if (org?.homerooms) {
+      Object.entries(org.homerooms).forEach(([gc, email]) => {
+        if (email && email.toLowerCase() === normalizedEmail) {
+          allowedClasses.add(gc);
+        }
+      });
+    }
+
+    // (3) 부여된 업무 권한(attendanceScope) 해석
+    permissions.forEach(p => {
+      if (p.attendanceScope) {
+        if (p.attendanceScope.type === 'assigned_grade') {
+          // 해당 교사가 속한 학년 전체
+          if (org?.gradeHeads) {
+            Object.entries(org.gradeHeads).forEach(([grade, email]) => {
+              if (email && email.toLowerCase() === normalizedEmail) allowedGrades.add(grade);
+            });
+          }
+          if (org?.homerooms) {
+            Object.entries(org.homerooms).forEach(([gc, email]) => {
+              if (email && email.toLowerCase() === normalizedEmail) allowedGrades.add(gc.split('-')[0]);
+            });
+          }
+        } else if (p.attendanceScope.type === 'specific_grades' && p.attendanceScope.grades) {
+          p.attendanceScope.grades.forEach(g => allowedGrades.add(String(g)));
+        } else if (p.attendanceScope.type === 'assigned_class') {
+          if (org?.homerooms) {
+            Object.entries(org.homerooms).forEach(([gc, email]) => {
+              if (email && email.toLowerCase() === normalizedEmail) allowedClasses.add(gc);
+            });
+          }
+        }
+      }
+    });
+
+    // 4. Firestore 쿼리 실행
+    // (A) 기본 공통: 자신이 기안했거나 결재선(approverEmails)에 포함된 승인 문서
+    const q1 = query(
+      getApprovalsCol(),
+      where('status', '==', 'approved'),
+      where('docType', '==', 'parent'),
+      where('requesterEmail', '==', normalizedEmail)
+    );
+    const q2 = query(
+      getApprovalsCol(),
+      where('status', '==', 'approved'),
+      where('docType', '==', 'parent'),
+      where('approverEmails', 'array-contains', normalizedEmail)
+    );
+
+    const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+    const docMap = new Map<string, any>();
+
+    const addDocsToMap = (docs: any[]) => {
+      docs.forEach(doc => {
+        docMap.set(doc.id, doc);
+      });
+    };
+
+    addDocsToMap(serializeDocs(snap1.docs, 'completedAt'));
+    addDocsToMap(serializeDocs(snap2.docs, 'completedAt'));
+
+    // (B) 만약 특정 학년 또는 학급에 대한 추가 열람 권한이 있다면, 전체 승인 문서 중 해당 학년/학급 문서를 매칭하여 병합
+    if (allowedGrades.size > 0 || allowedClasses.size > 0) {
+      const qAll = query(
+        getApprovalsCol(),
+        where('status', '==', 'approved'),
+        where('docType', '==', 'parent')
+      );
+      const allSnap = await getDocs(qAll);
+      const allDocs = serializeDocs(allSnap.docs, 'completedAt');
+
+      allDocs.forEach(d => {
+        const gcStr = d.parentFormData?.gradeClassNumber || d.gradeClass || '';
+        const parts = gcStr.split('-');
+        const grade = parts[0] || (d.studentGrade ? String(d.studentGrade) : '');
+        const gradeClass = parts.length >= 2 ? `${parts[0]}-${parts[1]}` : (d.studentGrade && d.studentClass ? `${d.studentGrade}-${d.studentClass}` : '');
+
+        const isAllowedGrade = grade && allowedGrades.has(grade);
+        const isAllowedClass = gradeClass && allowedClasses.has(gradeClass);
+
+        if (isAllowedGrade || isAllowedClass) {
+          docMap.set(d.id, d);
+        }
+      });
+    }
+
+    return Array.from(docMap.values()).sort((a, b) => {
+      const dateA = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+      const dateB = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+      return dateB - dateA;
+    });
   } catch (error) {
     console.error("[DocService] getAttendanceDocuments Error:", error);
     return [];

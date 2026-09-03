@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { ApprovalDoc } from "@/lib/types";
 import { 
     XCircle, Loader2, Trash2, Edit3, CheckSquare, Square, 
-    AlertTriangle, FileText, User, ChevronRight, RefreshCw, MessageSquare
+    AlertTriangle, FileText, User, ChevronRight, RefreshCw, MessageSquare, ArrowLeft
 } from "lucide-react";
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
@@ -162,14 +162,25 @@ export default function RejectedPage() {
         <div className="p-4 md:p-8 font-body space-y-6 max-w-7xl mx-auto">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b pb-5">
-                <div>
-                    <h1 className="font-headline text-2xl sm:text-3xl font-bold flex items-center gap-3 text-red-600">
-                        <XCircle className="h-7 w-7 text-red-500 shrink-0" />
-                        반려 문서함
-                    </h1>
-                    <p className="text-muted-foreground mt-1 text-sm">
-                        결재선에서 반려된 문서 목록입니다. 반려 사유를 확인하고 수정 후 즉시 재기안할 수 있습니다.
-                    </p>
+                <div className="flex items-center gap-3">
+                    <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={() => router.back()} 
+                        className="h-9 w-9 rounded-xl hover:bg-slate-100 shrink-0"
+                        title="뒤로 가기"
+                    >
+                        <ArrowLeft className="h-5 w-5 text-slate-600" />
+                    </Button>
+                    <div>
+                        <h1 className="font-headline text-2xl sm:text-3xl font-bold flex items-center gap-2.5 text-rose-600">
+                            <XCircle className="h-6 w-6 text-rose-500 shrink-0" />
+                            반려 문서함
+                        </h1>
+                        <p className="text-muted-foreground mt-0.5 text-xs sm:text-sm">
+                            결재선에서 반려된 문서 목록입니다. 반려 사유를 확인하고 수정 후 즉시 재기안할 수 있습니다.
+                        </p>
+                    </div>
                 </div>
                 
                 <div className="flex items-center gap-2">
@@ -177,7 +188,7 @@ export default function RejectedPage() {
                         variant="outline" 
                         size="sm" 
                         onClick={loadDocuments} 
-                        className="h-9 gap-1.5 text-xs font-semibold"
+                        className="h-8 gap-1.5 text-xs font-semibold rounded-xl"
                         disabled={loading}
                     >
                         <RefreshCw className="h-3.5 w-3.5" />
@@ -363,15 +374,17 @@ export default function RejectedPage() {
                             <AlertTriangle className="h-5 w-5" />
                             반려 문서 삭제 확인
                         </AlertDialogTitle>
-                        <AlertDialogDescription className="space-y-2 pt-2">
-                            <p>
-                                {singleDeleteTargetId 
-                                    ? "이 반려 문서를 정말로 영구 삭제하시겠습니까?" 
-                                    : `선택하신 ${selectedDocIds.size}건의 반려 문서를 정말로 영구 삭제하시겠습니까?`}
-                            </p>
-                            <p className="text-xs text-muted-foreground bg-muted p-2 rounded">
-                                ※ 삭제된 문서는 복구할 수 없으며, 감사 로그에 삭제 기록이 남습니다.
-                            </p>
+                        <AlertDialogDescription asChild>
+                            <div className="space-y-2 pt-2 text-xs text-muted-foreground">
+                                <div>
+                                    {singleDeleteTargetId 
+                                        ? "이 반려 문서를 정말로 영구 삭제하시겠습니까?" 
+                                        : `선택하신 ${selectedDocIds.size}건의 반려 문서를 정말로 영구 삭제하시겠습니까?`}
+                                </div>
+                                <div className="bg-muted p-2 rounded">
+                                    ※ 삭제된 문서는 복구할 수 없으며, 감사 로그에 삭제 기록이 남습니다.
+                                </div>
+                            </div>
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

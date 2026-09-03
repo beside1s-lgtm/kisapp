@@ -1,19 +1,29 @@
 'use client';
 
+import { useRouter } from "next/navigation";
 import { getAttendanceDocuments } from "@/lib/services/documentService";
+import { getOrgStructure } from "@/lib/services/settingsService";
 import { DocumentList } from "@/components/document-list";
 import { useAuth } from "@/hooks/use-auth";
-import { ApprovalDoc } from "@/lib/types";
-import { CalendarCheck, Loader2, Search, X } from "lucide-react";
+import { ApprovalDoc, OrgStructure, DutyRolePermission } from "@/lib/types";
+import { CalendarCheck, Loader2, Search, X, ArrowLeft, Printer, CheckSquare, Square } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { BatchDocumentPrintModal } from "@/components/batch-document-print-modal";
 
 export default function AttendanceRegistryPage() {
+    const router = useRouter();
     const { user, profile } = useAuth();
     const [docs, setDocs] = useState<ApprovalDoc[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // 다중 선택 및 일괄 인쇄 상태
+    const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
+    const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
     // 필터 상태
     const [selectedYear, setSelectedYear] = useState<string>('전체');
@@ -22,9 +32,47 @@ export default function AttendanceRegistryPage() {
 
     useEffect(() => {
         if (user?.uid && profile?.email) {
-            getAttendanceDocuments(profile.email, !!profile.isAdmin).then(data => {
-                setDocs(data);
-                setLoading(false);
+            getOrgStructure().then(orgData => {
+                const org = (orgData || null) as OrgStructure | null;
+                const normalizedEmail = profile.email.toLowerCase();
+                const userPerms: DutyRolePermission[] = [];
+
+                if (org) {
+                    if (org.afterschoolManagers?.some(e => e.toLowerCase() === normalizedEmail)) {
+                        if (org.dutyRolePermissions?.['afterschool']) userPerms.push(org.dutyRolePermissions['afterschool']);
+                    }
+                    if (org.busManagers?.some(e => e.toLowerCase() === normalizedEmail)) {
+                        if (org.dutyRolePermissions?.['bus']) userPerms.push(org.dutyRolePermissions['bus']);
+                    }
+                    if (org.systemManagers?.some(e => e.toLowerCase() === normalizedEmail)) {
+                        if (org.dutyRolePermissions?.['system']) userPerms.push(org.dutyRolePermissions['system']);
+                    }
+                    if (org.healthTeachers?.some(e => e.toLowerCase() === normalizedEmail)) {
+                        if (org.dutyRolePermissions?.['health']) userPerms.push(org.dutyRolePermissions['health']);
+                    }
+                    if (org.specialTeachers?.some(e => e.toLowerCase() === normalizedEmail)) {
+                        if (org.dutyRolePermissions?.['special']) userPerms.push(org.dutyRolePermissions['special']);
+                    }
+                    (org.customDutyRoles || []).forEach(role => {
+                        if (role.teacherEmails?.some(e => e.toLowerCase() === normalizedEmail)) {
+                            if (role.permissions) userPerms.push(role.permissions);
+                            else if (org.dutyRolePermissions?.[role.id]) userPerms.push(org.dutyRolePermissions[role.id]);
+                        }
+                    });
+                }
+
+                getAttendanceDocuments(profile.email, !!profile.isAdmin, {
+                    orgStructure: org,
+                    permissions: userPerms,
+                }).then(data => {
+                    setDocs(data);
+                    setLoading(false);
+                });
+            }).catch(() => {
+                getAttendanceDocuments(profile.email, !!profile.isAdmin).then(data => {
+                    setDocs(data);
+                    setLoading(false);
+                });
             });
         } else if (!user || !profile) {
             setLoading(false);
@@ -86,6 +134,26 @@ export default function AttendanceRegistryPage() {
         setSelectedYear('전체');
         setSelectedGrade('전체');
         setStudentNameQuery('');
+        setSelectedDocIds([]);
+    };
+
+    // 선택된 문서 목록
+    const selectedDocs = useMemo(() => {
+        return filteredDocs.filter(d => selectedDocIds.includes(d.id));
+    }, [filteredDocs, selectedDocIds]);
+
+    // 전체 선택 / 해제 핸들러
+    const handleSelectAll = (checked: boolean) => {
+        if (checked) {
+            setSelectedDocIds(filteredDocs.map(d => d.id));
+        } else {
+            setSelectedDocIds([]);
+        }
+    };
+
+    // 개별 선택 토글 핸들러
+    const handleSelectDoc = (docId: string, checked: boolean) => {
+        setSelectedDocIds(prev => checked ? [...prev, docId] : prev.filter(id => id !== docId));
     };
 
     if (loading) {
@@ -98,12 +166,23 @@ export default function AttendanceRegistryPage() {
 
     return (
         <div className="p-4 md:p-8">
-            <div className="mb-6">
-                <h1 className="font-headline text-3xl font-bold flex items-center gap-3">
-                    <CalendarCheck className="h-8 w-8 text-primary" />
-                    결석계 보관함
-                </h1>
-                <p className="text-muted-foreground mt-1">결재가 완료된 학부모 출결 문서(결석계) 기록입니다.</p>
+            <div className="mb-6 flex items-center gap-3 border-b pb-4">
+                <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => router.back()} 
+                    className="h-9 w-9 rounded-xl hover:bg-slate-100 shrink-0"
+                    title="뒤로 가기"
+                >
+                    <ArrowLeft className="h-5 w-5 text-slate-600" />
+                </Button>
+                <div>
+                    <h1 className="font-headline text-2xl sm:text-3xl font-bold flex items-center gap-2.5 text-slate-900">
+                        <CalendarCheck className="h-6 w-6 text-primary" />
+                        결석계 보관함
+                    </h1>
+                    <p className="text-muted-foreground mt-0.5 text-xs sm:text-sm">결재가 완료된 학부모 출결 문서(결석계) 기록입니다.</p>
+                </div>
             </div>
 
             {/* 필터 바 */}
@@ -170,7 +249,70 @@ export default function AttendanceRegistryPage() {
                 </div>
             </div>
 
-            <DocumentList documents={filteredDocs} />
+            {/* 일괄 선택 및 인쇄 툴바 */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                        <Checkbox
+                            id="select-all-attendance"
+                            checked={filteredDocs.length > 0 && selectedDocIds.length === filteredDocs.length}
+                            onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                            disabled={filteredDocs.length === 0}
+                            className="w-4 h-4"
+                        />
+                        <label
+                            htmlFor="select-all-attendance"
+                            className="text-xs font-bold text-slate-700 cursor-pointer select-none"
+                        >
+                            전체 선택
+                        </label>
+                    </div>
+                    <span className="text-xs text-slate-400">|</span>
+                    <span className="text-xs text-slate-600">
+                        총 <b className="text-slate-900">{filteredDocs.length}</b>건 중 <b className="text-primary">{selectedDocIds.length}</b>건 선택됨
+                    </span>
+                    {selectedDocIds.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => setSelectedDocIds([])}
+                            className="text-[11px] text-slate-500 hover:text-slate-800 underline ml-1 cursor-pointer"
+                        >
+                            선택 해제
+                        </button>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <Button
+                        type="button"
+                        onClick={() => setIsPrintModalOpen(true)}
+                        disabled={selectedDocIds.length === 0}
+                        className="h-8 px-3.5 text-xs font-bold bg-primary hover:bg-primary/90 text-white flex items-center gap-1.5 shadow-2xs shrink-0"
+                    >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>선택 결석계 일괄 인쇄 ({selectedDocIds.length}건)</span>
+                    </Button>
+                </div>
+            </div>
+
+            <DocumentList 
+                documents={filteredDocs} 
+                selectable={true}
+                selectedDocIds={selectedDocIds}
+                onSelectDoc={handleSelectDoc}
+                onPrintSingleDoc={(doc) => {
+                    setSelectedDocIds([doc.id]);
+                    setIsPrintModalOpen(true);
+                }}
+            />
+
+            {/* 일괄 인쇄 모달 */}
+            <BatchDocumentPrintModal
+                isOpen={isPrintModalOpen}
+                onClose={() => setIsPrintModalOpen(false)}
+                documents={selectedDocs}
+                title="결석계 일괄 인쇄"
+            />
         </div>
     );
 }

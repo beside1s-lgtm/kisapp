@@ -87,6 +87,11 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
     };
   }, []);
 
+  // 강좌 목록 가나다-ABC 순 정렬 (한글 localeCompare)
+  const sortedCourses = React.useMemo(() => {
+    return [...courses].sort((a, b) => (a.title || '').localeCompare(b.title || '', 'ko'));
+  }, [courses]);
+
   const getDetailedStatusText = () => {
     if (!teacherApplySettings) return '수강신청 대기 중';
 
@@ -828,17 +833,19 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
     : [];
 
   return (
-    <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <h2 className="text-xl font-bold text-slate-800">{t('afterschool.teacher.course_management_title')}</h2>
-            <span className="bg-indigo-50 text-indigo-700 text-[10px] px-2.5 py-1 rounded-full font-bold border border-indigo-200 shadow-sm animate-pulse">
+    <div className="space-y-2.5 sm:space-y-3">
+      {/* Header Banner (슬림 한 줄 표기) */}
+      <div className="bg-white px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight whitespace-nowrap">
+              {t('afterschool.teacher.course_management_title')}
+            </h2>
+            <span className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-0.5 rounded-full font-bold border border-indigo-200 shadow-2xs">
               {getDetailedStatusText()}
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-[11px] text-slate-500 truncate hidden md:inline">
             {t('afterschool.teacher.course_management_desc')}
           </p>
         </div>
@@ -846,35 +853,20 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
         <button
           onClick={() => setIsAddModalOpen(true)}
           disabled={!isTeacherApplyEnabled && (role !== 'admin' || (teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED')}
-          className={`font-bold text-xs px-4 py-2.5 rounded-xl shadow transition flex items-center gap-1.5 ${
+          className={`font-bold text-xs px-3 py-1.5 rounded-lg shadow-2xs transition flex items-center gap-1 shrink-0 ${
             isTeacherApplyEnabled || (role === 'admin' && (teacherApplySettings as any)?.afterschoolStageStatus !== 'CLOSED')
               ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
-              : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
           }`}
         >
-          <Plus className="w-4 h-4" />
-          {t('afterschool.teacher.new_course_btn')}
+          <Plus className="w-3.5 h-3.5" />
+          <span>{t('afterschool.teacher.new_course_btn')}</span>
         </button>
       </div>
 
-      {/* 강사 강좌 개설(신청) 권한 통제 안내 배너 */}
-      {(!isTeacherApplyEnabled || (teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED') && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl flex items-center gap-3 text-xs font-semibold animate-in slide-in-from-top duration-300">
-          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
-          <div>
-            {(teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED'
-              ? '현재 방과후학교 운영이 최종 종료(마감)되어 신규 강좌 개설 및 변경이 제한됩니다.'
-              : '현재는 강사용 신규 강좌 개설 및 등록 신청 기간이 아닙니다.'}
-            <span className="block text-slate-500 text-[10px] mt-0.5">
-              접수 일정: <b>{teacherApplySettings.applyStartDate}</b> ~ <b>{teacherApplySettings.applyEndDate}</b>
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Course Grid Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {courses.map((course) => {
+      {/* Course Grid Cards (2개씩 나란히 쌓이는 2열 그리드 & 세로 높이 절반 슬림화) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 sm:gap-3">
+        {sortedCourses.map((course) => {
           // 수강신청 시작일 기준으로 수강신청 전 여부 파악
           const now = new Date().getTime();
           const startTime = timerConfig?.startTime ? new Date(timerConfig.startTime).getTime() : 0;
@@ -883,18 +875,6 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
           const minStudents = course.minStudentsToOpen || 5;
           const isSatisfied = course.currentStudents >= minStudents;
 
-          // 동적 폐강 및 충족 문구 결정
-          let cancellationText = '';
-          if (isBeforeEnrollment) {
-            cancellationText = '수강신청 전';
-          } else if (course.status !== 'CANCELLED') {
-            if (isSatisfied) {
-              cancellationText = '정원 충족';
-            } else {
-              cancellationText = `모집인원 미달로 자동폐강 대기 중 (최소 ${minStudents}명 필요)`;
-            }
-          }
-          
           const isPendingCancellation = course.status !== 'CANCELLED' && !isBeforeEnrollment && !isSatisfied;
           
           // 모든 배정 강사 목록 종합 (주강사 + 보조강사들)
@@ -909,141 +889,136 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
           const leadInstructor = uniqueInstructors[0] || course.instructorName || '미배정';
           const assistantList = uniqueInstructors.slice(1);
 
-          // 동적 필요 강사 수 계산 (수강인원 20명 이상 시 2명, 이후 5명당 1명 추가)
+          // 동적 필요 강사 수 계산
           const requiredTeachers = getRequiredTeachersCount(course.currentStudents || 0);
           const isAssistantNeeded = uniqueInstructors.length < requiredTeachers;
 
           return (
             <div
               key={course.id}
-              className={`bg-white rounded-2xl border shadow-sm hover:border-indigo-300 transition p-6 flex flex-col justify-between space-y-4 ${
+              className={`bg-white rounded-xl border shadow-2xs hover:border-indigo-300 transition p-3 sm:p-3.5 flex flex-col justify-between gap-2 ${
                 course.status === 'PENDING' ? 'border-amber-200 bg-amber-50/20' : 'border-slate-200'
               }`}
             >
-              <div className="space-y-3">
-                <div className="flex justify-end items-start">
-                  <div className="flex gap-1.5">
+              {/* 상단 2열 정보 영역 */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-3 items-start">
+                {/* 좌측 (7칸): 강좌명, 설명, 시간, 장소 */}
+                <div className="sm:col-span-7 space-y-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 leading-tight truncate">
+                      {course.title}
+                    </h3>
                     {course.status === 'CANCELLED' ? (
-                      <span className="bg-slate-200 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full line-through">
+                      <span className="bg-slate-200 text-slate-600 text-[10px] font-bold px-1.5 py-0.5 rounded line-through">
                         폐강
                       </span>
                     ) : course.status === 'PENDING' ? (
-                      <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-1.5 py-0.5 rounded">
                         개설대기
                       </span>
                     ) : (teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED' ? (
-                      <span className="bg-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      <span className="bg-slate-200 text-slate-700 text-[10px] font-bold px-1.5 py-0.5 rounded">
                         운영종료
                       </span>
                     ) : (
                       <button
                         onClick={() => handleToggleLock(course.id)}
-                        className={`text-xs px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 transition ${
+                        className={`text-[10px] px-1.5 py-0.5 rounded font-bold flex items-center gap-0.5 transition ${
                           course.isForceLocked
                             ? 'bg-rose-100 text-rose-700'
                             : 'bg-emerald-100 text-emerald-700'
                         }`}
                       >
-                        {course.isForceLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                        {course.isForceLocked ? '신청잠김' : '신청가능'}
+                        {course.isForceLocked ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5" />}
+                        <span>{course.isForceLocked ? '신청잠김' : '신청가능'}</span>
                       </button>
+                    )}
+                  </div>
+
+                  <p className="text-[10.5px] text-slate-500 line-clamp-1">
+                    {course.description || '강좌 설명이 없습니다.'}
+                  </p>
+
+                  <div className="text-[10.5px] text-slate-600 bg-slate-50 p-1.5 rounded-lg border border-slate-100 space-y-0.5 font-mono">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">강의시간:</span>
+                      <b className="text-slate-800">{course.classTime}</b>
+                    </div>
+                    {course.classroom && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">장소:</span>
+                        <span className="font-bold text-slate-800">{course.classroom}</span>
+                      </div>
                     )}
                   </div>
                 </div>
 
-                <h3 className="text-base font-bold text-slate-900 leading-snug">{course.title}</h3>
-                <p className="text-xs text-slate-500 line-clamp-2">{course.description}</p>
-
-                <div className="space-y-1.5 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100 font-mono">
-                  <div>강의시간: {course.classTime}</div>
-                  {course.classroom && (
-                    <div className="flex items-center gap-1">
-                      <Building2 className="w-3 h-3 text-slate-400" />
-                      <span>{course.classroom}</span>
-                    </div>
-                  )}
-                  <div>수강인원: <b className="text-slate-900">{course.currentStudents}</b> / {course.maxStudents}명</div>
-                  
-                  {/* 동적 필요 강사 수 및 배정 강사 목록 */}
-                  <div className="border-t pt-1.5 mt-1 text-[11px] space-y-1.5 text-slate-500 font-sans">
-                    <div className="flex justify-between items-center">
-                      <span>필요 강사인원:</span>
-                      <span className="font-bold text-slate-800">
-                        {requiredTeachers}명
-                        {isAssistantNeeded ? (
-                          <span className="text-rose-600 text-[10px] ml-1 font-semibold">({requiredTeachers - uniqueInstructors.length}명 보조 필요)</span>
-                        ) : (
-                          <span className="text-emerald-600 text-[10px] ml-1 font-semibold">(충족)</span>
-                        )}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-1 items-center">
-                      <span className="shrink-0">배정 강사:</span>
-                      <span className="bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded text-[11px]">
+                {/* 우측 (5칸): 인원, 강사, 수강료 */}
+                <div className="sm:col-span-5 text-[10.5px] text-slate-600 bg-slate-50 p-1.5 rounded-lg border border-slate-100 space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">수강인원:</span>
+                    <span><b className="text-indigo-700 font-bold">{course.currentStudents}</b> / {course.maxStudents}명</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">배정강사:</span>
+                    <div className="flex items-center gap-1 truncate max-w-[120px]">
+                      <span className="bg-indigo-100 text-indigo-800 font-bold px-1 py-0.2 rounded text-[10px]">
                         {leadInstructor}
                       </span>
-                      {assistantList.map((ast, i) => (
-                        <span key={i} className="bg-emerald-100 text-emerald-800 font-medium px-1.5 py-0.5 rounded text-[11px] border border-emerald-200">
-                          +{ast}
+                      {assistantList.length > 0 && (
+                        <span className="bg-emerald-100 text-emerald-800 font-medium px-1 rounded text-[10px]">
+                          +{assistantList.length}
                         </span>
-                      ))}
-                      {uniqueInstructors.length === 0 && (
-                        <span className="text-slate-400 text-[11px]">미배정</span>
                       )}
                     </div>
                   </div>
-
-                  {/* 수강료 (고정 단가 표시) */}
-                  <div className="border-t pt-1.5 mt-1 flex justify-between font-sans">
-                    <span>수강료(차시별 계산):</span>
-                    <b className={course.isFree || course.tuition === 0 ? "text-emerald-600 font-bold" : "text-indigo-600"}>
+                  <div className="flex justify-between items-center border-t pt-1 border-slate-200/60 font-sans">
+                    <span className="text-slate-500">수강료:</span>
+                    <b className={course.isFree || course.tuition === 0 ? "text-emerald-600 font-bold" : "text-indigo-600 font-bold"}>
                       {course.isFree || course.tuition === 0 ? '0원 (무료)' : formatTuition(course.tuition)}
                     </b>
                   </div>
                 </div>
-
-                {/* 폐강 경고 표시 */}
-                {isPendingCancellation && (
-                  <div className="bg-rose-50 border border-rose-100 text-rose-700 p-2 rounded-lg text-[10px] font-bold flex items-center gap-1">
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                    모집인원 미달로 자동폐강 대기 중 (최소 {minStudents}명 필요)
-                  </div>
-                )}
               </div>
 
-              {/* 하단 4개 버튼: 가로 세로 비율 동일(aspect-square) 3줄 고정 타일형 배치 (Rule 6 준수) */}
-              <div className="grid grid-cols-4 gap-2 pt-3 border-t border-slate-100">
+              {/* 폐강 경고 표시 */}
+              {isPendingCancellation && (
+                <div className="bg-rose-50 border border-rose-100 text-rose-700 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  모집인원 미달로 자동폐강 대기 중 (최소 {minStudents}명 필요)
+                </div>
+              )}
+
+              {/* 하단 4개 액션 버튼 (가로로 슬림하게 나란히 배치) */}
+              <div className="grid grid-cols-4 gap-1.5 pt-1.5 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => handleOpenSyllabusEditor(course)}
-                  className="aspect-square bg-slate-50 hover:bg-indigo-50/70 hover:border-indigo-200 border border-slate-200 rounded-xl transition flex flex-col items-center justify-center p-1.5 text-center cursor-pointer shadow-2xs group"
+                  className="bg-slate-50 hover:bg-indigo-50/70 border border-slate-200 hover:border-indigo-200 rounded-lg py-1 px-1 transition flex items-center justify-center gap-1 text-center cursor-pointer shadow-2xs group"
                   title="수업 계획 / 날짜 수정"
                 >
-                  <Calendar className="w-4 h-4 text-indigo-600 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-                  <span className="text-[11px] font-bold text-slate-800 leading-tight">수업 계획</span>
-                  <span className="text-[10px] text-indigo-600 font-medium leading-tight mt-0.5">날짜 수정</span>
+                  <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                  <span className="text-[11px] font-bold text-slate-800 whitespace-nowrap">수업 계획</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleOpenAssistantModal(course)}
-                  className="aspect-square bg-emerald-50/70 hover:bg-emerald-100/80 border border-emerald-200 rounded-xl transition flex flex-col items-center justify-center p-1.5 text-center cursor-pointer shadow-2xs group"
+                  className="bg-emerald-50/70 hover:bg-emerald-100/80 border border-emerald-200 rounded-lg py-1 px-1 transition flex items-center justify-center gap-1 text-center cursor-pointer shadow-2xs group"
                   title="보조 강사 배정 및 관리"
                 >
-                  <Users className="w-4 h-4 text-emerald-600 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-                  <span className="text-[11px] font-bold text-emerald-900 leading-tight">보조 강사</span>
-                  <span className="text-[10px] text-emerald-700 font-semibold leading-tight mt-0.5">배정 관리</span>
+                  <Users className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="text-[11px] font-bold text-emerald-900 whitespace-nowrap">보조 강사</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => onSelectCourseForStudent(course.id)}
-                  className="aspect-square bg-indigo-50/70 hover:bg-indigo-100/80 border border-indigo-200 rounded-xl transition flex flex-col items-center justify-center p-1.5 text-center cursor-pointer shadow-2xs group"
+                  className="bg-indigo-50/70 hover:bg-indigo-100/80 border border-indigo-200 rounded-lg py-1 px-1 transition flex items-center justify-center gap-1 text-center cursor-pointer shadow-2xs group"
                   title="수강생 명단 관리"
                 >
-                  <UserCheck className="w-4 h-4 text-indigo-600 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-                  <span className="text-[11px] font-bold text-indigo-900 leading-tight">수강생</span>
-                  <span className="text-[10px] text-indigo-700 font-semibold leading-tight mt-0.5">명단 관리</span>
+                  <UserCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                  <span className="text-[11px] font-bold text-indigo-900 whitespace-nowrap">수강생 명단</span>
                 </button>
 
                 <button
@@ -1052,12 +1027,11 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                     setMaterialModalCourse(course);
                     setMaterialItems([{ name: '', quantity: 1, unitPrice: 0, amount: 0 }]);
                   }}
-                  className="aspect-square bg-amber-50/70 hover:bg-amber-100/80 border border-amber-200 rounded-xl transition flex flex-col items-center justify-center p-1.5 text-center cursor-pointer shadow-2xs group"
-                  title="학습 준비물 신청 및 관리"
+                  className="bg-amber-50/70 hover:bg-amber-100/80 border border-amber-200 rounded-lg py-1 px-1 transition flex items-center justify-center gap-1 text-center cursor-pointer shadow-2xs group"
+                  title="학습 준비물 품의"
                 >
-                  <Package className="w-4 h-4 text-amber-600 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-                  <span className="text-[11px] font-bold text-amber-900 leading-tight">학습</span>
-                  <span className="text-[10px] text-amber-700 font-semibold leading-tight mt-0.5">준비물</span>
+                  <Package className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span className="text-[11px] font-bold text-amber-900 whitespace-nowrap">준비물</span>
                 </button>
               </div>
             </div>
@@ -1276,7 +1250,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                     className="w-full border border-indigo-200 p-2 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
                   >
                     <option value="">[선택 안 함 - 신규 직접 작성]</option>
-                    {courses.map((c) => (
+                    {sortedCourses.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.title} ({c.classTime || '시간미정'}) {c.instructorName ? `- ${c.instructorName}` : ''}
                       </option>

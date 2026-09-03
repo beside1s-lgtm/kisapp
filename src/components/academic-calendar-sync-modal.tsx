@@ -13,10 +13,10 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Calendar, Globe, Check, Lock, Sun, Clock, Bell, UserCheck, Sparkles } from 'lucide-react';
+import { Calendar, Globe, Check, Lock, Sun, Clock, Bell, BellOff, UserCheck, Sparkles, AlertCircle } from 'lucide-react';
 
 export function AcademicCalendarSyncModal() {
-  const { profile } = useAuth();
+  const { user, profile, loading } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [academicCal, setAcademicCal] = useState<AcademicCalendarConfig | null>(null);
   const [gateDutyConfig, setGateDutyConfig] = useState<MultiSemesterMorningGateDutyConfig | null>(null);
@@ -24,13 +24,14 @@ export function AcademicCalendarSyncModal() {
   // Gate Duty Inclusion States
   const [includeGateDuty, setIncludeGateDuty] = useState(true);
   const [selectedTeacherName, setSelectedTeacherName] = useState<string>('');
+  const [dontShowAgainChecked, setDontShowAgainChecked] = useState(false);
 
   const isParent = profile?.role === '학부모' || profile?.role === 'parent' || !profile?.role;
 
   // Check if calendar sync was already acknowledged for this account or browser
   const isAlreadyAcked = (cal?: AcademicCalendarConfig | null) => {
-    if (!cal || !cal.publishedVersion) return true;
-    const version = cal.publishedVersion;
+    if (!cal) return true;
+    const version = cal.publishedVersion || 1;
 
     // 1. 계정 수준 확인: DB에 저장된 사용자의 확인 버전이 현재 버전 이상이면 팝업 차단
     if (profile?.lastAckAcademicCalVersion && profile.lastAckAcademicCalVersion >= version) {
@@ -77,8 +78,10 @@ export function AcademicCalendarSyncModal() {
 
   // Listen for Doc Config (Academic Calendar) & Gate Duty Config
   useEffect(() => {
+    if (loading || !user) return;
+
     const checkCalendarSync = (cal?: AcademicCalendarConfig) => {
-      if (!cal || !cal.publishedVersion) return;
+      if (!cal) return;
       setAcademicCal(cal);
       if (!isAlreadyAcked(cal)) {
         setIsOpen(true);
@@ -105,7 +108,7 @@ export function AcademicCalendarSyncModal() {
       unsubDoc();
       unsubDuty();
     };
-  }, [profile?.lastAckAcademicCalVersion, profile?.email]);
+  }, [loading, user, profile?.lastAckAcademicCalVersion, profile?.email]);
 
   // Extract all unique teacher names from gate duty sequence & schedules
   const allTeacherNames = useMemo(() => {
@@ -142,17 +145,19 @@ export function AcademicCalendarSyncModal() {
   }, [gateDutyConfig, selectedTeacherName]);
 
   const handleAcknowledge = () => {
-    if (academicCal?.publishedVersion) {
-      const ver = academicCal.publishedVersion;
-      // 1. 브라우저 로컬 스토리지에 저장
-      localStorage.setItem('lastAckAcademicCalVersion', ver.toString());
-      if (profile?.email) {
-        localStorage.setItem(`lastAckCalVersion_${profile.email.toLowerCase()}`, ver.toString());
-        // 2. 계정 DB(Firestore)에 저장하여 다른 브라우저/기기 접속 시에도 팝업 원천 차단
-        updateUserCalendarAck(profile.email, ver);
-      }
+    const ver = academicCal?.publishedVersion || 1;
+    // 1. 브라우저 로컬 스토리지에 저장
+    localStorage.setItem('lastAckAcademicCalVersion', ver.toString());
+    if (profile?.email) {
+      localStorage.setItem(`lastAckCalVersion_${profile.email.toLowerCase()}`, ver.toString());
+      // 2. 계정 DB(Firestore)에 저장하여 다른 브라우저/기기 접속 시에도 팝업 원천 차단
+      updateUserCalendarAck(profile.email, ver);
     }
     setIsOpen(false);
+  };
+
+  const handleDismissWithoutSync = () => {
+    handleAcknowledge();
   };
 
   const handleDownloadIcs = () => {
@@ -185,7 +190,8 @@ export function AcademicCalendarSyncModal() {
     window.open('https://calendar.google.com/calendar/r/settings/export', '_blank');
   };
 
-  if (!academicCal) return null;
+  // 로그인되지 않았거나 로딩 중이면 모달을 렌더링하지 않음 (로그인 전 팝업 노출 원천 방지)
+  if (loading || !user || !academicCal) return null;
 
   // Filter events based on role
   const visibleEvents = (academicCal.events || []).filter(ev => {
@@ -197,12 +203,22 @@ export function AcademicCalendarSyncModal() {
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleAcknowledge(); }}>
       <DialogContent className="sm:max-w-[650px] w-[95vw] max-h-[92vh] overflow-y-auto p-5 sm:p-6 rounded-2xl">
         <DialogHeader className="pb-1">
-          <DialogTitle className="flex items-center gap-2 text-base font-extrabold text-slate-900">
-            <Calendar className="w-5 h-5 text-indigo-600 shrink-0" />
-            <span>2026학년도 최신 학사 및 등교지도 캘린더 공유</span>
+          <div className="flex items-center gap-2 mb-1">
+            <Badge className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-[11px] px-2 py-0.5 flex items-center gap-1 shadow-xs animate-pulse">
+              <Sparkles className="w-3 h-3 text-white" /> 학사일정 알림
+            </Badge>
+            {academicCal.lastPublishedAt && (
+              <span className="text-[11px] text-muted-foreground">
+                업데이트: {academicCal.lastPublishedAt.split('T')[0]}
+              </span>
+            )}
+          </div>
+          <DialogTitle className="flex items-center gap-2 text-base sm:text-lg font-extrabold text-slate-900">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+            <span>추가/변경된 학사 일정이 있습니다</span>
           </DialogTitle>
-          <DialogDescription className="text-xs text-slate-500">
-            최신 학사 일정(휴업일, 행사)과 { !isParent ? '선생님 개인별 등교지도 근무일을' : '' } 내 캘린더(구글, 애플, 아웃룩)에 맞춤 동기화할 수 있습니다.
+          <DialogDescription className="text-xs text-slate-600 leading-relaxed">
+            {academicCal.year || 2026}학년도 최신 학사 일정(휴업일, 행사)과 { !isParent ? '선생님 맞춤 등교지도 근무일정이' : '주요 학사일정이' } 업데이트되었습니다. 내 캘린더(구글, 애플, 아웃룩)에 동기화하여 최신 일정을 확인하세요.
           </DialogDescription>
         </DialogHeader>
 
@@ -303,7 +319,7 @@ export function AcademicCalendarSyncModal() {
 
           {/* 학기 기간 안내 요약 */}
           <div className="p-3 bg-indigo-50/70 rounded-xl border border-indigo-200 space-y-1.5">
-            <span className="font-bold text-indigo-950 text-xs block">2026학년도 학기 및 방학 운영 일정</span>
+            <span className="font-bold text-indigo-950 text-xs block">{academicCal.year || 2026}학년도 학기 및 방학 운영 일정</span>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
               <div className="bg-white p-2 rounded-lg border border-indigo-100 flex flex-col justify-center">
                 <span className="text-slate-400 font-semibold block text-[10px]">1학기</span>
@@ -349,10 +365,10 @@ export function AcademicCalendarSyncModal() {
               )}
             </div>
 
-            <div className="max-h-[120px] overflow-y-auto border rounded-xl divide-y divide-slate-100 bg-white">
+            <div className="max-h-[130px] overflow-y-auto border rounded-xl divide-y divide-slate-100 bg-white">
               {visibleEvents.length > 0 ? (
                 visibleEvents.map(ev => (
-                  <div key={ev.id} className="flex items-center justify-between px-3 py-1.5 text-xs">
+                  <div key={ev.id} className="flex items-center justify-between px-3 py-1.5 text-xs hover:bg-slate-50 transition-colors">
                     <div className="flex items-center gap-2 font-mono flex-wrap">
                       <span className="font-bold text-slate-800">{ev.date}</span>
                       <span className="font-semibold text-slate-700">{ev.title}</span>
@@ -390,25 +406,26 @@ export function AcademicCalendarSyncModal() {
           </div>
         </div>
 
-        <DialogFooter className="flex flex-col-reverse sm:flex-row justify-between gap-2 pt-3 border-t">
+        <DialogFooter className="flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-3 border-t">
+          {/* 다시 띄우지 않기 버튼 */}
           <Button
             type="button"
-            variant="outline"
-            onClick={handleAcknowledge}
-            className="h-9 text-xs font-semibold text-slate-600 border-slate-300 rounded-xl px-4"
+            variant="ghost"
+            onClick={handleDismissWithoutSync}
+            className="h-9 text-xs font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-xl px-3 flex items-center gap-1.5"
           >
-            <Check className="w-3.5 h-3.5 mr-1" />
-            확인 (닫기)
+            <BellOff className="w-4 h-4 text-slate-400" />
+            <span>다시 띄우지 않기</span>
           </Button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
             <Button
               type="button"
               variant="outline"
               onClick={handleDownloadIcs}
               className="h-9 text-xs font-bold text-indigo-700 border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100 rounded-xl px-3"
             >
-              📥 .ics 파일 다운로드
+              📥 .ics 다운로드
             </Button>
             <Button
               type="button"
@@ -416,7 +433,7 @@ export function AcademicCalendarSyncModal() {
               className="h-9 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs px-4"
             >
               <Globe className="w-3.5 h-3.5 mr-1.5" />
-              구글 캘린더로 연동
+              구글 캘린더 연동
             </Button>
           </div>
         </DialogFooter>
@@ -424,4 +441,5 @@ export function AcademicCalendarSyncModal() {
     </Dialog>
   );
 }
+
 

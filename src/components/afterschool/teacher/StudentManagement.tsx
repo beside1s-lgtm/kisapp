@@ -107,21 +107,14 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     return `${amount.toLocaleString()} ${symbol}`;
   };
 
-  if (!courses || courses.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 px-4 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
-        <div className="p-3 bg-slate-100 rounded-full text-slate-400 mb-3">
-          <UserPlus className="h-8 w-8" />
-        </div>
-        <p className="text-sm font-bold text-slate-800">배정된 수강 학생이 없습니다.</p>
-        <p className="text-xs text-slate-500 mt-1">담당하고 있는 나의 강좌에 등록된 수강생이 존재하지 않습니다.</p>
-      </div>
-    );
-  }
+  // 강좌 목록 가나다-ABC 순 정렬 (한글 localeCompare)
+  const sortedCourses = React.useMemo(() => {
+    return [...(courses || [])].sort((a, b) => (a.title || '').localeCompare(b.title || '', 'ko'));
+  }, [courses]);
 
   const currentCourse = selectedCourseId === 'all'
     ? { id: 'all', title: '전체 강좌 수강생', tuition: 0, textbookFee: 0, materialFee: 0, period: '전체 학기' } as any
-    : (courses.find((c) => c.id === selectedCourseId) || courses[0]);
+    : (sortedCourses.find((c) => c.id === selectedCourseId) || sortedCourses[0]);
 
   // 수강생 데이터와 강좌 목록을 유연하게 매칭하는 헬퍼 함수
   const getMatchedCourse = (courseIdOrEnrollment: string | Enrollment | undefined): Course | undefined => {
@@ -153,13 +146,40 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   };
 
   const getStudentBusFareDetails = (enrollment: Enrollment) => {
-    const busInfo = resolveStudentBusInfo(enrollment.name, enrollment.grade, enrollment.classNum, enrollment.studentNum);
-    const busNo = (enrollment.kisbusNo && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청')
-      ? enrollment.kisbusNo
-      : (busInfo?.busNo || '');
+    const course = getMatchedCourse(enrollment);
+    const isSaturdayCourse = Boolean(course && (
+      course.classDays?.includes('토') || 
+      course.period?.includes('토') || 
+      course.title?.includes('토요') || 
+      course.title?.includes('토요일') || 
+      course.title?.includes('오케스트라') || 
+      course.title?.includes('basketball')
+    ));
 
-    if (!busNo || busNo === '-' || busNo === '미신청') {
-      return { zone: '미신청', fare: 0, destinationName: '-', isSaturday: false };
+    const busInfo = resolveStudentBusInfo(enrollment.name, enrollment.grade, enrollment.classNum, enrollment.studentNum);
+
+    // 1. 명시적으로 미신청('-' 또는 '미신청' 또는 needsBus === false)된 경우
+    const isExplicitlyNoBus = enrollment.kisbusNo === '-' || enrollment.kisbusNo === '미신청' || enrollment.needsBus === false;
+    if (isExplicitlyNoBus) {
+      return { isBusApplied: false, zone: '미신청', fare: 0, destinationName: '미신청', isSaturday: isSaturdayCourse };
+    }
+
+    // 2. 토요일 방과후 강좌: needsBus === true 이거나 유효한 신청 표시가 있어야 함
+    const isSatApplied = Boolean(
+      enrollment.needsBus === true || 
+      (enrollment.kisbusNo && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청' && enrollment.kisbusNo !== 'X')
+    );
+
+    if (isSaturdayCourse && !isSatApplied) {
+      return { isBusApplied: false, zone: '미신청', fare: 0, destinationName: '미신청', isSaturday: true };
+    }
+
+    // 3. 평일 방과후 강좌: 기존 등하교 버스 대상자이거나 needsBus === true 또는 kisbusNo가 있는 경우 신청으로 간주
+    const isRegularRider = Boolean(busInfo?.busNo && busInfo.busNo !== '-' && busInfo.busNo !== '미신청');
+    const isWeekdayApplied = isRegularRider || enrollment.needsBus === true || (enrollment.kisbusNo && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청');
+
+    if (!isSaturdayCourse && !isWeekdayApplied) {
+      return { isBusApplied: false, zone: '미신청', fare: 0, destinationName: '미신청', isSaturday: false };
     }
 
     const student = busInfo?.student || studentsList.find(s => 
@@ -167,20 +187,10 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       Number(s.grade) === Number(enrollment.grade) && 
       Number(s.class) === Number(enrollment.classNum)
     );
-    
-    const course = getMatchedCourse(enrollment);
-    const isSaturdayCourse = Boolean(course && (
-      course.classDays?.includes('토') || 
-      course.period?.includes('토') || 
-      course.title?.includes('토요') || 
-      course.title?.includes('토요일') ||
-      course.title?.includes('오케스트라') || 
-      course.title?.includes('basketball')
-    ));
 
-    // 1. 목적지 및 Zone 판별
+    // 목적지 및 Zone 판별
     let destinationName = '목적지 미지정';
-    let zone = 'Zone C (원거리)';
+    let zone = '7군';
 
     if (student) {
       const dayMap: Record<string, string> = {
@@ -190,26 +200,71 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       const firstDay = course?.classDays?.[0];
       const dayOfWeek = isSaturdayCourse ? 'Saturday' : (firstDay ? (dayMap[firstDay] || 'Monday') : 'Monday');
       
-      const destId = student.afterSchoolDestinations?.[dayOfWeek as any] || student.afternoonDestinationId || student.morningDestinationId;
+      let destId = isSaturdayCourse
+        ? (student.satAfternoonDestinationId || student.satMorningDestinationId || student.afternoonDestinationId || student.morningDestinationId)
+        : (student.afternoonDestinationId || student.morningDestinationId || student.afterSchoolDestinations?.[dayOfWeek as any]);
+
+      // 만약 destId에 호차 문자열('1호차' 등)이 들어가 있다면 학생의 실제 정규 목적지로 복구
+      if (destId && (destId.includes('호차') || destId === '미배정' || destId === '방과후 미배정')) {
+        destId = student.afternoonDestinationId || student.morningDestinationId;
+      }
+
       if (destId) {
         const destObj = destinations.find(d => d.id === destId || d.name === destId);
         destinationName = destObj ? destObj.name : destId;
-        zone = (destObj && destObj.zone) ? destObj.zone : 'Zone C (원거리)';
+        zone = (destObj && destObj.zone) ? destObj.zone : '';
       }
     }
 
-    // 2. 버스비 산정 규칙:
-    // - 평일 방과후: 기존 등/하교 버스 대상자이므로 별도 버스비 0원 (미징수)
-    // - 토요 방과후: 토요일 전용 거리별 요금제(saturdayBusFareSettings) 적용
+    // 버스비 산정:
+    // - 평일 방과후: 기존 등/하교 버스 대상자이므로 정규 분기 요금에 포함되어 방과후 청구 버스비는 0원 (미징수)
     if (!isSaturdayCourse) {
-      return { zone, fare: 0, destinationName, isSaturday: false };
+      return { isBusApplied: true, zone: zone || '평일 연동', fare: 0, destinationName, isSaturday: false };
     }
 
-    const saturdayFare = saturdayBusFareSettings[zone] !== undefined 
-      ? saturdayBusFareSettings[zone] 
-      : (zone.includes('A') ? 30000 : zone.includes('B') ? 50000 : 70000);
+    // - 토요 방과후: 토요일 전용 거리별 요금제 적용
+    let saturdayFare = 900000;
+    const keys = Object.keys(saturdayBusFareSettings || {});
 
-    return { zone, fare: saturdayFare, destinationName, isSaturday: true };
+    if (keys.length > 0) {
+      if (zone && saturdayBusFareSettings[zone] !== undefined) {
+        saturdayFare = saturdayBusFareSettings[zone];
+      } else if (destinationName && saturdayBusFareSettings[destinationName] !== undefined) {
+        saturdayFare = saturdayBusFareSettings[destinationName];
+      } else {
+        const isDistrict7 = (
+          (destinationName && destinationName.includes('7군') && !destinationName.includes('7군 외')) ||
+          (zone && zone.includes('7군') && !zone.includes('7군 외')) ||
+          (zone && zone.includes('Zone A')) ||
+          (destinationName && (destinationName.includes('Midtown') || destinationName.includes('Scenic') || destinationName.includes('Happy') || destinationName.includes('Sky') || destinationName.includes('Parkview') || destinationName.includes('Green') || destinationName.includes('Riverpark') || destinationName.includes('Grand View') || destinationName.includes('Panorama') || destinationName.includes('Star Hill') || destinationName.includes('Hung Vang') || destinationName.includes('My Khanh') || destinationName.includes('My Phuc') || destinationName.includes('Garden Court') || destinationName.includes('Garden Plaza') || destinationName.includes('Oakwood') || destinationName.includes('Sunrise') || destinationName.includes('Eco Green') || destinationName.includes('Richlane')))
+        );
+
+        const d7Key = keys.find(k => k.includes('7군') && !k.includes('7군 외') && !k.includes('기타'));
+        const nonD7Key = keys.find(k => k.includes('7군 외') || k.includes('기타') || k.includes('원거리') || k.includes('Zone B') || k.includes('Zone C'));
+
+        if (isDistrict7 && d7Key && saturdayBusFareSettings[d7Key]) {
+          saturdayFare = saturdayBusFareSettings[d7Key];
+          zone = d7Key;
+        } else if (!isDistrict7 && nonD7Key && saturdayBusFareSettings[nonD7Key]) {
+          saturdayFare = saturdayBusFareSettings[nonD7Key];
+          zone = nonD7Key;
+        } else if (isDistrict7) {
+          saturdayFare = saturdayBusFareSettings[keys[0]] || 900000;
+          zone = keys[0] || '7군';
+        } else {
+          saturdayFare = saturdayBusFareSettings[keys[1]] || saturdayBusFareSettings[keys[0]] || 1600000;
+          zone = keys[1] || '7군 외, 기타 지역';
+        }
+      }
+    }
+
+    return {
+      isBusApplied: true,
+      zone: zone || '7군',
+      fare: saturdayFare,
+      destinationName,
+      isSaturday: true,
+    };
   };
 
   // 학생 1인당 실제 총 납부 강의료(수강료) 산정 헬퍼 함수
@@ -593,32 +648,54 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     }
   };
 
+  // 개별 등록 폼 state
+  const [regModalCourseId, setRegModalCourseId] = useState<string>('');
+  const [regGrade, setRegGrade] = useState<string>('1');
+  const [regClassNum, setRegClassNum] = useState<string>('1');
+  const [regStudentNum, setRegStudentNum] = useState<string>('');
+  const [regName, setRegName] = useState<string>('');
+  const [regParentPhone, setRegParentPhone] = useState<string>('');
+  const [regNeedsBus, setRegNeedsBus] = useState<boolean>(false);
+
   const handleCompleteRegisterStudent = async () => {
-    if (!selectedStudentToRegister) return;
+    const targetCourse = courses.find((c) => c.id === regModalCourseId) || courses[0];
+    if (!targetCourse) {
+      alert('강좌를 선택해주세요.');
+      return;
+    }
+    if (!regName.trim()) {
+      alert('학생 이름을 입력해주세요.');
+      return;
+    }
+
+    const courseEnrollmentsList = enrollments.filter(e => e.courseId === targetCourse.id);
     const newEnrollment: Enrollment = {
-      id: `e_${Date.now()}`,
-      courseId: currentCourse.id,
-      studentId: selectedStudentToRegister.id,
-      yearNo: courseEnrollments.length + 1,
-      grade: selectedStudentToRegister.grade,
-      classNum: selectedStudentToRegister.classNum,
-      studentNum: selectedStudentToRegister.studentNum,
-      name: selectedStudentToRegister.name,
-      phone: selectedStudentToRegister.phone,
-      parentPhone: selectedStudentToRegister.parentPhone,
-      tuition: currentCourse.tuition,
-      textbookFee: currentCourse.textbookFee,
-      materialFee: currentCourse.materialFee,
+      id: `e_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      courseId: targetCourse.id,
+      studentId: selectedStudentToRegister?.id || `st_${Date.now()}`,
+      yearNo: courseEnrollmentsList.length + 1,
+      grade: Number(regGrade) || 1,
+      classNum: Number(regClassNum) || 1,
+      studentNum: Number(regStudentNum) || 0,
+      name: regName.trim(),
+      phone: '',
+      parentPhone: regParentPhone.trim(),
+      needsBus: regNeedsBus,
+      kisbusNo: regNeedsBus ? '신청' : '-',
+      tuition: targetCourse.tuition,
+      textbookFee: targetCourse.textbookFee,
+      materialFee: targetCourse.materialFee,
       registrationDate: new Date().toISOString().replace('T', ' ').slice(0, 19),
       status: registerStatusTarget,
     };
+
     const nextEnrollments = [newEnrollment, ...enrollments];
     setEnrollments(nextEnrollments);
     await saveAfterschoolEnrollment(newEnrollment);
-    await syncCourseStudentCounts(currentCourse.id, nextEnrollments);
+    await syncCourseStudentCounts(targetCourse.id, nextEnrollments);
     setIsRegisterModalOpen(false);
     setSelectedStudentToRegister(null);
-    alert(`[${selectedStudentToRegister.name}] 학생이 ${registerStatusTarget === 'ENROLLED' ? '수강 확정생' : '신청 대기자'}로 성공적으로 등록되었습니다.`);
+    alert(`[${newEnrollment.name}] 학생이 '${targetCourse.title}' 강좌에 ${registerStatusTarget === 'ENROLLED' ? '수강 확정생' : '신청 대기자'}로 성공적으로 등록되었습니다.`);
   };
 
   // 기존 스쿨버스 명단과 대조하여 스쿨버스 번호 및 연락처를 자동 참조하는 헬퍼 함수
@@ -725,8 +802,18 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
         let newParentPhone = item.parentPhone;
         let newStudentId = item.studentId;
 
-        // 스쿨버스 번호 채우기
-        if ((!newBusNo || newBusNo === '-' || newBusNo === '미신청') && busInfo.busNo) {
+        const matchedCourse = getMatchedCourse(item);
+        const isSat = Boolean(matchedCourse && (
+          matchedCourse.classDays?.includes('토') || 
+          matchedCourse.period?.includes('토') || 
+          matchedCourse.title?.includes('토요') || 
+          matchedCourse.title?.includes('토요일') || 
+          matchedCourse.title?.includes('오케스트라') || 
+          matchedCourse.title?.includes('basketball')
+        ));
+
+        // 스쿨버스 번호 채우기 (평일 강좌일 때만 평일 등하교 버스 자동 채움, 토요일은 사용자 선택값 100% 보존)
+        if (!isSat && (!newBusNo || newBusNo === '-' || newBusNo === '미신청') && busInfo.busNo) {
           newBusNo = busInfo.busNo;
           hasChange = true;
         }
@@ -972,11 +1059,11 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     <div className="space-y-1.5 sm:space-y-2 min-w-0 w-full overflow-hidden">
       {/* Course Selector Header & Action Buttons Toolbar */}
       <div className="bg-white p-2 sm:p-2.5 rounded-xl border border-slate-200/80 shadow-2xs space-y-1.5 min-w-0 w-full overflow-hidden">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 min-w-0 w-full">
-          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 w-full sm:flex-1">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 min-w-0 w-full">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
             <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 shrink-0" />
-            <label className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight shrink-0">
-              {t('afterschool.teacher.course_select_label')}
+            <label className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight shrink-0 whitespace-nowrap">
+              강좌 선택
             </label>
             <select
               value={selectedCourseId}
@@ -984,7 +1071,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
               className="flex-1 min-w-0 text-xs sm:text-sm font-bold text-slate-800 border-2 border-blue-500 rounded-lg sm:rounded-xl px-2 py-1.5 sm:px-2.5 sm:py-1.5 bg-blue-50/50 focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer transition truncate"
             >
               <option value="all">{t('afterschool.teacher.all_courses_select')}</option>
-              {courses.map((c) => (
+              {sortedCourses.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.title} ({c.period})
                 </option>
@@ -993,41 +1080,27 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
           </div>
 
           {/* 주요 수강생 일괄 등록 & 명단/양식 다운로드 액션 버튼 바 */}
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-1 sm:gap-1.5 w-full sm:w-auto shrink-0">
-            {/* 수강 확정 및 수강료 알림 관리 & 학부모 발송 버튼 */}
+          <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 shrink-0">
+            {/* 수강료 알림 관리 버튼 (아이콘 제거, 간결한 라벨) */}
             <button
               type="button"
               onClick={() => setIsAfterschoolBillingModalOpen(true)}
               disabled={enrollments.length === 0}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-2.5 sm:px-3 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm truncate disabled:opacity-50 cursor-pointer"
-              title="수강 확정생들의 수업 정보(장소, 시간, 강사명) 및 수강료/버스비를 확인하고 학부모 서비스로 수강 확정 알림을 발송합니다."
+              className="bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center shadow-sm whitespace-nowrap disabled:opacity-50 cursor-pointer"
+              title="수강 확정생들의 수강료/버스비를 확인하고 학부모 서비스로 수강 확정 알림을 발송합니다."
             >
-              <Receipt className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">📋 수강 확정 & 수강료 알림</span>
+              <span>수강료 알림</span>
             </button>
-
 
             <button
               type="button"
               onClick={handleSyncBusAndPhoneInfo}
               disabled={isSyncingBusInfo || enrollments.length === 0}
-              className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-300 px-2 sm:px-2.5 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs truncate disabled:opacity-50"
+              className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-300 px-2 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs whitespace-nowrap disabled:opacity-50"
               title="스쿨버스 명단과 대조하여 비어있는 스쿨버스 번호와 학부모 연락처를 일괄 자동 동기화합니다."
             >
-              <RefreshCw className={`w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-600 shrink-0 ${isSyncingBusInfo ? 'animate-spin' : ''}`} />
-              <span className="truncate">{isSyncingBusInfo ? '동기화 중...' : '스쿨버스 연동'}</span>
-            </button>
-
-
-            <button
-              type="button"
-              onClick={handleBatchTransferToAfterschoolBus}
-              disabled={isBatchTransferring || enrollments.length === 0}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 sm:px-2.5 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs truncate disabled:opacity-50"
-              title="스쿨버스 신청 수강생을 방과후 버스 노선(미배정 목록)으로 일괄 이동하고 정규 하교 버스에서 일시 제외합니다."
-            >
-              <Bus className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">{isBatchTransferring ? '이동 중...' : '방과후 노선으로 이동'}</span>
+              <RefreshCw className={`w-3 h-3 text-blue-600 shrink-0 ${isSyncingBusInfo ? 'animate-spin' : ''}`} />
+              <span className="whitespace-nowrap">{isSyncingBusInfo ? '동기화 중...' : '스쿨버스 연동'}</span>
             </button>
 
             {/* 수강생 명단 엑셀 다운로드 버튼 */}
@@ -1035,30 +1108,30 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
               type="button"
               onClick={handleDownloadStudentRoster}
               disabled={enrollments.length === 0}
-              className="bg-teal-600 hover:bg-teal-700 text-white px-2 sm:px-2.5 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs truncate disabled:opacity-50"
+              className="bg-teal-600 hover:bg-teal-700 text-white px-2 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs whitespace-nowrap disabled:opacity-50"
               title="현재 선택된 강좌(또는 전체)의 수강생 명단을 엑셀 파일로 다운로드합니다."
             >
-              <Download className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">명단 다운</span>
+              <Download className="w-3 h-3 shrink-0" />
+              <span className="whitespace-nowrap">명단 다운</span>
             </button>
 
             <button
               type="button"
               onClick={downloadSampleExcel}
-              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 sm:px-2.5 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs truncate"
+              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs whitespace-nowrap"
               title="일괄등록 양식 다운로드 (필수 항목: 학년, 반, 번호, 이름, 강좌명)"
             >
-              <Download className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
-              <span className="truncate">양식 다운</span>
+              <Download className="w-3 h-3 text-emerald-600 shrink-0" />
+              <span className="whitespace-nowrap">양식 다운</span>
             </button>
 
             <button
               type="button"
               onClick={() => setIsBulkImportModalOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 sm:px-3 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs truncate"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs whitespace-nowrap"
             >
-              <FileSpreadsheet className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
-              <span className="truncate">일괄 등록</span>
+              <FileSpreadsheet className="w-3 h-3 shrink-0" />
+              <span className="whitespace-nowrap">일괄 등록</span>
             </button>
 
             <button
@@ -1067,13 +1140,20 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                 setSearchStudentName('');
                 setFoundStudents([]);
                 setSelectedStudentToRegister(null);
+                setRegModalCourseId(selectedCourseId !== 'all' ? selectedCourseId : (sortedCourses[0]?.id || ''));
+                setRegGrade('1');
+                setRegClassNum('1');
+                setRegStudentNum('');
+                setRegName('');
+                setRegParentPhone('');
+                setRegNeedsBus(false);
                 setIsRegisterModalOpen(true);
               }}
-              className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-1.5 sm:px-2.5 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 truncate"
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-2 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap"
               title="개별 등록"
             >
-              <UserPlus className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-600 shrink-0" />
-              <span className="truncate">개별 등록</span>
+              <UserPlus className="w-3 h-3 text-slate-600 shrink-0" />
+              <span className="whitespace-nowrap">개별 등록</span>
             </button>
           </div>
         </div>
@@ -1205,10 +1285,10 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                   <th className="py-2.5 px-2 font-bold text-slate-900 w-24">이름</th>
                   {selectedCourseId === 'all' && <th className="py-2.5 px-2 w-32">강좌명</th>}
                   <th className="py-2.5 px-2 w-28">학부모연락처</th>
-                  <th className="py-2.5 px-2 text-center w-20">스쿨버스</th>
+                  <th className="py-2.5 px-2 text-center w-24">스쿨버스 신청</th>
                   <th className="py-2.5 px-2 text-center w-24">강좌 이동</th>
                   <th className="py-2.5 px-2 text-center w-28">스쿨버스 목적지</th>
-                  <th className="py-2.5 px-2 text-center w-24 bg-emerald-50 text-emerald-700">방과후버스</th>
+                  <th className="py-2.5 px-2 text-center w-28 bg-emerald-50 text-emerald-800">방과후버스 배정</th>
                   <th className="py-2.5 px-2 text-right w-24">스쿨버스비</th>
                   <th className="py-2.5 px-2 text-right w-24">강의료</th>
                   <th className="py-2.5 px-2 text-right w-20">교재비</th>
@@ -1263,9 +1343,6 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 
                           const busInfo = resolveStudentBusInfo(item.name, item.grade, item.classNum, item.studentNum);
                           const displayParentPhone = item.parentPhone || busInfo?.parentPhone || '-';
-                          const displayBusNo = (item.kisbusNo && item.kisbusNo !== '-' && item.kisbusNo !== '미신청') 
-                            ? item.kisbusNo 
-                            : (busInfo?.busNo || '-');
 
                           return (
                             <>
@@ -1283,30 +1360,27 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                               </td>
                               <td className="py-2 px-2 text-center">
                                 <select
-                                  value={displayBusNo}
+                                  value={fareDetails.isBusApplied ? '신청' : '미신청'}
                                   onChange={(e) => {
-                                    const val = e.target.value;
+                                    const isApply = e.target.value === '신청';
+                                    const updatedItem = {
+                                      ...item,
+                                      needsBus: isApply,
+                                      kisbusNo: isApply ? '신청' : '-',
+                                    };
                                     setEnrollments((prev) =>
-                                      prev.map((en) => (en.id === item.id ? { ...en, kisbusNo: val } : en))
+                                      prev.map((en) => (en.id === item.id ? updatedItem : en))
                                     );
-                                    saveAfterschoolEnrollment({ ...item, kisbusNo: val }).catch(console.error);
+                                    saveAfterschoolEnrollment(updatedItem).catch(console.error);
                                   }}
-                                  className={`border p-0.5 rounded text-[11px] cursor-pointer font-bold focus:outline-none ${
-                                    displayBusNo !== '-' ? 'bg-white text-blue-800 border-blue-200' : 'bg-slate-50 text-slate-400'
+                                  className={`border px-2 py-0.5 rounded text-[11px] cursor-pointer font-bold focus:outline-none transition ${
+                                    fareDetails.isBusApplied
+                                      ? 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100'
+                                      : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'
                                   }`}
                                 >
-                                  <option value="-">미신청</option>
-                                  {BUS_OPTIONS.map((busNo) => (
-                                    <option key={busNo} value={busNo}>
-                                      {busNo}
-                                    </option>
-                                  ))}
-                                  {displayBusNo &&
-                                    displayBusNo !== '-' &&
-                                    displayBusNo !== '미신청' &&
-                                    !BUS_OPTIONS.includes(displayBusNo) && (
-                                      <option value={displayBusNo}>{displayBusNo}</option>
-                                    )}
+                                  <option value="신청">신청</option>
+                                  <option value="미신청">미신청</option>
                                 </select>
                               </td>
                               <td className="py-2 px-2 text-center">
@@ -1356,47 +1430,46 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                           );
                         })()}
                         <td className="py-2 px-2 text-center">
-                          <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-800 font-bold block whitespace-nowrap text-[10px]" title={fareDetails.destinationName}>
-                            {destText}
-                          </span>
-                          <span className="text-[9px] text-slate-400 block mt-0.5 whitespace-nowrap">
-                            ({(fareDetails.zone || '').split(' (')[0]})
-                          </span>
+                          {fareDetails.isBusApplied ? (
+                            <>
+                              <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-800 font-bold block whitespace-nowrap text-[10px]" title={fareDetails.destinationName}>
+                                {destText}
+                              </span>
+                              {fareDetails.isSaturday && (
+                                <span className="text-[9px] text-slate-400 block mt-0.5 whitespace-nowrap">
+                                  ({(fareDetails.zone || '').split(' (')[0]})
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-slate-400 font-medium text-[10px]">-</span>
+                          )}
                         </td>
 
-                        {/* ─── 방과후버스 셀 ─── */}
+                        {/* ─── 방과후버스 배정 셀 ─── */}
                         <td className="py-2 px-2 text-center bg-emerald-50/40">
                           {(() => {
-                            const busInfo = resolveStudentBusInfo(item.name, item.grade, item.classNum, item.studentNum);
-                            const effectiveBusNo = (item.kisbusNo && item.kisbusNo !== '-' && item.kisbusNo !== '미신청') 
-                              ? item.kisbusNo 
-                              : (busInfo?.busNo || '-');
+                            if (!fareDetails.isBusApplied) {
+                              return <span className="text-slate-400 text-[11px] font-medium">미신청</span>;
+                            }
 
+                            const busInfo = resolveStudentBusInfo(item.name, item.grade, item.classNum, item.studentNum);
                             const afterSchoolBus = item.afterSchoolBusNo || busInfo?.afterSchoolBusNo;
 
-                            if (effectiveBusNo && effectiveBusNo !== '-') {
-                              if (afterSchoolBus && afterSchoolBus !== '-' && afterSchoolBus !== '미신청') {
-                                return (
-                                  <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap inline-flex items-center gap-1 border border-emerald-300 shadow-2xs">
-                                    <Bus className="w-3 h-3 text-emerald-600 shrink-0" />
-                                    {afterSchoolBus}
-                                  </span>
-                                );
-                              } else if (item.afternoonBusHidden) {
-                                return (
-                                  <span className="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap inline-flex items-center gap-0.5 border border-amber-300 shadow-2xs" title="스쿨버스 관리자의 방과후 배차표에 미배정으로 등록되어 있습니다.">
-                                    ⏳ 미배정
-                                  </span>
-                                );
-                              } else {
-                                return (
-                                  <span className="bg-sky-50 text-sky-700 font-semibold px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap inline-flex items-center gap-0.5 border border-sky-200" title="상단 [방과후 노선으로 이동] 버튼을 클릭하면 방과후 배차표로 이동됩니다.">
-                                    미이동
-                                  </span>
-                                );
-                              }
+                            if (afterSchoolBus && afterSchoolBus !== '-' && afterSchoolBus !== '미신청' && afterSchoolBus !== '미배정') {
+                              return (
+                                <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap inline-flex items-center gap-1 border border-emerald-300 shadow-2xs">
+                                  <Bus className="w-3 h-3 text-emerald-600 shrink-0" />
+                                  {afterSchoolBus}
+                                </span>
+                              );
                             }
-                            return <span className="text-[10px] text-slate-300">미신청</span>;
+
+                            return (
+                              <span className="bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap inline-flex items-center border border-amber-200" title="스쿨버스 관리자가 아직 방과후 좌석을 배정하지 않았습니다.">
+                                미배정
+                              </span>
+                            );
                           })()}
                         </td>
 
@@ -1734,121 +1807,223 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
         </div>
       )}
 
-      {/* Modal 1: Single Student Register (매뉴얼 2.1) */}
+      {/* Modal 1: Single Student Register */}
       {isRegisterModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden">
-            <div className="bg-blue-600 text-white px-6 py-4 flex justify-between items-center">
-              <h3 className="font-bold text-base flex items-center gap-2">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-blue-600 text-white px-5 py-3.5 flex justify-between items-center">
+              <h3 className="font-bold text-sm sm:text-base flex items-center gap-2">
                 <UserPlus className="w-4 h-4" />
-                신청자 개별 등록 (매뉴얼 2.1)
+                수강생 개별 직접 등록
               </h3>
-              <button onClick={() => setIsRegisterModalOpen(false)} className="text-white font-bold">
+              <button onClick={() => setIsRegisterModalOpen(false)} className="text-white hover:text-slate-200 font-bold text-lg">
                 &times;
               </button>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-800 border border-blue-200">
-                현재 선택된 강좌: <b>{currentCourse.title}</b>
-              </div>
-
-              {/* 등록 대상 구별 (수강 확정 vs 대기자) */}
+            <div className="p-5 space-y-4 max-h-[85vh] overflow-y-auto">
+              {/* 등록 대상 강좌 선택 */}
               <div className="space-y-1">
                 <label className="block text-xs font-bold text-slate-700">
-                  등록 명단 구분 선택
+                  배정 강좌 선택 <span className="text-rose-500">*</span>
                 </label>
-                <div className="flex gap-4 p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold">
-                  <label className="flex items-center gap-1.5 cursor-pointer text-blue-700">
+                <select
+                  value={regModalCourseId}
+                  onChange={(e) => setRegModalCourseId(e.target.value)}
+                  className="w-full text-xs font-bold text-slate-800 border-2 border-blue-400 rounded-lg p-2 bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer"
+                >
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.title} ({c.period}) - {c.instructorName || '강사'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 등록 구분 (수강 확정 vs 대기자) */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700">
+                  등록 상태 구분 <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold">
+                  <label className="flex items-center gap-2 cursor-pointer text-blue-700 p-1 rounded hover:bg-blue-50">
                     <input
                       type="radio"
                       name="regStatus"
                       checked={registerStatusTarget === 'ENROLLED'}
                       onChange={() => setRegisterStatusTarget('ENROLLED')}
                     />
-                    <span>수강 확정생으로 등록</span>
+                    <span>수강 확정생</span>
                   </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer text-amber-700">
+                  <label className="flex items-center gap-2 cursor-pointer text-amber-700 p-1 rounded hover:bg-amber-50">
                     <input
                       type="radio"
                       name="regStatus"
                       checked={registerStatusTarget === 'WAITING'}
                       onChange={() => setRegisterStatusTarget('WAITING')}
                     />
-                    <span>신청 대기자로 등록</span>
+                    <span>신청 대기자</span>
                   </label>
                 </div>
               </div>
 
-              <div>
+              {/* 학생 마스터 검색으로 자동 채우기 */}
+              <div className="border-t pt-3">
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  학생 이름으로 검색
+                  기존 학생 검색으로 정보 불러오기 (선택)
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="홍길동 등..."
+                    placeholder="이름 검색..."
                     value={searchStudentName}
                     onChange={(e) => setSearchStudentName(e.target.value)}
-                    className="flex-1 border p-2 rounded-lg text-sm"
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleSearchStudent(); }}
+                    className="flex-1 border p-1.5 rounded-lg text-xs"
                   />
                   <button
+                    type="button"
                     onClick={handleSearchStudent}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold"
+                    className="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition"
                   >
-                    검색하기
+                    검색
                   </button>
+                </div>
+
+                {foundStudents.length > 0 && (
+                  <div className="border rounded-lg overflow-hidden max-h-32 overflow-y-auto mt-2 text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-100 text-[11px]">
+                        <tr>
+                          <th className="p-1.5">학년/반/번호</th>
+                          <th className="p-1.5">이름</th>
+                          <th className="p-1.5 text-center">선택</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {foundStudents.map((st) => (
+                          <tr key={st.id} className="hover:bg-blue-50/50">
+                            <td className="p-1.5">{st.grade}학년 {st.classNum}반 {st.studentNum}번</td>
+                            <td className="p-1.5 font-bold">{st.name}</td>
+                            <td className="p-1.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedStudentToRegister(st);
+                                  setRegGrade(String(st.grade));
+                                  setRegClassNum(String(st.classNum));
+                                  setRegStudentNum(String(st.studentNum || ''));
+                                  setRegName(st.name);
+                                  setRegParentPhone(st.parentPhone || '');
+                                }}
+                                className="bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded font-bold text-[11px]"
+                              >
+                                채우기
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* 학생 정보 직접 입력 폼 */}
+              <div className="border-t pt-3 space-y-2.5">
+                <div className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                  <span>학생 인적사항 입력</span>
+                  <span className="text-slate-400 font-normal">(직접 수정 가능)</span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-0.5">학년 <span className="text-rose-500">*</span></label>
+                    <select
+                      value={regGrade}
+                      onChange={(e) => setRegGrade(e.target.value)}
+                      className="w-full border p-1.5 rounded-lg text-xs font-bold"
+                    >
+                      {[1, 2, 3, 4, 5, 6].map(g => (
+                        <option key={g} value={g}>{g}학년</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-0.5">반 <span className="text-rose-500">*</span></label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={regClassNum}
+                      onChange={(e) => setRegClassNum(e.target.value)}
+                      className="w-full border p-1.5 rounded-lg text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-0.5">번호</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      placeholder="번호"
+                      value={regStudentNum}
+                      onChange={(e) => setRegStudentNum(e.target.value)}
+                      className="w-full border p-1.5 rounded-lg text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-0.5">이름 <span className="text-rose-500">*</span></label>
+                    <input
+                      type="text"
+                      placeholder="학생 이름"
+                      value={regName}
+                      onChange={(e) => setRegName(e.target.value)}
+                      className="w-full border p-1.5 rounded-lg text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-0.5">학부모 연락처</label>
+                    <input
+                      type="text"
+                      placeholder="010-0000-0000"
+                      value={regParentPhone}
+                      onChange={(e) => setRegParentPhone(e.target.value)}
+                      className="w-full border p-1.5 rounded-lg text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-700">스쿨버스 신청 여부</span>
+                  <select
+                    value={regNeedsBus ? '신청' : '미신청'}
+                    onChange={(e) => setRegNeedsBus(e.target.value === '신청')}
+                    className="border px-2 py-1 rounded text-xs font-bold bg-white"
+                  >
+                    <option value="신청">신청</option>
+                    <option value="미신청">미신청</option>
+                  </select>
                 </div>
               </div>
 
-              {foundStudents.length > 0 && (
-                <div className="border rounded-lg overflow-hidden max-h-40 overflow-y-auto">
-                  <table className="w-full text-xs text-left">
-                    <thead className="bg-slate-100">
-                      <tr>
-                        <th className="p-2">학년/반/번호</th>
-                        <th className="p-2">이름</th>
-                        <th className="p-2 text-center">선택</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {foundStudents.map((st) => (
-                        <tr key={st.id} className="border-t hover:bg-slate-50">
-                          <td className="p-2">
-                            {st.grade}학년 {st.classNum}반 {st.studentNum}번
-                          </td>
-                          <td className="p-2 font-bold">{st.name}</td>
-                          <td className="p-2 text-center">
-                            <button
-                              onClick={() => setSelectedStudentToRegister(st)}
-                              className={`px-2 py-1 rounded text-xs ${
-                                selectedStudentToRegister?.id === st.id
-                                  ? 'bg-emerald-600 text-white font-bold'
-                                  : 'bg-slate-200 text-slate-700'
-                              }`}
-                            >
-                              {selectedStudentToRegister?.id === st.id ? '적용됨 ✓' : '적용'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 pt-4 border-t">
+              <div className="flex justify-end gap-2 pt-3 border-t">
                 <button
+                  type="button"
                   onClick={() => setIsRegisterModalOpen(false)}
-                  className="px-4 py-2 border rounded-lg text-xs font-medium text-slate-700"
+                  className="px-4 py-2 border rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 transition"
                 >
                   취소
                 </button>
                 <button
-                  disabled={!selectedStudentToRegister}
+                  type="button"
+                  disabled={!regName.trim()}
                   onClick={handleCompleteRegisterStudent}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow transition"
                 >
-                  작성완료 (등록)
+                  등록 완료
                 </button>
               </div>
             </div>

@@ -13,7 +13,31 @@ export function exportEnrollmentsToExcel(
     if (c.id) courseMap.set(c.id, c.title);
   });
 
-  const data = enrollments.map((item, index) => {
+  // 1. 강좌명 가나다-ABC 순 및 학년/반/번호 순 정렬
+  const sortedEnrollments = [...enrollments].sort((a, b) => {
+    const courseA = a.courseTitle || courseMap.get(a.courseId) || a.courseId || '';
+    const courseB = b.courseTitle || courseMap.get(b.courseId) || b.courseId || '';
+    const courseComp = courseA.localeCompare(courseB, 'ko');
+    if (courseComp !== 0) return courseComp;
+
+    const gA = Number(a.grade) || 0;
+    const gB = Number(b.grade) || 0;
+    if (gA !== gB) return gA - gB;
+
+    const cA = Number(a.classNum) || 0;
+    const cB = Number(b.classNum) || 0;
+    if (cA !== cB) return cA - cB;
+
+    const nA = Number(a.studentNum) || 0;
+    const nB = Number(b.studentNum) || 0;
+    if (nA !== nB) return nA - nB;
+
+    const nameA = a.name || a.studentName || '';
+    const nameB = b.name || b.studentName || '';
+    return nameA.localeCompare(nameB, 'ko');
+  });
+
+  const data = sortedEnrollments.map((item, index) => {
     const rawName = item.name || item.studentName || '';
     const courseName = item.courseTitle || courseMap.get(item.courseId) || item.courseId || '-';
     const busFee = item.busFee || 0;
@@ -65,17 +89,17 @@ export const downloadSampleExcel = () => {
       '번호': 1,
       '이름': '홍길동',
       '강좌명': '사고력 쑥쑥! 놀면서 배우는 창의수학(A)',
-      '스쿨버스(선택)': '11호차',
+      '스쿨버스(토요일은 O/X)': 'O',
       '학부모연락처(선택)': '010-1234-5678',
     },
     {
       '학년': 1,
       '반': 1,
-      '번호': 1,
-      '이름': '홍길동',
+      '번호': 2,
+      '이름': '김영희',
       '강좌명': 'AI 로봇코딩',
-      '스쿨버스(선택)': '',
-      '학부모연락처(선택)': '',
+      '스쿨버스(토요일은 O/X)': '',
+      '학부모연락처(선택)': '010-2345-6789',
     },
     {
       '학년': 2,
@@ -83,17 +107,17 @@ export const downloadSampleExcel = () => {
       '번호': 12,
       '이름': '김철수',
       '강좌명': 'K-Pop 댄스교실',
-      '스쿨버스(선택)': '18호차',
+      '스쿨버스(토요일은 O/X)': '18호차',
       '학부모연락처(선택)': '010-9876-5432',
     },
     {
       '학년': 3,
       '반': 2,
       '번호': 5,
-      '이름': '이영희',
-      '강좌명': '체스 & 보드게임 교실',
-      '스쿨버스(선택)': '',
-      '학부모연락처(선택)': '',
+      '이름': '이순신',
+      '강좌명': '오케스트라',
+      '스쿨버스(토요일은 O/X)': 'O',
+      '학부모연락처(선택)': '010-3456-7890',
     },
   ];
   const worksheet = XLSX.utils.json_to_sheet(data);
@@ -495,12 +519,12 @@ export function parseEnrollmentEditExcel(file: File): Promise<any[]> {
  * 스쿨버스 호차 텍스트 정규화 유틸리티 (예: '11호' -> '11호차', '18호' -> '18호차', '11' -> '11호차')
  */
 export function formatBusNo(input: any): string {
-  if (input === null || input === undefined) return '-';
+  if (input === null || input === undefined) return '미신청';
   const str = String(input).trim();
-  if (!str || str === '-' || str === '미신청' || str === 'X' || str === 'x') {
+  if (!str || str === '-' || str === '미신청' || str === 'X' || str === 'x' || str === '아니오' || str === 'N' || str === 'n' || str === 'false') {
     return '미신청';
   }
-  if (str === 'O' || str === 'o' || str === '신청' || str === 'Y' || str === 'y') {
+  if (str === 'O' || str === 'o' || str === '신청' || str === 'Y' || str === 'y' || str === '예' || str === 'v' || str === 'V' || str === 'true' || str === '1') {
     return '1호차';
   }
 

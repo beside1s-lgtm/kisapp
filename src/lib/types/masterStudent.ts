@@ -21,6 +21,7 @@ export type MasterStudent = {
   parentEmail?: string | null; // 보호자 연동 이메일
   address?: string | null;     // 주소
   kisbusNo?: string | null;    // 승차권 번호
+  photoUrl?: string | null;    // 학생 사진 URL (가로세로 2cm 최적화 Base64 또는 이미지 URL)
 
   // [학적 이력 아카이브] 과거 학학년도별 학년/반/번호 아카이브 기록
   academicHistory?: AcademicHistoryRecord[];

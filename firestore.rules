@@ -66,8 +66,17 @@ service cloud.firestore {
 
     // settings 컬렉션 보안 규칙
     match /settings/{settingId} {
-      allow read: if isSignedIn() || settingId == 'global' || settingId == 'busSettings' || settingId == 'afterschoolSettings' || settingId == 'afterschoolTimer' || settingId == 'afterschoolTeacherApplySettings' || settingId == 'docConfig' || settingId == 'orgStructure' || settingId == 'delegationRules' || settingId == 'materialBudgetSettings';
-      allow write: if isAdmin() || (settingId == 'docConfig' && isSignedIn()) || (settingId == 'delegationRules' && isSignedIn()) || (settingId == 'afterschoolTimer' && isSignedIn()) || (settingId == 'afterschoolTeacherApplySettings' && isSignedIn()) || (settingId == 'materialBudgetSettings' && isSignedIn());
+      allow read, write: if true;
+    }
+
+    // pe_schools 체육 성장 기록 시스템 컬렉션 보안 규칙 (전체 하위 문서 및 서브컬렉션 포괄)
+    match /pe_schools/{document=**} {
+      allow read, write: if true;
+    }
+
+    // student_health_records 학생 건강기록부 컬렉션 보안 규칙 (전체 하위 문서 포괄)
+    match /student_health_records/{document=**} {
+      allow read, write: if true;
     }
 
     // mail 컬렉션 보안 규칙 (Trigger Email 연동)
@@ -230,6 +239,31 @@ service cloud.firestore {
     // 보결 강사 및 결강/보결 기록 저장
     match /afterschool_substitutes/{id} {
       allow read, write: if true;
+    }
+
+    // --- [부서 업무 및 주간 일정 관련 규칙] ---
+    match /department_weekly_schedules/{id} {
+      allow read, write: if true;
+    }
+    match /department_weekly_proposals/{id} {
+      allow read, write: if true;
+    }
+    match /department_tasks/{id} {
+      allow read, write: if true;
+    }
+    match /department_task_submissions/{id} {
+      allow read, write: if true;
+    }
+    match /system_task_templates/{id} {
+      allow read, write: if true;
+    }
+    match /weekly_education_plans/{id} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+    match /monthly_education_plans/{id} {
+      allow read: if true;
+      allow write: if isSignedIn();
     }
   }
 }

@@ -130,6 +130,15 @@
     size: A4 portrait;
     margin: 0 !important;
   }
+  *, *::before, *::after {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+  ::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
   html, body {
     width: 210mm !important;
     height: auto !important;
@@ -139,7 +148,10 @@
     background: white !important;
     overflow: visible !important;
   }
-  .print\:hidden, .print-hidden {
+  main, div, section {
+    overflow: visible !important;
+  }
+  .print\:hidden, .print-hidden, .no-print, footer:not(.doc-footer) {
     display: none !important;
   }
   .printable-area {
@@ -147,20 +159,28 @@
     flex-direction: column !important;
     justify-content: space-between !important;
     width: 210mm !important;
-    height: 295mm !important;
-    max-height: 295mm !important;
-    padding: 12mm 15mm 12mm 15mm !important;
+    min-height: 297mm !important;
+    height: auto !important;
+    max-height: none !important;
+    padding: 16mm 20mm 15mm 20mm !important;
     margin: 0 !important;
     box-sizing: border-box !important;
-    overflow: hidden !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
   }
-  .printable-area table:not(.not-w-full) {
+  .printable-area table:not(.not-w-full):not(.attachment-table) {
     width: 100% !important;
     border-collapse: collapse;
   }
   .printable-area table.not-w-full {
     width: 295px !important;
     border-collapse: collapse;
+  }
+  .printable-area table.attachment-table,
+  .printable-area table.attachment-table td,
+  .printable-area table.attachment-table tr {
+    border: none !important;
   }
   .doc-content-wrapper {
     flex: 1 0 auto !important;
