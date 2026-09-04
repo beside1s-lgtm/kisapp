@@ -365,8 +365,15 @@ export async function bulkRegisterUsers(fileData: string) {
     let facultyCount = 0;
 
     for (const row of rows) {
-      // 학생 계정 양식인 경우 (학년, 학생이름 또는 studentName 필드 감지 시)
-      const isStudentRow = row['학생이름'] || row['학생 이름'] || row['studentName'] || (row['학년'] && row['반']);
+      // 학생 계정 양식 명시 필드 감지
+      const hasExplicitStudentField = Boolean(
+        row['학생이름'] || row['학생 이름'] || row['studentName'] || 
+        row['보호자 이름'] || row['보호자이름'] || row['학부모 이름'] || 
+        row['학생 계정 이메일'] || row['학생계정이메일']
+      );
+      const hasFacultyRole = Boolean(row['직책'] || row['role'] || row['부서'] || row['소속부서']);
+      // 교직원 직책/부서가 명시되어 있지 않고, 학생 고유 필드 또는 (학년+반+번호)가 있는 경우에만 학생으로 판정
+      const isStudentRow = hasExplicitStudentField || (!hasFacultyRole && row['학년'] && row['반'] && (row['번호'] || row['studentNumber']));
       if (isStudentRow) {
         const studentName = String(row['학생이름'] || row['학생 이름'] || row['이름'] || row['studentName'] || row['name'] || '').trim();
         const email = String(row['학생 계정 이메일'] || row['학생계정이메일'] || row['학생이메일'] || row['이메일'] || row['email'] || '').trim().toLowerCase();

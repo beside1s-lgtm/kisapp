@@ -4553,8 +4553,8 @@ export function SettingsModal() {
               <Tabs value={userSubTab} onValueChange={(val) => setUserSubTab(val as 'teachers' | 'students')} className="flex-1 min-h-0 flex flex-col">
                 <div className="flex justify-between items-center px-1 shrink-0 mb-2">
                     <TabsList className="grid grid-cols-2 w-[340px]">
-                      <TabsTrigger value="teachers">교직원 ({users.filter(u => u.email === 'beside1s@kshcm.net' || (!u.studentName && u.role !== '학부모' && u.role !== 'student')).length})</TabsTrigger>
-                      <TabsTrigger value="students">학생 계정 ({users.filter(u => u.email !== 'beside1s@kshcm.net' && (!!u.studentName || u.role === '학부모' || u.role === 'student' || /^\d{4}[a-zA-Z]+@kshcm\.net$/i.test(u.email))).length})</TabsTrigger>
+                      <TabsTrigger value="teachers">교직원 ({users.filter(u => u.email === 'beside1s@kshcm.net' || (u.role !== '학부모' && u.role !== 'student' && (!u.studentName || !!u.dept || u.role === '교사'))).length})</TabsTrigger>
+                      <TabsTrigger value="students">학생 계정 ({users.filter(u => u.email !== 'beside1s@kshcm.net' && (u.role === '학부모' || u.role === 'student' || (!!u.studentName && u.role !== '교사' && !u.dept))).length})</TabsTrigger>
                     </TabsList>
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" onClick={() => setIsBulkUploadOpen(true)}>
@@ -4629,7 +4629,7 @@ export function SettingsModal() {
                               </TableCell>
                           </TableRow>
                       )}
-                      {users.filter(user => user.email === 'beside1s@kshcm.net' || (!user.studentName && user.role !== '학부모' && user.role !== 'student')).map(user => (
+                      {users.filter(user => user.email === 'beside1s@kshcm.net' || (user.role !== '학부모' && user.role !== 'student' && (!user.studentName || !!user.dept || user.role === '교사'))).map(user => (
                         <TableRow key={user.email}>
                           <TableCell>
                           <div className="font-medium">{user.name}</div>
@@ -4706,7 +4706,7 @@ export function SettingsModal() {
                   {(() => {
                     const allStudents = users.filter(u =>
                       u.email !== 'beside1s@kshcm.net' &&
-                      (!!u.studentName || u.role === '학부모' || u.role === 'student' || /^\d{4}[a-zA-Z]+@kshcm\.net$/i.test(u.email))
+                      (u.role === '학부모' || u.role === 'student' || (!!u.studentName && u.role !== '교사' && !u.dept))
                     );
                     // 학년 목록 자동 추출
                     const gradeOptions = Array.from(new Set(allStudents.map(u => u.studentGrade).filter(Boolean))).sort();
