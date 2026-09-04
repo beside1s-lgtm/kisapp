@@ -636,13 +636,13 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
 
   // 학생 프로필 사진 & 스쿨버스 번호 & 학부모 연락처 통합 연동 헬퍼
   const getStudentInfo = (studentId: string, studentName: string, grade?: any, classNum?: any) => {
+    // 동명이인 오매칭 방지: 이름+학년+반이 모두 일치할 때만 매칭 (이름만 fallback 제거)
     const m = (masterStudents || []).find(ms =>
       ms.studentId === studentId ||
       ms.studentEmail?.toLowerCase() === studentId?.toLowerCase() ||
-      (ms.name === studentName && String(ms.grade) === String(grade) && String(ms.classNum) === String(classNum)) ||
-      ms.name === studentName
+      (ms.name === studentName && String(ms.grade) === String(grade) && String(ms.classNum) === String(classNum))
     );
-    const s = (studentsList || []).find(st => st.id === studentId || st.name === studentName);
+    const s = (studentsList || []).find(st => st.id === studentId || (st.name === studentName && String(st.grade) === String(grade) && String(st.class) === String(classNum)));
 
     const photoUrl = m?.photoUrl || (s as any)?.photoUrl || (s as any)?.photo || '';
     let rawBus = (m?.busSummary as any)?.assignedBusName || (m?.busSummary as any)?.busName || m?.kisbusNo || (s as any)?.kisbusNo || (s as any)?.busNo || '';

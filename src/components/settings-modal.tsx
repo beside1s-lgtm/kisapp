@@ -864,7 +864,7 @@ export function SettingsModal() {
     return users.filter(u => {
       if (u.email === 'beside1s@kshcm.net') return true;
       if (u.studentName || u.studentGrade || u.role === '학부모' || u.role === 'student' || u.role === 'parent') return false;
-      if (/^\d{4}[a-zA-Z]+@kshcm\.net$/i.test(u.email)) return false;
+      // 이메일 패턴이 숫자로 시작되더라도 DB role이 교사라면 교직원으로 포함
       return true;
     });
   }, [users]);
@@ -890,6 +890,7 @@ export function SettingsModal() {
   const [newHomeroom, setNewHomeroom] = useState({ grade: '1', class: '1', email: '', isGradeHead: false, roleType: 'homeroom' as 'homeroom' | 'subject' });
   const [teacherComboboxOpen, setTeacherComboboxOpen] = useState(false);
   const [teacherSearchQuery, setTeacherSearchQuery] = useState('');
+  const [teacherTabQuery, setTeacherTabQuery] = useState(''); // 교직원 탭 검색
 
   const filteredTeachers = useMemo(() => {
     if (!teacherSearchQuery.trim()) return facultyUsers;
@@ -4568,7 +4569,17 @@ export function SettingsModal() {
                     </div>
                 </div>
 
-                <TabsContent value="teachers" className="flex-1 min-h-0 data-[state=active]:flex flex-col border rounded-md overflow-y-auto">
+                <TabsContent value="teachers" className="flex-1 min-h-0 data-[state=active]:flex flex-col border rounded-md overflow-hidden">
+                  {/* 교직원 검색 입력 */}
+                  <div className="p-2 border-b bg-background sticky top-0 z-20">
+                    <Input
+                      placeholder="이름, 이메일, 부서로 검색..."
+                      value={teacherTabQuery}
+                      onChange={(e) => setTeacherTabQuery(e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <div className="overflow-y-auto flex-1">
                   <Table>
                       <TableHeader className="sticky top-0 bg-background z-10">
                       <TableRow>
@@ -4629,7 +4640,16 @@ export function SettingsModal() {
                               </TableCell>
                           </TableRow>
                       )}
-                      {users.filter(user => user.email === 'beside1s@kshcm.net' || (user.role !== '학부모' && user.role !== 'student' && (!user.studentName || !!user.dept || user.role === '교사'))).map(user => (
+                      {users.filter(user => {
+                         const isTeacher = user.email === 'beside1s@kshcm.net' || (user.role !== '학부모' && user.role !== 'student' && (!user.studentName || !!user.dept || user.role === '교사'));
+                         if (!isTeacher) return false;
+                         if (!teacherTabQuery.trim()) return true;
+                         const q = teacherTabQuery.trim().toLowerCase();
+                         return (user.name || '').toLowerCase().includes(q) ||
+                           (user.email || '').toLowerCase().includes(q) ||
+                           (user.dept || '').toLowerCase().includes(q) ||
+                           (user.role || '').toLowerCase().includes(q);
+                       }).map(user => (
                         <TableRow key={user.email}>
                           <TableCell>
                           <div className="font-medium">{user.name}</div>
@@ -4698,7 +4718,8 @@ export function SettingsModal() {
                       </TableRow>
                       ))}
                       </TableBody>
-                  </Table>
+                      </Table>
+                       </div>
                 </TabsContent>
 
                 <TabsContent value="students" className="flex-1 min-h-0 data-[state=active]:flex flex-col border rounded-md mt-0">

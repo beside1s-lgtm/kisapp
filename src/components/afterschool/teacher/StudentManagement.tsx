@@ -574,6 +574,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 
   // ─── 방과후 버스 배정 핸들러 ───
   // 하교 버스를 숨기고 방과후 버스 번호를 enrollment에 저장합니다.
+  // 단, 토요일 강좌(토요방과후) 학생은 토요일 노선을 그대로 사용하므로 하교 버스 숨김 안 함.
   const handleAssignAfterSchoolBus = async (enrollmentId: string, afterSchoolBusNo: string) => {
     if (!afterSchoolBusNo || afterSchoolBusNo === '-') {
       alert('방과후 버스 번호를 선택해주세요.');
@@ -582,22 +583,28 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     const target = enrollments.find((e) => e.id === enrollmentId);
     if (!target) return;
 
+    // 토요일 강좌 여부 판별: classDays에 '토'가 포함되어 있거나, 토요만 운영되는 강좌
+    const targetCourse = courses.find((c) => c.id === target.courseId);
+    const isSaturdayCourse = targetCourse?.classDays?.includes('토') ?? false;
+
     setIsBusTransferLoading(true);
     try {
-      // 1. enrollment 업데이트: 방과후 버스 번호 저장 + 하교 버스 숨김 플래그
+      // 1. enrollment 업데이트: 방과후 버스 번호 저장
+      //    토요일 강좌는 하교 버스 숨김 플래그를 설정하지 않음
       const updatedEnrollment: Enrollment = {
         ...target,
         afterSchoolBusNo,
-        afternoonBusHidden: true,
+        afternoonBusHidden: isSaturdayCourse ? false : true,
       };
       setEnrollments((prev) =>
         prev.map((en) => (en.id === enrollmentId ? updatedEnrollment : en))
       );
       await saveAfterschoolEnrollment(updatedEnrollment);
 
-      // 2. kisbus students DB에서 해당 학생의 하교 목적지를 숨김 처리
+      // 2. kisbus students DB 업데이트
+      //    토요일 강좌는 하교 목적지를 숨길 필요 없음 (토요일 노선 유지)
       const kisbusStudentId = target.studentId;
-      if (kisbusStudentId && kisbusStudentId.startsWith('e_') === false) {
+      if (!isSaturdayCourse && kisbusStudentId && kisbusStudentId.startsWith('e_') === false) {
         await hideAfternoonBusForStudent(kisbusStudentId).catch((err) => {
           console.warn('kisbus 하교 숨김 처리 실패 (수강생 데이터는 저장됨):', err);
         });
@@ -605,7 +612,11 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 
       setBusTransferModalEnrollmentId(null);
       setAfterSchoolBusInputNo('-');
-      alert(`✅ [${target.name}] 학생이 방과후 버스(${afterSchoolBusNo})로 배정되었습니다.\n하교 버스는 숨김 처리되었습니다.`);
+      if (isSaturdayCourse) {
+        alert(`[${target.name}] 학생의 토요 방과후 버스(${afterSchoolBusNo})를 저장했습니다.\n토요일 노선은 유지됩니다.`);
+      } else {
+        alert(`[${target.name}] 학생이 방과후 버스(${afterSchoolBusNo})로 배정되었습니다.\n하교 버스는 숨김 처리되었습니다.`);
+      }
     } catch (err: any) {
       alert(`방과후 버스 배정 중 오류가 발생했습니다: ${err.message}`);
     } finally {
@@ -724,11 +735,15 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       });
     }
 
-    // 3단계: 이름만으로 fallback 매칭
+    // 3단계: 이름만으로 fallback 매칭 (동명이인이 1명뿐인 경우에만 허용)
     if (!matched) {
-      matched = studentsList.find((s) => {
+      const sameNameStudents = studentsList.filter((s) => {
         return clean(s.name) === targetName || clean(s.nameKo) === targetName || clean(s.nameEn) === targetName;
       });
+      if (sameNameStudents.length === 1) {
+        matched = sameNameStudents[0];
+      }
+      // 동명이인 2명 이상이면 매칭하지 않음 (null 반환하여 오배정 방지)
     }
 
     if (!matched) return null;
