@@ -2,37 +2,61 @@
 
 ## Current Status
 - 외부 강사용 독립 출석부 공유 링크 기능 및 전용 페이지(`/attendance/share/[courseId]`) 구현 완료.
-- 방과후 출석부 상단에 [출석부 공유] 링크 복사 버튼 추가 완료 (클릭 시 전용 URL 복사 및 토스트 안내).
-- 외부 강사(비로그인 게스트)가 해당 링크로 접속 시:
-  - 오직 해당 강좌의 학생 명단, 회차/날짜 선택기, 간편 탭 출석(○/△/×/·) 기능만 제공.
-  - 상단 헤더에 "KIS 출석부" 브랜딩 표시 및 홈/뒤로가기 버튼 제거로 시스템 이탈 원천 차단.
-  - 모바일 하단 네비게이션바(`MobileBottomNav`) 완전 숨김 처리.
-  - 출석 체크(결석/개별하교/출석) 시 Firestore 배치 저장 및 스쿨버스 시스템(`routes/{routeId}/attendance/{date}.notBoarding`) 실시간 연동.
-- 비로그인 상태에서 다른 페이지(`/teacher/afterschool`, `/inbox` 등) 주소창 접근 시 즉시 로그인 페이지로 차단 및 리다이렉트.
-- Next.js 프로덕션 빌드 통과 및 GitHub 원격 저장소(`origin/main`) 푸시를 통한 Firebase App Hosting 배포 트리거 완료.
+- 사용자 피드백 반영 완료:
+  1. 스쿨버스 번호 표기 오류 개선:
+     - 중복으로 '호'가 붙던 문제('1호차호') 해결.
+     - 학생 마스터 정보(`masterStudents`) 연동을 통해 실제 배정된 버스 번호('5호', '14호', '08호차' 등) 정확히 표기.
+     - 스쿨버스가 배정되지 않은 학생은 원래 출석부와 동일하게 '미배정' 뱃지 표시.
+  2. 전원 출석 버튼 추가:
+     - 공유 출석부 상단 세션 선택기 좌측에 [전원 출석] 버튼 배치.
+     - 클릭 시 해당 회차의 모든 수강생을 출석(○) 처리하고, 스쿨버스 결석 해제 연동 및 Firestore 일괄 저장 즉시 완료.
+- 시스템 전반의 TypeScript 오류 및 런타임 잠재 결함 해결:
+  - `CourseManagement.tsx`: `isFreeCourse` 누락 state 선언 추가 (ReferenceError 차단).
+  - `document-view.tsx`: 반려 모달 `Textarea` 누락 import 추가 (반려 시 크래시 차단).
+  - `peService.ts`: `suggestPeEventToDepartment` 인자 형태 호환 확장.
+  - `ClassAnalytics.tsx`: `ScoutingReportOutput` import 추가.
+  - `TournamentManagement.tsx`: props 호환성 확장 및 안전 호출 처리.
+  - `Student`, `Teacher`, `MasterStudent`, `UserProfile`, `ParentFormData`, `ApprovalDocPayload`, `PeEventBudget` 인터페이스 확장 완료.
+- Next.js 프로덕션 빌드 통과(`Compiled successfully in 88s`, 44개 라우트 정상 생성).
+- Puppeteer 브라우저 실시간 검증 완료 (실제 배구부 강좌 25명 대상 전원 출석 동작 및 버스번호 표기 확인).
+- GitHub 원격 저장소(`origin/main`) 푸시를 통한 Firebase App Hosting(`studio-9153973571-7837c`) 자동 배포 진행 완료.
 
 ## Modified Files
-1. `src/app/attendance/share/[courseId]/page.tsx` [신규]: 외부 강사용 독립 출석부 페이지. 비로그인 접근 허용, 출석 체크 및 버스 시스템 실시간 연동.
-2. `src/components/afterschool/teacher/AttendanceManagement.tsx`: 회차 선택기 상단에 [출석부 공유] 버튼 추가 및 링크 복사 핸들러 구현.
-3. `src/components/layout/main-layout.tsx`: `/attendance/share/`를 공개 페이지로 등록, 게스트 브랜딩 분기(스쿨버스: KIS BUS, 출석부: KIS 출석부), 홈/뒤로가기 차단.
-4. `src/components/layout/mobile-bottom-nav.tsx`: `/attendance/share/` 비로그인 접근 시 하단 네비게이션바 숨김 처리.
-5. `src/lib/afterschool/schedule.ts`: 방과후 수업일수 및 출석부 생성 시 기간형 학사일정 전체 휴업일 반영.
-6. `src/lib/services/academicCalendarService.ts`: 다가오는 학사일정 계산 시 종료일 기준 필터링 적용.
+1. `src/app/attendance/share/[courseId]/page.tsx`:
+   - 학생 마스터 정보 연동을 통한 실제 스쿨버스 배정 번호/미배정 표기.
+   - [전원 출석] 버튼 UI 및 `handleBulkAttendDay` 핸들러 추가.
+2. `src/components/afterschool/teacher/CourseManagement.tsx`:
+   - `isFreeCourse` 상태 선언 누락 추가.
+3. `src/components/document-view.tsx`:
+   - `Textarea` import 추가.
+4. `src/components/document-form.tsx`:
+   - `category`에 'general' 추가 및 결재선 타입 명시.
+5. `src/components/pe/TournamentManagement.tsx`:
+   - props 호환성 확장 및 `handleUpdate` 안전 호출.
+6. `src/components/pe/ClassAnalytics.tsx`:
+   - `ScoutingReportOutput` 타입 import 추가.
+7. `src/components/pe/PeEventManagement.tsx`:
+   - `TaskSubmission` import 및 파라미터 타입 명시.
+8. `src/lib/services/peService.ts`:
+   - `suggestPeEventToDepartment` 시그니처 확장.
+9. `src/lib/types.ts`, `src/lib/kisbus/types.ts`, `src/lib/types/masterStudent.ts`, `src/lib/pe/types.ts`:
+   - 모델 및 페이로드 인터페이스 필드 보강.
+10. `SESSION_HANDOVER.md`:
+    - 인수인계 문서 업데이트.
 
 ## Verification
 - Next.js 프로덕션 빌드 검증:
-  - `npm run build` 정상 완료 (`Compiled successfully in 51s`, 44개 정적/동적 라우트 생성 완료).
-- Puppeteer 브라우저 실시간 검증:
-  - 비로그인 상태에서 실제 강좌 공유 링크(`http://localhost:9002/attendance/share/c_1787191609050_9bidq`) 접속 검증:
-    - `headerBranding`: "KIS 출석부" 정상 표시
-    - `hasBottomNav`: false (하단바 완전 숨김)
-    - `courseTitle`: "사고력 쑥쑥! 놀면서 배우는 창의수학 출석부" 표시
-    - `studentRowCount`: 12명 학생 정상 렌더링
-    - `homeBtnFound`: false (홈/뒤로가기 미노출로 내부 페이지 이동 차단)
-  - 비로그인 상태에서 교사용 페이지(`/teacher/afterschool`) 접근 시 `/login?redirect=%2Fteacher%2Fafterschool` 즉시 차단/리다이렉트 확인.
-  - 비로그인 상태에서 `/teacher/bus` 접근 시 `branding: "KIS BUS"`, `hasBottomNav: false` 확인.
-  - 교사용 출석부 페이지(`/teacher/afterschool`)에서 `출석부 공유` 버튼 렌더링 및 클릭 복사 동작 확인.
+  - `npm run build` 성공 (`Compiled successfully in 88s`, 44개 정적/동적 라우트 생성 완료).
+- Puppeteer 브라우저 실시간 검증 (KIS 배구부 `c_1787191609056_rt7mf`, 25명):
+  - 스쿨버스 번호 표기 확인:
+    - 임유나 (4-5): '5호' 정상 표기 (기존 '1호차호' 중복 제거 및 실제 배정 번호 반영)
+    - 지연우 (4-5): '미배정' 정상 표기
+    - 문승연 (5-2): '14호' 정상 표기
+    - 김세준 (5-3): '08호차' 정상 표기
+  - [전원 출석] 버튼 동작 확인:
+    - 클릭 즉시 25명 전원 출석(○) 처리 완료 ("출석 25명 지각/개별 0명 결석 0명 미체크 0명").
+    - Firestore 배치 저장 및 스쿨버스 탑승 연동 정상 작동 확인.
 
 ## Deployment
-- Git 커밋: `feat: implement external instructor attendance sharing page and link copy feature`
-- 원격 푸시: `git push origin main` 완료 -> Firebase App Hosting 자동 배포 진행.
+- 커밋: `77e3ef0`: fix: resolve typescript type errors, improve bus number display and add bulk attendance button to shared attendance page
+- 푸시: `git push origin main` 완료 -> Firebase App Hosting 자동 빌드/배포 진행.
