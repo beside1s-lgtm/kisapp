@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Download, Search, GraduationCap } from 'lucide-react';
+import { Download, Search, GraduationCap, Bus as BusIcon } from 'lucide-react';
 import { useTranslation } from '@/hooks/use-translation';
 import { getStudentName, normalizeString } from '@/lib/kisbus/utils';
 
@@ -44,9 +44,9 @@ export const AfterSchoolInquiryDialog = ({
     const [selectedTeacherId, setSelectedTeacherId] = useState<string | 'all'>('all');
     const [classSearchQuery, setClassSearchQuery] = useState('');
     const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+    const [showBusRidersOnly, setShowBusRidersOnly] = useState(false);
 
     const filteredClasses = useMemo(() => {
-        if (!isOperating) return [];
         return afterSchoolClasses.filter(c => {
             if ((c.semesterMode || 'regular') !== semesterMode) return false;
             if (selectedDay !== 'all' && c.dayOfWeek !== selectedDay) return false;
@@ -63,20 +63,26 @@ export const AfterSchoolInquiryDialog = ({
             if (a.dayOfWeek !== b.dayOfWeek) return days.indexOf(a.dayOfWeek) - days.indexOf(b.dayOfWeek);
             return a.name.localeCompare(b.name, 'ko');
         });
-    }, [afterSchoolClasses, selectedDay, selectedTeacherId, classSearchQuery, isOperating, semesterMode]);
+    }, [afterSchoolClasses, selectedDay, selectedTeacherId, classSearchQuery, semesterMode]);
 
     const displayClasses = useMemo(() => {
-        if (!isVacationMode) return filteredClasses;
-        const seen = new Set<string>();
+        const seenIds = new Set<string>();
+        const seenNames = isVacationMode ? new Set<string>() : null;
+
         return filteredClasses.filter(c => {
-            if (seen.has(c.name)) return false;
-            seen.add(c.name);
+            if (!c.id || seenIds.has(c.id)) return false;
+            seenIds.add(c.id);
+
+            if (seenNames) {
+                if (seenNames.has(c.name)) return false;
+                seenNames.add(c.name);
+            }
             return true;
         });
     }, [filteredClasses, isVacationMode]);
 
     const classStudents = useMemo(() => {
-        if (!selectedClassId || !isOperating) return [];
+        if (!selectedClassId) return [];
         const targetClass = afterSchoolClasses.find(c => c.id === selectedClassId);
         if (!targetClass) return [];
 
@@ -89,12 +95,19 @@ export const AfterSchoolInquiryDialog = ({
                         .filter(c => c.semesterMode === 'vacation' && c.name === targetClass.name)
                         .map(c => c.id);
                     const days: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-                    return days.some(day => {
-                        const classId = s.afterSchoolClassIds?.[day];
+                    const hasId = days.some(day => {
+                        const classId = s.afterSchoolClassIds?.[day] || s.vacationAfterSchoolClassIds?.[day];
                         return classId && targetClassIds.includes(classId);
                     });
+                    if (hasId) return true;
                 }
-                return s.afterSchoolClassIds?.[targetClass.dayOfWeek] === targetClass.id;
+                const dayMatch = s.afterSchoolClassIds?.[targetClass.dayOfWeek] === targetClass.id;
+                if (dayMatch) return true;
+
+                // 이름 기반 매칭 fallback
+                const titles = (s as any).enrolledCourseTitles || (s as any).afterSchoolCourseTitles || [];
+                const singleTitle = (s as any).afterSchoolCourseTitle;
+                return titles.some((t: string) => t === targetClass.name) || singleTitle === targetClass.name;
             })
             .map(s => {
                 // 토요일은 AfterSchool 노선이 없고 일반 등하교(Morning/Afternoon) 노선을 사용
@@ -122,18 +135,24 @@ export const AfterSchoolInquiryDialog = ({
             });
     }, [selectedClassId, students, afterSchoolClasses, routes, buses, t, i18n.language, isOperating, isVacationMode, semesterMode]);
 
+    const displayedClassStudents = useMemo(() => {
+        if (!showBusRidersOnly) return classStudents;
+        return classStudents.filter(s => s.busName && s.busName !== t('unassigned') && s.busName !== '-');
+    }, [classStudents, showBusRidersOnly, t]);
+
     const handleDownload = () => {
-        if (!selectedClassId || classStudents.length === 0) return;
+        if (!selectedClassId || displayedClassStudents.length === 0) return;
         const targetClass = afterSchoolClasses.find(c => c.id === selectedClassId);
         if (!targetClass) return;
         const headers = ['학년', '반', '이름', '방과후 버스번호'];
-        const rows = classStudents.map(s => [s.grade, s.class, getStudentName(s, i18n.language), s.busName].join(','));
+        const rows = displayedClassStudents.map(s => [s.grade, s.class, getStudentName(s, i18n.language), s.busName].join(','));
         const csvContent = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.body.appendChild(document.createElement('a'));
         link.setAttribute('href', url);
-        link.setAttribute('download', `${targetClass.name}_명단.csv`);
+        const filterSuffix = showBusRidersOnly ? '_버스탑승자만' : '';
+        link.setAttribute('download', `${targetClass.name}_명단${filterSuffix}.csv`);
         link.click();
         document.body.removeChild(link);
     };
@@ -234,24 +253,43 @@ export const AfterSchoolInquiryDialog = ({
                         {/* 학생 목록 */}
                         {selectedClassId && (
                             <div className="flex flex-col gap-2 flex-1 min-h-0">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-xs font-medium text-slate-600">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="text-xs font-medium text-slate-600">
                                         총 <strong className="text-slate-900 font-bold">{classStudents.length}</strong>명
+                                        {classStudents.length > 0 && (
+                                            <> (버스 탑승: <strong className="text-indigo-600 font-bold">{classStudents.filter(s => s.busName && s.busName !== t('unassigned') && s.busName !== '-').length}</strong>명)</>
+                                        )}
+                                        {showBusRidersOnly && (
+                                            <span className="ml-1 text-indigo-600 font-semibold">
+                                                [필터: {displayedClassStudents.length}명]
+                                            </span>
+                                        )}
                                         {selectedClass && (
                                             <span className="ml-1 text-slate-500">
                                                 — {t(`day.${selectedClass.dayOfWeek.toLowerCase()}`)} {selectedClass.name}
                                             </span>
                                         )}
-                                    </span>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-7 text-xs font-semibold gap-1"
-                                        onClick={handleDownload}
-                                        disabled={classStudents.length === 0}
-                                    >
-                                        <Download className="h-3 w-3" /> 명단 다운로드
-                                    </Button>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <Button
+                                            variant={showBusRidersOnly ? "default" : "outline"}
+                                            size="sm"
+                                            className="h-7 text-xs font-semibold gap-1 px-2"
+                                            onClick={() => setShowBusRidersOnly(prev => !prev)}
+                                        >
+                                            <BusIcon className="h-3 w-3" />
+                                            {showBusRidersOnly ? '전체 보기' : '버스 탑승자만'}
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 text-xs font-semibold gap-1 px-2"
+                                            onClick={handleDownload}
+                                            disabled={displayedClassStudents.length === 0}
+                                        >
+                                            <Download className="h-3 w-3" /> 명단 다운로드
+                                        </Button>
+                                    </div>
                                 </div>
                                 <div className="rounded-xl border overflow-y-auto flex-1 min-h-[160px]">
                                     <Table>
@@ -264,8 +302,8 @@ export const AfterSchoolInquiryDialog = ({
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            {classStudents.length > 0 ? (
-                                                classStudents.map(s => (
+                                            {displayedClassStudents.length > 0 ? (
+                                                displayedClassStudents.map(s => (
                                                     <TableRow key={s.id}>
                                                         <TableCell className="text-xs font-medium">{s.grade}</TableCell>
                                                         <TableCell className="text-xs font-medium">{s.class}</TableCell>
@@ -280,7 +318,7 @@ export const AfterSchoolInquiryDialog = ({
                                             ) : (
                                                 <TableRow>
                                                     <TableCell colSpan={4} className="h-24 text-center text-xs text-muted-foreground">
-                                                        배정된 학생이 없습니다.
+                                                        {showBusRidersOnly ? '버스 탑승 학생이 없습니다.' : '배정된 학생이 없습니다.'}
                                                     </TableCell>
                                                 </TableRow>
                                             )}

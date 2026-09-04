@@ -261,7 +261,7 @@ export const syncAfterschoolBusAssignmentsOnStageChange = async (
       studentEnrollmentMap.get(key)!.push(enroll);
     });
 
-    busStudentsSnap.docs.forEach(docSnap => {
+    studentsSnap.docs.forEach((docSnap: any) => {
       const busStudent = { id: docSnap.id, ref: docSnap.ref, data: docSnap.data() as Student };
       const enrolls = studentEnrollmentMap.get(busStudent.id);
 
@@ -544,6 +544,67 @@ export const executeTransferAfterschoolStudentsToBus = async (): Promise<{ succe
     success: true,
     count: matchCount,
     message: `🚌 [방과후 노선으로 이동 완료]\n\n총 ${matchCount}명의 방과후 신청 학생이 정규 하교 좌석에서 제외되고 방과후 버스 노선으로 이동되었습니다.`
+  };
+};
+
+/**
+ * 🌟 스쿨버스 관리자용: 방과후 버스로 이동된 학생들을 원래의 정규 하교 버스로 즉시 복귀
+ */
+export const executeRevertTransferFromAfterschoolToBus = async (): Promise<{ success: boolean; count: number; message: string }> => {
+  const mainDb = (await import('@/lib/firebase')).getDb();
+  const busDbInstance = db();
+
+  // 1. 기존 정규 하교 버스 좌석 복구 실행
+  await clearAllAfterSchoolAssignments('regular');
+
+  // 2. 숨김 처리되었던 학생들의 하교 목적지 복원
+  const studentsSnap = await getDocs(collection(busDbInstance, 'students'));
+  const batch = writeBatch(busDbInstance);
+  let restoredCount = 0;
+
+  studentsSnap.forEach(d => {
+    const data = d.data();
+    if (data._hiddenAfternoonDestId) {
+      batch.update(d.ref, {
+        afternoonDestinationId: data._hiddenAfternoonDestId,
+        _hiddenAfternoonDestId: null
+      });
+      restoredCount++;
+    }
+  });
+
+  // 3. Firestore 이동 상태를 해제 (isTransferred: false)
+  const { setDoc, doc: fDoc } = await import('firebase/firestore');
+  const transferDocRef = fDoc(busDbInstance, 'config', 'afterschool_bus_transfer_state');
+  batch.set(transferDocRef, {
+    isTransferred: false,
+    revertedAt: new Date().toISOString()
+  }, { merge: true });
+
+  await batch.commit();
+
+  // 4. afterschool_enrollments 문서들의 afternoonBusHidden 플래그 복구
+  try {
+    const enrollmentsSnap = await getDocs(collection(mainDb, 'afterschool_enrollments'));
+    const mainBatch = writeBatch(mainDb);
+    let mainUpdated = false;
+    enrollmentsSnap.forEach(eDoc => {
+      if (eDoc.data().afternoonBusHidden) {
+        mainBatch.update(eDoc.ref, { afternoonBusHidden: false });
+        mainUpdated = true;
+      }
+    });
+    if (mainUpdated) {
+      await mainBatch.commit();
+    }
+  } catch (err) {
+    console.warn('afterschool_enrollments 하교 숨김 해제 실패 (버스 데이터는 정상 복구됨):', err);
+  }
+
+  return {
+    success: true,
+    count: restoredCount,
+    message: '🏁 [하교 노선 복귀 완료]\n\n방과후 버스 노선 이동이 해제되고 모든 수강생이 원래의 정규 하교 버스로 복귀되었습니다.'
   };
 };
 

@@ -91,6 +91,7 @@ export async function saveUserProfile(userId: string, email: string, profileData
     }
     
     await setDoc(userProfileRef, dataToSave, { merge: true });
+    invalidateUsersCache();
     const finalProfileSnap = await getDoc(userProfileRef);
     const finalData = finalProfileSnap.data() as UserProfile;
 
@@ -143,6 +144,8 @@ export async function getUsersDirectory(forceRefresh = false): Promise<UserProfi
         dept: data.dept ?? null,
         isFaculty: data.isFaculty ?? null,
         isStaff: data.isStaff ?? null,
+        isManualFaculty: data.isManualFaculty ?? null,
+        registrationSource: data.registrationSource ?? null,
       } as UserProfile;
     });
     // 캐시 갱신
@@ -589,6 +592,7 @@ export async function syncAllUsersToOrgStructure(): Promise<{ success: boolean; 
       dutyRolePermissions: { ...(currentOrg.dutyRolePermissions || {}) }
     };
 
+    if (!orgData.departments) orgData.departments = [];
     let syncCount = 0;
 
     for (const u of users) {
@@ -742,6 +746,7 @@ export async function deleteUser(email: string) {
   try {
     const userRef = doc(getUsersCol(), email.toLowerCase());
     await firestoreDeleteDoc(userRef);
+    invalidateUsersCache();
     return { success: true };
   } catch (error: any) {
     console.error('[UserService] deleteUser failed:', error);
@@ -949,3 +954,43 @@ export async function getApproversByGradeClass(
 
   return approvers;
 }
+
+/**
+ * 주어진 사용자가 교직원인지 여부를 일관성 있게 판별
+ * - 슈퍼 관리자 / 스쿨버스 관리자: 무조건 교직원
+ * - isFaculty === true 또는 isStaff === true 또는 isManualFaculty === true: 무조건 교직원
+ * - 부서 소속(dept 설정 또는 조직도 부서원): 무조건 교직원
+ * - 교직원 전용 직책(교사, 부장, 교감, 교장, 행정실 등): 교직원
+ * - 학생/학부모 특화 정보(studentName, parentName, role: '학부모'/'학생'): 학생 계정
+ * - 학번 형태(숫자 시작)이면서 위의 교직원 조건이 없는 경우: 학생 계정
+ */
+export function isFacultyMember(u: UserProfile | null | undefined, deptMemberSet?: Set<string>): boolean {
+  if (!u) return false;
+  const emailLower = (u.email || '').toLowerCase().trim();
+  if (emailLower === 'beside1s@kshcm.net' || emailLower === 'bus@kshcm.net') return true;
+
+  // 1. 명시적 교직원 플래그가 있는 경우 최우선 인정
+  if (u.isFaculty === true || u.isStaff === true || u.isManualFaculty === true) return true;
+
+  // 2. 부서가 지정되어 있거나 조직도 부서원에 포함된 경우 최우선 인정
+  if (u.dept && u.dept.trim() !== '') return true;
+  if (deptMemberSet && deptMemberSet.has(emailLower)) return true;
+
+  // 3. 교직원 전용 직책을 가진 경우
+  if (u.role && u.role !== '학부모' && u.role !== '학생' && u.role !== 'parent' && u.role !== 'student') {
+    return true;
+  }
+
+  // 4. 학생/학부모 특화 정보가 있는 경우 학생 계정
+  if (u.studentName || u.studentGrade || u.role === '학부모' || u.role === 'student' || u.role === 'parent') {
+    return false;
+  }
+
+  // 5. 숫자로 시작하는 학번 이메일 패턴(예: 20211234, 2026hong)이면서 교직원 조건이 없으면 학생 계정
+  if (/^\d{2,8}[a-zA-Z0-9._-]*@kshcm\.net$/i.test(emailLower)) {
+    return false;
+  }
+
+  return true;
+}
+

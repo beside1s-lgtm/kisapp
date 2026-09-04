@@ -990,9 +990,8 @@ export default function TeacherPage() {
   }, [afterschoolStageStatus]);
 
   const activeAfterSchoolClasses = useMemo(() => {
-    if (!isAfterSchoolActive) return [];
     return afterSchoolClasses.filter(c => (c.semesterMode || 'regular') === semesterMode);
-  }, [isAfterSchoolActive, afterSchoolClasses, semesterMode]);
+  }, [afterSchoolClasses, semesterMode]);
   
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrAlertStudent, setQrAlertStudent] = useState<Student | null>(null);
@@ -2327,7 +2326,11 @@ updates.disembarked = arrayUnion(student.id);
                                             if (afterSchoolClass.teacherName2) teachers.push(afterSchoolClass.teacherName2.slice(0, 3));
                                         }
                                         const teachersText = teachers.length > 0 ? `(${teachers.join(',')})` : '';
-                                        const asBadgeText = afterSchoolClass ? `[${classNameShort}]${teachersText}` : '';
+                                        const fallbackCourseName = (s as any).afterSchoolCourseTitle || 
+                                            ((s as any).enrolledCourseTitles && (s as any).enrolledCourseTitles[0]);
+                                        const asBadgeText = afterSchoolClass 
+                                            ? `[${classNameShort}]${teachersText}` 
+                                            : (fallbackCourseName ? `[${fallbackCourseName.slice(0, 4)}]` : '');
 
                                         return (
                                             <TableRow key={s.id} onClick={() => handleStudentRowClick(s.id)} className={cn("cursor-pointer hover:bg-accent/50 transition-colors", lastClickedStudentId === s.id && "bg-accent/70")}>
@@ -2492,6 +2495,17 @@ updates.disembarked = arrayUnion(student.id);
                                                 {destBasedClass.teacherName && (
                                                     <span className="text-xs text-muted-foreground/70">({destBasedClass.teacherName})</span>
                                                 )}
+                                            </p>
+                                        );
+                                    }
+                                    const fallbackTitle = (selectedStudent as any).afterSchoolCourseTitle || 
+                                        ((selectedStudent as any).enrolledCourseTitles && (selectedStudent as any).enrolledCourseTitles.join(', '));
+                                    if (fallbackTitle) {
+                                        return (
+                                            <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                                                <GraduationCap className="w-3.5 h-3.5 text-primary shrink-0" />
+                                                <span>방과후 ({t(`day_short.${selectedDay.toLowerCase()}`)}):</span>
+                                                <span className="font-medium text-foreground">{fallbackTitle}</span>
                                             </p>
                                         );
                                     }

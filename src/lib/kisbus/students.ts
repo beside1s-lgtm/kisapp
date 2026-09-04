@@ -1,5 +1,5 @@
 import { getKisbusDb as db } from './firebase';
-import { collection, doc, writeBatch, updateDoc, onSnapshot, query, getDocs, setDoc } from 'firebase/firestore';
+import { collection, doc, writeBatch, updateDoc, onSnapshot, query, getDocs, getDoc, setDoc } from 'firebase/firestore';
 import type { Student, NewStudent, Destination } from './types';
 import { fetchCollection, onCollectionUpdate, addDocument } from './core';
 import { sanitizeDataForSystem } from './utils';
@@ -18,9 +18,9 @@ const syncKisbusDestinationToMasterAddress = async (studentId: string, updatedDa
         const mainDb = getDb();
         
         // 1. 현재 학생 데이터 조회
-        const sSnap = await getDocs(query(collection(busDb, 'students'), where('__name__', '==', studentId)));
-        if (sSnap.empty) return;
-        const student = { id: sSnap.docs[0].id, ...sSnap.docs[0].data(), ...updatedData } as Student;
+        const sSnap = await getDoc(doc(busDb, 'students', studentId));
+        if (!sSnap.exists()) return;
+        const student = { id: sSnap.id, ...sSnap.data(), ...updatedData } as Student;
         
         const destId = updatedData.morningDestinationId || updatedData.afternoonDestinationId || updatedData.suggestedMorningDestination || student.morningDestinationId || student.afternoonDestinationId;
         if (!destId) return;
@@ -28,7 +28,7 @@ const syncKisbusDestinationToMasterAddress = async (studentId: string, updatedDa
         // 2. 목적지명 조회
         const destSnap = await getDocs(collection(busDb, 'destinations'));
         const destinations = destSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const matched = destinations.find((d: any) => d.id === destId || d.name === destId);
+        const matched = destinations.find((d: any) => d.id === destId || (d as any).name === destId) as any;
         const destName = matched ? (matched.name || destId) : destId;
 
         // 3. master_students 컬렉션 동기화

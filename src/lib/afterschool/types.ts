@@ -129,6 +129,9 @@ export interface SubstituteRecord {
   substituteSignature?: string;
   reason?: string;
   createdAt: string;
+  recordType?: 'SUBSTITUTE' | 'ABSENCE'; // 보결 등록 또는 결근 처리
+  isAbsence?: boolean; // 결근 처리 여부
+  targetInstructor?: string; // 특정 강사 대상 (복수 강사 강좌인 경우)
 }
 
 export interface RefundRequest {

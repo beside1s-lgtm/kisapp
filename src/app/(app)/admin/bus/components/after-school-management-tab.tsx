@@ -41,7 +41,8 @@ import {
     ChevronDown,
     ChevronUp,
     Loader2,
-    UserPlus
+    UserPlus,
+    Bus as BusIcon
 } from 'lucide-react';
 import { 
     Dialog, 
@@ -147,16 +148,29 @@ export const AfterSchoolManagementTab = ({
     const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
     const [classSearchQuery, setClassSearchQuery] = useState('');
     const [studentNameQuery, setStudentNameQuery] = useState('');
+    const [searchBusRidersOnly, setSearchBusRidersOnly] = useState(false);
+    const [showBusRidersOnly, setShowBusRidersOnly] = useState(false);
 
     const [isAddStudentDialogOpen, setIsAddStudentDialogOpen] = useState(false);
     const [addStudentSearchQuery, setAddStudentSearchQuery] = useState('');
     const [selectedStudentToAddId, setSelectedStudentToAddId] = useState<string | null>(null);
 
-    // 학생 이름 검색 시 해당 학생이 등록된 수업 ID 목록 계산
+    // 학생 이름 검색 시 해당 학생이 등록된 수업 ID 목록 계산 (버스 탑승자만 필터 지원)
     const classIdsForStudentSearch = useMemo(() => {
-        if (!studentNameQuery.trim()) return null;
+        if (!studentNameQuery.trim() && !searchBusRidersOnly) return null;
         const q = normalizeString(studentNameQuery.trim());
-        const matchedStudents = students.filter(s => normalizeString(getStudentName(s, 'ko')).includes(q));
+        const matchedStudents = students.filter(s => {
+            if (q && !normalizeString(getStudentName(s, 'ko')).includes(q) && !normalizeString(getStudentName(s, 'en')).includes(q)) {
+                return false;
+            }
+            if (searchBusRidersOnly) {
+                const hasBusNo = s.kisbusNo && s.kisbusNo !== '-' && s.kisbusNo !== t('unassigned');
+                const hasAfterDest = s.afterSchoolDestinations && Object.values(s.afterSchoolDestinations).some(Boolean);
+                const hasVacDest = s.vacationAfterSchoolDestinations && Object.values(s.vacationAfterSchoolDestinations).some(Boolean);
+                if (!hasBusNo && !hasAfterDest && !hasVacDest) return false;
+            }
+            return true;
+        });
         if (matchedStudents.length === 0) return new Set<string>();
         const classIds = new Set<string>();
         matchedStudents.forEach(s => {
@@ -170,7 +184,7 @@ export const AfterSchoolManagementTab = ({
             }
         });
         return classIds;
-    }, [studentNameQuery, students]);
+    }, [studentNameQuery, searchBusRidersOnly, students, t]);
 
     const filteredClasses = useMemo(() => {
         return afterSchoolClasses.filter(c => {
@@ -261,10 +275,11 @@ export const AfterSchoolManagementTab = ({
 
         return combinedList
             .map(s => {
-                const targetRouteType = isVac ? 'Afternoon' : 'AfterSchool';
+                const isSaturday = targetClass.dayOfWeek === 'Saturday';
+                const targetRouteType = isVac ? 'Afternoon' : (isSaturday ? 'Afternoon' : 'AfterSchool');
                 const studentRoute = routes.find(r => 
                     r.dayOfWeek === targetClass.dayOfWeek && 
-                    r.type === targetRouteType && 
+                    (isSaturday ? (r.type === 'Morning' || r.type === 'Afternoon') : (r.type === targetRouteType)) && 
                     r.seating.some(seat => seat.studentId === s.id)
                 );
                 const bus = buses.find(b => b.id === studentRoute?.busId);
@@ -284,14 +299,25 @@ export const AfterSchoolManagementTab = ({
     }, [selectedClassId, students, enrollments, afterSchoolClasses, routes, buses, t, i18n.language]);
 
     const displayClasses = useMemo(() => {
-        if (currentViewMode !== 'vacation') return filteredClasses;
-        const seen = new Set<string>();
+        const seenIds = new Set<string>();
+        const seenNames = currentViewMode === 'vacation' ? new Set<string>() : null;
+
         return filteredClasses.filter(c => {
-            if (seen.has(c.name)) return false;
-            seen.add(c.name);
+            if (!c.id || seenIds.has(c.id)) return false;
+            seenIds.add(c.id);
+
+            if (seenNames) {
+                if (seenNames.has(c.name)) return false;
+                seenNames.add(c.name);
+            }
             return true;
         });
     }, [filteredClasses, currentViewMode]);
+
+    const displayedClassStudents = useMemo(() => {
+        if (!showBusRidersOnly) return classStudents;
+        return classStudents.filter(s => s.busName && s.busName !== t('unassigned') && s.busName !== '-');
+    }, [classStudents, showBusRidersOnly, t]);
 
     const handleUpdateClass = async () => {
         if (!editingClass || !editingClass.name) return;
@@ -872,7 +898,7 @@ export const AfterSchoolManagementTab = ({
     };
 
     const handleDownloadClassStudents = () => {
-        if (!selectedClassId || classStudents.length === 0) return;
+        if (!selectedClassId || displayedClassStudents.length === 0) return;
         const targetClass = afterSchoolClasses.find(c => c.id === selectedClassId);
         if (!targetClass) return;
 
@@ -880,7 +906,7 @@ export const AfterSchoolManagementTab = ({
             const headers = ["학년", "반", "이름", "방과후 버스번호"];
             const wsData = [
                 headers,
-                ...classStudents.map(s => [
+                ...displayedClassStudents.map(s => [
                     s.grade,
                     s.class,
                     getStudentName(s, i18n.language),
@@ -890,7 +916,8 @@ export const AfterSchoolManagementTab = ({
             const ws = XLSX.utils.aoa_to_sheet(wsData);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "학생명단");
-            XLSX.writeFile(wb, `${targetClass.name}_명단.xlsx`);
+            const filterSuffix = showBusRidersOnly ? '_버스탑승자만' : '';
+            XLSX.writeFile(wb, `${targetClass.name}_명단${filterSuffix}.xlsx`);
         }).catch(err => {
             console.error(err);
             toast({ title: t('error'), description: "Excel 다운로드 중 오류가 발생했습니다.", variant: 'destructive' });
@@ -988,7 +1015,18 @@ export const AfterSchoolManagementTab = ({
                         </div>
                     </div>
                     <div className="space-y-1">
-                        <Label className="text-xs">학생 이름으로 수업 검색</Label>
+                        <div className="flex items-center justify-between">
+                            <Label className="text-xs">학생 이름으로 수업 검색</Label>
+                            <label className="flex items-center gap-1 cursor-pointer text-xs text-muted-foreground select-none hover:text-slate-900">
+                                <input
+                                    type="checkbox"
+                                    checked={searchBusRidersOnly}
+                                    onChange={e => { setSearchBusRidersOnly(e.target.checked); setSelectedClassId(null); }}
+                                    className="rounded border-slate-300 text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer"
+                                />
+                                <span className="font-medium text-[11px] text-slate-700">버스 탑승자만</span>
+                            </label>
+                        </div>
                         <div className="relative">
                             <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
                             <Input
@@ -998,11 +1036,11 @@ export const AfterSchoolManagementTab = ({
                                 onChange={e => { setStudentNameQuery(e.target.value); setClassSearchQuery(''); setSelectedClassId(null); }}
                             />
                         </div>
-                        {studentNameQuery.trim() && classIdsForStudentSearch !== null && (
+                        {(studentNameQuery.trim() || searchBusRidersOnly) && classIdsForStudentSearch !== null && (
                             <p className="text-xs text-muted-foreground">
                                 {classIdsForStudentSearch.size === 0
-                                    ? '해당 이름의 수강 이력이 없습니다.'
-                                    : `${classIdsForStudentSearch.size}개 수업에 등록됨`}
+                                    ? '해당 조건의 수강 이력이 없습니다.'
+                                    : `${classIdsForStudentSearch.size}개 수업에 등록됨${searchBusRidersOnly ? ' (버스 탑승자 대상)' : ''}`}
                             </p>
                         )}
                     </div>
@@ -1110,16 +1148,33 @@ export const AfterSchoolManagementTab = ({
 
             {selectedClassId && (
                 <Card className="animate-in fade-in slide-in-from-bottom-2">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 gap-3">
                         <div>
-                            <CardTitle className="text-lg">
+                            <CardTitle className="text-lg font-bold">
                                 {afterSchoolClasses.find(c => c.id === selectedClassId)?.name} 학생 명단
                             </CardTitle>
-                            <CardDescription>
-                                총 {classStudents.length}명의 학생이 배정되었습니다.
+                            <CardDescription className="text-xs">
+                                총 {classStudents.length}명
+                                {classStudents.length > 0 && (
+                                    <> (버스 탑승자: <strong className="text-primary font-bold">{classStudents.filter(s => s.busName && s.busName !== t('unassigned') && s.busName !== '-').length}</strong>명)</>
+                                )}
+                                {showBusRidersOnly && (
+                                    <span className="ml-1 text-primary font-semibold">
+                                        [버스 탑승자만 필터링: {displayedClassStudents.length}명]
+                                    </span>
+                                )}
                             </CardDescription>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button 
+                                variant={showBusRidersOnly ? "default" : "outline"} 
+                                size="sm" 
+                                className="h-8 text-xs font-semibold gap-1.5"
+                                onClick={() => setShowBusRidersOnly(prev => !prev)}
+                            >
+                                <BusIcon className="h-3.5 w-3.5" />
+                                {showBusRidersOnly ? '전체 학생 보기' : '버스 탑승자만 보기'}
+                            </Button>
                             <Dialog open={isAddStudentDialogOpen} onOpenChange={(open) => {
                                 setIsAddStudentDialogOpen(open);
                                 if (!open) {
@@ -1128,8 +1183,8 @@ export const AfterSchoolManagementTab = ({
                                 }
                             }}>
                                 <DialogTrigger asChild>
-                                    <Button variant="outline" size="sm">
-                                        <UserPlus className="mr-2 h-4 w-4" /> 개별 학생 등록
+                                    <Button variant="outline" size="sm" className="h-8 text-xs">
+                                        <UserPlus className="mr-1.5 h-3.5 w-3.5" /> 개별 학생 등록
                                     </Button>
                                 </DialogTrigger>
                                 <DialogContent>
@@ -1180,8 +1235,8 @@ export const AfterSchoolManagementTab = ({
                                     </DialogFooter>
                                 </DialogContent>
                             </Dialog>
-                            <Button variant="outline" size="sm" onClick={handleDownloadClassStudents} disabled={classStudents.length === 0}>
-                                <Download className="mr-2 h-4 w-4" /> 명단 다운로드
+                            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={handleDownloadClassStudents} disabled={displayedClassStudents.length === 0}>
+                                <Download className="mr-1.5 h-3.5 w-3.5" /> 명단 다운로드
                             </Button>
                         </div>
                     </CardHeader>
@@ -1198,8 +1253,8 @@ export const AfterSchoolManagementTab = ({
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {classStudents.length > 0 ? (
-                                        classStudents.map((s) => (
+                                    {displayedClassStudents.length > 0 ? (
+                                        displayedClassStudents.map((s) => (
                                             <TableRow key={s.id}>
                                                 <TableCell className="whitespace-nowrap">{s.grade}</TableCell>
                                                 <TableCell className="whitespace-nowrap">{s.class}</TableCell>
@@ -1224,7 +1279,7 @@ export const AfterSchoolManagementTab = ({
                                     ) : (
                                         <TableRow>
                                             <TableCell colSpan={5} className="h-24 text-center text-muted-foreground whitespace-nowrap">
-                                                배정된 학생이 없습니다.
+                                                {showBusRidersOnly ? '버스 탑승 학생이 없습니다.' : '배정된 학생이 없습니다.'}
                                             </TableCell>
                                         </TableRow>
                                     )}

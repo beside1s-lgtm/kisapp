@@ -990,8 +990,10 @@ export const StudentGlobalSearchPanel = ({
                                 const regIds = Object.values(selectedGlobalStudent.afterSchoolClassIds || {});
                                 return regIds.includes(c.id);
                             });
-                            // Deduplicate by name for vacation mode
-                            const uniqueClassNames = Array.from(new Set(enrolledClasses.map(c => c.name)));
+                            // Deduplicate by name for vacation mode, plus fallback from student profile
+                            const directTitles = (selectedGlobalStudent as any).enrolledCourseTitles || (selectedGlobalStudent as any).afterSchoolCourseTitles || [];
+                            const singleTitle = (selectedGlobalStudent as any).afterSchoolCourseTitle ? [(selectedGlobalStudent as any).afterSchoolCourseTitle] : [];
+                            const uniqueClassNames = Array.from(new Set([...enrolledClasses.map(c => c.name), ...directTitles, ...singleTitle].filter(Boolean)));
 
                             return (
                                 <div className="space-y-2">

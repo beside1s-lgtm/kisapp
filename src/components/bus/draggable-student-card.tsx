@@ -69,11 +69,16 @@ export const StudentCard: React.FC<StudentCardProps> = ({
         onClick={(e) => e.stopPropagation()} // Prevent card click when checkbox is clicked
       />
       <div className="flex-1 truncate">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-wrap">
             <span className="text-sm font-medium">{formatStudentName(student)}</span>
             {student.siblingGroupId && (
                 <span className="flex items-center gap-0.5 text-[10px] font-bold text-primary bg-primary/10 px-1 rounded border border-primary/20" title="형제/자매">
                     <Users className="w-2.5 h-2.5" /> O
+                </span>
+            )}
+            {(student as any).afterSchoolCourseTitle && (
+                <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 px-1.5 py-0 rounded border border-purple-200 truncate max-w-[130px]" title={(student as any).afterSchoolCourseTitle}>
+                    {(student as any).afterSchoolCourseTitle}
                 </span>
             )}
         </div>

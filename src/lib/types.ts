@@ -36,6 +36,8 @@ export type UserProfile = {
   parentRelation?: string; // 학부모와의 관계 (예: 부, 모)
   isFaculty?: boolean; // 교직원 명시 표식 (교직원 탭 수동 등록 또는 교직원 엑셀 등록 계정)
   isStaff?: boolean;
+  isManualFaculty?: boolean; // 교직원 탭에서 직접 수동 등록된 계정
+  registrationSource?: 'manual_faculty' | 'manual_student' | 'bulk_faculty' | 'bulk_student' | 'auto_login';
 };
 
 export type AbsenceType = '병결' | '미인정' | '기타' | '출석인정';

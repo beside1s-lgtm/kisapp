@@ -1,6 +1,6 @@
 'use client';
 
-import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache, normalizeGrade, resolveDepartment, syncAllUsersToOrgStructure } from '@/lib/services/userService';
+import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache, normalizeGrade, resolveDepartment, syncAllUsersToOrgStructure, isFacultyMember } from '@/lib/services/userService';
 import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES, getGoogleDriveConfig, saveGoogleDriveConfig, DEFAULT_GOOGLE_DRIVE_CONFIG } from '@/lib/services/settingsService';
 import { getAuditLogs } from '@/lib/services/documentService';
 import { DocConfig, UserProfile, OrgStructure, DelegationRule, AcademicCalendarConfig, AcademicEvent, AcademicSemesterPeriod, FieldTripBlackoutPeriod, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, CustomDutyRole, DutyRolePermission, DutyRoleAttendanceScope, ClassPeriodSchedule, DEFAULT_PERIOD_SCHEDULES, GoogleDriveConfig } from '@/lib/types';
@@ -859,22 +859,6 @@ export function SettingsModal() {
   };
   const [users, setUsers] = useState<UserProfile[]>([]);
 
-  // 교직원 전용 목록 (학생/학부모 계정 원천 분리 이원화)
-  const facultyUsers = useMemo(() => {
-    const deptMemberSet = new Set<string>();
-    (org.departments || []).forEach(d => {
-      (d.memberEmails || []).forEach(em => deptMemberSet.add(em.toLowerCase().trim()));
-      if (d.headEmail) deptMemberSet.add(d.headEmail.toLowerCase().trim());
-    });
-
-    return users.filter(u => {
-      if (u.email === 'beside1s@kshcm.net') return true;
-      if (u.isFaculty === true || deptMemberSet.has(u.email.toLowerCase().trim()) || !!u.dept) return true;
-      if (u.studentName || u.studentGrade || u.role === '학부모' || u.role === 'student' || u.role === 'parent') return false;
-      return true;
-    });
-  }, [users, org.departments]);
-
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedHomeroomFile, setSelectedHomeroomFile] = useState<File | null>(null);
   const [selectedDeptFile, setSelectedDeptFile] = useState<File | null>(null);
@@ -888,6 +872,20 @@ export function SettingsModal() {
   const [selectedDeptId, setSelectedDeptId] = useState<string>('');
   const [selectedGradeView, setSelectedGradeView] = useState<string>('all');
   const [newDeptTaskNames, setNewDeptTaskNames] = useState<{ [deptId: string]: string }>({});
+
+  // 교직원 전용 목록 (학생/학부모 계정 원천 분리 이원화) — org 선언 이후
+  const deptMemberSet = useMemo(() => {
+    const set = new Set<string>();
+    (org.departments || []).forEach(d => {
+      (d.memberEmails || []).forEach(em => set.add(em.toLowerCase().trim()));
+      if (d.headEmail) set.add(d.headEmail.toLowerCase().trim());
+    });
+    return set;
+  }, [org.departments]);
+
+  const facultyUsers = useMemo(() => {
+    return users.filter(u => isFacultyMember(u, deptMemberSet));
+  }, [users, deptMemberSet]);
 
   const activeDept = useMemo(() => {
     if (!org.departments || org.departments.length === 0) return null;
@@ -1390,23 +1388,29 @@ export function SettingsModal() {
   };
 
   const handleAddNewUser = async () => {
-      if (!newUser.email || !newUser.name || !newUser.role) {
+      const rawEmail = (newUser.email || '').trim().toLowerCase();
+      if (!rawEmail || !newUser.name.trim() || !newUser.role) {
           toast({ variant: 'destructive', title: '입력 오류', description: '이메일, 이름, 직책을 모두 입력해야 합니다.' });
           return;
       }
+      const finalEmail = rawEmail.includes('@') ? rawEmail : `${rawEmail}@kshcm.net`;
       const normGrade = normalizeGrade(newUser.grade);
       const gradeStr = normGrade ? normGrade.gradeName : (newUser.grade || '');
       const deptStr = resolveDepartment(newUser.dept, org.departments || []);
 
       const payload = {
         ...newUser,
+        email: finalEmail,
+        name: newUser.name.trim(),
         grade: gradeStr,
         dept: deptStr,
         isFaculty: true,
         isStaff: true,
+        isManualFaculty: true,
+        registrationSource: 'manual_faculty' as const,
       };
 
-      const result = await saveUserProfile('', newUser.email, payload as any);
+      const result = await saveUserProfile('', finalEmail, payload as any);
       if (result.success) {
           // 조직도 동기화
           if (deptStr || normGrade) {
@@ -1422,21 +1426,21 @@ export function SettingsModal() {
                 };
                 updatedOrg.departments = [...(updatedOrg.departments || []), targetDept];
               }
-              if (!targetDept.memberEmails.includes(newUser.email.toLowerCase())) {
-                targetDept.memberEmails = [...targetDept.memberEmails, newUser.email.toLowerCase()];
+              if (!targetDept.memberEmails.includes(finalEmail)) {
+                targetDept.memberEmails = [...targetDept.memberEmails, finalEmail];
               }
               if (newUser.role.includes('부장') && !newUser.role.includes('학년')) {
-                targetDept.headEmail = newUser.email.toLowerCase();
+                targetDept.headEmail = finalEmail;
               }
             }
             if (normGrade) {
               const gNum = normGrade.gradeNumber;
               if (newUser.role.includes('부장') || newUser.role.includes('학년부장')) {
-                updatedOrg.gradeHeads = { ...(updatedOrg.gradeHeads || {}), [gNum]: newUser.email.toLowerCase(), [`${gNum}학년`]: newUser.email.toLowerCase() };
+                updatedOrg.gradeHeads = { ...(updatedOrg.gradeHeads || {}), [gNum]: finalEmail, [`${gNum}학년`]: finalEmail };
               } else {
                 const currentSubs = updatedOrg.gradeSubjects?.[gNum] || [];
-                if (!currentSubs.includes(newUser.email.toLowerCase())) {
-                  updatedOrg.gradeSubjects = { ...(updatedOrg.gradeSubjects || {}), [gNum]: [...currentSubs, newUser.email.toLowerCase()] };
+                if (!currentSubs.includes(finalEmail)) {
+                  updatedOrg.gradeSubjects = { ...(updatedOrg.gradeSubjects || {}), [gNum]: [...currentSubs, finalEmail] };
                 }
               }
             }
@@ -1445,7 +1449,7 @@ export function SettingsModal() {
           }
 
           toast({ title: '교직원 추가 완료', description: '사용자 정보 및 조직도에 반영되었습니다.' });
-          fetchUsers(); // Refresh the list
+          await fetchUsers(true); // 강제 새로고침으로 목록 즉시 반영
           setIsAddingNewUser(false);
           setNewUser({ email: '', name: '', role: '교사', dept: '', grade: '' });
       } else {
@@ -4561,19 +4565,8 @@ export function SettingsModal() {
 
               <Tabs value={userSubTab} onValueChange={(val) => setUserSubTab(val as 'teachers' | 'students')} className="flex-1 min-h-0 flex flex-col">
                 {(() => {
-                  const deptMemberSet = new Set<string>();
-                  (org.departments || []).forEach(d => {
-                    (d.memberEmails || []).forEach(em => deptMemberSet.add(em.toLowerCase().trim()));
-                    if (d.headEmail) deptMemberSet.add(d.headEmail.toLowerCase().trim());
-                  });
-                  const isTeacherUser = (u: UserProfile) => {
-                    if (u.email === 'beside1s@kshcm.net') return true;
-                    if (u.isFaculty === true || deptMemberSet.has(u.email.toLowerCase().trim()) || !!u.dept || u.role === '교사') return true;
-                    if (u.studentName || u.studentGrade || u.role === '학부모' || u.role === 'student' || u.role === 'parent') return false;
-                    return true;
-                  };
-                  const teacherCount = users.filter(isTeacherUser).length;
-                  const studentCount = users.filter(u => !isTeacherUser(u)).length;
+                  const teacherCount = users.filter(u => isFacultyMember(u, deptMemberSet)).length;
+                  const studentCount = users.filter(u => !isFacultyMember(u, deptMemberSet)).length;
 
                   return (
                     <div className="flex justify-between items-center px-1 shrink-0 mb-2">
@@ -4667,20 +4660,8 @@ export function SettingsModal() {
                           </TableRow>
                       )}
                       {(() => {
-                         const deptMemberSet = new Set<string>();
-                         (org.departments || []).forEach(d => {
-                           (d.memberEmails || []).forEach(em => deptMemberSet.add(em.toLowerCase().trim()));
-                           if (d.headEmail) deptMemberSet.add(d.headEmail.toLowerCase().trim());
-                         });
-                         const isTeacherUser = (u: UserProfile) => {
-                           if (u.email === 'beside1s@kshcm.net') return true;
-                           if (u.isFaculty === true || deptMemberSet.has(u.email.toLowerCase().trim()) || !!u.dept || u.role === '교사') return true;
-                           if (u.studentName || u.studentGrade || u.role === '학부모' || u.role === 'student' || u.role === 'parent') return false;
-                           return true;
-                         };
-
                          return users.filter(user => {
-                           if (!isTeacherUser(user)) return false;
+                           if (!isFacultyMember(user, deptMemberSet)) return false;
                            if (!teacherTabQuery.trim()) return true;
                            const q = teacherTabQuery.trim().toLowerCase();
                            return (user.name || '').toLowerCase().includes(q) ||
@@ -4692,9 +4673,15 @@ export function SettingsModal() {
                              <TableCell>
                              <div className="flex items-center gap-1.5 flex-wrap">
                                <span className="font-medium">{user.name}</span>
-                               <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px] px-1.5 py-0 font-bold">
-                                 교직원
-                               </Badge>
+                               {user.isManualFaculty || user.registrationSource === 'manual_faculty' ? (
+                                 <Badge variant="secondary" className="bg-purple-100 text-purple-800 border-purple-300 text-[10px] px-1.5 py-0 font-bold">
+                                   교직원 (수동등록)
+                                 </Badge>
+                               ) : (
+                                 <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px] px-1.5 py-0 font-bold">
+                                   교직원
+                                 </Badge>
+                               )}
                              </div>
                              <div className="text-xs text-muted-foreground">{user.email}</div>
                              </TableCell>
@@ -4771,18 +4758,7 @@ export function SettingsModal() {
                 <TabsContent value="students" className="flex-1 min-h-0 data-[state=active]:flex flex-col border rounded-md mt-0">
                   {/* ── 학생 탭 필터 바 ── */}
                   {(() => {
-                    const deptMemberSet = new Set<string>();
-                    (org.departments || []).forEach(d => {
-                      (d.memberEmails || []).forEach(em => deptMemberSet.add(em.toLowerCase().trim()));
-                      if (d.headEmail) deptMemberSet.add(d.headEmail.toLowerCase().trim());
-                    });
-                    const isTeacherUser = (u: UserProfile) => {
-                      if (u.email === 'beside1s@kshcm.net') return true;
-                      if (u.isFaculty === true || deptMemberSet.has(u.email.toLowerCase().trim()) || !!u.dept || u.role === '교사') return true;
-                      if (u.studentName || u.studentGrade || u.role === '학부모' || u.role === 'student' || u.role === 'parent') return false;
-                      return true;
-                    };
-                    const allStudents = users.filter(u => !isTeacherUser(u));
+                    const allStudents = users.filter(u => !isFacultyMember(u, deptMemberSet));
                     // 학년 목록 자동 추출
                     const gradeOptions = Array.from(new Set(allStudents.map(u => u.studentGrade).filter(Boolean))).sort();
                     // 반 목록 (선택 학년 기반)

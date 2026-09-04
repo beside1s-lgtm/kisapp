@@ -326,21 +326,23 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
             }
             if (selectedDay === 'Saturday') {
                 const explicitSatDest = selectedRouteType === 'Morning' ? s.satMorningDestinationId : s.satAfternoonDestinationId;
-                if (explicitSatDest) return explicitSatDest;
+                if (explicitSatDest && explicitSatDest !== '-' && explicitSatDest !== '미신청') return explicitSatDest;
 
-                // 토요 방과후 수강생 감지 (토요일은 방과후 노선이 따로 없고 토요일 등하교 버스를 이용하므로 미배정 학생으로 표시)
-                const hasSatAfterSchool = Boolean(
-                    s.afterSchoolClassIds?.['Saturday'] ||
-                    s.afterSchoolDestinations?.['Saturday'] ||
-                    (s.afterSchoolDestinations && Object.keys(s.afterSchoolDestinations).some(k => k.toLowerCase().includes('sat') || k === 'Saturday')) ||
-                    (s as any).isSaturdayAfterSchool
+                // 토요 방과후 수강생 중 "버스 탑승 신청자"만 판별 (미신청/자차 등 미탑승자는 제외)
+                const satDest = s.afterSchoolDestinations?.['Saturday'];
+                const isSatBusApplied = Boolean(
+                    satDest &&
+                    satDest !== '-' &&
+                    satDest !== '미신청' &&
+                    satDest !== '방과후 미배정' &&
+                    (s as any).needsBus !== false
                 );
 
-                if (hasSatAfterSchool) {
-                    const fallbackDest = s.afterSchoolDestinations?.['Saturday'] ||
-                        (selectedRouteType === 'Morning' ? (s.morningDestinationId || s.suggestedMorningDestination || s.residenceDestinationId) : (s.afternoonDestinationId || s.suggestedAfternoonDestination || s.residenceDestinationId)) ||
+                if (isSatBusApplied) {
+                    const fallbackDest = satDest ||
+                        (selectedRouteType === 'Morning' ? (s.morningDestinationId || s.suggestedMorningDestination || (s as any).residenceDestinationId) : (s.afternoonDestinationId || s.suggestedAfternoonDestination || (s as any).residenceDestinationId)) ||
                         'SATURDAY_AFTERSCHOOL';
-                    return fallbackDest || 'SATURDAY_AFTERSCHOOL';
+                    return fallbackDest;
                 }
                 return null;
             }
@@ -779,7 +781,7 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
 
         const ObjectRoutes = routes.filter(r => 
             selectedDays.includes(r.dayOfWeek) && 
-            selectedTypes.includes(r.type) && 
+            selectedTypes.includes(r.type as any) && 
             selectedBusIds.has(r.busId)
         );
 
@@ -893,7 +895,13 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
         const csvRows = filteredUnassignedStudents.map(s => {
             let typeStr = "";
             let destName = "";
-            if (selectedRouteType === 'Morning') {
+            if (selectedDay === 'Saturday' && selectedRouteType === 'Morning') {
+                typeStr = "토요 등교";
+                destName = destinations.find(d => d.id === s.satMorningDestinationId)?.name || '';
+            } else if (selectedDay === 'Saturday' && selectedRouteType === 'Afternoon') {
+                typeStr = "토요 하교";
+                destName = destinations.find(d => d.id === s.satAfternoonDestinationId)?.name || '';
+            } else if (selectedRouteType === 'Morning') {
                 typeStr = "등교";
                 destName = destinations.find(d => d.id === s.morningDestinationId)?.name || '';
             } else if (selectedRouteType === 'Afternoon') {
@@ -903,12 +911,6 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                 typeStr = "방과후";
                 const destId = getAfterSchoolDest(s, selectedDay);
                 destName = destinations.find(d => d.id === destId)?.name || '';
-            } else if (selectedRouteType === 'SaturdayMorning') {
-                typeStr = "토요 등교";
-                destName = destinations.find(d => d.id === s.satMorningDestinationId)?.name || '';
-            } else if (selectedRouteType === 'SaturdayAfternoon') {
-                typeStr = "토요 하교";
-                destName = destinations.find(d => d.id === s.satAfternoonDestinationId)?.name || '';
             }
 
             return [
@@ -1521,7 +1523,11 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                                 updates.satAfternoonDestinationId = realVal; 
                                 updates.suggestedSatAfternoonDestination = null;
                             } else if (type === 'afterSchool' && day) { 
-                                const current = getAfterSchoolDests(students.find(s => s.id === sid)!); 
+                                const targetStudent = students.find(s => s.id === sid);
+                                const current = {
+                                    ...(targetStudent ? getAfterSchoolDests(targetStudent) : {}),
+                                    ...(selectedGlobalStudent?.id === sid ? getAfterSchoolDests(selectedGlobalStudent) : {})
+                                };
                                 updates[afterSchoolDestField] = { ...current, [day]: realVal }; 
                                 
                                 // Clear after school suggestion if it exists for this day

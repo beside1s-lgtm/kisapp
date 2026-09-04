@@ -93,16 +93,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [subTargetDay, setSubTargetDay] = useState<ScheduleDay | null>(null);
   const [subTeacherName, setSubTeacherName] = useState<string>('');
   const [subReason, setSubReason] = useState<string>('');
+  const [subRecordType, setSubRecordType] = useState<'SUBSTITUTE' | 'ABSENCE'>('SUBSTITUTE');
+  const [subTargetInstructor, setSubTargetInstructor] = useState<string>('');
 
-  const handleOpenSubstituteModal = (day: ScheduleDay, course: Course) => {
+  const handleOpenSubstituteModal = (day: ScheduleDay, course: Course, targetInst?: string) => {
     setSubTargetDay(day);
+    const instructors = [
+      course.instructorName,
+      course.instructor2,
+      course.instructor3,
+      course.instructor4,
+      ...(course.assistantTeachers || [])
+    ].filter(Boolean) as string[];
+
+    const defaultInst = targetInst || instructors[0] || course.instructorName || '';
+    setSubTargetInstructor(defaultInst);
+
     const existing = substituteRecords.find(
-      (s) => s.courseId === course.id && s.dayIndex === day.dayIndex
+      (s) => s.courseId === course.id && s.dayIndex === day.dayIndex && (!s.targetInstructor || s.targetInstructor === defaultInst)
     );
     if (existing) {
-      setSubTeacherName(existing.substituteInstructor);
+      setSubRecordType(existing.recordType || (existing.isAbsence ? 'ABSENCE' : 'SUBSTITUTE'));
+      setSubTeacherName(existing.isAbsence ? '' : existing.substituteInstructor);
       setSubReason(existing.reason || '');
+      if (existing.targetInstructor) setSubTargetInstructor(existing.targetInstructor);
     } else {
+      setSubRecordType('SUBSTITUTE');
       setSubTeacherName('');
       setSubReason('개인사정/병가');
     }
@@ -111,30 +127,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleSaveSubstitute = async () => {
     if (!subTargetDay || !viewingDocCourse) return;
-    if (!subTeacherName.trim()) {
+    if (subRecordType === 'SUBSTITUTE' && !subTeacherName.trim()) {
       alert('보결 강사 성명을 입력해 주세요.');
       return;
     }
+    const isAbs = subRecordType === 'ABSENCE';
     const subRecord: SubstituteRecord = {
-      id: `sub_${viewingDocCourse.id}_d${subTargetDay.dayIndex}`,
+      id: `sub_${viewingDocCourse.id}_d${subTargetDay.dayIndex}_${(subTargetInstructor || 'lead').replace(/\s+/g, '')}`,
       courseId: viewingDocCourse.id,
       courseTitle: viewingDocCourse.title,
       dayIndex: subTargetDay.dayIndex,
       dateStr: subTargetDay.dateStr,
       sessionNos: subTargetDay.sessionNos,
       sessionCount: subTargetDay.sessionNos.length,
-      originalInstructor: viewingDocCourse.instructorName || '원강사',
-      substituteInstructor: subTeacherName.trim(),
+      originalInstructor: subTargetInstructor || viewingDocCourse.instructorName || '원강사',
+      targetInstructor: subTargetInstructor || viewingDocCourse.instructorName || '원강사',
+      substituteInstructor: isAbs ? '결근' : subTeacherName.trim(),
+      recordType: subRecordType,
+      isAbsence: isAbs,
       reason: subReason.trim(),
       createdAt: new Date().toLocaleString('ko-KR'),
     };
     await saveSubstituteRecord(subRecord);
     setIsSubModalOpen(false);
-    alert(`[${subTargetDay.dayIndex}회차 (${subTargetDay.dateStr})] 보결 강사(${subTeacherName.trim()})가 성공적으로 등록되었습니다. 출근부 및 강사비 정산에 즉시 반영됩니다.`);
+    if (isAbs) {
+      alert(`[${subTargetDay.dayIndex}회차 (${subTargetDay.dateStr})] [${subTargetInstructor || '강사'}] 결근 처리가 완료되었습니다.`);
+    } else {
+      alert(`[${subTargetDay.dayIndex}회차 (${subTargetDay.dateStr})] 보결 강사(${subTeacherName.trim()})가 성공적으로 등록되었습니다.`);
+    }
   };
 
   const handleDeleteSubstitute = async (subId: string) => {
-    if (!window.confirm('등록된 보결 강사 정보를 삭제하시겠습니까? 원 강사 출근부로 복원됩니다.')) return;
+    if (!window.confirm('등록된 보결/결근 정보를 삭제하시겠습니까? 정상 출근 상태로 복원됩니다.')) return;
     await deleteSubstituteRecord(subId);
     setIsSubModalOpen(false);
   };
@@ -2594,7 +2618,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             </tr>
                           ) : (
                             courseStudents.map((enr, idx) => {
-                              const matchedStudent = studentsList.find((s) => s.id === enr.studentId);
+                              const matchedStudent = studentsList.find((s) => s.id === enr.studentId) ||
+                                studentsList.find((s) => 
+                                  s.name === enr.name && 
+                                  String(s.grade) === String(enr.grade) && 
+                                  String(s.class) === String(enr.classNum) &&
+                                  (!enr.studentNum || String(s.number) === String(enr.studentNum))
+                                ) ||
+                                studentsList.find((s) => 
+                                  s.name === enr.name && 
+                                  String(s.grade) === String(enr.grade) && 
+                                  String(s.class) === String(enr.classNum)
+                                );
                               return (
                                 <tr key={enr.id} className="h-7 hover:bg-slate-50">
                                   <td className="border border-slate-800">{idx + 1}</td>
@@ -2668,7 +2703,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <th className="border border-slate-800 p-2">회차 (차시)</th>
                           <th className="border border-slate-800 p-2">수업 날짜</th>
                           <th className="border border-slate-800 p-2">강사 서명 (출근 날인)</th>
-                          <th className="border border-slate-800 p-2 w-28">보결(대강) 관리</th>
+                          <th className="border border-slate-800 p-2 w-32">보결 / 결근 관리</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2677,59 +2712,100 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             (r) => r.courseId === c.id && day.sessionNos.includes(r.sessionNo || 0) && Boolean(r.status || (r as any).markSymbol)
                           );
                           const hasChecked = records.length > 0;
-                          const subRecord = substituteRecords.find(
+
+                          const allCourseInstructors = [
+                            c.instructorName,
+                            c.instructor2,
+                            c.instructor3,
+                            c.instructor4,
+                            ...(c.assistantTeachers || [])
+                          ].filter(Boolean) as string[];
+                          const instructors = allCourseInstructors.length > 0 ? allCourseInstructors : [c.instructorName || '강사'];
+
+                          const daySubs = substituteRecords.filter(
                             (s) => s.courseId === c.id && s.dayIndex === day.dayIndex
                           );
-                          const effectiveInstructor = subRecord ? subRecord.substituteInstructor : (c.instructorName || '강사');
-                          const effectiveSignature = subRecord ? '' : instructorSignature;
 
                           return (
-                            <tr key={day.dayIndex} className={`h-10 hover:bg-slate-50 ${subRecord ? 'bg-amber-50/50' : ''}`}>
+                            <tr key={day.dayIndex} className={`h-10 hover:bg-slate-50 ${daySubs.length > 0 ? 'bg-amber-50/50' : ''}`}>
                               <td className="border border-slate-800 font-mono font-bold bg-slate-50 text-[11px] px-2 py-1">
                                 {day.dayIndex}회차 ({day.startSessionNo}~{day.endSessionNo}차시)
                               </td>
                               <td className="border border-slate-800 font-mono text-[11px] text-indigo-900 px-2 py-1">
                                 <div>{day.dateStr} ({day.fullDate})</div>
-                                {subRecord && (
-                                  <div className="text-[10px] text-amber-800 font-sans font-medium">보결사유: {subRecord.reason || '대강'}</div>
-                                )}
+                                {daySubs.map(s => (
+                                  <div key={s.id} className="text-[10px] text-amber-800 font-sans font-medium">
+                                    {s.targetInstructor ? `[${s.targetInstructor}] ` : ''}{s.isAbsence ? '결근' : `보결(${s.substituteInstructor})`}: {s.reason || '-'}
+                                  </div>
+                                ))}
                               </td>
                               <td className="border border-slate-800 px-2 py-1">
                                 {hasChecked ? (
-                                  <div className="flex items-center justify-center gap-1.5">
-                                    {subRecord && (
-                                      <span className="text-[10px] bg-amber-200 text-amber-900 px-1 py-0.5 rounded font-bold">보결</span>
-                                    )}
-                                    <span className={`font-bold text-[11px] ${subRecord ? 'text-amber-900' : 'text-slate-900'}`}>
-                                      {effectiveInstructor}
-                                    </span>
-                                    <OfficialSeal
-                                      name={effectiveInstructor}
-                                      signatureUrl={effectiveSignature}
-                                      size="sm"
-                                    />
+                                  <div className="flex flex-col gap-1 items-center justify-center">
+                                    {instructors.map((inst) => {
+                                      const sub = daySubs.find(s => !s.targetInstructor || s.targetInstructor === inst);
+                                      if (sub?.isAbsence) {
+                                        return (
+                                          <div key={inst} className="flex items-center gap-1">
+                                            <span className="text-[10px] bg-rose-100 text-rose-800 border border-rose-300 px-1 py-0.5 rounded font-bold">결근</span>
+                                            <span className="line-through text-slate-400 font-bold text-[11px]">{inst}</span>
+                                            <span className="text-[10px] text-slate-500">({sub.reason || '사유미기재'})</span>
+                                          </div>
+                                        );
+                                      }
+                                      if (sub) {
+                                        return (
+                                          <div key={inst} className="flex items-center gap-1">
+                                            <span className="text-[10px] bg-amber-200 text-amber-900 px-1 py-0.5 rounded font-bold">보결</span>
+                                            <span className="font-bold text-[11px] text-amber-900">{sub.substituteInstructor}</span>
+                                            <OfficialSeal name={sub.substituteInstructor} signatureUrl="" size="sm" />
+                                            <span className="text-[9px] text-slate-400 font-sans">(원: {inst})</span>
+                                          </div>
+                                        );
+                                      }
+                                      return (
+                                        <div key={inst} className="flex items-center gap-1.5">
+                                          <span className="font-bold text-[11px] text-slate-900">{inst}</span>
+                                          <OfficialSeal name={inst} signatureUrl={instructorSignature} size="sm" />
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 ) : (
-                                  <div className="text-slate-400 text-[11px]">
-                                    {subRecord && <span className="text-amber-700 font-bold">[보결: {subRecord.substituteInstructor}] </span>}
-                                    -
+                                  <div className="flex flex-col gap-0.5 items-center justify-center text-slate-400 text-[11px]">
+                                    {daySubs.map(s => (
+                                      <span key={s.id} className="text-amber-700 font-bold">
+                                        [{s.targetInstructor || '강사'} {s.isAbsence ? '결근' : `보결: ${s.substituteInstructor}`}]
+                                      </span>
+                                    ))}
+                                    <span>미출근 (체크 전)</span>
                                   </div>
                                 )}
                               </td>
                               <td className="border border-slate-800 px-1 py-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenSubstituteModal(day, c)}
-                                  className={`text-[11px] font-bold px-2 py-1 rounded-lg border transition flex items-center justify-center gap-1 mx-auto ${
-                                    subRecord
-                                      ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
-                                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                                  }`}
-                                  title={subRecord ? '보결 강사 정보 수정/삭제' : '결강 시 보결 강사 등록'}
-                                >
-                                  <UserPlus className="w-3 h-3 text-amber-600" />
-                                  {subRecord ? '보결 수정' : '보결 등록'}
-                                </button>
+                                <div className="flex flex-col gap-1 items-center justify-center">
+                                  {instructors.map((inst) => {
+                                    const sub = daySubs.find(s => !s.targetInstructor || s.targetInstructor === inst);
+                                    return (
+                                      <button
+                                        key={inst}
+                                        type="button"
+                                        onClick={() => handleOpenSubstituteModal(day, c, inst)}
+                                        className={`text-[10.5px] font-bold px-1.5 py-0.5 rounded border transition flex items-center justify-center gap-1 w-full max-w-[120px] ${
+                                          sub
+                                            ? sub.isAbsence
+                                              ? 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                                              : 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                                        }`}
+                                        title={sub ? '보결/결근 정보 수정/삭제' : `${inst} 보결 등록 또는 결근 처리`}
+                                      >
+                                        <UserPlus className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                        <span className="truncate">{instructors.length > 1 ? `${inst}: ` : ''}{sub ? (sub.isAbsence ? '결근 수정' : '보결 수정') : '보결/결근'}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -2876,12 +2952,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <div className="bg-amber-600 px-6 py-4 flex items-center justify-between text-white">
               <div className="flex items-center gap-2">
                 <UserPlus className="w-5 h-5" />
-                <h3 className="font-bold text-base">관리자 결강 보결(대강) 강사 등록</h3>
+                <h3 className="font-bold text-base">강사 출결 및 보결/결근 관리</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setIsSubModalOpen(false)}
-                className="text-white/80 hover:text-white p-1 rounded-lg transition"
+                className="text-white/80 hover:text-white p-1 rounded-lg transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2892,32 +2968,97 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 space-y-1">
                 <div className="font-bold text-amber-950">{viewingDocCourse.title}</div>
                 <div className="text-xs text-amber-800">
-                  결강 회차: <strong>{subTargetDay.dayIndex}회차 ({subTargetDay.startSessionNo}~{subTargetDay.endSessionNo}차시)</strong> · 일자: {subTargetDay.dateStr} ({subTargetDay.fullDate})
-                </div>
-                <div className="text-xs text-amber-800">
-                  원 담당 강사: <span className="font-bold">{viewingDocCourse.instructorName || '강사'}</span>
+                  대상 회차: <strong>{subTargetDay.dayIndex}회차 ({subTargetDay.startSessionNo}~{subTargetDay.endSessionNo}차시)</strong> · 일자: {subTargetDay.dateStr} ({subTargetDay.fullDate})
                 </div>
               </div>
 
+              {/* 대상 강사 선택 (복수 강사인 경우) */}
+              {(() => {
+                const allInsts = [
+                  viewingDocCourse.instructorName,
+                  viewingDocCourse.instructor2,
+                  viewingDocCourse.instructor3,
+                  viewingDocCourse.instructor4,
+                  ...(viewingDocCourse.assistantTeachers || [])
+                ].filter(Boolean) as string[];
+
+                if (allInsts.length <= 1) return null;
+
+                return (
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700">대상 강사</label>
+                    <select
+                      value={subTargetInstructor}
+                      onChange={(e) => setSubTargetInstructor(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold focus:ring-2 focus:ring-amber-500 outline-none"
+                    >
+                      {allInsts.map(inst => (
+                        <option key={inst} value={inst}>{inst}</option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
+
+              {/* 보결 vs 결근 선택 탭 */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700">
-                  보결 강사 성명 <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="대강을 진행할 보결 강사 이름 입력"
-                  value={subTeacherName}
-                  onChange={(e) => setSubTeacherName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-bold focus:ring-2 focus:ring-amber-500 outline-none"
-                  autoFocus
-                />
-                <p className="text-[11px] text-slate-500">
-                  ※ 보결 강사로 등록 시 출근부 해당 회차에 보결자 도장이 날인되며, 학기말 강사료 정산 시 수당이 보결 강사에게 분리 책정됩니다.
-                </p>
+                <label className="block text-xs font-bold text-slate-700">처리 유형 선택</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSubRecordType('SUBSTITUTE')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      subRecordType === 'SUBSTITUTE'
+                        ? 'bg-amber-100 border-amber-400 text-amber-900 ring-1 ring-amber-400 shadow-2xs'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>보결 강사 등록</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSubRecordType('ABSENCE')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      subRecordType === 'ABSENCE'
+                        ? 'bg-rose-100 border-rose-400 text-rose-900 ring-1 ring-rose-400 shadow-2xs'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                    <span>결근 처리 (보결 없음)</span>
+                  </button>
+                </div>
               </div>
 
+              {subRecordType === 'SUBSTITUTE' ? (
+                <div className="space-y-1.5 animate-in fade-in duration-150">
+                  <label className="block text-xs font-bold text-slate-700">
+                    보결 강사 성명 <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="대강을 진행할 보결 강사 이름 입력"
+                    value={subTeacherName}
+                    onChange={(e) => setSubTeacherName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-bold focus:ring-2 focus:ring-amber-500 outline-none"
+                    autoFocus
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    ※ 보결 강사로 등록 시 출근부 해당 회차에 보결자 도장이 날인되며, 학기말 강사료 정산 시 수당이 보결 강사에게 분리 책정됩니다.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 space-y-1 animate-in fade-in duration-150">
+                  <p className="font-bold">※ 결근 처리 시 안내사항</p>
+                  <p className="text-[11px] text-rose-700 leading-relaxed">
+                    해당 회차는 보결 강사 없이 <strong>결근 처리</strong>되며, 출근부에서 출근 날인이 생략됩니다. (단, 학생 출석체크는 다른 강사가 정상 진행할 수 있습니다.)
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700">결강 및 보결 사유</label>
+                <label className="block text-xs font-bold text-slate-700">{subRecordType === 'SUBSTITUTE' ? '결강 및 보결 사유' : '결근 사유'}</label>
                 <input
                   type="text"
                   placeholder="예: 병가, 공결, 출장, 개인사정 등"
@@ -2929,17 +3070,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               {/* Action Buttons */}
               <div className="flex gap-2 pt-2">
-                {substituteRecords.some(s => s.courseId === viewingDocCourse.id && s.dayIndex === subTargetDay.dayIndex) && (
+                {substituteRecords.some(s => s.courseId === viewingDocCourse.id && s.dayIndex === subTargetDay.dayIndex && (!s.targetInstructor || s.targetInstructor === subTargetInstructor)) && (
                   <button
                     type="button"
                     onClick={() => {
-                      const existing = substituteRecords.find(s => s.courseId === viewingDocCourse.id && s.dayIndex === subTargetDay.dayIndex);
+                      const existing = substituteRecords.find(s => s.courseId === viewingDocCourse.id && s.dayIndex === subTargetDay.dayIndex && (!s.targetInstructor || s.targetInstructor === subTargetInstructor));
                       if (existing) handleDeleteSubstitute(existing.id);
                     }}
                     className="px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs flex items-center gap-1 transition cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    보결 취소
+                    삭제
                   </button>
                 )}
                 <button
@@ -2952,10 +3093,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveSubstitute}
-                  className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  className={`flex-1 py-2.5 rounded-xl text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    subRecordType === 'SUBSTITUTE' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-rose-600 hover:bg-rose-700'
+                  }`}
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  보결 강사 저장
+                  {subRecordType === 'SUBSTITUTE' ? '보결 강사 저장' : '결근 처리 완료'}
                 </button>
               </div>
             </div>

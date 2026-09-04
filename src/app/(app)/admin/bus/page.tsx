@@ -21,7 +21,7 @@ import type { Bus, Student, Route, Destination, Teacher, DayOfWeek, RouteType, A
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Trash2, Check, CheckCheck, Bell, ChevronDown, ChevronsUpDown, UserCog, Bus as BusIcon, Users, GraduationCap, Activity, Settings, Download, Send, Upload, Database, FileText, FilePlus, ShieldCheck, CheckCircle2, ChevronRight, PlusCircle, ArrowRightLeft, Loader2 } from 'lucide-react';
-import { executeTransferAfterschoolStudentsToBus } from '@/lib/kisbus/assignments';
+import { executeTransferAfterschoolStudentsToBus, executeRevertTransferFromAfterschoolToBus } from '@/lib/kisbus/assignments';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MainLayout } from '@/components/layout/main-layout';
 import { onDocConfigUpdate, saveDocConfig } from '@/lib/services/settingsService';
@@ -988,6 +988,36 @@ export default function AdminPage() {
         }
     };
 
+    const handleRevertTransfer = async () => {
+        if (!window.confirm("방과후 노선으로 이동된 학생들을 원래의 정규 하교 버스로 복귀시키시겠습니까?\n\n(※ 실행 시 정규 하교 버스 좌석이 복원되고 방과후 버스 노선 이동 상태가 해제됩니다.)")) {
+            return;
+        }
+        setIsTransferring(true);
+        try {
+            const res = await executeRevertTransferFromAfterschoolToBus();
+            if (res.success) {
+                toast({
+                    title: "하교 노선 복귀 완료",
+                    description: res.message
+                });
+            } else {
+                toast({
+                    title: "복귀 실패",
+                    description: res.message,
+                    variant: "destructive"
+                });
+            }
+        } catch (e: any) {
+            toast({
+                title: "복귀 실패",
+                description: e.message || "오류가 발생했습니다.",
+                variant: "destructive"
+            });
+        } finally {
+            setIsTransferring(false);
+        }
+    };
+
     const handleToggleBusApply = async (checked: boolean) => {
         try {
             await saveDocConfig({ isBusApplyActive: checked });
@@ -1108,17 +1138,28 @@ export default function AdminPage() {
             return days;
         };
 
-        const convertedClasses: AfterSchoolClass[] = afterschoolCourses.map(course => {
+        const convertedClasses: AfterSchoolClass[] = [];
+        afterschoolCourses.forEach(course => {
             const days = extractCourseDays(course);
-            const dayOfWeek = days.length > 0 ? (dayMap[days[0]] || 'Saturday') : 'Monday';
-            return {
-                id: course.id,
-                name: course.title,
-                dayOfWeek,
-                teacherId: null,
-                teacherName: course.instructorName || '',
-                semesterMode: 'vacation'
-            };
+            const targetDays = days.length > 0 ? (days.map(d => dayMap[d]).filter(Boolean) as DayOfWeek[]) : ['Monday' as DayOfWeek];
+            targetDays.forEach(dayOfWeek => {
+                convertedClasses.push({
+                    id: course.id,
+                    name: course.title,
+                    dayOfWeek,
+                    teacherId: null,
+                    teacherName: course.instructorName || '',
+                    semesterMode: 'regular'
+                });
+                convertedClasses.push({
+                    id: `${course.id}_vacation`,
+                    name: course.title,
+                    dayOfWeek,
+                    teacherId: null,
+                    teacherName: course.instructorName || '',
+                    semesterMode: 'vacation'
+                });
+            });
         });
         setAfterSchoolClasses(convertedClasses);
 
@@ -1132,31 +1173,37 @@ export default function AdminPage() {
 
             const studentEnrollments = afterschoolEnrollments.filter(e => {
                 const eName = clean(e.name || e.studentName);
-                const eGrade = Number(e.grade);
-                const eClass = Number(e.classNum);
-                const matchName = eName === studentName || studentName.includes(eName) || eName.includes(studentName);
-                const matchGrade = eGrade === studentGrade;
-                const matchClass = eClass === studentClass;
-                return matchName && (matchGrade ? matchClass : true);
+                const matchName = eName === studentName;
+                const matchGrade = !e.grade || Number(e.grade) === studentGrade;
+                const matchClass = !e.classNum || Number(e.classNum) === studentClass;
+                return matchName && matchGrade && matchClass;
             });
 
             if (studentEnrollments.length === 0) {
                 return {
                     ...student,
-                    afterSchoolClassIds: {},
-                    afterSchoolDestinations: {},
-                    vacationAfterSchoolClassIds: {},
-                    vacationAfterSchoolDestinations: {}
+                    afterSchoolCourseTitle: '',
+                    afterSchoolCourseTitles: [],
+                    enrolledCourseTitles: [],
+                    afterSchoolClassIds: student.afterSchoolClassIds || {},
+                    afterSchoolDestinations: student.afterSchoolDestinations || {},
+                    vacationAfterSchoolClassIds: student.vacationAfterSchoolClassIds || {},
+                    vacationAfterSchoolDestinations: student.vacationAfterSchoolDestinations || {}
                 };
             }
 
-            const afterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = {};
-            const afterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = {};
-            const vacationAfterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = {};
-            const vacationAfterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = {};
+            const afterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = { ...(student.afterSchoolClassIds || {}) };
+            const afterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = { ...(student.afterSchoolDestinations || {}) };
+            const vacationAfterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = { ...(student.vacationAfterSchoolClassIds || {}) };
+            const vacationAfterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = { ...(student.vacationAfterSchoolDestinations || {}) };
+            const enrolledCourseTitles: string[] = [];
 
             studentEnrollments.forEach(enrollment => {
                 const course = afterschoolCourses.find(c => c.id === enrollment.courseId);
+                const cTitle = course?.title || enrollment.courseTitle || '';
+                if (cTitle && !enrolledCourseTitles.includes(cTitle)) {
+                    enrolledCourseTitles.push(cTitle);
+                }
                 if (!course) return;
 
                 const classDays = extractCourseDays(course);
@@ -1192,15 +1239,19 @@ export default function AdminPage() {
                 }
 
                 targetDays.forEach(day => {
-                    afterSchoolClassIds[day] = course.id;
-                    vacationAfterSchoolClassIds[day] = course.id;
-                    afterSchoolDestinations[day] = realDestId;
-                    vacationAfterSchoolDestinations[day] = realDestId;
+                    if (!afterSchoolClassIds[day]) afterSchoolClassIds[day] = course.id;
+                    if (!vacationAfterSchoolClassIds[day]) vacationAfterSchoolClassIds[day] = course.id;
+                    // 이미 수동/개별 지정된 목적지가 있다면 덮어쓰지 않고 보존
+                    if (!afterSchoolDestinations[day]) afterSchoolDestinations[day] = realDestId;
+                    if (!vacationAfterSchoolDestinations[day]) vacationAfterSchoolDestinations[day] = realDestId;
                 });
             });
 
             return {
                 ...student,
+                afterSchoolCourseTitle: enrolledCourseTitles.join(', '),
+                afterSchoolCourseTitles: enrolledCourseTitles,
+                enrolledCourseTitles,
                 afterSchoolClassIds,
                 afterSchoolDestinations,
                 vacationAfterSchoolClassIds,
@@ -2623,34 +2674,34 @@ ${leaderRowsHtml}
                 )}
             </div>
 
-            {/* 🌟 방과후 노선으로 이동 액션 버튼 */}
+            {/* 🌟 방과후 노선 이동 및 하교 복귀 액션 버튼 */}
             <Button
                 type="button"
                 variant="ghost"
-                onClick={handleExecuteTransfer}
+                onClick={transferState?.isTransferred ? handleRevertTransfer : handleExecuteTransfer}
                 disabled={isTransferring}
                 className={cn(
                     "h-8 px-2 sm:px-2.5 font-bold text-xs rounded-lg shadow-none flex items-center gap-1 cursor-pointer transition whitespace-nowrap border",
                     transferState?.isTransferred
-                        ? "bg-emerald-50 hover:bg-emerald-100/80 border-emerald-200 text-emerald-800"
+                        ? "bg-indigo-50 hover:bg-indigo-100/80 border-indigo-300 text-indigo-900"
                         : "bg-amber-50 hover:bg-amber-100/80 border-amber-300 text-amber-900 animate-pulse"
                 )}
-                title={transferState?.isTransferred ? "방과후 노선 이동 완료됨 (정규 하교 좌석 제외 상태)" : "방과후 시작일에 클릭하여 정규 하교 좌석에서 방과후 노선으로 이동"}
+                title={transferState?.isTransferred ? "정규 하교 버스로 즉시 복귀 (클릭 시 하교 좌석 복구 및 방과후 이동 해제)" : "방과후 시작일에 클릭하여 정규 하교 좌석에서 방과후 노선으로 이동"}
             >
                 {isTransferring ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-700 shrink-0" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-700 shrink-0" />
                 ) : (
-                    <ArrowRightLeft className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                    <ArrowRightLeft className={cn("w-3.5 h-3.5 shrink-0", transferState?.isTransferred ? "text-indigo-700" : "text-amber-700")} />
                 )}
                 <span className="hidden sm:inline">
-                    {transferState?.isTransferred ? "방과후 노선 이동 완료" : "방과후 노선으로 이동"}
+                    {transferState?.isTransferred ? "하교 노선으로 복귀" : "방과후 노선으로 이동"}
                 </span>
                 <span className="inline sm:hidden text-[11px]">
-                    {transferState?.isTransferred ? "이동완료" : "방과후 이동"}
+                    {transferState?.isTransferred ? "하교 복귀" : "방과후 이동"}
                 </span>
                 {transferState?.isTransferred ? (
-                    <Badge className="bg-emerald-600 text-white text-[9px] px-1 py-0 font-bold ml-0.5">
-                        완료
+                    <Badge className="bg-indigo-600 text-white text-[9px] px-1 py-0 font-bold ml-0.5">
+                        복귀 가능
                     </Badge>
                 ) : (
                     <Badge className="bg-amber-600 text-white text-[9px] px-1 py-0 font-bold ml-0.5">
