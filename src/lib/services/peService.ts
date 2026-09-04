@@ -592,11 +592,27 @@ export async function deletePeEvent(school: string = 'KISH', eventId: string): P
 export async function suggestPeEventToDepartment(
   school: string = 'KISH',
   eventId: string,
-  suggestion: any
+  suggestionOrEmail: any,
+  displayName?: string,
+  title?: string,
+  content?: string
 ): Promise<void> {
+  let suggestionPayload: any;
+  if (typeof suggestionOrEmail === 'string' && title && content) {
+    suggestionPayload = {
+      suggestedAt: new Date().toISOString(),
+      suggestedBy: displayName || suggestionOrEmail,
+      title,
+      content,
+      status: 'PENDING',
+    };
+  } else {
+    suggestionPayload = suggestionOrEmail;
+  }
+
   const eventRef = doc(db, 'pe_schools', school, 'events', eventId);
   await updateDoc(eventRef, {
-    suggestion,
+    suggestion: suggestionPayload,
     updatedAt: serverTimestamp(),
   });
 }

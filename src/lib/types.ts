@@ -9,6 +9,7 @@ export type UserProfile = {
   parentPhone?: string;
   parentSignature?: string;
   hashedPin?: string;
+  parentPinHash?: string;
   parentName?: string;
   studentName?: string;
   studentNameEn?: string;
@@ -31,6 +32,8 @@ export type UserProfile = {
   dept?: string; // 소속 부서 (예: 교무기획부)
   grade?: string; // 소속 학년 (예: 3학년)
   lastAckAcademicCalVersion?: number; // 캘린더 공유 팝업 확인 완료 버전 (계정당 1회 팝업 보장)
+  phoneNumber?: string; // 학부모 연락처
+  parentRelation?: string; // 학부모와의 관계 (예: 부, 모)
 };
 
 export type AbsenceType = '병결' | '미인정' | '기타' | '출석인정';
@@ -65,6 +68,7 @@ export type ParentFormData = {
   reportContent?: string;
   reportSubmitted?: boolean;
   reportSubmittedAt?: string;
+  applyDate?: string; // 신청일자
 };
 
 export type Approver = {
@@ -242,6 +246,7 @@ export type Department = {
   id: string; // 부서 고유 ID
   name: string; // 부서명 (예: 문예방과후부)
   headEmail: string | null; // 부장 교사 이메일
+  headName?: string | null; // 부장 교사 이름
   memberEmails: string[]; // 부원 교사 이메일 배열
   tasks?: DepartmentTaskAssignment[]; // 부서 내 담당 업무 목록
 };
@@ -391,7 +396,7 @@ export type ApprovalDocPayload = {
   title: string;
   content: string;
   docType: 'internal' | 'external' | 'parent' | 'teacher-duty' | 'teacher-overtime' | 'teacher-afterschool';
-  category?: 'draft' | 'family'; 
+  category?: 'draft' | 'family' | 'general'; 
   // [수정] 실제 사용되는 값인 한글로 타입 변경 ('public' | 'private' -> '공개' | '비공개')
   publishStatus: '공개' | '비공개' | '부분공개'; 
   parentFormData?: ParentFormData;
@@ -399,7 +404,7 @@ export type ApprovalDocPayload = {
   teacherOvertimeData?: TeacherOvertimeData;
   afterschoolCourseData?: AfterschoolCourseData;
   approvers: Approver[];
-  attachments: Attachment[];
+  attachments?: Attachment[];
   circulars?: Circular[];
   receiverInfo?: { name: string; email?: string };
   headerImage?: string;
@@ -584,3 +589,5 @@ export interface MonthlyEducationPlan {
   updatedBy?: string;
   updatedByName?: string;
 }
+
+export type { MeasurementItem } from './pe/types';

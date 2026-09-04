@@ -25,7 +25,7 @@ import {
 } from '@/lib/services/departmentTaskService';
 import { getOrgStructure, getPeriodSchedules } from '@/lib/services/settingsService';
 import { getUsersDirectory } from '@/lib/services/userService';
-import type { ClassPeriodSchedule } from '@/lib/types';
+import type { ClassPeriodSchedule, TaskSubmission } from '@/lib/types';
 import { DEFAULT_PERIOD_SCHEDULES } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
@@ -1089,7 +1089,7 @@ export function PeEventManagement({ allStudents = [] }: PeEventManagementProps) 
           .sort((a, b) => Number(a[0]) - Number(b[0]));
 
         const gradeSectionsHtml = sortedGradeEntries.map(([grade, { key, sub }]) => {
-          const scenariosRows = (sub.scenarios || []).map((sc, idx) => `
+          const scenariosRows = (sub.scenarios || []).map((sc: any, idx: number) => `
             <tr>
               <td style="border: 1px solid #cbd5e1; padding: 8px; text-align: center; font-weight: bold;">${sc.time}</td>
               <td style="border: 1px solid #cbd5e1; padding: 8px; font-weight: bold; color: #1e1b4b;">${sc.program}</td>

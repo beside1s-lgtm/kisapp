@@ -207,6 +207,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
   const [newTimeEnd, setNewTimeEnd] = useState('15:20');
   const [newClassroom, setNewClassroom] = useState('');
   const [newMax, setNewMax] = useState('20');
+  const [isFreeCourse, setIsFreeCourse] = useState(false);
 
   // 교시 기반 수업시간 선택용 상태
   const [periodType, setPeriodType] = useState<'SEMESTER' | 'VACATION'>('SEMESTER');

@@ -407,7 +407,7 @@ export default function TeacherDutyPage() {
     );
 
     if (rule) {
-      setFinalApprover(rule.finalApprover);
+      setFinalApprover(rule.finalApprover === 'VP' ? 'VP' : 'PRINCIPAL');
       return;
     }
 

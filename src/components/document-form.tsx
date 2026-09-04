@@ -73,7 +73,7 @@ const defaultApproversTemplate = [
 
 type DocumentFormProps = {
     docToEdit?: ApprovalDoc | null;
-    category?: 'draft' | 'family';
+    category?: 'draft' | 'family' | 'general';
 }
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB 제한
@@ -452,7 +452,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
         let isClone = false;
 
         // 1. 시스템 설정의 조직도 및 사용자 목록으로부터 실제 기본 결재선 구성
-        let dynamicDefaultApprovers = defaultApproversTemplate.map(ap => ({...ap, active: ap.role !== '협조'}));
+        let dynamicDefaultApprovers: (Approver & { active: boolean })[] = defaultApproversTemplate.map(ap => ({...ap, active: ap.role !== '협조'}));
         try {
             const org = await getOrgStructure();
             const usersSnap = await getDocs(collection(getDb(), 'users'));

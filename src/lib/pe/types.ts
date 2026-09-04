@@ -278,10 +278,11 @@ export type PeEventSchedule = {
 
 export type PeEventBudget = {
   id: string;
+  category?: string; // 카테고리 (예: 경기용품, 시상, 운영비 등)
   item: string; // 항목명 e.g. "측정기기 소모품 및 배터리"
   spec?: string; // 규격/용도 e.g. "AAA 알카라인"
-  quantity: number; // 수량
-  unitPrice: number; // 단가
+  quantity?: number; // 수량
+  unitPrice?: number; // 단가
   amount: number; // 합계 금액 (quantity * unitPrice)
   currency?: 'VND' | 'KRW';
   note?: string; // 산출근거
@@ -301,6 +302,7 @@ export type PeGradeAssignment = {
   teacherEmail: string;
   teacherName: string;
   status: 'PENDING' | 'SUBMITTED';
+  submitted?: boolean;
   submittedAt?: string;
 };
 
@@ -318,7 +320,7 @@ export type PeEvent = {
   schedules: PeEventSchedule[];
   budgets: PeEventBudget[];
   totalBudget: number;
-  approvalStatus: 'PLANNING' | 'DRAFTED' | 'APPROVED' | 'REJECTED';
+  approvalStatus: 'PLANNING' | 'DRAFTED' | 'APPROVED' | 'REJECTED' | 'DRAFT' | 'SUBMITTED';
   approvalDocId?: string;
   linkedTaskId?: string; // KIS 대시보드 업무 요청 연동 ID
   gradeAssignments?: PeGradeAssignment[]; // 학년별 담당자 배정 및 제출 현황

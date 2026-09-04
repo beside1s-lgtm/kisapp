@@ -25,6 +25,15 @@ export type Student = {
   applicationStatus?: 'pending' | 'reviewed';
   siblingGroupId?: string | null;
   kisbusNo?: string | null;
+  classNum?: string;
+  parentEmail?: string | null;
+  studentEmail?: string | null;
+  assignedBusId?: string | null;
+  routeId?: string | null;
+  stationId?: string | null;
+  morningBusNo?: string | null;
+  afternoonBusNo?: string | null;
+  afterSchoolBusNo?: string | null;
 };
 export type NewStudent = Omit<Student, 'id'>;
 
@@ -47,6 +56,7 @@ export type NewAfterSchoolClass = Omit<AfterSchoolClass, 'id'>;
 
 export type Bus = {
   id: string;
+  busId?: string;
   name: string;
   capacity: 16 | 29 | 45;
   type: '16-seater' | '29-seater' | '45-seater';
@@ -70,6 +80,7 @@ export type NewDestination = Omit<Destination, 'id'>;
 export type Teacher = {
     id: string;
     name: string;
+    email?: string;
     afterSchoolDays?: DayOfWeek[];
     pushToken?: string;
     assignedBusId?: string | null;
@@ -106,7 +117,7 @@ export type AttendanceRecord = {
 
 export type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday';
 
-export type RouteType = 'Morning' | 'Afternoon' | 'AfterSchool';
+export type RouteType = 'Morning' | 'Afternoon' | 'AfterSchool' | 'Saturday';
 
 export type GroupLeaderRecord = {
     studentId: string;

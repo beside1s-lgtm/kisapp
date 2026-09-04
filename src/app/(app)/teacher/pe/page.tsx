@@ -182,7 +182,7 @@ export default function TeacherPePage() {
         classNum: String(s.classNum || (s as any).class || ''),
         studentNum: String(s.studentNum || (s as any).number || ''),
         name: s.nameKo || s.name,
-        gender: s.gender === 'Female' || s.gender === 'female' || (s.gender as any) === '여' ? '여' : '남',
+        gender: (s.gender as string)?.toLowerCase() === 'female' || (s.gender as any) === '여' ? '여' : '남',
         accessCode: (s as any).studentCode || '',
         personalCode: (s as any).studentCode || '',
         photoUrl: s.photoUrl || (s as any).photo || '',
@@ -559,8 +559,9 @@ export default function TeacherPePage() {
 
         {mainCategory === 'competition' && subCategory === 'tournament' && (
           <TournamentManagement
-            teams={data.teams}
-            onTeamsUpdate={handleTournamentUpdate}
+            allTeamGroups={data.teams}
+            allStudents={data.students}
+            onTournamentUpdate={handleTournamentUpdate}
           />
         )}
         {mainCategory === 'competition' && subCategory === 'balancer' && (

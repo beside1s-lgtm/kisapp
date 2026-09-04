@@ -7,6 +7,7 @@ import {
   addOrUpdateRecord,
 } from '@/lib/services/peService';
 import { Student, MeasurementRecord, MeasurementItem, SportsClub, MeasurementPeriod } from '@/lib/pe/types';
+import type { ScoutingReportOutput } from "@/ai/flows/scouting-report-flow";
 import { Input } from "@/components/ui/input";
 import {
   Card,

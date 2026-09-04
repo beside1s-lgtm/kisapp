@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { ApprovalDoc } from '@/lib/types';
+import { ApprovalDoc, ParentFormData } from '@/lib/types';
 import { format } from 'date-fns';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -20,7 +20,7 @@ export function ParentNotificationModal({ doc, open, onOpenChange }: ParentNotif
 
   if (!doc) return null;
 
-  const data = doc.parentFormData || {};
+  const data: Partial<ParentFormData> = doc.parentFormData || {};
   const studentName = data.studentName || '';
 
   // 학년, 반, 번호 파싱

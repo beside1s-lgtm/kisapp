@@ -14,6 +14,7 @@ import { HeartPulse, RefreshCw, Loader2, ShieldCheck, Stethoscope, ShieldAlert, 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { HealthRecordManagement } from '@/components/health/HealthRecordManagement';
 
 function HealthDashboardSkeleton() {
   return (
@@ -92,7 +93,7 @@ export default function TeacherHealthPage() {
         classNum: String(s.classNum || (s as any).class || ''),
         studentNum: String(s.studentNum || (s as any).number || ''),
         name: s.nameKo || s.name,
-        gender: s.gender === 'Female' || s.gender === 'female' || (s.gender as any) === '여' ? '여' : '남',
+        gender: (s.gender as string)?.toLowerCase() === 'female' || (s.gender as any) === '여' ? '여' : '남',
         accessCode: (s as any).studentCode || '',
         personalCode: (s as any).studentCode || '',
         photoUrl: (s as any).photoUrl || '',

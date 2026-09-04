@@ -645,7 +645,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
     const s = (studentsList || []).find(st => st.id === studentId || st.name === studentName);
 
     const photoUrl = m?.photoUrl || (s as any)?.photoUrl || (s as any)?.photo || '';
-    let rawBus = m?.busSummary?.busName || m?.kisbusNo || (s as any)?.kisbusNo || (s as any)?.busNo || '';
+    let rawBus = (m?.busSummary as any)?.assignedBusName || (m?.busSummary as any)?.busName || m?.kisbusNo || (s as any)?.kisbusNo || (s as any)?.busNo || '';
     if (rawBus && !rawBus.includes('호') && !rawBus.includes('버스') && !rawBus.includes('자율')) {
       rawBus = `${rawBus}호차`;
     }

@@ -32,7 +32,6 @@ import { getDocConfig, onOrgStructureUpdate } from '@/lib/services/settingsServi
 import { onMasterStudentsUpdate } from '@/lib/services/masterStudentService';
 import { getStudentFieldTripDays, getStudentAbsenceDays, createDocument, approveDocument } from '@/lib/services/documentService';
 import { getApproversByGradeClass } from '@/lib/services/userService';
-import { useAcademicCalendar } from '@/lib/services/academicCalendarService';
 import { getWorkingDaysCount } from '@/lib/utils';
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import type { OrgStructure, DocConfig } from '@/lib/types';
@@ -90,8 +89,7 @@ export default function TeacherHomeroomApplyPage() {
 
   // 학사일정 (공휴일 자동 제외)
   const academicCalConfig = docConfig?.academicCalendar;
-  const currentCalYear = academicCalConfig?.year || new Date().getFullYear();
-  const { semesterEvents } = useAcademicCalendar(academicCalConfig, currentCalYear);
+  const semesterEvents = academicCalConfig?.events || [];
 
   // 연간 누계 자동 계산 기능 활성화 여부
   const enableCumulative = docConfig?.enableCumulativeStats !== false;
@@ -303,6 +301,7 @@ export default function TeacherHomeroomApplyPage() {
         docType: 'parent',
         category: 'general',
         approvers: approvers,
+        attachments: [],
         parentFormData,
         publishStatus: '비공개'
       }, user.uid, profile);

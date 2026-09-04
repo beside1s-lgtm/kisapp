@@ -208,12 +208,22 @@ function generateRoundRobinMatches(teams: Team[]): { matches: Match[] } {
 }
 
 interface TournamentManagementProps {
-  onTournamentUpdate: () => void;
-  allTeamGroups: TeamGroup[];
-  allStudents: Student[];
+  onTournamentUpdate?: () => void;
+  onTeamsUpdate?: () => void;
+  allTeamGroups?: TeamGroup[];
+  teams?: TeamGroup[];
+  allStudents?: Student[];
 }
 
-export default function TournamentManagement({ onTournamentUpdate, allTeamGroups, allStudents }: TournamentManagementProps) {
+export default function TournamentManagement({ 
+  onTournamentUpdate, 
+  onTeamsUpdate, 
+  allTeamGroups: propTeamGroups, 
+  teams, 
+  allStudents = [] 
+}: TournamentManagementProps) {
+  const allTeamGroups = propTeamGroups || teams || [];
+  const handleUpdate = onTournamentUpdate || onTeamsUpdate || (() => {});
   const { user } = useAuth(); const school = 'KISH';
   const { toast } = useToast();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
@@ -276,7 +286,7 @@ export default function TournamentManagement({ onTournamentUpdate, allTeamGroups
       setCurrentTournament(newT);
       setSelectedTournamentId(newT.id);
       toast({ title: "대회 생성 완료" });
-      onTournamentUpdate();
+      handleUpdate();
     } catch (e) {
       console.error(e);
       toast({ variant: 'destructive', title: '대회 생성 실패' });
@@ -303,7 +313,7 @@ export default function TournamentManagement({ onTournamentUpdate, allTeamGroups
       setCurrentTournament(null);
       setSelectedTournamentId('');
       toast({ title: "대회 삭제 완료" });
-      onTournamentUpdate();
+      handleUpdate();
     } catch (error) {
       console.error("Failed to delete tournament:", error);
       toast({ variant: 'destructive', title: "삭제 실패" });

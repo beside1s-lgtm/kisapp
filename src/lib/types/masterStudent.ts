@@ -9,6 +9,7 @@ export type AcademicHistoryRecord = {
 export type MasterStudent = {
   studentEmail: string;        // 주 식별자 계정 이메일 (예: "2023KANGDONGYUN@kshcm.net")
   studentId: string;           // Firestore 고유 ID (doc ID 또는 UUID)
+  id?: string;                 // 고유 ID 별칭 (doc ID 호환)
   studentNumYear?: number;     // 입학년도/학번 (예: 2023)
   name: string;                // 이름
   nameKo?: string | null;
@@ -18,10 +19,13 @@ export type MasterStudent = {
   studentNum?: string | null;  // 번호 (예: "5")
   gender: 'Male' | 'Female';
   contact: string;             // 본인/보호자 연락처
+  emergencyContact?: string;   // 비상 연락처
+  parentName?: string;         // 학부모 이름
   parentEmail?: string | null; // 보호자 연동 이메일
   address?: string | null;     // 주소
   kisbusNo?: string | null;    // 승차권 번호
   photoUrl?: string | null;    // 학생 사진 URL (가로세로 2cm 최적화 Base64 또는 이미지 URL)
+  status?: string;             // 재학 상태 (예: enrolled, active)
 
   // [학적 이력 아카이브] 과거 학학년도별 학년/반/번호 아카이브 기록
   academicHistory?: AcademicHistoryRecord[];

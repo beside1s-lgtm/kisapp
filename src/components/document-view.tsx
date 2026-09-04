@@ -6,6 +6,7 @@ import { useToast } from '@/hooks/use-toast';
 import { approveDocument, rejectDocument, recallDocument, deleteDocument } from '@/lib/services/documentService';
 import { getUserProfileByEmail } from '@/lib/services/userService';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { CheckCircle2, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, Paperclip, Trash2, Lock, Download, FileCheck, Printer } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition, useEffect } from 'react';
