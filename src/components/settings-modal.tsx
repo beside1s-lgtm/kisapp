@@ -861,13 +861,19 @@ export function SettingsModal() {
 
   // 교직원 전용 목록 (학생/학부모 계정 원천 분리 이원화)
   const facultyUsers = useMemo(() => {
+    const deptMemberSet = new Set<string>();
+    (org.departments || []).forEach(d => {
+      (d.memberEmails || []).forEach(em => deptMemberSet.add(em.toLowerCase().trim()));
+      if (d.headEmail) deptMemberSet.add(d.headEmail.toLowerCase().trim());
+    });
+
     return users.filter(u => {
       if (u.email === 'beside1s@kshcm.net') return true;
+      if (u.isFaculty === true || deptMemberSet.has(u.email.toLowerCase().trim()) || !!u.dept) return true;
       if (u.studentName || u.studentGrade || u.role === '학부모' || u.role === 'student' || u.role === 'parent') return false;
-      // 이메일 패턴이 숫자로 시작되더라도 DB role이 교사라면 교직원으로 포함
       return true;
     });
-  }, [users]);
+  }, [users, org.departments]);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedHomeroomFile, setSelectedHomeroomFile] = useState<File | null>(null);
@@ -1396,6 +1402,8 @@ export function SettingsModal() {
         ...newUser,
         grade: gradeStr,
         dept: deptStr,
+        isFaculty: true,
+        isStaff: true,
       };
 
       const result = await saveUserProfile('', newUser.email, payload as any);
@@ -4552,22 +4560,40 @@ export function SettingsModal() {
               </Dialog>
 
               <Tabs value={userSubTab} onValueChange={(val) => setUserSubTab(val as 'teachers' | 'students')} className="flex-1 min-h-0 flex flex-col">
-                <div className="flex justify-between items-center px-1 shrink-0 mb-2">
-                    <TabsList className="grid grid-cols-2 w-[340px]">
-                      <TabsTrigger value="teachers">교직원 ({users.filter(u => u.email === 'beside1s@kshcm.net' || (u.role !== '학부모' && u.role !== 'student' && (!u.studentName || !!u.dept || u.role === '교사'))).length})</TabsTrigger>
-                      <TabsTrigger value="students">학생 계정 ({users.filter(u => u.email !== 'beside1s@kshcm.net' && (u.role === '학부모' || u.role === 'student' || (!!u.studentName && u.role !== '교사' && !u.dept))).length})</TabsTrigger>
-                    </TabsList>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setIsBulkUploadOpen(true)}>
-                        <FileUp className="mr-2 h-4 w-4" />일괄 등록
-                      </Button>
-                      {!isAddingNewUser && (
-                          <Button variant="outline" size="sm" onClick={() => setIsAddingNewUser(true)}>
-                              <PlusCircle className="mr-2 h-4 w-4" />추가
+                {(() => {
+                  const deptMemberSet = new Set<string>();
+                  (org.departments || []).forEach(d => {
+                    (d.memberEmails || []).forEach(em => deptMemberSet.add(em.toLowerCase().trim()));
+                    if (d.headEmail) deptMemberSet.add(d.headEmail.toLowerCase().trim());
+                  });
+                  const isTeacherUser = (u: UserProfile) => {
+                    if (u.email === 'beside1s@kshcm.net') return true;
+                    if (u.isFaculty === true || deptMemberSet.has(u.email.toLowerCase().trim()) || !!u.dept || u.role === '교사') return true;
+                    if (u.studentName || u.studentGrade || u.role === '학부모' || u.role === 'student' || u.role === 'parent') return false;
+                    return true;
+                  };
+                  const teacherCount = users.filter(isTeacherUser).length;
+                  const studentCount = users.filter(u => !isTeacherUser(u)).length;
+
+                  return (
+                    <div className="flex justify-between items-center px-1 shrink-0 mb-2">
+                        <TabsList className="grid grid-cols-2 w-[340px]">
+                          <TabsTrigger value="teachers">교직원 ({teacherCount})</TabsTrigger>
+                          <TabsTrigger value="students">학생 계정 ({studentCount})</TabsTrigger>
+                        </TabsList>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setIsBulkUploadOpen(true)}>
+                            <FileUp className="mr-2 h-4 w-4" />일괄 등록
                           </Button>
-                      )}
+                          {!isAddingNewUser && (
+                              <Button variant="outline" size="sm" onClick={() => setIsAddingNewUser(true)}>
+                                  <PlusCircle className="mr-2 h-4 w-4" />추가
+                              </Button>
+                          )}
+                        </div>
                     </div>
-                </div>
+                  );
+                })()}
 
                 <TabsContent value="teachers" className="flex-1 min-h-0 data-[state=active]:flex flex-col border rounded-md overflow-hidden">
                   {/* 교직원 검색 입력 */}
@@ -4640,21 +4666,38 @@ export function SettingsModal() {
                               </TableCell>
                           </TableRow>
                       )}
-                      {users.filter(user => {
-                         const isTeacher = user.email === 'beside1s@kshcm.net' || (user.role !== '학부모' && user.role !== 'student' && (!user.studentName || !!user.dept || user.role === '교사'));
-                         if (!isTeacher) return false;
-                         if (!teacherTabQuery.trim()) return true;
-                         const q = teacherTabQuery.trim().toLowerCase();
-                         return (user.name || '').toLowerCase().includes(q) ||
-                           (user.email || '').toLowerCase().includes(q) ||
-                           (user.dept || '').toLowerCase().includes(q) ||
-                           (user.role || '').toLowerCase().includes(q);
-                       }).map(user => (
-                        <TableRow key={user.email}>
-                          <TableCell>
-                          <div className="font-medium">{user.name}</div>
-                          <div className="text-xs text-muted-foreground">{user.email}</div>
-                          </TableCell>
+                      {(() => {
+                         const deptMemberSet = new Set<string>();
+                         (org.departments || []).forEach(d => {
+                           (d.memberEmails || []).forEach(em => deptMemberSet.add(em.toLowerCase().trim()));
+                           if (d.headEmail) deptMemberSet.add(d.headEmail.toLowerCase().trim());
+                         });
+                         const isTeacherUser = (u: UserProfile) => {
+                           if (u.email === 'beside1s@kshcm.net') return true;
+                           if (u.isFaculty === true || deptMemberSet.has(u.email.toLowerCase().trim()) || !!u.dept || u.role === '교사') return true;
+                           if (u.studentName || u.studentGrade || u.role === '학부모' || u.role === 'student' || u.role === 'parent') return false;
+                           return true;
+                         };
+
+                         return users.filter(user => {
+                           if (!isTeacherUser(user)) return false;
+                           if (!teacherTabQuery.trim()) return true;
+                           const q = teacherTabQuery.trim().toLowerCase();
+                           return (user.name || '').toLowerCase().includes(q) ||
+                             (user.email || '').toLowerCase().includes(q) ||
+                             (user.dept || '').toLowerCase().includes(q) ||
+                             (user.role || '').toLowerCase().includes(q);
+                         }).map(user => (
+                           <TableRow key={user.email}>
+                             <TableCell>
+                             <div className="flex items-center gap-1.5 flex-wrap">
+                               <span className="font-medium">{user.name}</span>
+                               <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px] px-1.5 py-0 font-bold">
+                                 교직원
+                               </Badge>
+                             </div>
+                             <div className="text-xs text-muted-foreground">{user.email}</div>
+                             </TableCell>
                           <TableCell className="text-xs">
                             <div className="flex flex-wrap items-center gap-1.5 max-w-[260px]">
                               {user.grade && (
@@ -4710,13 +4753,16 @@ export function SettingsModal() {
                                   disabled={user.email === 'beside1s@kshcm.net'} // 슈퍼 관리자 보호
                               />
                           </TableCell>
-                          <TableCell className="text-right">
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive/90" onClick={() => confirmDeleteUser(user)}>
-                                  <Trash2 className="h-4 w-4" />
-                              </Button>
-                          </TableCell>
+                      {(() => {
+                        return <TableCell className="text-right">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive/90" onClick={() => confirmDeleteUser(user)}>
+                              <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>;
+                      })()}
                       </TableRow>
-                      ))}
+                      ));
+                      })()}
                       </TableBody>
                       </Table>
                        </div>
@@ -4725,10 +4771,18 @@ export function SettingsModal() {
                 <TabsContent value="students" className="flex-1 min-h-0 data-[state=active]:flex flex-col border rounded-md mt-0">
                   {/* ── 학생 탭 필터 바 ── */}
                   {(() => {
-                    const allStudents = users.filter(u =>
-                      u.email !== 'beside1s@kshcm.net' &&
-                      (u.role === '학부모' || u.role === 'student' || (!!u.studentName && u.role !== '교사' && !u.dept))
-                    );
+                    const deptMemberSet = new Set<string>();
+                    (org.departments || []).forEach(d => {
+                      (d.memberEmails || []).forEach(em => deptMemberSet.add(em.toLowerCase().trim()));
+                      if (d.headEmail) deptMemberSet.add(d.headEmail.toLowerCase().trim());
+                    });
+                    const isTeacherUser = (u: UserProfile) => {
+                      if (u.email === 'beside1s@kshcm.net') return true;
+                      if (u.isFaculty === true || deptMemberSet.has(u.email.toLowerCase().trim()) || !!u.dept || u.role === '교사') return true;
+                      if (u.studentName || u.studentGrade || u.role === '학부모' || u.role === 'student' || u.role === 'parent') return false;
+                      return true;
+                    };
+                    const allStudents = users.filter(u => !isTeacherUser(u));
                     // 학년 목록 자동 추출
                     const gradeOptions = Array.from(new Set(allStudents.map(u => u.studentGrade).filter(Boolean))).sort();
                     // 반 목록 (선택 학년 기반)

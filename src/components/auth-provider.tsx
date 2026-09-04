@@ -297,7 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             const fetchedProfile = await fetchProfile(firebaseUser);
             if (fetchedProfile) {
-              const isTeacher = !isStudentPattern(firebaseUser.email);
+              const isTeacher = Boolean(fetchedProfile.isFaculty || fetchedProfile.dept || (fetchedProfile.role && fetchedProfile.role !== '학부모' && fetchedProfile.role !== '학생') || !isStudentPattern(firebaseUser.email));
               const mfaSessionKey = `mfa_verified_${firebaseUser.email.trim().toLowerCase()}`;
               let isAlreadyVerified = false;
               try {
@@ -386,7 +386,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   };
 
-  const isParent = profile?.role === '학부모' || profile?.role === '학생' || isStudentPattern(user?.email || profile?.email || null);
+  const isStaffUser = Boolean(profile?.isFaculty || profile?.dept || (profile?.role && profile.role !== '학부모' && profile.role !== '학생') || profile?.isAdmin);
+  const isParent = !isStaffUser && (profile?.role === '학부모' || profile?.role === '학생' || isStudentPattern(user?.email || profile?.email || null));
 
   const bypassLogin = async (role: 'admin' | 'parent') => {
     if (process.env.NODE_ENV !== 'development') return;

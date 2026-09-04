@@ -141,6 +141,8 @@ export async function getUsersDirectory(forceRefresh = false): Promise<UserProfi
         // 추가 교직원 정보
         annualLeaveLimit: data.annualLeaveLimit ?? null,
         dept: data.dept ?? null,
+        isFaculty: data.isFaculty ?? null,
+        isStaff: data.isStaff ?? null,
       } as UserProfile;
     });
     // 캐시 갱신
@@ -174,6 +176,8 @@ export function onUsersDirectoryUpdate(callback: (users: UserProfile[]) => void)
         studentNumber: data.studentNumber ?? null,
         annualLeaveLimit: data.annualLeaveLimit ?? null,
         dept: data.dept ?? null,
+        isFaculty: data.isFaculty ?? null,
+        isStaff: data.isStaff ?? null,
       } as UserProfile;
     });
     callback(list);
@@ -468,6 +472,8 @@ export async function bulkRegisterUsers(fileData: string) {
             email: email,
             isAdmin: false,
             signature: '',
+            isFaculty: true,
+            isStaff: true,
           }, { merge: true });
           count++;
           facultyCount++;

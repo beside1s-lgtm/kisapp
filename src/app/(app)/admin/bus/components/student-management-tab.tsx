@@ -324,7 +324,26 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                 }
                 return null;
             }
-            if (selectedDay === 'Saturday') return selectedRouteType === 'Morning' ? s.satMorningDestinationId : s.satAfternoonDestinationId;
+            if (selectedDay === 'Saturday') {
+                const explicitSatDest = selectedRouteType === 'Morning' ? s.satMorningDestinationId : s.satAfternoonDestinationId;
+                if (explicitSatDest) return explicitSatDest;
+
+                // 토요 방과후 수강생 감지 (토요일은 방과후 노선이 따로 없고 토요일 등하교 버스를 이용하므로 미배정 학생으로 표시)
+                const hasSatAfterSchool = Boolean(
+                    s.afterSchoolClassIds?.['Saturday'] ||
+                    s.afterSchoolDestinations?.['Saturday'] ||
+                    (s.afterSchoolDestinations && Object.keys(s.afterSchoolDestinations).some(k => k.toLowerCase().includes('sat') || k === 'Saturday')) ||
+                    (s as any).isSaturdayAfterSchool
+                );
+
+                if (hasSatAfterSchool) {
+                    const fallbackDest = s.afterSchoolDestinations?.['Saturday'] ||
+                        (selectedRouteType === 'Morning' ? (s.morningDestinationId || s.suggestedMorningDestination || s.residenceDestinationId) : (s.afternoonDestinationId || s.suggestedAfternoonDestination || s.residenceDestinationId)) ||
+                        'SATURDAY_AFTERSCHOOL';
+                    return fallbackDest || 'SATURDAY_AFTERSCHOOL';
+                }
+                return null;
+            }
             if (selectedRouteType === 'Morning') return s.morningDestinationId;
             if (selectedRouteType === 'Afternoon') return s.afternoonDestinationId;
             if (selectedRouteType === 'AfterSchool') return getAfterSchoolDest(s, selectedDay);
@@ -342,8 +361,8 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
         let unassigned = students.filter(s => {
             if (allAssignedIds.has(s.id)) return false;
 
-            // 학기 중 정규 하교(Afternoon) 필터링: 방과후 노선 이동(isTransferred === true)이 완료된 경우에만 하교 미배정에서 제외
-            if (semesterMode !== 'vacation' && selectedRouteType === 'Afternoon') {
+            // 학기 중 정규 하교(Afternoon) 필터링: 방과후 노선 이동(isTransferred === true)이 완료된 경우에만 하교 미배정에서 제외 (단, 토요일은 토요 등하교 버스 유지)
+            if (semesterMode !== 'vacation' && selectedRouteType === 'Afternoon' && selectedDay !== 'Saturday') {
                 if (isTransferred && getAfterSchoolDest(s, selectedDay)) return false;
             }
 
@@ -354,6 +373,11 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
             if (semesterMode === 'vacation' && selectedRouteType === 'Afternoon') {
                 if (destId === 'VACATION_CLASS_ENROLLED') return true;
                 return unassignedView === 'current' ? targetStopIds.has(destId) : true;
+            }
+
+            // 토요일 토요방과후 학생: 목적지 정류장 매칭 무관하게 미배정 목록에 노출
+            if (selectedDay === 'Saturday' && (destId === 'SATURDAY_AFTERSCHOOL' || destId === 'UNSPECIFIED')) {
+                return true;
             }
 
             // [사용자 요청 3] 전체 버스 선택(selectedBusId === 'all') 또는 전체 보기 탭(unassignedView === 'all')일 때 모든 미배정 학생 표시

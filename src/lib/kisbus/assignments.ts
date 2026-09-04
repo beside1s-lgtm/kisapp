@@ -328,10 +328,23 @@ export const syncAfterschoolBusAssignmentsOnStageChange = async (
         });
       });
 
-      batch.update(busStudent.ref, {
+      const updateData: Record<string, any> = {
         [destField]: newDests,
         [classField]: newClassIds
-      });
+      };
+
+      // 토요 방과후 신청 학생: 토요일은 별도의 방과후 노선이 없고 토요일 등하교 버스를 이용하므로,
+      // 토요일 등/하교 목적지 필드를 보장하여 토요일 등하교 노선 미배정 목록에 나타나도록 설정
+      if (newDests['Saturday']) {
+        if (!busStudent.data.satMorningDestinationId) {
+          updateData.satMorningDestinationId = newDests['Saturday'];
+        }
+        if (!busStudent.data.satAfternoonDestinationId) {
+          updateData.satAfternoonDestinationId = newDests['Saturday'];
+        }
+      }
+
+      batch.update(busStudent.ref, updateData);
     });
 
     // 4. [중요] 수강신청 완료(CONFIRMED) 단계에서는 방과후 명단에 2중 배정만 진행하고,
@@ -477,7 +490,8 @@ export const executeTransferAfterschoolStudentsToBus = async (): Promise<{ succe
 
     matchCount++;
     const classDays: string[] = course.classDays || (isSat ? ['토'] : ['월']);
-    const targetDays = classDays.map(d => dayMap[d]).filter(Boolean) as DayOfWeek[];
+    // 토요일은 별도의 방과후 노선이 없고 토요일 등하교 버스를 그대로 이용하므로, 평일 정규 하교 좌석 제외 대상 요일에서 '토'는 제외합니다!
+    const targetDays = classDays.filter(d => d !== '토').map(d => dayMap[d]).filter(Boolean) as DayOfWeek[];
 
     targetDays.forEach(day => {
       if (!dayStudentsMap.has(day)) dayStudentsMap.set(day, new Set());
@@ -599,7 +613,14 @@ export const transferAllAfterschoolStudentsToBus = async (
 
     affectedCount++;
     const classDays: string[] = course?.classDays || ['월'];
-    const targetDays = classDays.map((d) => dayMap[d]).filter(Boolean) as DayOfWeek[];
+    const isSat = classDays.includes('토') || Boolean(
+      course?.period?.includes('토') ||
+      course?.title?.includes('토요') ||
+      course?.title?.includes('토요일') ||
+      course?.title?.includes('오케스트라')
+    );
+    // 평일 하교 버스 제외 대상에서는 '토'를 제외
+    const targetDays = classDays.filter(d => d !== '토').map((d) => dayMap[d]).filter(Boolean) as DayOfWeek[];
 
     targetDays.forEach((day) => {
       if (!dayStudentsMap.has(day)) dayStudentsMap.set(day, new Set());
@@ -611,7 +632,8 @@ export const transferAllAfterschoolStudentsToBus = async (
 
     // 하교 목적지 백업 & 요일별 방과후 목적지 설정 (미배정 상태)
     const baseDestId = busStudent.data.afternoonDestinationId || busStudent.data.suggestedAfternoonDestination || busStudent.data.morningDestinationId || '방과후 미배정';
-    targetDays.forEach((day) => {
+    const allDays = classDays.map(d => dayMap[d]).filter(Boolean) as DayOfWeek[];
+    allDays.forEach((day) => {
       currentDests[day] = baseDestId;
       currentClassIds[day] = course?.id || 'afterschool';
     });
@@ -621,9 +643,15 @@ export const transferAllAfterschoolStudentsToBus = async (
       [classField]: currentClassIds,
     };
 
-    // 하교 목적지가 있으면 백업 후 null 처리 (하교 버스에서 숨김)
-    if (busStudent.data.afternoonDestinationId && !busStudent.data._hiddenAfternoonDestId) {
+    // 토요일 강좌 학생은 평일 하교 목적지를 숨기지 않음 (_hiddenAfternoonDestId 적용 X)
+    if (!isSat && busStudent.data.afternoonDestinationId && !busStudent.data._hiddenAfternoonDestId) {
       studentUpdatePayload._hiddenAfternoonDestId = busStudent.data.afternoonDestinationId;
+    }
+
+    if (isSat) {
+      // 토요일 등/하교 목적지 필드를 보장하여 토요일 등하교 노선 미배정 목록에 확실히 뜨도록 함
+      studentUpdatePayload.satMorningDestinationId = busStudent.data.satMorningDestinationId || busStudent.data.morningDestinationId || baseDestId;
+      studentUpdatePayload.satAfternoonDestinationId = busStudent.data.satAfternoonDestinationId || busStudent.data.afternoonDestinationId || baseDestId;
     }
 
     busBatch.update(busStudent.ref, studentUpdatePayload);
@@ -631,7 +659,7 @@ export const transferAllAfterschoolStudentsToBus = async (
     // afterschool_enrollments 문서 업데이트
     const enrollDocRef = doc(mainDb, 'afterschool_enrollments', enroll.id);
     mainBatch.update(enrollDocRef, {
-      afternoonBusHidden: true,
+      afternoonBusHidden: !isSat,
       needsBus: true,
     });
   });

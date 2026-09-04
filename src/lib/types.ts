@@ -34,6 +34,8 @@ export type UserProfile = {
   lastAckAcademicCalVersion?: number; // 캘린더 공유 팝업 확인 완료 버전 (계정당 1회 팝업 보장)
   phoneNumber?: string; // 학부모 연락처
   parentRelation?: string; // 학부모와의 관계 (예: 부, 모)
+  isFaculty?: boolean; // 교직원 명시 표식 (교직원 탭 수동 등록 또는 교직원 엑셀 등록 계정)
+  isStaff?: boolean;
 };
 
 export type AbsenceType = '병결' | '미인정' | '기타' | '출석인정';
