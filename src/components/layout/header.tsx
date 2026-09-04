@@ -19,6 +19,7 @@ import { SettingsModal } from '../settings-modal';
 import { ProfileModal } from '../profile-modal';
 import { DropdownMenuTriggerItem } from '../ui/dropdown-menu-trigger-item';
 import { useSidebar } from './sidebar-context';
+import { LanguageSwitcher } from './language-switcher';
 
 export function AppHeader() {
   const { user, profile, logout, profileLoading } = useAuth();
@@ -107,7 +108,7 @@ export function AppHeader() {
     <>
       <header className="fixed top-0 left-0 right-0 z-50 flex h-14 sm:h-16 items-center justify-between border-b bg-card px-2.5 sm:px-4 lg:px-8 max-w-full overflow-x-hidden min-w-0">
         <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-          <Link href="/inbox" className="flex items-center gap-2 sm:gap-4 cursor-pointer hover:opacity-80 transition-opacity shrink-0">
+          <Link href="/inbox" className="hidden sm:flex items-center gap-2 sm:gap-4 cursor-pointer hover:opacity-80 transition-opacity shrink-0">
             <div className="bg-primary p-1.5 sm:p-2 rounded-lg text-primary-foreground">
               <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
@@ -197,6 +198,23 @@ export function AppHeader() {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+
+          {/* 데스크톱 전용: 언어 선택기 및 로그아웃 버튼을 헤더 맨 오른쪽 구석에 전역 고정 */}
+          <div className="hidden sm:flex items-center gap-2 shrink-0">
+            <LanguageSwitcher />
+            {user && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={logout}
+                className="h-8 px-2.5 text-xs text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700 font-bold flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer"
+                title="로그아웃"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span>로그아웃</span>
+              </Button>
+            )}
+          </div>
         </div>
       </header>
     </>

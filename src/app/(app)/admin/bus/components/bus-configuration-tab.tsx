@@ -42,6 +42,7 @@ interface BusConfigurationTabProps {
   selectedBusId: string | null;
   students?: Student[];
   academicCalendar?: AcademicCalendarConfig;
+  semesterMode?: 'regular' | 'vacation';
 }
 
 export const BusConfigurationTab = ({
@@ -54,6 +55,7 @@ export const BusConfigurationTab = ({
   selectedBusId,
   students = [],
   academicCalendar,
+  semesterMode = 'regular',
 }: BusConfigurationTabProps) => {
   const [newDestinationName, setNewDestinationName] = useState('');
   const [destinationSearchQuery, setDestinationSearchQuery] = useState('');
@@ -328,26 +330,89 @@ export const BusConfigurationTab = ({
         .filter(Boolean) as string[];
   }, [selectedAllDestIds, routes, selectedDay, selectedRouteType, buses]);
 
-  // 미편성 목적지: 학생이 사용 중이나 현재 경로(요일+타입)의 어떤 버스 노선에도 편성되지 않은 목적지
+  // 학생의 현재 요일 및 경로 타입에 맞는 유효 목적지 추출 (해당 요일/경로 탑승 대상자만 반환)
+  const getStudentDestForRoute = useCallback((s: Student, day: DayOfWeek, routeType: RouteType): string | null => {
+    // 1. 토요일
+    if (day === 'Saturday') {
+      return routeType === 'Morning' ? (s.satMorningDestinationId || null) : (s.satAfternoonDestinationId || null);
+    }
+
+    // 2. 등교
+    if (routeType === 'Morning') {
+      return s.morningDestinationId || null;
+    }
+
+    // 3. 방과후 (AfterSchool): 오직 해당 요일에 방과후 수업을 수강하거나 목적지가 등록된 학생만 대상!
+    if (routeType === 'AfterSchool') {
+      const destMap = semesterMode === 'vacation'
+        ? (s.vacationAfterSchoolDestinations || {})
+        : (s.afterSchoolDestinations || {});
+      const classMap = semesterMode === 'vacation'
+        ? (s.vacationAfterSchoolClassIds || {})
+        : (s.afterSchoolClassIds || {});
+
+      // 해당 요일에 수업(classId)이나 방과후 목적지(dest)가 등록되어 있지 않다면 방과후 버스 탑승 대상자가 아님!
+      const hasClassOnDay = Boolean(classMap[day]);
+      const hasDestOnDay = Boolean(destMap[day]);
+      if (!hasClassOnDay && !hasDestOnDay) {
+        return null;
+      }
+
+      let dest = destMap[day] || null;
+      if (!dest || dest.includes('호차') || dest === '미배정' || dest === '방과후 미배정' || dest === 'UNSPECIFIED') {
+        dest = s.afternoonDestinationId || s.morningDestinationId || null;
+      }
+      return dest;
+    }
+
+    // 4. 정규 하교 (Afternoon)
+    if (routeType === 'Afternoon') {
+      return s.afternoonDestinationId || null;
+    }
+
+    return null;
+  }, [semesterMode]);
+
+  // 미편성 목적지: 학생이 실제 사용 중이나 현재 경로(요일+타입)의 어떤 버스 노선에도 편성되지 않은 목적지
   const unassignedDestinations = useMemo(() => {
     if (students.length === 0) return [];
 
-    // 현재 경로의 모든 버스 노선에 편성된 목적지 ID 집합
-    const assignedDestIds = new Set<string>();
+    // 1. 현재 경로(선택된 요일 + 선택된 경로 타입)의 모든 버스 노선에 편성된 목적지 식별자(ID 및 이름) 수집
+    const assignedDestKeys = new Set<string>();
     routes
       .filter(r => r.dayOfWeek === selectedDay && r.type === selectedRouteType)
-      .forEach(r => (r.stops || []).forEach(id => assignedDestIds.add(id)));
+      .forEach(r => {
+        (r.stops || []).forEach(stopIdOrName => {
+          if (!stopIdOrName) return;
+          assignedDestKeys.add(stopIdOrName);
+          const matched = destinations.find(d => d.id === stopIdOrName || d.name === stopIdOrName);
+          if (matched) {
+            assignedDestKeys.add(matched.id);
+            assignedDestKeys.add(matched.name);
+          }
+        });
+      });
 
-    // 현재 경로 타입에 따라 학생의 목적지 ID 수집
-    const studentDestIds = new Set<string>();
+    // 2. 현재 요일/경로에 실제로 탑승하는 학생들의 목적지 중 미편성된 목적지 식별자 수집
+    const studentUnassignedDestIds = new Set<string>();
     students.forEach(s => {
-      const dId = selectedRouteType === 'Morning' ? s.morningDestinationId : s.afternoonDestinationId;
-      if (dId && !assignedDestIds.has(dId)) studentDestIds.add(dId);
+      const dId = getStudentDestForRoute(s, selectedDay, selectedRouteType);
+      if (!dId) return;
+
+      // 이미 현재 경로의 어떤 버스 노선에라도 편성되어 있는 목적지면 미편성 대상에서 제외!
+      if (assignedDestKeys.has(dId)) return;
+
+      // destinations 목록에서 매칭 (ID 또는 명칭 매칭)
+      const matched = destinations.find(d => d.id === dId || d.name === dId);
+      if (matched) {
+        if (!assignedDestKeys.has(matched.id) && !assignedDestKeys.has(matched.name)) {
+          studentUnassignedDestIds.add(matched.id);
+        }
+      }
     });
 
-    // 해당 목적지가 destinations 목록에 존재하는 경우만 반환
-    return destinations.filter(d => studentDestIds.has(d.id));
-  }, [students, routes, destinations, selectedDay, selectedRouteType]);
+    return destinations.filter(d => studentUnassignedDestIds.has(d.id));
+  }, [students, routes, destinations, selectedDay, selectedRouteType, getStudentDestForRoute]);
 
 
   const getStopsForCurrentRoute = useCallback(() => {
@@ -873,13 +938,24 @@ export const BusConfigurationTab = ({
                                     <div className="p-2 space-y-1.5 max-h-40 overflow-y-auto">
                                         {unassignedDestinations.map((dest) => {
                                             const studentCount = students.filter(s => {
-                                                const dId = selectedRouteType === 'Morning' ? s.morningDestinationId : s.afternoonDestinationId;
-                                                return dId === dest.id;
+                                                const dId = getStudentDestForRoute(s, selectedDay, selectedRouteType);
+                                                if (!dId) return false;
+                                                return dId === dest.id || dId === dest.name;
                                             }).length;
-                                            const candidateRoutes = routes.filter(r =>
-                                                r.dayOfWeek === selectedDay &&
-                                                r.type === selectedRouteType
-                                            );
+                                            const candidateRoutes = routes
+                                                .filter(r =>
+                                                    r.dayOfWeek === selectedDay &&
+                                                    r.type === selectedRouteType &&
+                                                    buses.some(b => b.id === r.busId && b.name && b.name.trim() !== '')
+                                                )
+                                                .sort((a, b) => {
+                                                    const busA = buses.find(b => b.id === a.busId);
+                                                    const busB = buses.find(b => b.id === b.busId);
+                                                    const numA = parseInt((busA?.name || '').replace(/\D/g, ''), 10);
+                                                    const numB = parseInt((busB?.name || '').replace(/\D/g, ''), 10);
+                                                    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                                                    return (busA?.name || '').localeCompare(busB?.name || '', 'ko');
+                                                });
                                             const shortName = dest.name.length > 20 ? dest.name.slice(0, 20) + '...' : dest.name;
                                             return (
                                                 <div key={dest.id} className="flex items-center gap-2 bg-white rounded-lg border border-amber-200/60 px-2.5 py-1.5">
@@ -910,8 +986,9 @@ export const BusConfigurationTab = ({
                                                         >
                                                             <option value="">버스</option>
                                                             {candidateRoutes.map(r => {
-                                                                const busName = buses.find(b => b.id === r.busId)?.name || r.busId;
-                                                                return <option key={r.id} value={r.id}>{busName}</option>;
+                                                                const bus = buses.find(b => b.id === r.busId);
+                                                                if (!bus || !bus.name) return null;
+                                                                return <option key={r.id} value={r.id}>{bus.name}</option>;
                                                             })}
                                                         </select>
                                                     ) : (

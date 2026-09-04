@@ -77,12 +77,12 @@ export function LanguageSwitcher() {
         <Button
           variant="outline"
           size="sm"
-          className="h-8 px-2 sm:px-2.5 rounded-lg border-slate-300 bg-white hover:bg-slate-50 font-bold text-xs flex items-center gap-1.5 shrink-0 shadow-2xs transition cursor-pointer"
+          className="h-8 px-1.5 sm:px-2.5 rounded-lg border-slate-300 bg-white hover:bg-slate-50 font-bold text-xs flex items-center gap-1 sm:gap-1.5 shrink-0 shadow-2xs transition cursor-pointer"
           title="언어 변경 / Đổi ngôn ngữ / Change Language"
         >
           {current.flag}
-          <span className="font-bold text-slate-800 tracking-tight text-xs">{current.label}</span>
-          <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
+          <span className="font-bold text-slate-800 tracking-tight text-xs hidden sm:inline">{current.label}</span>
+          <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-400 shrink-0" />
         </Button>
       </DropdownMenuTrigger>
       

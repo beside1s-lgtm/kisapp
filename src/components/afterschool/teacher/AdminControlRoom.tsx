@@ -55,7 +55,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/kisbus/utils';
 import type { DocConfig } from '@/lib/types';
-import { generateCalendarSchedule, calculateRealOperatingWeeksAndDays } from '@/lib/afterschool/schedule';
+import { generateCalendarSchedule, calculateRealOperatingWeeksAndDays, extractHolidayDatesFromEvents } from '@/lib/afterschool/schedule';
 import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
 
 interface AdminControlRoomProps {
@@ -237,9 +237,7 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
 
   const handleSemesterChange = (newSem: string) => {
     const { startDate, endDate, year } = getSemesterDatesFromAcademicCalendar(newSem);
-    const holidayDates = (docConfig?.academicCalendar?.events || DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || [])
-      .filter(e => !e.isSchoolDay || e.type === 'HOLIDAY' || e.type === 'PUBLIC_HOLIDAY')
-      .map(e => e.date);
+    const holidayDates = extractHolidayDatesFromEvents(docConfig?.academicCalendar?.events || DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || []);
     const allowedDays = draftTeacherApply.allowedDays || ['월', '화', '수', '목', '금'];
     const { operatingWeeks } = calculateRealOperatingWeeksAndDays(startDate, endDate, allowedDays, holidayDates);
 
@@ -256,9 +254,7 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
   const handleOperatingDateChange = (field: 'operatingStartDate' | 'operatingEndDate', val: string) => {
     const nextStart = field === 'operatingStartDate' ? val : draftTeacherApply.operatingStartDate;
     const nextEnd = field === 'operatingEndDate' ? val : draftTeacherApply.operatingEndDate;
-    const holidayDates = (docConfig?.academicCalendar?.events || DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || [])
-      .filter(e => !e.isSchoolDay || e.type === 'HOLIDAY' || e.type === 'PUBLIC_HOLIDAY')
-      .map(e => e.date);
+    const holidayDates = extractHolidayDatesFromEvents(docConfig?.academicCalendar?.events || DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || []);
     const allowedDays = draftTeacherApply.allowedDays || ['월', '화', '수', '목', '금'];
     const { operatingWeeks } = calculateRealOperatingWeeksAndDays(nextStart, nextEnd, allowedDays, holidayDates);
 
@@ -276,9 +272,7 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
 
   // 실시간 운영 통계 (휴업일 제외 실제 수업일수 및 요일별 횟수)
   const realtimeOperatingStats = React.useMemo(() => {
-    const holidayDates = (docConfig?.academicCalendar?.events || DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || [])
-      .filter(e => !e.isSchoolDay || e.type === 'HOLIDAY' || e.type === 'PUBLIC_HOLIDAY')
-      .map(e => e.date);
+    const holidayDates = extractHolidayDatesFromEvents(docConfig?.academicCalendar?.events || DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || []);
     const allowedDays = draftTeacherApply.allowedDays || ['월', '화', '수', '목', '금'];
     return calculateRealOperatingWeeksAndDays(
       draftTeacherApply.operatingStartDate || '2026-08-17',

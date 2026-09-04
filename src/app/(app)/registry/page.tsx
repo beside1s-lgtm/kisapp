@@ -1,16 +1,19 @@
 'use client';
 
-import { getRegistryDocuments } from "@/lib/services/documentService";
+import { getRegistryDocuments, getFaceToFaceRegistryDocuments } from "@/lib/services/documentService";
 import { DocumentList } from "@/components/document-list";
 import { useAuth } from "@/hooks/use-auth";
-import { ApprovalDoc } from "@/lib/types";
+import { ApprovalDoc, DocConfig } from "@/lib/types";
 import { useRouter } from "next/navigation";
-import { ListFilter, Loader2, Search, X, ChevronDown, ArrowLeft } from "lucide-react";
+import { ListFilter, Loader2, Search, X, ChevronDown, ArrowLeft, Users } from "lucide-react";
 import { useEffect, useState, useMemo, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { getDoc, doc } from "firebase/firestore";
+import { getDb } from "@/lib/firebase";
+
 
 export default function RegistryPage() {
     const router = useRouter();
@@ -19,6 +22,28 @@ export default function RegistryPage() {
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
     const [hasMore, setHasMore] = useState(false);
+    // 대면결재 문서 상태
+    const [docConfig, setDocConfig] = useState<DocConfig>({});
+    const [faceToFaceDocs, setFaceToFaceDocs] = useState<ApprovalDoc[]>([]);
+    const [faceToFaceLoading, setFaceToFaceLoading] = useState(false);
+    const [faceToFaceLoadingMore, setFaceToFaceLoadingMore] = useState(false);
+    const [faceToFaceHasMore, setFaceToFaceHasMore] = useState(false);
+    const [faceToFaceKeyword, setFaceToFaceKeyword] = useState('');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lastFaceToFaceDocRef = useRef<any>(null);
+
+    // 더 보기 (대면결재)
+    const handleFaceToFaceLoadMore = async () => {
+        if (!lastFaceToFaceDocRef.current || faceToFaceLoadingMore) return;
+        setFaceToFaceLoadingMore(true);
+        const result = await getFaceToFaceRegistryDocuments(lastFaceToFaceDocRef.current);
+        setFaceToFaceDocs(prev => [...prev, ...result.docs]);
+        setFaceToFaceHasMore(result.hasMore);
+        lastFaceToFaceDocRef.current = result.lastVisible;
+        setFaceToFaceLoadingMore(false);
+    };
+
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const lastDocRef = useRef<any>(null);
 
@@ -60,10 +85,29 @@ export default function RegistryPage() {
                 lastDocRef.current = result.lastVisible;
                 setLoading(false);
             });
+
+            // DocConfig 로드 (대면 결재 기능 활성화 여부 확인)
+            getDoc(doc(getDb(), 'settings', 'docConfig')).then(snap => {
+                if (snap.exists()) setDocConfig(snap.data() as DocConfig);
+            });
         } else if (!user || !profile) {
             setLoading(false);
         }
     }, [user, profile]);
+
+    // 대면결재 문서 로드 (docConfig.enableFaceToFaceApproval 켜진 경우)
+    useEffect(() => {
+        if (docConfig.enableFaceToFaceApproval && user?.uid) {
+            setFaceToFaceLoading(true);
+            lastFaceToFaceDocRef.current = null;
+            getFaceToFaceRegistryDocuments().then(result => {
+                setFaceToFaceDocs(result.docs);
+                setFaceToFaceHasMore(result.hasMore);
+                lastFaceToFaceDocRef.current = result.lastVisible;
+                setFaceToFaceLoading(false);
+            });
+        }
+    }, [docConfig.enableFaceToFaceApproval, user?.uid]);
 
     // 더 보기
     const handleLoadMore = async () => {
@@ -75,6 +119,7 @@ export default function RegistryPage() {
         lastDocRef.current = result.lastVisible;
         setLoadingMore(false);
     };
+
 
     // 클라이언트 사이드 필터링
     const filteredDocs = useMemo(() => {
@@ -124,6 +169,7 @@ export default function RegistryPage() {
     }
 
     return (
+        <>
         <div className="p-4 md:p-8 space-y-6">
             {/* 헤더 */}
             <div className="flex items-center gap-3 border-b pb-4">
@@ -294,5 +340,86 @@ export default function RegistryPage() {
                 </p>
             )}
         </div>
+
+        {/* 대면결재문서대장 섹션 */}
+        {docConfig.enableFaceToFaceApproval && (
+            <div className="p-4 md:p-8 space-y-6 border-t-4 border-amber-200 mt-2">
+                {/* 헤더 */}
+                <div className="flex items-center gap-3 border-b pb-4">
+                    <div>
+                        <h1 className="font-headline text-2xl sm:text-3xl font-bold flex items-center gap-2.5 text-amber-900">
+                            <Users className="h-6 w-6 text-amber-600" />
+                            대면결재문서대장
+                        </h1>
+                        <p className="text-muted-foreground mt-0.5 text-xs sm:text-sm">
+                            전자결재 시스템을 거치지 않고 대면으로 결재된 문서의 기록입니다.
+                        </p>
+                    </div>
+                </div>
+
+                {/* 키워드 검색 */}
+                <div className="bg-card border rounded-xl p-4 shadow-sm">
+                    <div className="relative max-w-sm">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input
+                            placeholder="제목 키워드 검색..."
+                            value={faceToFaceKeyword}
+                            onChange={e => setFaceToFaceKeyword(e.target.value)}
+                            className="pl-8 h-9 text-sm"
+                        />
+                    </div>
+                </div>
+
+                {/* 결과 수 */}
+                <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                        <span>대면 결재 문서 <strong className="text-foreground">{faceToFaceDocs.filter(d => !faceToFaceKeyword || d.title.toLowerCase().includes(faceToFaceKeyword.toLowerCase())).length}</strong>건</span>
+                    </p>
+                </div>
+
+                {/* 문서 목록 */}
+                {faceToFaceLoading ? (
+                    <div className="flex justify-center py-10">
+                        <Loader2 className="h-7 w-7 animate-spin text-amber-600" />
+                    </div>
+                ) : (
+                    <DocumentList
+                        documents={faceToFaceDocs.filter(d =>
+                            !faceToFaceKeyword || d.title.toLowerCase().includes(faceToFaceKeyword.toLowerCase())
+                        )}
+                    />
+                )}
+
+                {/* 더 보기 */}
+                {!faceToFaceKeyword && faceToFaceHasMore && (
+                    <div className="flex justify-center pt-2">
+                        <Button
+                            variant="outline"
+                            onClick={handleFaceToFaceLoadMore}
+                            disabled={faceToFaceLoadingMore}
+                            className="gap-2 px-8 border-amber-300 text-amber-800 hover:bg-amber-50"
+                        >
+                            {faceToFaceLoadingMore
+                                ? <><Loader2 className="h-4 w-4 animate-spin" /> 불러오는 중...</>
+                                : <><ChevronDown className="h-4 w-4" /> 더 보기 (30건씩)</>
+                            }
+                        </Button>
+                    </div>
+                )}
+
+                {!faceToFaceHasMore && faceToFaceDocs.length > 0 && !faceToFaceKeyword && (
+                    <p className="text-center text-xs text-muted-foreground py-2">
+                        모든 대면 결재 문서를 불러왔습니다. (총 {faceToFaceDocs.length}건)
+                    </p>
+                )}
+
+                {!faceToFaceLoading && faceToFaceDocs.length === 0 && (
+                    <p className="text-center text-sm text-muted-foreground py-10">
+                        등록된 대면 결재 문서가 없습니다.
+                    </p>
+                )}
+            </div>
+        )}
+        </>
     );
 }

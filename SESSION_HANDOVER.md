@@ -1,37 +1,20 @@
-# KISAPP Development Session Handover
+# SESSION HANDOVER
 
-## 1. Current Status (현재 상태)
-1. **학사일정 공유 팝업 및 전용앱 다운 팝업 보안/프라이버시 노출 차단 (로그인 후 대시보드 진입 시에만 표시)**:
-   - **학사일정 공유 팝업(`AcademicCalendarSyncModal`)**:
-     * 최초 사이트 접속 화면, 로그인 화면(`/login`, `/parents/login`), 루트 리다이렉트(`/`), 약관 페이지(`/privacy`) 등에서는 학교 정보 외부 유출 방지를 위해 팝업 렌더링을 원천 차단.
-     * 로그인이 완료되어 실제 교직원 대시보드(`/inbox`, `/admin/...`, `/teacher/...` 등) 또는 학부모 대시보드(`/parents` 서비스 경로)에 정상 진입했을 때만 팝업을 표시하도록 개선.
-     * 전용앱(PWA Standalone)으로 접속한 경우에도 로그인 전에는 절대 뜨지 않고, 구글 로그인 성공 후 대시보드에 진입했을 때만 정상 노출.
-     * '다시 띄우지 않기' 설정(계정 DB 및 로컬 스토리지 버전 체크) 완벽 유지.
-   - **전용앱 다운 팝업(`PwaInstallPrompt`)**:
-     * 비로그인 상태 및 로그인 전 화면에서는 다운로드 유도 배너를 일절 띄우지 않음.
-     * 로그인이 성공하여 대시보드에 진입한 사용자 중 아직 앱을 설치하지 않은 웹 브라우저 사용자에게만 우측 하단 배너 노출.
-     * 이미 전용앱(Standalone) 모드로 실행 중인 경우에는 중복 다운로드 배너 차단 유지.
-     * '7일간 보지 않기' 및 '다시 보지 않기(영구)' 설정 완벽 유지.
-2. **관리자 페이지 상단 고정 요소 덜컹거림(Jitter) 0.0px 완전 해결**:
-   - 스크롤 전 초기 상태(scrollTop=0)에서 헤더와 탭 영역 사이의 42px 간격을 제거하여 0px 틈으로 완전 밀착.
-   - 스크롤 시 위아래 흔들림 없이 그 자리에 칼같이 딱 고정.
-3. **탑승 학생 관리 탭에서도 버스/요일/경로 필터 상단 고정 지원**:
-   - 버스 설정 탭뿐만 아니라 탑승 학생 관리 탭에서도 버스/요일/경로 필터가 상단에 함께 고정되도록 통합.
+## Current Status
+- 스쿨버스 선생님 페이지(`/teacher/bus`)에 비로그인 게스트 접속 시 하단 네비게이션바 숨김 처리 및 보안 가드 구현 완료.
+- 로그인한 교직원/관리자가 접근 시 하단 네비게이션바 정상 노출 유지.
+- 비로그인 사용자가 주소창 조작 등으로 다른 시스템 내부 페이지(`/teacher/afterschool`, `/inbox` 등) 접근 시 로그인 화면 리다이렉트 및 Access Denied 차단 처리 완료.
+- 학사일정 및 방과후 출석부/수업일수 계산 시 기간형 일정(시작일~종료일) 전체를 휴업일로 정확하게 반영하는 로직 개선 및 검증 완료.
 
----
+## Modified Files
+1. `src/components/layout/mobile-bottom-nav.tsx`: 비로그인 상태(`!user`)이거나 비로그인 스쿨버스 접속 시 컴포넌트 렌더링을 차단(`return null`).
+2. `src/components/layout/main-layout.tsx`: `hideMobileBottomNav` 지원, 비로그인 상태에서 홈 버튼 및 내부 경로 이동 차단, 공개 페이지 외 접근 시 보안 가드 처리.
+3. `src/app/teacher/bus/page.tsx`: 비로그인 여부에 따라 하단 네비게이션바 숨김(`hideMobileBottomNav={!user}`) 설정.
+4. `src/lib/afterschool/schedule.ts`: 방과후 수업일수 및 출석부 생성 시 기간형 학사일정(start~end) 전체를 휴업일로 계산하도록 보강.
+5. `src/lib/services/academicCalendarService.ts`: 다가오는 학사일정 계산 시 종료일 기준(`end.toDate() < todayStart`) 필터링 적용.
 
-## 2. Modified Files (수정된 주요 파일)
-1. `src/components/layout/main-layout.tsx`:
-   - `header` 요소의 높이를 측정하여 CSS 변수로 반영하고, 내부 `main`의 `overflow-x-hidden`을 제거하여 자식 sticky 요소가 스크롤 컨테이너에 정확히 부착되도록 개선.
-2. `src/app/(app)/admin/bus/page.tsx`:
-   - `TabsList`와 버스 설정용 `AdminPageFilter`를 묶어 sticky 래퍼에 배치(오직 `activeTab === 'bus-configuration'`일 때만 필터가 포함되어 상단 고정).
-3. `src/app/(app)/admin/bus/components/bus-configuration-tab.tsx`:
-   - 미편성 목적지 추천 및 목적지 그룹 이동 블록 글씨 크기 1.5배 확대.
-   - 목적지 목록 내 평일/토요일 드롭다운 가로 폭 통일 및 글자 크기 1pt 확대.
-4. `src/app/(app)/admin/bus/components/student-unassigned-panel.tsx`:
-   - 미배정 학생 검색 후 Enter 입력 시 카드 자동 스크롤 기능 구현.
-
----
-
-## 3. Next Steps (다음 작업 목표)
-- 사용자의 명시적 배포 지시("배포해줘") 시 Firebase 호스팅 배포 진행.
+## Verification
+- Puppeteer 브라우저 테스트:
+  - 게스트 상태 `/teacher/bus` 접속 시 하단 네비게이션바 부재(`hasBottomNav: false`) 및 홈/이동 링크 숨김 확인 완료.
+  - 게스트 상태 `/teacher/afterschool`, `/inbox` 강제 접근 시 `/login` 리다이렉트 및 접근 차단 확인 완료.
+  - 교직원 세션 로그인 후 `/teacher/bus` 접속 시 하단 네비게이션바 정상 렌더링 확인 완료.

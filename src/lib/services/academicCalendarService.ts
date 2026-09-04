@@ -187,8 +187,12 @@ export function checkIsSchoolHoliday(
     const day = dateObj.getDay();
     const isWeekend = day === 0 || day === 6; // 0=일, 6=토
 
-    // 학사일정 events 매칭
-    const matchingEvent = (cal.events || []).find(e => e.date === dateStr);
+    // 학사일정 events 매칭 (단일 일자 date 또는 기간형 date ~ endDate)
+    const matchingEvent = (cal.events || []).find(e => {
+        if (!e.date) return false;
+        const eEnd = e.endDate || e.date;
+        return dateStr >= e.date && dateStr <= eEnd;
+    });
 
     if (matchingEvent && (!matchingEvent.isSchoolDay || matchingEvent.type === 'HOLIDAY' || matchingEvent.type === 'PUBLIC_HOLIDAY')) {
         return {

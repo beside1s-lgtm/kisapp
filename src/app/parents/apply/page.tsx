@@ -173,6 +173,7 @@ function ApplyForm() {
   const annualSchoolDays = docConfig?.annualSchoolDays || 190;
   const maxFieldTripDays = Math.floor(annualSchoolDays * 0.1); // 연간 10%
   const maxAbsenceDays = annualSchoolDays - Math.ceil(annualSchoolDays * 2 / 3); // 유급 기준 1/3 결석 한도
+  const enableCumulative = docConfig?.enableCumulativeStats !== false; // 관리자 연간 누계 자동 계산 기능 토글
 
   // 1. 결과보고서인 경우 원본 신청서 데이터 로딩
   useEffect(() => {
@@ -726,20 +727,24 @@ function ApplyForm() {
                   {(errors as any).absenceReason && <p className="text-[11px] text-red-500">{(errors as any).absenceReason.message}</p>}
                 </div>
 
-                {/* 누적 결석 현황 */}
-                {isLoadingLimits ? (
-                  <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-500 text-center">누적 현황 조회 중...</div>
-                ) : (
-                  <div className={`rounded-lg px-3 py-2 text-xs flex justify-between items-center ${isOverAbsenceLimit ? 'bg-red-50 text-red-700' : 'bg-slate-50 text-slate-600'}`}>
-                    <span className="font-medium">{t('parents.apply.accumulated_absence_label') || '올해 누적 결석'}</span>
-                    <span className="font-bold">{accumulatedAbsenceDays}일 + {t('parents.apply.applied_label') || '신청'} {watchAbsenceTotalDays}일 = {accumulatedAbsenceDays + Number(watchAbsenceTotalDays)}일 / 63일</span>
-                  </div>
-                )}
-                {isOverAbsenceLimit && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                    한해 총 결석 63일 초과 시 진급이 불가할 수 있습니다.
-                  </div>
+                {/* 누적 결석 현황 (연간 누계 기능 활성화 시에만 노출) */}
+                {enableCumulative && (
+                  <>
+                    {isLoadingLimits ? (
+                      <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-500 text-center">누적 현황 조회 중...</div>
+                    ) : (
+                      <div className={`rounded-lg px-3 py-2 text-xs flex justify-between items-center ${isOverAbsenceLimit ? 'bg-red-50 text-red-700' : 'bg-slate-50 text-slate-600'}`}>
+                        <span className="font-medium">{t('parents.apply.accumulated_absence_label') || '올해 누적 결석'}</span>
+                        <span className="font-bold">{accumulatedAbsenceDays}일 + {t('parents.apply.applied_label') || '신청'} {watchAbsenceTotalDays}일 = {accumulatedAbsenceDays + Number(watchAbsenceTotalDays)}일 / 63일</span>
+                      </div>
+                    )}
+                    {isOverAbsenceLimit && (
+                      <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                        한해 총 결석 63일 초과 시 진급이 불가할 수 있습니다.
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             ) : currentType === 'field-trip-report' ? (
@@ -909,29 +914,33 @@ function ApplyForm() {
           <div className="hidden sm:block p-3.5 sm:p-6 md:p-[20mm] overflow-x-auto">
             {currentType === 'absence' ? (
               <div className="font-serif text-[10pt] sm:text-[11pt] text-black min-w-[280px]">
-              {/* 누적 결석 경고 알림 */}
-              <div className="bg-slate-50 border border-slate-200 p-2.5 sm:p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4 mb-4 sm:mb-6 print:hidden">
-                <div>
-                  <h5 className="font-bold text-slate-800 text-xs sm:text-sm">연간 누적 결석 현황 (올해)</h5>
-                  <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">병결, 미인정, 기타 결석의 합계 (출석인정 제외)</p>
-                </div>
-                <div className="text-left sm:text-right">
-                  <span className="text-[10px] sm:text-xs text-muted-foreground block">누적 / 한도 (유급)</span>
-                  <span className={`text-xs sm:text-base md:text-sm font-black whitespace-nowrap ${isOverAbsenceLimit ? 'text-destructive' : 'text-slate-700'}`}>
-                    {isLoadingLimits ? '...' : `${accumulatedAbsenceDays}일`}
-                    {` + 신청 ${watchAbsenceTotalDays}일 = 총 ${accumulatedAbsenceDays + Number(watchAbsenceTotalDays)}일`}
-                    {` / 63일`}
-                  </span>
-                </div>
-              </div>
-
-              {isOverAbsenceLimit && (
-                <div className="bg-destructive/10 text-destructive p-3 sm:p-4 rounded-lg text-xs sm:text-sm font-semibold flex items-start gap-2 border border-destructive/20 mb-4 sm:mb-6 print:hidden">
-                  <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-bold">한해 총 결석 일수가 63일을 초과할 경우 교육과정 수료(진급)가 불가할 수 있습니다.</p>
+              {/* 누적 결석 경고 알림 (연간 누계 기능 활성화 시에만 노출) */}
+              {enableCumulative && (
+                <>
+                  <div className="bg-slate-50 border border-slate-200 p-2.5 sm:p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4 mb-4 sm:mb-6 print:hidden">
+                    <div>
+                      <h5 className="font-bold text-slate-800 text-xs sm:text-sm">연간 누적 결석 현황 (올해)</h5>
+                      <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">병결, 미인정, 기타 결석의 합계 (출석인정 제외)</p>
+                    </div>
+                    <div className="text-left sm:text-right">
+                      <span className="text-[10px] sm:text-xs text-muted-foreground block">누적 / 한도 (유급)</span>
+                      <span className={`text-xs sm:text-base md:text-sm font-black whitespace-nowrap ${isOverAbsenceLimit ? 'text-destructive' : 'text-slate-700'}`}>
+                        {isLoadingLimits ? '...' : `${accumulatedAbsenceDays}일`}
+                        {` + 신청 ${watchAbsenceTotalDays}일 = 총 ${accumulatedAbsenceDays + Number(watchAbsenceTotalDays)}일`}
+                        {` / 63일`}
+                      </span>
+                    </div>
                   </div>
-                </div>
+
+                  {isOverAbsenceLimit && (
+                    <div className="bg-destructive/10 text-destructive p-3 sm:p-4 rounded-lg text-xs sm:text-sm font-semibold flex items-start gap-2 border border-destructive/20 mb-4 sm:mb-6 print:hidden">
+                      <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">한해 총 결석 일수가 63일을 초과할 경우 교육과정 수료(진급)가 불가할 수 있습니다.</p>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               <div className="mb-1 text-[8.5pt] sm:text-[9.5pt]">{'<서식 3>'}</div>
@@ -1227,29 +1236,33 @@ function ApplyForm() {
             </div>
           ) : (
             <div className="font-serif text-[10pt] text-black min-w-[280px]">
-              {/* 누적 일수 경고 */}
-              <div className="bg-slate-50 border border-slate-200 p-2.5 sm:p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4 mb-4 sm:mb-6 print:hidden">
-                <div>
-                  <h5 className="font-bold text-slate-800 text-xs sm:text-sm">연간 누적 체험학습 현황 (올해)</h5>
-                  <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">출석인정 개인 교외체험학습 사용 현황</p>
-                </div>
-                <div className="text-left sm:text-right">
-                  <span className="text-[10px] sm:text-xs text-muted-foreground block">누적 / 한도 (연간)</span>
-                  <span className={`text-xs sm:text-base md:text-sm font-black whitespace-nowrap ${isOverFieldTripLimit ? 'text-destructive' : 'text-slate-700'}`}>
-                    {isLoadingLimits ? '...' : `${accumulatedFieldTripDays}일`}
-                    {` + 신청 ${watchFieldTripTotalDays}일 = 총 ${accumulatedFieldTripDays + Number(watchFieldTripTotalDays)}일`}
-                    {` / 20일`}
-                  </span>
-                </div>
-              </div>
-
-              {isOverFieldTripLimit && (
-                <div className="bg-destructive/10 text-destructive p-3 sm:p-4 rounded-lg text-xs sm:text-sm font-semibold flex items-start gap-2 border border-destructive/20 mb-4 sm:mb-6 print:hidden">
-                  <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-bold">연간 교외체험학습 허용 한도(20일)를 초과하여 신청할 수 없습니다.</p>
+              {/* 누적 일수 경고 (연간 누계 기능 활성화 시에만 노출) */}
+              {enableCumulative && (
+                <>
+                  <div className="bg-slate-50 border border-slate-200 p-2.5 sm:p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4 mb-4 sm:mb-6 print:hidden">
+                    <div>
+                      <h5 className="font-bold text-slate-800 text-xs sm:text-sm">연간 누적 체험학습 현황 (올해)</h5>
+                      <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">출석인정 개인 교외체험학습 사용 현황</p>
+                    </div>
+                    <div className="text-left sm:text-right">
+                      <span className="text-[10px] sm:text-xs text-muted-foreground block">누적 / 한도 (연간)</span>
+                      <span className={`text-xs sm:text-base md:text-sm font-black whitespace-nowrap ${isOverFieldTripLimit ? 'text-destructive' : 'text-slate-700'}`}>
+                        {isLoadingLimits ? '...' : `${accumulatedFieldTripDays}일`}
+                        {` + 신청 ${watchFieldTripTotalDays}일 = 총 ${accumulatedFieldTripDays + Number(watchFieldTripTotalDays)}일`}
+                        {` / 20일`}
+                      </span>
+                    </div>
                   </div>
-                </div>
+
+                  {isOverFieldTripLimit && (
+                    <div className="bg-destructive/10 text-destructive p-3 sm:p-4 rounded-lg text-xs sm:text-sm font-semibold flex items-start gap-2 border border-destructive/20 mb-4 sm:mb-6 print:hidden">
+                      <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">연간 교외체험학습 허용 한도(20일)를 초과하여 신청할 수 없습니다.</p>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               <div className="mb-1 text-[8.5pt] sm:text-[9.5pt]">{'<서식 1>'}</div>
@@ -1297,9 +1310,9 @@ function ApplyForm() {
                       />
                     </td>
                   </tr>
-                  {/* 2. 본교 출석인정기간 (rowSpan 3) / 신청 기간 / 연간 누적 일수 / 불인정 기간 안내 및 표 */}
+                  {/* 2. 본교 출석인정기간 (rowSpan 3 또는 2) / 신청 기간 / 연간 누적 일수 / 불인정 기간 안내 및 표 */}
                   <tr>
-                    <th rowSpan={3} className="border border-black bg-slate-50/50 py-2.5 text-red-600 font-bold text-[8pt] leading-snug break-keep" style={{ wordBreak: 'keep-all' }}>
+                    <th rowSpan={enableCumulative ? 3 : 2} className="border border-black bg-slate-50/50 py-2.5 text-red-600 font-bold text-[8pt] leading-snug break-keep" style={{ wordBreak: 'keep-all' }}>
                       본교 출석인정기간<br/>(휴일 제외, 학기당 7일,<br/>연간 14일)
                     </th>
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-[9pt] break-keep whitespace-nowrap" style={{ wordBreak: 'keep-all' }}>신청 기간</th>
@@ -1322,12 +1335,14 @@ function ApplyForm() {
                       )}
                     </td>
                   </tr>
-                  <tr>
-                    <th className="border border-black bg-slate-50/50 py-2.5 font-bold leading-tight text-[9pt] break-keep" style={{ wordBreak: 'keep-all' }}>연간 체험학습<br/>누적 일수</th>
-                    <td colSpan={4} className="border border-black py-2.5 text-left px-3 text-xs break-keep" style={{ wordBreak: 'keep-all' }}>
-                      기존 사용 일수 및 금번 신청 일수 포함 총 ( {accumulatedFieldTripDays} + {watchFieldTripTotalDays} = {accumulatedFieldTripDays + Number(watchFieldTripTotalDays)} ) 일
-                    </td>
-                  </tr>
+                  {enableCumulative && (
+                    <tr>
+                      <th className="border border-black bg-slate-50/50 py-2.5 font-bold leading-tight text-[9pt] break-keep" style={{ wordBreak: 'keep-all' }}>연간 체험학습<br/>누적 일수</th>
+                      <td colSpan={4} className="border border-black py-2.5 text-left px-3 text-xs break-keep" style={{ wordBreak: 'keep-all' }}>
+                        기존 사용 일수 및 금번 신청 일수 포함 총 ( {accumulatedFieldTripDays} + {watchFieldTripTotalDays} = {accumulatedFieldTripDays + Number(watchFieldTripTotalDays)} ) 일
+                      </td>
+                    </tr>
+                  )}
                   <tr>
                     <td colSpan={5} className="border border-black p-2 bg-white text-left align-middle font-sans">
                       <div className="text-[7.5pt] font-bold text-gray-800 mb-1 flex items-center justify-between">

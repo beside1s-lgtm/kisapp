@@ -267,6 +267,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [toast]); 
 
   useEffect(() => {
+    // 개발 모드에서 세션 스토리지에 bypass 역할이 저장되어 있다면 자동 복원
+    if (process.env.NODE_ENV === 'development') {
+      try {
+        const savedBypass = sessionStorage.getItem('dev_bypass_role') as 'admin' | 'parent' | null;
+        if (savedBypass) {
+          bypassLogin(savedBypass);
+          return;
+        }
+      } catch (e) {}
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       // 개발 테스트 우회 세션 중이면 Firebase 상태 변화를 무시한다
       if (isDevBypassRef.current) return;
@@ -360,6 +371,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     isDevBypassRef.current = false; // bypass 플래그 초기화
+    try {
+      sessionStorage.removeItem('dev_bypass_role');
+    } catch (e) {}
     if (user?.email) {
       try {
         const mfaKey = `mfa_verified_${user.email.trim().toLowerCase()}`;
@@ -379,6 +393,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // 플래그를 먼저 세워서 onAuthStateChanged가 상태를 덮어쓰지 않게 방지
     isDevBypassRef.current = true;
+    try {
+      sessionStorage.setItem('dev_bypass_role', role);
+    } catch (e) {}
 
     // 테스트용 기본 서명 캔버스 dataURL
     const dummySignature = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAAAyCAYAAACAnNXFAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAA0SURBVHhe7cExAQAAAMKg9U9tDC8gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADA3DVAAAYs42c0AAAAASUVORK5CYII=';

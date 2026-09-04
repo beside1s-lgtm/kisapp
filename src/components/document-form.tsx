@@ -93,6 +93,11 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
   const [circularQuery, setCircularQuery] = useState('');
   const attachmentInputRef = useRef<HTMLInputElement>(null);
 
+  // 대면 결재 관련 상태
+  const [faceToFaceDocNo, setFaceToFaceDocNo] = useState('');
+  const [isFaceToFacePending, startFaceToFaceTransition] = useTransition();
+
+
   // 프리셋 관련 상태
   const [presets, setPresets] = useState<any[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
@@ -1122,6 +1127,93 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
      });
   };
 
+  const handleFaceToFaceSubmit = (data: FormData) => {
+     if (!user || !profile) {
+         toast({ variant: "destructive", title: "권한 오류", description: "로그인이 필요합니다." });
+         return;
+     }
+     if (!faceToFaceDocNo.trim()) {
+         toast({ variant: "destructive", title: "문서 번호 필요", description: "대면 결재 시 문서 번호를 직접 입력해야 합니다." });
+         return;
+     }
+
+     startFaceToFaceTransition(async () => {
+         try {
+             if (!user || !profile) return;
+
+             const activeApprovers = data.approvers.filter(a => a.active && a.name && a.name.trim() !== '');
+
+             const payload: any = {
+                 title: data.title,
+                 content: data.content,
+                 docType: data.docType,
+                 publishStatus: data.publishStatus,
+                 attachments: data.attachments.map(a => ({
+                     name: a.name || '',
+                     size: a.size || 0,
+                     data: a.data || ''
+                 })),
+                 circulars: data.circulars.map(c => ({
+                     name: c.name || '',
+                     email: c.email || '',
+                     role: c.role || ''
+                 })),
+                 category: category || 'draft',
+                 approvers: activeApprovers.map(a => {
+                     let resolvedEmail = (a.email || '').trim();
+                     if (!resolvedEmail && a.name) {
+                         const matchedUser = users.find(u => u.name?.trim() === a.name?.trim());
+                         if (matchedUser?.email) resolvedEmail = matchedUser.email.trim();
+                     }
+                     return {
+                         name: a.name.trim(),
+                         email: resolvedEmail,
+                         role: a.role,
+                         type: a.type,
+                         status: 'approved', // 대면 결재이므로 모두 승인 처리
+                     };
+                 }),
+                 receiverInfo: data.docType === 'external' ? { name: data.receiverName || '', email: data.receiverEmail || '' } : null,
+                 headerImage: (docConfig as any).headerImage || '',
+                 footerInfo: {
+                     address: docConfig.address || '',
+                     phone: docConfig.phone || '',
+                     fax: docConfig.fax || '',
+                     email: docConfig.email || '',
+                     homepage: docConfig.homepage || '',
+                 },
+                 approverEmails: activeApprovers.map(a => a.email?.trim().toLowerCase()).filter(Boolean),
+                 circularEmails: data.circulars.map(c => c.email?.trim().toLowerCase()).filter(Boolean),
+                 // 대면 결재 전용 필드
+                 isFaceToFace: true,
+                 faceToFaceDocNo: faceToFaceDocNo.trim(),
+                 docNo: faceToFaceDocNo.trim(),
+                 requesterId: user.uid,
+                 requesterName: profile.name,
+                 requesterEmail: profile.email,
+                 requesterRole: profile.role,
+                 requesterSignature: profile.signature || '',
+                 currentStep: activeApprovers.length > 0 ? activeApprovers.length - 1 : 0,
+                 status: 'approved',
+                 createdAt: serverTimestamp(),
+                 completedAt: serverTimestamp(),
+             };
+
+             const newDocRef = doc(collection(getDb(), 'approvals'));
+             await setDoc(newDocRef, payload);
+
+             toast({ title: "대면 결재 완료", description: `문서 번호 [${faceToFaceDocNo.trim()}]로 대면결재문서대장에 등록되었습니다.` });
+             router.push('/registry');
+             router.refresh();
+         } catch (error: any) {
+             console.error("FaceToFace Submit Error:", error);
+             toast({ variant: "destructive", title: "대면 결재 실패", description: error.message });
+         }
+     });
+  };
+
+
+
   return (
     <>
       <Form {...form}>
@@ -1460,18 +1552,42 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                     placeholder="공람자 검색..."
                 />
                 </div>
-                <div className="flex flex-wrap gap-2 min-h-[40px]">
-                    {circularFields.map((field, i) => (
-                        <div key={field.id} className="bg-muted p-2 rounded-md flex gap-2 items-center text-sm font-medium">
-                            <span>{field.name} ({field.role})</span>
-                            <button type="button" onClick={() => removeCircular(i)}>
-                                <X className="h-4 w-4 text-muted-foreground hover:text-foreground"/>
-                            </button>
-                        </div>
-                    ))}
+                <div className="flex flex-wrap gap-2 min-h-[36px] items-center p-2 rounded-lg bg-slate-50/60 border border-dashed border-slate-200">
+                    {circularFields.length === 0 ? (
+                        <span className="text-xs text-muted-foreground">지정된 공람자가 없습니다. (필요 시 검색하여 추가)</span>
+                    ) : (
+                        circularFields.map((field, i) => (
+                            <div key={field.id} className="bg-white border shadow-xs px-2.5 py-1 rounded-md flex gap-2 items-center text-xs font-semibold">
+                                <span>{field.name} ({field.role})</span>
+                                <button type="button" onClick={() => removeCircular(i)} className="hover:text-destructive">
+                                    <X className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive"/>
+                                </button>
+                            </div>
+                        ))
+                    )}
                 </div>
             </CardContent>
             </Card>
+
+            {/* 대면 결재 활성화 시 문서 번호 직접 입력 */}
+            {docConfig.enableFaceToFaceApproval && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-amber-700 shrink-0" />
+                  <Label htmlFor="faceToFaceDocNo" className="font-bold text-amber-900 text-sm cursor-pointer">
+                    문서 번호
+                  </Label>
+                  <span className="text-xs text-amber-700 font-medium">(대면 결재 시 등록대장 번호를 직접 입력)</span>
+                </div>
+                <Input
+                  id="faceToFaceDocNo"
+                  value={faceToFaceDocNo}
+                  onChange={(e) => setFaceToFaceDocNo(e.target.value)}
+                  placeholder="예: 교무-2026-001"
+                  className="h-10 text-sm font-semibold border-amber-300 bg-white focus-visible:ring-amber-400"
+                />
+              </div>
+            )}
 
             <div className="space-y-4">
                 <FormField
@@ -1651,9 +1767,35 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
             </CardContent>
         </Card>
 
-        <Button type="submit" disabled={isPending || isUploadingFiles} className="w-full h-12 text-lg font-bold">
-            {isPending || isUploadingFiles ? <Loader2 className="animate-spin" /> : (isEditMode ? '수정 후 재상신' : '결재 상신')}
-        </Button>
+        {/* 하단 버튼 영역 */}
+        <div className={`grid gap-3 ${docConfig.enableFaceToFaceApproval ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          <Button
+            type="submit"
+            disabled={isPending || isUploadingFiles || isFaceToFacePending}
+            className="h-12 text-base font-bold"
+          >
+            {isPending || isUploadingFiles
+              ? <Loader2 className="animate-spin" />
+              : (isEditMode ? '수정 후 재상신' : '결재 상신')}
+          </Button>
+
+          {docConfig.enableFaceToFaceApproval && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isPending || isUploadingFiles || isFaceToFacePending}
+              onClick={form.handleSubmit(
+                (data) => handleFaceToFaceSubmit(data),
+                onInvalid
+              )}
+              className="h-12 text-base font-bold border-amber-400 text-amber-800 bg-amber-50 hover:bg-amber-100 hover:text-amber-900"
+            >
+              {isFaceToFacePending
+                ? <Loader2 className="animate-spin" />
+                : '대면 결재'}
+            </Button>
+          )}
+        </div>
       </form>
     </Form>
 

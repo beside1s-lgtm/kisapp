@@ -4,30 +4,13 @@
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { Loader2, Plus, Inbox, Send, FileClock, ListFilter, Undo2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { AppHeader } from '@/components/layout/header';
 import AppSidebar from '@/components/layout/sidebar';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-
 import { SidebarProvider } from '@/components/layout/sidebar-context';
-
-const MobileNavItem = ({ href, label, icon }: { href: string, label: string, icon: React.ReactNode}) => {
-  const pathname = usePathname();
-  const isActive = pathname === href;
-
-  return (
-    <Link href={href} className={cn(
-      "flex flex-col items-center justify-center gap-1 w-full h-full rounded-lg text-xs",
-      isActive ? "text-primary font-bold" : "text-muted-foreground"
-    )}>
-      {icon}
-      <span>{label}</span>
-    </Link>
-  )
-}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, profile, profileLoading, isParent } = useAuth();
@@ -59,10 +42,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider>
       <div className="h-screen max-h-screen overflow-hidden flex flex-col bg-background text-foreground font-body w-full max-w-full">
-        <div className="print:hidden w-full max-w-full shrink-0 z-50">
+        <div className="print:hidden w-full max-w-full shrink-0 z-50 hidden sm:block">
           <AppHeader />
         </div>
-        <div className="flex-1 min-h-0 flex print:block pt-14 sm:pt-16 print:pt-0 min-w-0 w-full max-w-full overflow-hidden">
+        <div className="flex-1 min-h-0 flex print:block pt-0 sm:pt-16 print:pt-0 min-w-0 w-full max-w-full overflow-hidden">
           <div className="print:hidden shrink-0 h-full">
             <AppSidebar />
           </div>
@@ -79,22 +62,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </footer>
           </main>
-        </div>
-
-        {/* Mobile Bottom Navigation */}
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 h-20 bg-card border-t z-40 grid grid-cols-5 items-center justify-around px-2 print:hidden">
-            <MobileNavItem href="/inbox" label="미결재함" icon={<Inbox size={20} />} />
-            <MobileNavItem href="/sent" label="상신함" icon={<Send size={20} />} />
-            <div className="flex justify-center">
-              <Button asChild className="h-16 w-16 rounded-full shadow-lg -mt-8 bg-primary hover:bg-primary/90" size="icon">
-                <Link href="/new">
-                  <Plus className="h-8 w-8" />
-                  <span className="sr-only">새 결재문서 작성</span>
-                </Link>
-              </Button>
-            </div>
-            <MobileNavItem href="/recalled" label="회수함" icon={<Undo2 size={20} />} />
-            <MobileNavItem href="/registry" label="문서대장" icon={<ListFilter size={20} />} />
         </div>
       </div>
     </SidebarProvider>

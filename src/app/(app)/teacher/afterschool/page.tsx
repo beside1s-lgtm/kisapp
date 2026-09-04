@@ -242,16 +242,16 @@ function AfterschoolConsole() {
     <MainLayout
       title={
         <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-nowrap">
-          {/* 1. 강의 선택 드롭다운 버튼 (요청 1: 선생님 페이지 앞으로 이동!) */}
+          {/* 1. 강의 선택 드롭다운 버튼 */}
           {myCourses.length > 0 && (
             <Select
               value={selectedCourseId}
               onValueChange={(val) => {
                 setSelectedCourseId(val);
-                setActiveSubTab('course'); // 드롭다운 선택 시 해당 강좌 카드로 이동!
+                setActiveSubTab('course');
               }}
             >
-              <SelectTrigger className="h-7 text-xs bg-white border-slate-300 font-bold px-2 min-w-[105px] max-w-[160px] shrink-0 rounded-lg shadow-2xs text-slate-800">
+              <SelectTrigger className="h-7 text-xs bg-white border-slate-300 font-bold px-2 min-w-[90px] max-w-[130px] sm:max-w-[160px] shrink-0 rounded-lg shadow-2xs text-slate-800">
                 <SelectValue placeholder="강좌 선택" />
               </SelectTrigger>
               <SelectContent>
@@ -279,31 +279,33 @@ function AfterschoolConsole() {
             </Select>
           )}
 
-          {/* 2. 선생님 페이지 타이틀 */}
-          <span className="text-sm sm:text-base font-bold font-headline text-slate-800 shrink-0">
+          {/* 2. 선생님 페이지 타이틀 (모바일에서는 숨겨 가로 공간 확보) */}
+          <span className="text-sm sm:text-base font-bold font-headline text-slate-800 shrink-0 hidden sm:inline">
             {t('page.title.teacher') || '선생님 페이지'}
           </span>
 
-          {/* 3. 출석부/강사출근부/증빙 문서 관리 드롭다운 버튼 (요청 2: 최상단 헤더 선생님 페이지 오른쪽 자리로 이동!) */}
-          <Select value={activeSubTab} onValueChange={(val: any) => setActiveSubTab(val)}>
-            <SelectTrigger className="h-7 text-xs bg-indigo-50 text-indigo-900 border-indigo-300 font-extrabold px-2.5 min-w-[100px] max-w-[140px] shrink-0 rounded-lg shadow-2xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="studentSheet" className="text-xs font-bold">
-                📋 출석부
-              </SelectItem>
-              <SelectItem value="teacherAttendance" className="text-xs font-bold">
-                📝 강사출근부
-              </SelectItem>
-              <SelectItem value="batchApproval" className="text-xs font-bold">
-                📦 증빙 문서 관리
-              </SelectItem>
-              <SelectItem value="course" className="text-xs font-bold text-indigo-700">
-                📖 강좌 관리 & 수업계획
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          {/* 3. 데스크톱 전용 기능 선택 드롭다운 (모바일에서는 아래 4분할 균등 버튼이 담당하므로 숨김) */}
+          <div className="hidden sm:flex shrink-0">
+            <Select value={activeSubTab} onValueChange={(val: any) => setActiveSubTab(val)}>
+              <SelectTrigger className="h-7 text-xs bg-indigo-50 text-indigo-900 border-indigo-300 font-extrabold px-2.5 min-w-[100px] max-w-[140px] shrink-0 rounded-lg shadow-2xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="studentSheet" className="text-xs font-bold">
+                  출석부
+                </SelectItem>
+                <SelectItem value="teacherAttendance" className="text-xs font-bold">
+                  강사출근부
+                </SelectItem>
+                <SelectItem value="batchApproval" className="text-xs font-bold">
+                  증빙 문서 관리
+                </SelectItem>
+                <SelectItem value="course" className="text-xs font-bold text-indigo-700">
+                  강좌 관리 & 수업계획
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       }
       rightActions={
@@ -331,34 +333,34 @@ function AfterschoolConsole() {
         </button>
       }
       titleActions={
-        <div className="flex sm:hidden items-center w-full grid grid-cols-4 bg-slate-100/90 p-0.5 rounded-lg border border-slate-200 gap-0.5 text-[10.5px] font-bold text-center">
+        <div className="grid sm:hidden grid-cols-4 w-full bg-slate-100/90 p-0.5 rounded-lg border border-slate-200 gap-1 text-[11px] font-bold text-center">
           <button
             type="button"
             onClick={() => setActiveSubTab('studentSheet')}
-            className={cn("py-1 rounded-md transition", activeSubTab === 'studentSheet' ? "bg-white text-indigo-600 shadow-2xs" : "text-slate-600")}
+            className={cn("py-1.5 rounded-md transition text-center", activeSubTab === 'studentSheet' ? "bg-white text-indigo-600 shadow-2xs font-extrabold" : "text-slate-600 hover:text-slate-900")}
           >
-            📋 출석
+            출석
           </button>
           <button
             type="button"
             onClick={() => setActiveSubTab('teacherAttendance')}
-            className={cn("py-1 rounded-md transition", activeSubTab === 'teacherAttendance' ? "bg-white text-indigo-600 shadow-2xs" : "text-slate-600")}
+            className={cn("py-1.5 rounded-md transition text-center", activeSubTab === 'teacherAttendance' ? "bg-white text-indigo-600 shadow-2xs font-extrabold" : "text-slate-600 hover:text-slate-900")}
           >
-            📝 출근
+            출근
           </button>
           <button
             type="button"
             onClick={() => setActiveSubTab('batchApproval')}
-            className={cn("py-1 rounded-md transition", activeSubTab === 'batchApproval' ? "bg-white text-indigo-600 shadow-2xs" : "text-slate-600")}
+            className={cn("py-1.5 rounded-md transition text-center", activeSubTab === 'batchApproval' ? "bg-white text-indigo-600 shadow-2xs font-extrabold" : "text-slate-600 hover:text-slate-900")}
           >
-            📦 증빙
+            증빙
           </button>
           <button
             type="button"
             onClick={() => setActiveSubTab('course')}
-            className={cn("py-1 rounded-md transition", activeSubTab === 'course' ? "bg-white text-indigo-600 shadow-2xs" : "text-slate-600")}
+            className={cn("py-1.5 rounded-md transition text-center", activeSubTab === 'course' ? "bg-white text-indigo-600 shadow-2xs font-extrabold" : "text-slate-600 hover:text-slate-900")}
           >
-            📖 강좌
+            강좌
           </button>
         </div>
       }
@@ -369,7 +371,7 @@ function AfterschoolConsole() {
           <div className="space-y-2">
             <div className="flex items-center justify-between bg-indigo-50/70 border border-indigo-200/80 px-3.5 py-2 rounded-xl text-xs text-indigo-900">
               <span className="font-bold flex items-center gap-1.5">
-                📖 강좌 관리 & 수업계획 카드
+                강좌 관리 & 수업계획 카드
               </span>
               <Button
                 size="sm"
@@ -377,7 +379,7 @@ function AfterschoolConsole() {
                 onClick={() => setActiveSubTab('studentSheet')}
                 className="h-6 px-2.5 text-xs bg-white text-indigo-700 font-bold border-indigo-300 hover:bg-indigo-50 cursor-pointer shadow-2xs"
               >
-                📋 출석부로 이동
+                출석부로 이동
               </Button>
             </div>
             <CourseManagement

@@ -8,7 +8,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { downloadClassroomTemplateExcel, parseClassroomExcel, downloadCourseTemplateExcel, parseCourseExcel } from '@/lib/afterschool/excel';
 import { defaultTeacherApplySettings, getTeacherApplySettings, onTeacherApplySettingsUpdate, saveTeacherApplySettings, updateAfterschoolCourse, deleteAfterschoolCourse, saveAfterschoolCoursesBatch, addAfterschoolClassroom, deleteAfterschoolClassroom, saveAfterschoolClassroomsBatch, onMaterialRequestsUpdate, onExpenseProofsUpdate, sendSubmissionReminder, purgeAfterschoolOperationalData, onAttendanceRecordsUpdate, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord, onDocConfigUpdate, deleteAfterschoolApprovalDoc } from '@/lib/services/settingsService';
-import { countOperatingDays, getCourseSessionsPerClass, generateCalendarSchedule, generateCalendarScheduleByDateRange, ScheduleDay } from '@/lib/afterschool/schedule';
+import { countOperatingDays, getCourseSessionsPerClass, generateCalendarSchedule, generateCalendarScheduleByDateRange, ScheduleDay, extractHolidayDatesFromEvents } from '@/lib/afterschool/schedule';
 import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
 import type { DocConfig } from '@/lib/types';
 import { StudentManagement } from './StudentManagement';
@@ -81,9 +81,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   }, []);
 
   const holidayDates = React.useMemo(() => {
-    return (docConfig?.academicCalendar?.events || DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || [])
-      .filter(e => !e.isSchoolDay || e.type === 'HOLIDAY' || e.type === 'PUBLIC_HOLIDAY')
-      .map(e => e.date);
+    return extractHolidayDatesFromEvents(docConfig?.academicCalendar?.events || DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || []);
   }, [docConfig]);
 
   // 서류 검토 팝업 모달 상태

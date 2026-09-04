@@ -7,17 +7,61 @@ export interface ScheduleDay {
   sessionNos: number[];    // [1, 2]
 }
 
+/**
+ * 학사일정 events 목록에서 기간형(date ~ endDate) 및 단일 일자의 공휴일/휴업일 날짜(YYYY-MM-DD)를 완벽 전개하여 추출
+ */
+export function extractHolidayDatesFromEvents(events: Array<any> = []): string[] {
+  const holidaySet = new Set<string>();
+
+  (events || []).forEach(ev => {
+    if (!ev) return;
+    const isHoliday = !ev.isSchoolDay || ev.type === 'HOLIDAY' || ev.type === 'PUBLIC_HOLIDAY';
+    if (!isHoliday) return;
+
+    const startStr = ev.date;
+    const endStr = ev.endDate || ev.date;
+
+    if (!startStr) return;
+
+    if (!endStr || startStr === endStr) {
+      holidaySet.add(startStr);
+      return;
+    }
+
+    let cur = new Date(startStr.replace(' ', 'T'));
+    const end = new Date(endStr.replace(' ', 'T'));
+    if (isNaN(cur.getTime()) || isNaN(end.getTime())) {
+      holidaySet.add(startStr);
+      if (endStr) holidaySet.add(endStr);
+      return;
+    }
+
+    end.setHours(23, 59, 59, 999);
+    while (cur <= end) {
+      const y = cur.getFullYear();
+      const m = String(cur.getMonth() + 1).padStart(2, '0');
+      const d = String(cur.getDate()).padStart(2, '0');
+      holidaySet.add(`${y}-${m}-${d}`);
+      cur.setDate(cur.getDate() + 1);
+    }
+  });
+
+  return Array.from(holidaySet).sort();
+}
+
 export function generateCalendarSchedule(
   startDateStr: string = '2026-03-30',
   operatingWeeks: number = 10,
   classDays: string[] = ['월'],
-  sessionsPerClass: number = 2
+  sessionsPerClass: number = 2,
+  holidayDates?: string[] | Set<string>
 ): ScheduleDay[] {
   const dayNameMap: { [key: number]: string } = {
     0: '일', 1: '월', 2: '화', 3: '수', 4: '목', 5: '금', 6: '토'
   };
 
   const normalizedDays = (classDays && classDays.length > 0) ? classDays : ['월'];
+  const holidaySet = holidayDates instanceof Set ? holidayDates : new Set(holidayDates || []);
   const schedule: ScheduleDay[] = [];
 
   let start = new Date(startDateStr.replace(' ', 'T'));
@@ -36,11 +80,12 @@ export function generateCalendarSchedule(
 
   while (schedule.length < targetTotalDays && count < maxDaysToSearch) {
     const dayOfWeek = dayNameMap[current.getDay()];
-    if (normalizedDays.includes(dayOfWeek)) {
-      const month = String(current.getMonth() + 1).padStart(2, '0');
-      const date = String(current.getDate()).padStart(2, '0');
+    const month = String(current.getMonth() + 1).padStart(2, '0');
+    const date = String(current.getDate()).padStart(2, '0');
+    const fullDate = `${current.getFullYear()}-${month}-${date}`;
+
+    if (normalizedDays.includes(dayOfWeek) && !holidaySet.has(fullDate)) {
       const dateStr = `${month}/${date}(${dayOfWeek})`;
-      const fullDate = `${current.getFullYear()}-${month}-${date}`;
 
       const sessionNos: number[] = [];
       for (let s = 0; s < sessionsPerClass; s++) {

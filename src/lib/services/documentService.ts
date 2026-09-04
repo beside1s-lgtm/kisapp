@@ -354,7 +354,8 @@ export async function getRegistryDocuments(lastDoc?: DocumentSnapshot) {
   try {
     const snapshot = await getDocs(q);
     const docs = serializeDocs(snapshot.docs, 'completedAt');
-    const filtered = docs.filter((d: ApprovalDoc) => d.docType !== 'parent');
+    // 대면 결재 문서 및 parent 문서 제외 (대면 결재는 별도 대장으로 관리)
+    const filtered = docs.filter((d: ApprovalDoc) => d.docType !== 'parent' && !d.isFaceToFace);
     const lastVisible = snapshot.docs[snapshot.docs.length - 1] ?? null;
     const hasMore = snapshot.docs.length === REGISTRY_PAGE_SIZE;
     return { docs: filtered, lastVisible, hasMore };
@@ -363,6 +364,29 @@ export async function getRegistryDocuments(lastDoc?: DocumentSnapshot) {
     return { docs: [], lastVisible: null, hasMore: false };
   }
 }
+
+export async function getFaceToFaceRegistryDocuments(lastDoc?: DocumentSnapshot) {
+  const constraints: any[] = [
+    where('status', '==', 'approved'),
+    where('isFaceToFace', '==', true),
+    orderBy('completedAt', 'desc'),
+    limit(REGISTRY_PAGE_SIZE),
+  ];
+  if (lastDoc) constraints.push(startAfter(lastDoc));
+
+  const q = query(getApprovalsCol(), ...constraints);
+  try {
+    const snapshot = await getDocs(q);
+    const docs = serializeDocs(snapshot.docs, 'completedAt');
+    const lastVisible = snapshot.docs[snapshot.docs.length - 1] ?? null;
+    const hasMore = snapshot.docs.length === REGISTRY_PAGE_SIZE;
+    return { docs, lastVisible, hasMore };
+  } catch (error) {
+    console.error('[DocService] getFaceToFaceRegistryDocuments Error:', error);
+    return { docs: [], lastVisible: null, hasMore: false };
+  }
+}
+
 
 export async function getAttendanceDocuments(
   userEmail: string, 
@@ -816,7 +840,7 @@ export async function updateDocument(docId: string, payload: ApprovalDocPayload,
   }
 }
 
-export async function approveDocument(docId: string, userProfile: UserProfile, updatedParentData?: any) {
+export async function approveDocument(docId: string, userProfile: UserProfile, updatedParentData?: any, approvalDateOverride?: string) {
   const docRef = doc(getApprovalsCol(), docId);
   try {
     let emailInfo: {
@@ -848,12 +872,16 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
 
       if (!isAuthorized) throw new Error("권한이 없습니다.");
 
+      const approvedAtString = approvalDateOverride 
+        ? new Date(approvalDateOverride.includes('T') ? approvalDateOverride : `${approvalDateOverride}T09:00:00`).toISOString()
+        : new Date().toISOString();
+
       const updatedApprovers = [...data.approvers];
       updatedApprovers[step] = {
         ...updatedApprovers[step],
         status: 'approved',
         signature: userProfile.signature || '',
-        approvedAt: new Date().toISOString(),
+        approvedAt: approvedAtString,
         approverName: userProfile.name,
       };
 
@@ -907,7 +935,7 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
         approvers: updatedApprovers,
         currentStep: isFinal ? step : step + 1,
         status: isFinal ? 'approved' : 'pending',
-        completedAt: isFinal ? serverTimestamp() : null,
+        completedAt: isFinal ? (approvalDateOverride ? approvedAtString : serverTimestamp()) : null,
         ...(isFinal ? { docNo: finalDocNoStr } : {}),
       };
 

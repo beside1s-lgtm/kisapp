@@ -246,8 +246,8 @@ export default function ParentsDashboard() {
         </div>
       )}
 
-      {/* 교외체험학습 및 출석 현황 현황판 */}
-      {profile && (
+      {/* 교외체험학습 및 출석 현황 현황판 (연간 누계 자동 계산 기능 활성화 시에만 노출) */}
+      {profile && (config?.enableCumulativeStats !== false) && (
         <Card className="border border-slate-200/60 shadow-xs sm:shadow-sm bg-slate-50/50 w-full min-w-0 overflow-hidden">
           <CardHeader className="p-3.5 sm:p-6 pb-2 sm:pb-3">
             <CardTitle className="text-base sm:text-lg font-bold flex items-center gap-2 flex-wrap">

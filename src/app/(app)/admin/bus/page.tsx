@@ -377,6 +377,7 @@ const AdminPageContent: React.FC<{
                             selectedRouteType={selectedRouteType}
                             selectedBusId={selectedBusId}
                             students={students}
+                            semesterMode={semesterMode}
                         />
                     </TabsContent>
 
@@ -461,7 +462,10 @@ const AdminSettingsDialogContent: React.FC<{
         });
     }, []);
 
-    // Load global settings
+    const [enableCumulativeStats, setEnableCumulativeStats] = useState<boolean>(true);
+    const [statsToggleLoading, setStatsToggleLoading] = useState(false);
+
+    // Load global settings & docConfig
     useEffect(() => {
         const loadSettings = async () => {
             try {
@@ -469,12 +473,37 @@ const AdminSettingsDialogContent: React.FC<{
                 if (settings?.contactPhone) {
                     setContactPhone(settings.contactPhone);
                 }
+                const cfg = await import('@/lib/services/settingsService').then(m => m.getDocConfig());
+                if (cfg && typeof cfg.enableCumulativeStats === 'boolean') {
+                    setEnableCumulativeStats(cfg.enableCumulativeStats);
+                } else {
+                    setEnableCumulativeStats(true); // 기본값 true
+                }
             } catch (e) {
                 console.error("Error loading settings:", e);
             }
         };
         loadSettings();
     }, []);
+
+    const handleToggleCumulativeStats = async (checked: boolean) => {
+        setStatsToggleLoading(true);
+        try {
+            const { saveDocConfig } = await import('@/lib/services/settingsService');
+            await saveDocConfig({ enableCumulativeStats: checked });
+            setEnableCumulativeStats(checked);
+            toast({
+                title: "설정 변경 완료",
+                description: checked 
+                    ? "연간 누계 자동 계산 기능이 켜졌습니다." 
+                    : "연간 누계 자동 계산 기능이 꺼졌습니다 (누적 일수 숨김 처리)."
+            });
+        } catch (e) {
+            toast({ title: "설정 저장 실패", description: "설정 저장 중 오류가 발생했습니다.", variant: "destructive" });
+        } finally {
+            setStatsToggleLoading(false);
+        }
+    };
 
     const handleSaveSettings = async () => {
         setSettingsLoading(true);
@@ -719,6 +748,29 @@ const AdminSettingsDialogContent: React.FC<{
                                 전송
                             </Button>
                         </div>
+                    </div>
+
+                    {/* 연간 누계 자동 계산 기능 토글 */}
+                    <div className="flex items-center justify-between bg-slate-50/50 p-4 rounded-xl border border-slate-100 gap-4">
+                        <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                                <Label className="text-sm font-bold text-slate-800 cursor-pointer" htmlFor="cumulative-stats-toggle">
+                                    연간 누계 자동 계산 기능
+                                </Label>
+                                <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 font-bold", enableCumulativeStats ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-600 border-slate-300")}>
+                                    {enableCumulativeStats ? "사용 중" : "사용 안 함"}
+                                </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                                학부모 서비스의 체험학습 신청서 및 결석계에서 연간 누적 일수를 자동 계산하여 화면에 표시합니다. 종이 신청서 병용 시 누계 혼선을 방지하려면 이 기능을 끌 수 있습니다.
+                            </p>
+                        </div>
+                        <Switch
+                            id="cumulative-stats-toggle"
+                            checked={enableCumulativeStats}
+                            onCheckedChange={handleToggleCumulativeStats}
+                            disabled={statsToggleLoading}
+                        />
                     </div>
                 </TabsContent>
 

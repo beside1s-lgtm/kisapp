@@ -83,7 +83,9 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
   );
 
   const hasReport = !isAbsence && !isReport && (isReportSubmitted || Boolean(reportContent));
-  const submitDate = doc.createdAt ? new Date(doc.createdAt) : new Date();
+  const submitDate = data.applyDate 
+    ? new Date(data.applyDate.includes('T') ? data.applyDate : `${data.applyDate}T09:00:00`)
+    : (doc.createdAt ? new Date(doc.createdAt) : new Date());
   
   // 학년, 반, 번호 파싱 (형식: "5-1-15" 또는 "5학년 1반 15번")
   let grade = '', studentClass = '', number = '';

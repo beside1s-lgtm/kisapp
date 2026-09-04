@@ -58,6 +58,7 @@ import { CreateWeeklyProposalDialog } from "@/components/tasks/create-weekly-pro
 import { ReviewWeeklyProposalDialog } from "@/components/tasks/review-weekly-proposal-dialog";
 import { SubmitDepartmentTaskDialog } from "@/components/tasks/submit-department-task-dialog";
 import { TaskSubmissionsDialog } from "@/components/tasks/task-submissions-dialog";
+import { MainLayout } from "@/components/layout/main-layout";
 import { WeeklyEducationPlanModal } from "@/components/tasks/weekly-education-plan-modal";
 import { MonthlyEducationPlanModal } from "@/components/tasks/monthly-education-plan-modal";
 
@@ -423,17 +424,14 @@ export default function InboxPage() {
         };
     }, [profile, orgData]);
 
-    // ── 주요 학교 일정 계산 (오늘 기준 앞 3일 ~ 뒤 1주일) ──
+    // ── 주요 학교 일정 계산 (오늘 D-day ~ 향후 7일간 일정) ──
     const mainSchoolSchedules = useMemo(() => {
         const now = new Date();
-        const start = new Date(now);
-        start.setDate(start.getDate() - 3);
         const end = new Date(now);
-        end.setDate(end.getDate() + 7);
+        end.setDate(end.getDate() + 7); // D-day ~ D+7 (향후 7일간)
 
-        const startDateStr = formatToDateStr(start);
-        const endDateStr = formatToDateStr(end);
         const todayStr = formatToDateStr(now);
+        const endDateStr = formatToDateStr(end);
 
         const emailLower = profile?.email?.toLowerCase() || '';
         const isHeadOrAdmin = myBelongingInfo.isHead || profile?.isAdmin || (profile?.role && (profile.role.includes('부장') || profile.role === '교장' || profile.role === '교감'));
@@ -457,10 +455,10 @@ export default function InboxPage() {
             content?: string;
         }> = [];
 
-        // 1. 학사일정 events
+        // 1. 학사일정 events (오늘 D-day 시점에 진행 중이거나 향후 7일 이내 시작되는 일정만)
         academicEvents.forEach((ev) => {
             const evEnd = ev.endDate || ev.date;
-            if (ev.date <= endDateStr && evEnd >= startDateStr) {
+            if (evEnd >= todayStr && ev.date <= endDateStr) {
                 const diffTime = new Date(ev.date).getTime() - new Date(todayStr).getTime();
                 const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
                 results.push({
@@ -480,9 +478,9 @@ export default function InboxPage() {
             }
         });
 
-        // 2. 부서별 주간 일정
+        // 2. 부서별 주간 일정 (오늘 D-day 시점에 진행 중이거나 향후 7일 이내 시작되는 일정만)
         weeklySchedules.forEach((sch) => {
-            if (sch.startDate <= endDateStr && sch.endDate >= startDateStr) {
+            if (sch.endDate >= todayStr && sch.startDate <= endDateStr) {
                 const isCreator = sch.creatorEmail?.toLowerCase() === emailLower;
                 const isMyDept = sch.deptName === myDept || myBelongingInfo.belongsList.some(b => b.includes(sch.deptName));
                 const isPrivate = !sch.isMainSchoolSchedule && !sch.sendToAcademicCalendar;
@@ -636,36 +634,37 @@ export default function InboxPage() {
     }
 
     return (
-        <div className="p-3 sm:p-4 h-full max-h-full flex flex-col gap-3 font-body overflow-hidden">
+        <MainLayout title="전자결재 대시보드" contentClassName="p-2 sm:p-4 h-full max-h-full flex flex-col gap-3 font-body overflow-hidden">
             {/* ── 2열 50:50 나란한 배치: [결재 대기 문서 + 주요 학교 일정] (좌) & [나의 업무] (우) ── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0 items-stretch overflow-y-auto lg:overflow-hidden">
                 {/* 1. 좌측 (50%): [결재 대기 문서 목록] (상단) + [주요 학교 일정] (하단) */}
                 <div className="flex flex-col gap-3 flex-1 min-h-0 h-full">
                     {/* 1-1. 상단 (절반): 결재 대기 문서 목록 카드 */}
-                    <Card className="rounded-2xl border bg-card shadow-xs flex flex-col flex-1 min-h-0 overflow-hidden">
+                    <Card className="rounded-2xl border bg-card shadow-xs flex flex-col lg:flex-1 min-h-0 overflow-hidden">
                         <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-2 shrink-0 bg-slate-50/70 rounded-t-2xl">
-                            <div className="flex items-center gap-2">
-                                <div className="p-1.5 bg-blue-500/10 rounded-xl text-blue-600">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <div className="p-1.5 bg-blue-500/10 rounded-xl text-blue-600 shrink-0">
                                     <Inbox className="h-4 w-4" />
                                 </div>
-                                <div>
-                                    <div className="flex items-center gap-1.5">
-                                        <h2 className="text-sm sm:text-base font-bold text-slate-900 font-headline">
-                                            결재 대기 문서 목록
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                        <h2 className="text-sm sm:text-base font-bold text-slate-900 font-headline whitespace-nowrap">
+                                            <span className="sm:hidden">결재 대기</span>
+                                            <span className="hidden sm:inline">결재 대기 문서 목록</span>
                                         </h2>
-                                        <Badge className="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0 rounded-full">
+                                        <Badge className="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0 rounded-full shrink-0">
                                             {inboxDocs.length}
                                         </Badge>
                                     </div>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                                <Button asChild variant="outline" size="sm" className="h-7 text-xs font-semibold gap-1 px-2.5">
+                            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                                <Button asChild variant="outline" size="sm" className="h-7 text-xs font-semibold gap-1 px-2 sm:px-2.5">
                                     <Link href="/sent">
-                                        <Send className="w-3 h-3" /> 상신함
+                                        <Send className="w-3 h-3" /> <span className="hidden sm:inline">상신함</span><span className="sm:hidden">상신</span>
                                     </Link>
                                 </Button>
-                                <Button asChild variant="outline" size="sm" className="h-7 text-xs font-semibold gap-1 text-primary border-primary/30 px-2.5">
+                                <Button asChild variant="outline" size="sm" className="h-7 text-xs font-semibold gap-1 text-primary border-primary/30 px-2 sm:px-2.5">
                                     <Link href="/registry">
                                         대장 →
                                     </Link>
@@ -673,12 +672,11 @@ export default function InboxPage() {
                             </div>
                         </div>
 
-                        <div className={cn("p-2.5 sm:p-3 flex-1 min-h-0", inboxDocs.length > 0 ? "overflow-y-auto scrollbar-thin" : "overflow-hidden flex flex-col")}>
+                        <div className={cn("p-2 sm:p-3", inboxDocs.length > 0 ? "overflow-y-auto scrollbar-thin lg:flex-1 min-h-0" : "flex flex-col")}>
                             {inboxDocs.length === 0 ? (
-                                <div className="flex-1 w-full flex flex-col items-center justify-center text-center p-3 bg-slate-50/60 rounded-xl border border-dashed text-slate-400 space-y-1">
-                                    <Inbox className="w-7 h-7 text-slate-300 stroke-[1.5]" />
-                                    <p className="text-xs font-semibold text-slate-600">현재 결재 대기 중인 문서가 없습니다.</p>
-                                    <p className="text-[11px] text-slate-400">새로운 결재 문서가 상신되면 실시간으로 표시됩니다.</p>
+                                <div className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-slate-50/60 rounded-xl border border-dashed text-slate-400">
+                                    <Inbox className="w-4 h-4 text-slate-400 shrink-0 stroke-[1.5]" />
+                                    <p className="text-xs font-semibold text-slate-600 truncate">현재 결재 대기 중인 문서가 없습니다.</p>
                                 </div>
                             ) : (
                                 <DocumentList documents={inboxDocs} />
@@ -686,23 +684,24 @@ export default function InboxPage() {
                         </div>
                     </Card>
 
-                    {/* 1-2. 하단 (절반): 주요 학교 일정 (앞 3일 ~ 뒤 1주일) */}
-                    <Card className="rounded-2xl border bg-card shadow-xs flex flex-col flex-1 min-h-0 overflow-hidden">
+                    {/* 1-2. 하단 (절반): 주요 학교 일정 (최근 3일 ~ D-day 당일) */}
+                    <Card className="rounded-2xl border bg-card shadow-xs flex flex-col lg:flex-1 min-h-0 overflow-hidden">
                         <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-2 shrink-0 bg-blue-50/50 rounded-t-2xl">
-                            <div className="flex items-center gap-2">
-                                <div className="p-1.5 bg-blue-600/10 rounded-xl text-blue-600">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <div className="p-1.5 bg-blue-600/10 rounded-xl text-blue-600 shrink-0">
                                     <CalendarDays className="h-4 w-4" />
                                 </div>
-                                <div>
-                                    <div className="flex items-center gap-1.5">
-                                        <h2 className="text-sm sm:text-base font-bold text-slate-900 font-headline">
-                                            주요 학교 일정
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                        <h2 className="text-sm sm:text-base font-bold text-slate-900 font-headline whitespace-nowrap">
+                                            <span className="sm:hidden">일정</span>
+                                            <span className="hidden sm:inline">주요 학교 일정</span>
                                         </h2>
-                                        <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px] font-bold px-1.5 py-0">
-                                            D-3 ~ D+7
+                                        <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px] font-bold px-1.5 py-0 whitespace-nowrap shrink-0">
+                                            D-day ~ D+7
                                         </Badge>
                                     </div>
-                                    <p className="text-[11px] text-muted-foreground">오늘 기준 최근 3일 및 향후 1주일간의 일정입니다.</p>
+                                    <p className="text-[11px] text-muted-foreground hidden sm:block truncate">오늘 기준 향후 1주일간의 주요 학교 일정입니다.</p>
                                 </div>
                             </div>
 
@@ -715,7 +714,8 @@ export default function InboxPage() {
                                     title="유초등 주간교육계획 조회 및 관리"
                                 >
                                     <CalendarDays className="w-3 h-3 text-blue-600 shrink-0" />
-                                    <span>주간 일정</span>
+                                    <span className="sm:hidden">주간</span>
+                                    <span className="hidden sm:inline">주간 일정</span>
                                 </Button>
                                 <Button 
                                     size="sm" 
@@ -725,17 +725,17 @@ export default function InboxPage() {
                                     title="유초등 월간 교육활동 계획 조회 및 관리"
                                 >
                                     <Calendar className="w-3 h-3 text-blue-600 shrink-0" />
-                                    <span>월간 일정</span>
+                                    <span className="sm:hidden">월간</span>
+                                    <span className="hidden sm:inline">월간 일정</span>
                                 </Button>
                             </div>
                         </div>
 
-                        <div className={cn("p-2.5 sm:p-3 flex-1 min-h-0 space-y-1.5", mainSchoolSchedules.length > 0 ? "overflow-y-auto scrollbar-thin" : "overflow-hidden flex flex-col")}>
+                        <div className={cn("p-2.5 sm:p-3 space-y-1.5", mainSchoolSchedules.length > 0 ? "overflow-visible lg:overflow-y-auto scrollbar-thin lg:flex-1 lg:min-h-0" : "flex flex-col")}>
                             {mainSchoolSchedules.length === 0 ? (
-                                <div className="flex-1 w-full flex flex-col items-center justify-center text-center p-3 bg-slate-50/60 rounded-xl border border-dashed text-slate-400 space-y-1">
-                                    <Calendar className="w-7 h-7 text-slate-300 stroke-[1.5]" />
-                                    <p className="text-xs font-semibold text-slate-600">해당 기간(앞 3일 ~ 뒤 1주일)에 예정된 학교 일정이 없습니다.</p>
-                                    <p className="text-[11px] text-slate-400">부서별 주간 일정이나 학사일정이 등록되면 이곳에 표시됩니다.</p>
+                                <div className="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-slate-50/60 rounded-xl border border-dashed text-slate-400">
+                                    <Calendar className="w-4 h-4 text-slate-400 shrink-0 stroke-[1.5]" />
+                                    <p className="text-xs font-semibold text-slate-600">해당 기간(오늘 ~ D+7)에 예정된 학교 일정이 없습니다.</p>
                                 </div>
                             ) : (
                                 mainSchoolSchedules.map((item) => {
@@ -1493,6 +1493,6 @@ export default function InboxPage() {
               weeklySchedules={weeklySchedules}
               orgData={orgData}
             />
-        </div>
+        </MainLayout>
     );
 }

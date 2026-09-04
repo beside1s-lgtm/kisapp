@@ -49,16 +49,23 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   
-  const isTeacherTurn = initialDoc.status === 'pending' && 
-                        initialDoc.approvers[initialDoc.currentStep]?.email?.trim().toLowerCase() === user?.email?.trim().toLowerCase() &&
-                        initialDoc.approvers[initialDoc.currentStep]?.role === '담임' &&
-                        initialDoc.docType === 'parent' && 
-                        initialDoc.parentFormData?.type === 'absence';
+  const isTeacherParentTurn = initialDoc.status === 'pending' && 
+                              initialDoc.approvers[initialDoc.currentStep]?.email?.trim().toLowerCase() === user?.email?.trim().toLowerCase() &&
+                              Boolean(initialDoc.approvers[initialDoc.currentStep]?.role?.includes('담임')) &&
+                              initialDoc.docType === 'parent';
+
+  const isTeacherTurn = isTeacherParentTurn && initialDoc.parentFormData?.type === 'absence';
                         
+  const defaultApplyDateStr = initialDoc.parentFormData?.applyDate || 
+    (initialDoc.createdAt ? format(new Date(initialDoc.createdAt), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'));
+
+  const [approvalDateOverride, setApprovalDateOverride] = useState<string>(defaultApplyDateStr);
+  const [showTeacherApproveModal, setShowTeacherApproveModal] = useState(false);
+
   const [teacherConfirmData, setTeacherConfirmData] = useState({
     absenceType: initialDoc.parentFormData?.absenceType || '병결',
-    confirmMethod: initialDoc.parentFormData?.teacherConfirmMethod || '',
-    confirmDate: initialDoc.parentFormData?.teacherConfirmDate || format(new Date(), 'yyyy-MM-dd')
+    confirmMethod: initialDoc.parentFormData?.teacherConfirmMethod || '전화/문자',
+    confirmDate: initialDoc.parentFormData?.teacherConfirmDate || defaultApplyDateStr
   });
 
   const [showNotificationModal, setShowNotificationModal] = useState(false);
@@ -186,7 +193,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
   const containerMaxWidth = (initialDoc.docType === 'teacher-duty' || initialDoc.docType === 'teacher-overtime') ? 'max-w-full' : 'max-w-[210mm]';
 
-  const handleApprove = () => {
+  const executeApprove = (overrideDate?: string) => {
     if (!profile?.signature) {
       toast({
         variant: 'destructive',
@@ -208,21 +215,41 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     }
 
     startApproveTransition(async () => {
-      const parentUpdateData = isTeacherTurn ? {
-        absenceType: teacherConfirmData.absenceType,
-        teacherConfirmMethod: teacherConfirmData.confirmMethod,
-        teacherConfirmDate: teacherConfirmData.confirmDate
-      } : undefined;
+      const finalDate = overrideDate || approvalDateOverride;
+      const parentUpdateData: any = {};
+      if (isTeacherTurn) {
+        parentUpdateData.absenceType = teacherConfirmData.absenceType;
+        parentUpdateData.teacherConfirmMethod = teacherConfirmData.confirmMethod;
+        parentUpdateData.teacherConfirmDate = teacherConfirmData.confirmDate || finalDate;
+      }
+      if (isTeacherParentTurn && finalDate) {
+        parentUpdateData.applyDate = finalDate;
+      }
 
-      const result = await approveDocument(initialDoc.id, profile, parentUpdateData);
+      const result = await approveDocument(
+        initialDoc.id, 
+        profile, 
+        Object.keys(parentUpdateData).length > 0 ? parentUpdateData : undefined,
+        isTeacherParentTurn ? finalDate : undefined
+      );
+
       if (result.success) { 
         toast({ title: '결재 완료!' }); 
+        setShowTeacherApproveModal(false);
         router.push('/inbox');
         router.refresh();
       } else { 
         toast({ variant: 'destructive', title: '결재 실패', description: result.error }); 
       }
     });
+  };
+
+  const handleApprove = () => {
+    if (isTeacherParentTurn) {
+      setShowTeacherApproveModal(true);
+      return;
+    }
+    executeApprove();
   };
   
   const handleReject = () => {
@@ -748,6 +775,82 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                      </div>
                  </div>
              </div>
+        )}
+
+        {/* 담임 교사 결재일 수정 및 확인 모달 */}
+        {showTeacherApproveModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 animate-in fade-in">
+            <div className="bg-white p-5 sm:p-6 rounded-2xl max-w-md w-full space-y-4 shadow-2xl border">
+              <div className="space-y-1">
+                <h3 className="font-bold text-base sm:text-lg text-slate-900">담임 교사 결재 확인</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  사전 전화 통보나 종이 신청서 접수일 등 필요한 경우 결재일자(신청일)를 수정하여 결재할 수 있습니다.
+                </p>
+              </div>
+
+              <div className="space-y-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 text-xs">
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 block">결재일자 (신청서 제출일)</label>
+                  <input
+                    type="date"
+                    value={approvalDateOverride}
+                    onChange={(e) => {
+                      setApprovalDateOverride(e.target.value);
+                      if (isTeacherTurn) {
+                        setTeacherConfirmData(prev => ({ ...prev, confirmDate: e.target.value }));
+                      }
+                    }}
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                  />
+                  <span className="text-[11px] text-muted-foreground block mt-0.5">
+                    * 지정한 날짜로 결재란 및 신청서 하단 제출일자가 함께 반영됩니다.
+                  </span>
+                </div>
+
+                {isTeacherTurn && (
+                  <>
+                    <div className="space-y-1 pt-1 border-t border-slate-200">
+                      <label className="font-bold text-slate-700 block">결석 구분</label>
+                      <select
+                        value={teacherConfirmData.absenceType}
+                        onChange={(e) => setTeacherConfirmData(prev => ({ ...prev, absenceType: e.target.value as any }))}
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs"
+                      >
+                        <option value="병결">병결</option>
+                        <option value="미인정">미인정</option>
+                        <option value="기타">기타</option>
+                        <option value="출석인정">출석인정</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-bold text-slate-700 block">확인 방법</label>
+                      <select
+                        value={teacherConfirmData.confirmMethod}
+                        onChange={(e) => setTeacherConfirmData(prev => ({ ...prev, confirmMethod: e.target.value as any }))}
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs"
+                      >
+                        <option value="전화/문자">전화/문자</option>
+                        <option value="학부모 내교">학부모 내교</option>
+                        <option value="가정방문">가정방문</option>
+                        <option value="기타">기타</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <Button variant="outline" size="sm" onClick={() => setShowTeacherApproveModal(false)} disabled={isApproving}>
+                  취소
+                </Button>
+                <Button size="sm" onClick={() => executeApprove(approvalDateOverride)} disabled={isApproving} className="gap-1.5 bg-primary font-bold">
+                  {isApproving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  서명 및 결재 완료
+                </Button>
+              </div>
+            </div>
+          </div>
         )}
 
         <ParentNotificationModal

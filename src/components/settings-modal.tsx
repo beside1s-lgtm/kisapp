@@ -2138,10 +2138,60 @@ export function SettingsModal() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="nextNumber" className="font-semibold text-slate-800">다음 문서 번호</Label>
-                  <Input id="nextNumber" name="nextNumber" type="number" value={config.nextNumber || 1} onChange={handleChange} className="w-full sm:w-60" />
+                {/* 대면 결재 기능 활성화 스위치 */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-amber-50/80 rounded-xl border border-amber-200 shadow-2xs">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="enableFaceToFaceApproval" className="font-bold text-amber-900 text-sm flex items-center gap-2 cursor-pointer">
+                      <Users className="w-4 h-4 text-amber-600 shrink-0" />
+                      대면 결재 기능 활성화
+                    </Label>
+                    <p className="text-xs text-amber-700">
+                      켜짐 시 기안 화면에 문서 번호 직접 입력란과 [대면 결재] 버튼이 표시되며, 아래의 다음 문서 번호 자동 채번이 비활성화됩니다. 대면 결재된 문서는 문서등록대장 하단 대면결재문서대장에 별도 보관됩니다.
+                    </p>
+                  </div>
+                  <Switch
+                    id="enableFaceToFaceApproval"
+                    checked={config.enableFaceToFaceApproval === true}
+                    onCheckedChange={(checked) => setConfig((prev) => ({ ...prev, enableFaceToFaceApproval: checked }))}
+                  />
                 </div>
+
+                {/* 연간 누계 자동 계산 기능 스위치 */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-emerald-50/80 rounded-xl border border-emerald-200 shadow-2xs">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="enableCumulativeStats" className="font-bold text-emerald-950 text-sm flex items-center gap-2 cursor-pointer">
+                      <GraduationCap className="w-4 h-4 text-emerald-700 shrink-0" />
+                      연간 누계 자동 계산 기능
+                    </Label>
+                    <p className="text-xs text-emerald-800">
+                      학부모 서비스의 체험학습 신청서 및 결석계에서 연간 누적 사용 일수를 자동으로 계산하여 표시합니다. 종이 신청서와 병용 시 누계 혼선을 방지하려면 이 기능을 끌 수 있습니다. 끄면 학부모 대시보드 현황판과 신청서 서식의 누계 영역이 숨겨집니다.
+                    </p>
+                  </div>
+                  <Switch
+                    id="enableCumulativeStats"
+                    checked={config.enableCumulativeStats !== false}
+                    onCheckedChange={(checked) => setConfig((prev) => ({ ...prev, enableCumulativeStats: checked }))}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="nextNumber" className={`font-semibold ${config.enableFaceToFaceApproval ? 'text-slate-400' : 'text-slate-800'}`}>
+                    다음 문서 번호
+                    {config.enableFaceToFaceApproval && (
+                      <span className="ml-2 text-xs font-normal text-amber-600">(대면 결재 기능 켜짐 시 자동 채번 비활성화)</span>
+                    )}
+                  </Label>
+                  <Input
+                    id="nextNumber"
+                    name="nextNumber"
+                    type="number"
+                    value={config.nextNumber || 1}
+                    onChange={handleChange}
+                    disabled={config.enableFaceToFaceApproval === true}
+                    className={`w-full sm:w-60 ${config.enableFaceToFaceApproval ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}
+                  />
+                </div>
+
                 
                 <div className="space-y-2">
                   <Label htmlFor="slogan" className="font-semibold text-slate-800">상단 문구 (슬로건)</Label>

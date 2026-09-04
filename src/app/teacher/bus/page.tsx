@@ -2078,7 +2078,11 @@ updates.disembarked = arrayUnion(student.id);
 
   if (loading) {
     return (
-      <MainLayout title={t('page.title.teacher') || '선생님 페이지'} headerContent={headerContent}>
+      <MainLayout 
+        title={t('page.title.teacher') || '선생님 페이지'} 
+        headerContent={headerContent}
+        hideMobileBottomNav={!user}
+      >
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 flex flex-col gap-6">
             <Card>
@@ -2242,6 +2246,7 @@ updates.disembarked = arrayUnion(student.id);
       headerContent={headerContent} 
       titleActions={titleActions}
       hideTitle={false}
+      hideMobileBottomNav={!user}
     >
         <div onContextMenu={(e) => { e.preventDefault(); setSwapSourceSeat(null); }} className="min-h-full">
         {selectedBusId === 'all' ? (

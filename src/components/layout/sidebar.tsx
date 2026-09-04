@@ -27,7 +27,8 @@ import {
   Download,
   Smartphone,
   Activity,
-  Stethoscope
+  Stethoscope,
+  Users2
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -201,6 +202,17 @@ export default function AppSidebar() {
   const canAccessHealth = useMemo(() => {
     return checkHealthAccessPermission(user?.email, profile, orgStructure);
   }, [user?.email, profile, orgStructure]);
+
+  // 담임 교사 또는 관리자 여부 판별 (담임 업무 바로가기 노출 조건)
+  const isHomeroomTeacher = useMemo(() => {
+    if (!user?.email || isParent) return false;
+    if (profile?.isAdmin || profile?.role === '관리자' || profile?.role === 'admin') return true;
+    if (!orgStructure?.homerooms) return false;
+    const normalizedEmail = user.email.trim().toLowerCase();
+    return Object.values(orgStructure.homerooms).some(
+      (teacherEmail) => teacherEmail && teacherEmail.trim().toLowerCase() === normalizedEmail
+    );
+  }, [user?.email, isParent, profile, orgStructure]);
 
   useEffect(() => {
     if (!user || isParent) return;
@@ -459,6 +471,29 @@ export default function AppSidebar() {
                 <span>주요 바로가기</span>
               </div>
               <div className="space-y-1">
+                {/* 담임 교사 및 관리자에게 노출: '담임 업무 (출결/체험 대리)' */}
+                {isHomeroomTeacher && (
+                  <Link
+                    href="/teacher/homeroom"
+                    className={cn(
+                      "flex items-center justify-between p-2 rounded-xl text-xs font-bold transition-all group",
+                      pathname?.startsWith('/teacher/homeroom')
+                        ? "bg-amber-500/15 text-amber-900 font-black shadow-xs"
+                        : "text-slate-700 hover:bg-amber-50 hover:text-amber-900"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="p-1 rounded-lg bg-amber-500/10 text-amber-700 group-hover:bg-amber-600 group-hover:text-white transition-colors">
+                        <Users2 size={14} />
+                      </div>
+                      <span className="truncate">담임 업무 (출결/체험 대리)</span>
+                    </div>
+                    <span className="text-[10px] text-amber-700 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                      이동
+                    </span>
+                  </Link>
+                )}
+
                 {/* 방과후학교 강사를 하고 있는 선생님에게만 노출: '(나의 강좌명) 수업 관리' */}
                 {afterschoolShortcutLabel && (
                   <Link

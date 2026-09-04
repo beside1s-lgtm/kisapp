@@ -1,16 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { Course, Enrollment, AttendanceRecord, Student, SyllabusSession, SubmittedApprovalDoc, SubstituteRecord } from '@/lib/afterschool/types';
-import { generateCalendarSchedule, generateCalendarScheduleByDateRange, ScheduleDay, getCourseSessionsPerClass } from '@/lib/afterschool/schedule';
+import { generateCalendarSchedule, generateCalendarScheduleByDateRange, ScheduleDay, getCourseSessionsPerClass, extractHolidayDatesFromEvents } from '@/lib/afterschool/schedule';
 import {
   Printer, Calendar, X, FileSpreadsheet,
   Send, FileText, UserCheck,
   Users, Package, AlertCircle, ChevronLeft, ChevronRight,
-  Phone, CheckCircle2, UserPlus, UserMinus, Edit3, Trash2
+  Phone, CheckCircle2, UserPlus, UserMinus, Edit3, Trash2, Share2
 } from 'lucide-react';
 import { exportAttendanceToExcel } from '@/lib/afterschool/excel';
-import { getTeacherApplySettings, saveTeacherApplySettings, onTeacherApplySettingsUpdate, submitAfterschoolApprovalDoc, deleteAfterschoolApprovalDoc, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord } from '@/lib/services/settingsService';
+import { getTeacherApplySettings, saveTeacherApplySettings, onTeacherApplySettingsUpdate, submitAfterschoolApprovalDoc, deleteAfterschoolApprovalDoc, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord, onDocConfigUpdate, getDocConfig } from '@/lib/services/settingsService';
+import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
+import type { DocConfig } from '@/lib/types';
 import { useTranslation } from '@/hooks/use-translation';
 import { useAuth } from '@/hooks/use-auth';
+import { useToast } from '@/hooks/use-toast';
 
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -253,7 +256,31 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   };
 
   const { profile } = useAuth();
+  const { toast } = useToast();
   const currentCourse = courses.find((c) => c.id === selectedCourseId) || courses[0];
+
+  // 외부 강사용 공유 출석부 링크 복사 핸들러
+  const handleCopyShareLink = () => {
+    if (!currentCourse?.id) return;
+    const shareUrl = `${window.location.origin}/attendance/share/${currentCourse.id}`;
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      toast({
+        title: '공유 링크 복사 완료',
+        description: `외부 강사용 출석부 링크가 클립보드에 복사되었습니다. 해당 링크로 접속 시 출석 체크만 가능하며, 다른 시스템 기능에는 접근할 수 없습니다.`,
+      });
+    }).catch(() => {
+      // clipboard API 실패 시 fallback
+      const el = document.createElement('textarea');
+      el.value = shareUrl;
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      toast({ title: '공유 링크 복사 완료', description: shareUrl });
+    });
+  };
 
   // 보결 등록/수정 핸들러
   const handleOpenSubstituteModal = (day: ScheduleDay) => {
@@ -351,13 +378,26 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
 
   // 마스터 설정 구독 (operatingStartDate, operatingEndDate, allowedDays)
   const [masterSettings, setMasterSettings] = useState<any>(null);
+  const [docConfig, setDocConfig] = useState<DocConfig | null>(null);
+
   useEffect(() => {
+    getTeacherApplySettings().then(s => { if (s) setMasterSettings(s); });
+    getDocConfig().then(c => { if (c) setDocConfig(c as DocConfig); });
+
     const unsub = onTeacherApplySettingsUpdate((s) => setMasterSettings(s));
-    return () => unsub();
+    const unsubDoc = onDocConfigUpdate((c) => setDocConfig(c as DocConfig));
+    return () => {
+      unsub();
+      unsubDoc();
+    };
   }, []);
 
+  const holidayDates = React.useMemo(() => {
+    return extractHolidayDatesFromEvents(docConfig?.academicCalendar?.events || DEFAULT_ACADEMIC_CALENDAR_CONFIG.events || []);
+  }, [docConfig]);
+
   // 운영기간 기반 달력 생성 (마스터 설정 우선, fallback: operatingWeeks 기반)
-  const scheduleDays: ScheduleDay[] = (() => {
+  const scheduleDays: ScheduleDay[] = React.useMemo(() => {
     const opStart = masterSettings?.operatingStartDate || '';
     const opEnd = masterSettings?.operatingEndDate || '';
     // 강좌의 classDays 우선, 없으면 마스터 allowedDays fallback
@@ -365,12 +405,12 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     const effectiveSessions = getCourseSessionsPerClass(currentCourse, masterSettings?.sessionsPerClass || 2);
 
     if (opStart && opEnd) {
-      // 운영기간 내의 날짜 범위를 달력에 사용
-      return generateCalendarScheduleByDateRange(opStart, opEnd, effectiveDays, effectiveSessions);
+      // 운영기간 내의 날짜 범위를 달력에 사용 (학사일정 공휴일/휴업일 전개 반영)
+      return generateCalendarScheduleByDateRange(opStart, opEnd, effectiveDays, effectiveSessions, holidayDates);
     }
     // fallback: 기존 operatingWeeks 기반 방식
-    return generateCalendarSchedule(startDateStr, operatingWeeks, effectiveDays, effectiveSessions);
-  })();
+    return generateCalendarSchedule(startDateStr, operatingWeeks, effectiveDays, effectiveSessions, holidayDates);
+  }, [masterSettings?.operatingStartDate, masterSettings?.operatingEndDate, masterSettings?.allowedDays, masterSettings?.sessionsPerClass, classDays, currentCourse, holidayDates, startDateStr, operatingWeeks]);
 
   // 최초 로드 및 강좌 변경 시 오늘 날짜 수업 회차로 자동 이동
   useEffect(() => {
@@ -715,7 +755,17 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                 <UserCheck className="w-3.5 h-3.5" />
                 전원출석
               </button>
+              {/* 외부 강사용 공유 출석부 링크 복사 버튼 */}
+              <button
+                onClick={handleCopyShareLink}
+                className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-sm shrink-0 flex items-center gap-1 cursor-pointer"
+                title="외부 강사가 로그인 없이 접속하여 출석 체크만 할 수 있는 전용 링크를 클립보드에 복사합니다"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                출석부 공유
+              </button>
               <div className="h-5 w-[1px] bg-slate-300 shrink-0" />
+
 
               {/* 날짜(회차) 중심 버튼 스크롤 */}
               {scheduleDays.map((day) => {

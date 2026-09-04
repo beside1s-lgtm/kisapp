@@ -223,10 +223,12 @@ export type DocConfig = {
     annualSchoolDays?: number; // 연간 총 수업일수 설정
     academicCalendar?: AcademicCalendarConfig; // 통합 학사 일정 및 학기 관리
     enableAiDraft?: boolean; // 기안문 작성 화면 내 AI 초안 생성 기능 활성화 여부
+    enableFaceToFaceApproval?: boolean; // 대면 결재 기능 활성화 여부 (켜지면 기안 시 문서번호 직접 입력 + 대면결재 버튼 표시, 자동채번 비활성화)
     afterschoolStageStatus?: 'RECRUITING' | 'APPLYING' | 'CONFIRMED' | 'OPERATING' | 'CLOSED';
     isAfterschoolFinalized?: boolean; // 수강신청 최종 확정 여부
     afterschoolFinalizedAt?: string; // 최종 확정 일시
     fieldTripBlackoutPeriods?: FieldTripBlackoutPeriod[]; // 체험학습 불인정(신청 불가) 기간 설정
+    enableCumulativeStats?: boolean; // 연간 누계 자동 계산 기능 활성화 여부 (기본값 true, false이면 학부모 대시보드 현황판 및 신청서 누계 숨김)
 };
 
 export type DepartmentTaskAssignment = {
@@ -425,6 +427,8 @@ export type ApprovalDoc = ApprovalDocPayload & {
   createdAt: any;
   completedAt?: any;
   updatedAt?: any;
+  isFaceToFace?: boolean; // 대면 결재 문서 여부
+  faceToFaceDocNo?: string; // 기안자가 직접 입력한 문서 번호 (대면 결재 시)
 };
 
 // ─── 부서 및 학년 그룹 업무 할당 및 제출 관리 타입 ───────────────────────────
