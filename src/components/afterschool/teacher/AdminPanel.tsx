@@ -13,7 +13,7 @@ import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalenda
 import type { DocConfig, UserProfile } from '@/lib/types';
 import { getUsersDirectory } from '@/lib/services/userService';
 import { StudentManagement } from './StudentManagement';
-import { OfficialSeal } from './AttendanceManagement';
+import { OfficialAttendanceSheet, OfficialSeal } from './OfficialAttendanceSheet';
 import { SignatureRegisterModal } from './SignatureRegisterModal';
 import { useAuth } from '@/hooks/use-auth';
 import { useTranslation } from '@/hooks/use-translation';
@@ -2542,6 +2542,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         const courseStudents = enrollments.filter((e) => e.courseId === c.id && e.status === 'ENROLLED');
         const proof = expenseProofs.find((p) => p.courseId === c.id);
 
+        if (viewingDocType === 'ATTENDANCE') {
+          return (
+            <OfficialAttendanceSheet
+              course={c}
+              students={courseStudents.map((enr) => {
+                const matchedStudent = studentsList.find((s) => s.id === enr.studentId);
+                return {
+                  id: enr.id,
+                  studentId: enr.studentId,
+                  name: enr.name,
+                  grade: enr.grade,
+                  classNum: enr.classNum,
+                  studentNum: enr.studentNum,
+                  kisbusNo: matchedStudent?.kisbusNo || enr.kisbusNo,
+                  parentPhone: enr.parentPhone || matchedStudent?.parentPhone,
+                };
+              })}
+              scheduleDays={scheduleDays}
+              getDayMark={(studentId, dayIndex) => {
+                const dayObj = scheduleDays.find((d) => d.dayIndex === dayIndex);
+                if (!dayObj) return '';
+                const rec = attendanceRecords.find(
+                  (r) => r.courseId === c.id && r.studentId === studentId && dayObj.sessionNos.includes(r.sessionNo || 0)
+                );
+                return rec?.status === 'ATTEND' ? 'O' : (rec?.status === 'LATE' || (rec as any)?.mark === 'V') ? '△' : rec?.status === 'ABSENT' ? '×' : '';
+              }}
+              getInstructorSeal={getInstructorSeal}
+              onRequestSignature={(teacherName, courseId) => {
+                setSigModalTarget({ teacherName, courseId });
+              }}
+              onClose={() => {
+                setViewingDocCourse(null);
+                setViewingDocType(null);
+              }}
+            />
+          );
+        }
+
         const handlePrint = () => {
           if (!getInstructorSeal(mainInstructor)) {
             if (confirm(`주강사 [${mainInstructor}] 선생님의 도장(서명)이 등록되지 않았습니다. 서명을 먼저 등록하시겠습니까?\n(취소 시 기본 원형 직인으로 인쇄됩니다)`)) {
@@ -2554,16 +2592,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         return (
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 p-2 md:p-4 overflow-y-auto backdrop-blur-xs animate-in fade-in duration-200">
-            {/* 인쇄 전용 스타일 태그 (A4 가로 방향 및 서식 외 요소 완전 숨김) */}
+            {/* 인쇄 전용 스타일 태그 (A4 세로 방향 및 서식 외 요소 완전 숨김) */}
             <style>{`
               @media print {
                 @page {
-                  size: A4 landscape;
-                  margin: 7mm 5mm 7mm 5mm;
+                  size: A4 portrait;
+                  margin: 15mm 12mm 15mm 12mm;
                 }
                 html, body {
                   margin: 0 !important;
                   padding: 0 !important;
+                  width: 100% !important;
+                  height: 100% !important;
+                  overflow: hidden !important;
                   background: white !important;
                   -webkit-print-color-adjust: exact !important;
                   print-color-adjust: exact !important;
@@ -2576,17 +2617,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   visibility: visible !important;
                 }
                 .print-container-only {
-                  position: fixed !important;
+                  position: absolute !important;
                   left: 0 !important;
                   top: 0 !important;
+                  right: 0 !important;
                   width: 100% !important;
-                  max-width: 100% !important;
-                  margin: 0 !important;
+                  max-width: 186mm !important;
+                  margin: 0 auto !important;
                   padding: 0 !important;
                   border: none !important;
                   box-shadow: none !important;
                   background: white !important;
-                  z-index: 99999 !important;
+                  overflow: visible !important;
+                  page-break-after: avoid !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
                 }
                 .no-print {
                   display: none !important;
@@ -2594,14 +2639,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 table {
                   width: 100% !important;
                   border-collapse: collapse !important;
-                  page-break-inside: auto;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
                 }
                 tr {
-                  page-break-inside: avoid;
-                  page-break-after: auto;
-                }
-                thead {
-                  display: table-header-group;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
                 }
               }
             `}</style>
@@ -2610,12 +2653,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               {/* Modal Header (인쇄 시 숨김) */}
               <div className="no-print bg-slate-900 px-6 py-4 flex items-center justify-between text-white shrink-0">
                 <div className="flex items-center gap-2.5">
-                  {viewingDocType === 'ATTENDANCE' && <ClipboardList className="w-5 h-5 text-emerald-400" />}
-                  {viewingDocType === 'WORK_REGISTER' && <FileText className="w-5 h-5 text-amber-400" />}
-                  {viewingDocType === 'EXPENSE_PROOF' && <DollarSign className="w-5 h-5 text-blue-400" />}
+                  {viewingDocType === 'WORK_REGISTER' ? <FileText className="w-5 h-5 text-amber-400" /> : <DollarSign className="w-5 h-5 text-blue-400" />}
                   <div>
                     <h3 className="font-bold text-sm text-white">
-                      [{c.title}] {viewingDocType === 'ATTENDANCE' ? '공식 출석부 검토' : viewingDocType === 'WORK_REGISTER' ? '강사출근부 검토' : '학습준비물 지출증빙서 검토'}
+                      [{c.title}] {viewingDocType === 'WORK_REGISTER' ? '강사출근부 검토' : '학습준비물 지출증빙서 검토'}
                     </h3>
                     <p className="text-[11px] text-slate-400">
                       강사: {mainInstructor}{assistantInstructors.length > 0 ? ` (보조: ${assistantInstructors.join(', ')})` : ''} · 장소: {c.classroom || '-'} · 시간: {c.classTime}
@@ -2642,164 +2683,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               {/* Modal Body */}
               <div className="p-4 md:p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50">
-                {/* 1. 출석부 서식 */}
-                {viewingDocType === 'ATTENDANCE' && (
-                  <div id="print-official-attendance-sheet" className="print-container-only bg-white p-5 md:p-6 border border-slate-300 rounded-2xl font-serif space-y-3 text-slate-900 shadow-sm">
-                    <div className="text-xs text-slate-600 font-bold font-sans">
-                      {teacherApplySettings?.year || '2026'}-{teacherApplySettings?.semester || '1학기'} KIS방과후학교
-                    </div>
-                    <div className="flex justify-between items-start flex-wrap gap-2 font-sans">
-                      <div>
-                        <h2 className="text-xl font-bold text-slate-900">{c.title} 출석부</h2>
-                        <div className="text-xs text-slate-600 mt-1 space-y-1">
-                          <div>기간: {c.startDate || '2026-03-30'} ~ {c.endDate || '2026-06-20'}</div>
-                          
-                          {/* 주강사 및 보조강사 도장 표기 (증빙 필수) */}
-                          <div className="flex items-center gap-3 flex-wrap pt-0.5">
-                            <div className="flex items-center gap-1">
-                              <span className="font-semibold text-slate-700">강사:</span>
-                              <span className="font-extrabold text-slate-900">{mainInstructor}</span>
-                              <OfficialSeal
-                                name={mainInstructor}
-                                signatureUrl={getInstructorSeal(mainInstructor)}
-                                size="sm"
-                              />
-                              {!getInstructorSeal(mainInstructor) && (
-                                <button
-                                  type="button"
-                                  onClick={() => setSigModalTarget({ teacherName: mainInstructor, courseId: c.id })}
-                                  className="no-print ml-1 text-[10px] text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded font-bold cursor-pointer transition"
-                                  title="도장/서명 등록"
-                                >
-                                  서명 등록
-                                </button>
-                              )}
-                            </div>
-
-                            {assistantInstructors.length > 0 && (
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-slate-500 font-semibold">· 보조강사:</span>
-                                {assistantInstructors.map((asst) => (
-                                  <div key={asst} className="flex items-center gap-1">
-                                    <span className="font-bold text-slate-800">{asst}</span>
-                                    <OfficialSeal
-                                      name={asst}
-                                      signatureUrl={getInstructorSeal(asst)}
-                                      size="sm"
-                                    />
-                                    {!getInstructorSeal(asst) && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setSigModalTarget({ teacherName: asst, courseId: c.id })}
-                                        className="no-print ml-0.5 text-[10px] text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded font-bold cursor-pointer transition"
-                                        title="도장/서명 등록"
-                                      >
-                                        서명 등록
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 결재란 */}
-                      <table className="border-collapse border border-slate-800 text-xs text-center shrink-0">
-                        <tbody>
-                          <tr>
-                            <td rowSpan={2} className="border border-slate-800 bg-slate-100 px-1.5 py-2 font-bold w-6 leading-tight text-[10px]">결<br/>재</td>
-                            <td className="border border-slate-800 px-3 py-0.5 font-bold w-14 bg-slate-50 text-[11px]">부장</td>
-                            <td className="border border-slate-800 px-3 py-0.5 font-bold w-14 bg-slate-50 text-[11px]">교감</td>
-                          </tr>
-                          <tr className="h-10">
-                            <td className="border border-slate-800 p-0.5">
-                              {isManagerApproved ? (
-                                <OfficialSeal name="부장" signatureUrl={managerSignature} size="md" />
-                              ) : <span className="text-slate-300">-</span>}
-                            </td>
-                            <td className="border border-slate-800 p-0.5">
-                              {isVicePrincipalApproved ? (
-                                <OfficialSeal name="교감" signatureUrl={vicePrincipalSignature} size="md" />
-                              ) : <span className="text-slate-300">-</span>}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* 출석부 명단 테이블 (A4 가로 폭 최적화) */}
-                    <div className="overflow-x-auto print:overflow-visible">
-                      <table className="w-full border-collapse border border-slate-800 text-xs text-center font-sans print:text-[9.5px]">
-                        <thead className="bg-slate-100 font-bold">
-                          <tr>
-                            <th className="border border-slate-800 p-0.5 w-6 print:w-5">순</th>
-                            <th className="border border-slate-800 p-0.5 w-6 print:w-5">학</th>
-                            <th className="border border-slate-800 p-0.5 w-6 print:w-5">반</th>
-                            <th className="border border-slate-800 p-0.5 w-6 print:w-5">번</th>
-                            <th className="border border-slate-800 p-1 w-16 print:w-14">이름</th>
-                            {scheduleDays.map((d) => (
-                              <th key={d.dayIndex} className="border border-slate-800 p-0.5 text-[8.5px] print:text-[8px] min-w-[20px]">
-                                <div>{d.dateStr}</div>
-                                <div className="text-[7.5px] font-normal text-slate-500">{d.dayIndex}회</div>
-                              </th>
-                            ))}
-                            <th className="border border-slate-800 p-0.5 w-12 print:w-11 text-[10px]">버스</th>
-                            <th className="border border-slate-800 p-0.5 w-20 print:w-18 text-[10px]">학부모</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {courseStudents.length === 0 ? (
-                            <tr>
-                              <td colSpan={scheduleDays.length + 7} className="border border-slate-800 py-6 text-slate-400">
-                                등록된 수강 학생이 없습니다.
-                              </td>
-                            </tr>
-                          ) : (
-                            courseStudents.map((enr, idx) => {
-                              const matchedStudent = studentsList.find((s) => s.id === enr.studentId) ||
-                                studentsList.find((s) => 
-                                  s.name === enr.name && 
-                                  String(s.grade) === String(enr.grade) && 
-                                  String(s.class) === String(enr.classNum) &&
-                                  (!enr.studentNum || String(s.number) === String(enr.studentNum))
-                                ) ||
-                                studentsList.find((s) => 
-                                  s.name === enr.name && 
-                                  String(s.grade) === String(enr.grade) && 
-                                  String(s.class) === String(enr.classNum)
-                                );
-                              return (
-                                <tr key={enr.id} className="h-6 print:h-5 hover:bg-slate-50">
-                                  <td className="border border-slate-800 py-0.5 text-[10px]">{idx + 1}</td>
-                                  <td className="border border-slate-800 py-0.5 text-[10px]">{enr.grade}</td>
-                                  <td className="border border-slate-800 py-0.5 text-[10px]">{enr.classNum}</td>
-                                  <td className="border border-slate-800 py-0.5 text-[10px]">{enr.studentNum}</td>
-                                  <td className="border border-slate-800 py-0.5 font-bold text-[10.5px]">{enr.name}</td>
-                                  {scheduleDays.map((d) => {
-                                    const rec = attendanceRecords.find(
-                                      (r) => r.courseId === c.id && r.studentId === enr.studentId && d.sessionNos.includes(r.sessionNo || 0)
-                                    );
-                                    const mark = rec?.status === 'ATTEND' ? 'O' : (rec?.status === 'LATE' || (rec as any)?.mark === 'V') ? 'V' : rec?.status === 'ABSENT' ? 'X' : '';
-                                    return (
-                                      <td key={d.dayIndex} className="border border-slate-800 font-bold py-0.5">
-                                        {mark || '·'}
-                                      </td>
-                                    );
-                                  })}
-                                  <td className="border border-slate-800 py-0.5 text-[9px] text-slate-600">{matchedStudent?.kisbusNo || enr.kisbusNo || '-'}</td>
-                                  <td className="border border-slate-800 py-0.5 text-[9px] font-mono">{enr.parentPhone || matchedStudent?.parentPhone || '-'}</td>
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-                {/* 2. 강사출근부 서식 */}
+              {/* 2. 강사출근부 서식 */}
                 {viewingDocType === 'WORK_REGISTER' && (
                   <div id="print-official-work-register" className="print-container-only bg-white p-5 md:p-6 border border-slate-300 rounded-2xl font-serif space-y-4 text-slate-900 shadow-sm max-w-3xl mx-auto">
                     <div className="text-xs text-slate-600 font-bold font-sans">
