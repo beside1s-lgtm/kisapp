@@ -47,7 +47,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { LostAndFound } from '@/components/bus/lost-and-found';
 import { AfterSchoolInquiryDialog } from '@/components/bus/after-school-inquiry-dialog';
 import { MorningGateDutyDialog } from '@/components/bus/morning-gate-duty-dialog';
-import { onTeacherApplySettingsUpdate, onAttendanceRecordsUpdate } from '@/lib/services/settingsService';
+import { onTeacherApplySettingsUpdate, onAttendanceRecordsUpdate, onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsUpdate } from '@/lib/services/settingsService';
 import { useTranslation } from '@/hooks/use-translation';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -955,6 +955,9 @@ const TeacherAssignmentViewDialog = ({
 export default function TeacherPage() {
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
+  const [rawStudents, setRawStudents] = useState<Student[]>([]);
+  const [afterschoolCourses, setAfterschoolCourses] = useState<any[]>([]);
+  const [afterschoolEnrollments, setAfterschoolEnrollments] = useState<any[]>([]);
   const [buses, setBuses] = useState<Bus[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [allRoutes, setAllRoutes] = useState<Route[]>([]);
@@ -986,8 +989,8 @@ export default function TeacherPage() {
   const [afterschoolStageStatus, setAfterschoolStageStatus] = useState<string>('CLOSED');
 
   const isAfterSchoolActive = useMemo(() => {
-    return afterschoolStageStatus === 'CONFIRMED' || afterschoolStageStatus === 'OPERATING';
-  }, [afterschoolStageStatus]);
+    return afterschoolStageStatus === 'CONFIRMED' || afterschoolStageStatus === 'OPERATING' || afterschoolCourses.length > 0 || afterSchoolClasses.length > 0;
+  }, [afterschoolStageStatus, afterschoolCourses.length, afterSchoolClasses.length]);
 
   const activeAfterSchoolClasses = useMemo(() => {
     return afterSchoolClasses.filter(c => (c.semesterMode || 'regular') === semesterMode);
@@ -1156,12 +1159,12 @@ export default function TeacherPage() {
     };
   }, []);
 
-  // Auto clean-up leftover classes from previous semesters if stage is CLOSED
+  // Auto clean-up leftover classes from previous semesters if stage is CLOSED and courses are empty
   useEffect(() => {
-    if (afterschoolStageStatus === 'CLOSED' && afterSchoolClasses.length > 0) {
+    if (afterschoolStageStatus === 'CLOSED' && afterSchoolClasses.length > 0 && afterschoolCourses.length === 0) {
       import('@/lib/kisbus/after-school-classes').then(m => m.clearAllAfterSchoolClasses()).catch(console.error);
     }
-  }, [afterschoolStageStatus, afterSchoolClasses.length]);
+  }, [afterschoolStageStatus, afterSchoolClasses.length, afterschoolCourses.length]);
 
   useEffect(() => {
     // 1. Google Workspace 로그인된 교직원 계정 자동 인식
@@ -1296,13 +1299,15 @@ export default function TeacherPage() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const unsubBuses = onBusesUpdate(data => setBuses(sortBuses(data))); 
-    const unsubStudents = onStudentsUpdate(setStudents); 
+    const unsubStudents = onStudentsUpdate(setRawStudents); 
 
     const unsubDestinations = onDestinationsUpdate(setDestinations); 
     const unsubAfterSchoolTeachers = onAfterSchoolTeachersUpdate(setAfterSchoolTeachers); 
     const unsubSaturdayTeachers = onSaturdayTeachersUpdate(setSaturdayTeachers);
     const unsubAfterSchoolClasses = onAfterSchoolClassesUpdate(setAfterSchoolClasses);
     const unsubLostItems = onLostItemsUpdate(setLostItems);
+    const unsubAfterschoolCourses = onAfterschoolCoursesUpdate(setAfterschoolCourses);
+    const unsubAfterschoolEnrollments = onAfterschoolEnrollmentsUpdate(setAfterschoolEnrollments);
     setLoading(false);
 
     return () => {
@@ -1315,9 +1320,161 @@ export default function TeacherPage() {
         unsubSaturdayTeachers();
         unsubAfterSchoolClasses();
         unsubLostItems();
+        unsubAfterschoolCourses();
+        unsubAfterschoolEnrollments();
         unsubscribeAllRoutes();
     };
   }, [isAuthenticated, currentTeacherId, teachers, isManualMode, calculateDate]);
+
+  // 방과후학교 관리 데이터(강좌 및 수강생)와 학생 스쿨버스 데이터 실시간 연동 및 병합
+  useEffect(() => {
+    if (rawStudents.length === 0) {
+      setStudents([]);
+      return;
+    }
+
+    // 1. 방과후 강좌 변환 연동
+    const dayMap: Record<string, DayOfWeek> = {
+      '월': 'Monday', '화': 'Tuesday', '수': 'Wednesday',
+      '목': 'Thursday', '금': 'Friday', '토': 'Saturday'
+    };
+
+    const extractCourseDays = (course: any): string[] => {
+      if (Array.isArray(course.classDays) && course.classDays.length > 0) return course.classDays;
+      if (Array.isArray(course.days) && course.days.length > 0) return course.days;
+      const text = `${course.period || ''} ${course.title || ''} ${course.schedule || ''} ${course.day || ''} ${course.classTime || ''}`;
+      if (text.includes('토')) return ['토'];
+      const days: string[] = [];
+      if (text.includes('월')) days.push('월');
+      if (text.includes('화')) days.push('화');
+      if (text.includes('수')) days.push('수');
+      if (text.includes('목')) days.push('목');
+      if (text.includes('금')) days.push('금');
+      return days;
+    };
+
+    if (afterschoolCourses.length > 0) {
+      const convertedClasses: AfterSchoolClass[] = [];
+      afterschoolCourses.forEach(course => {
+        const days = extractCourseDays(course);
+        const targetDays = days.length > 0 ? (days.map(d => dayMap[d]).filter(Boolean) as DayOfWeek[]) : ['Monday' as DayOfWeek];
+        targetDays.forEach(dayOfWeek => {
+          convertedClasses.push({
+            id: course.id,
+            name: course.title,
+            dayOfWeek,
+            teacherId: null,
+            teacherName: course.instructorName || '',
+            semesterMode: 'regular'
+          });
+          convertedClasses.push({
+            id: `${course.id}_vacation`,
+            name: course.title,
+            dayOfWeek,
+            teacherId: null,
+            teacherName: course.instructorName || '',
+            semesterMode: 'vacation'
+          });
+        });
+      });
+      setAfterSchoolClasses(convertedClasses);
+    }
+
+    // 2. 학생 및 수강신청/버스 정보 병합
+    const clean = (str: any) => String(str || '').replace(/\s+/g, '').toLowerCase();
+
+    const merged = rawStudents.map(student => {
+      const studentName = clean(student.nameKo || student.name || student.nameEn);
+      const studentGrade = Number(student.grade);
+      const studentClass = Number(student.class || student.classNum);
+
+      const studentEnrollments = afterschoolEnrollments.filter(e => {
+        const eName = clean(e.name || e.studentName);
+        const matchName = eName === studentName;
+        const matchGrade = !e.grade || Number(e.grade) === studentGrade;
+        const matchClass = !e.classNum || Number(e.classNum) === studentClass;
+        return matchName && matchGrade && matchClass;
+      });
+
+      if (studentEnrollments.length === 0) {
+        return {
+          ...student,
+          afterSchoolCourseTitle: '',
+          afterSchoolCourseTitles: [],
+          enrolledCourseTitles: [],
+          afterSchoolClassIds: student.afterSchoolClassIds || {},
+          afterSchoolDestinations: student.afterSchoolDestinations || {},
+          vacationAfterSchoolClassIds: student.vacationAfterSchoolClassIds || {},
+          vacationAfterSchoolDestinations: student.vacationAfterSchoolDestinations || {}
+        };
+      }
+
+      const afterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = { ...(student.afterSchoolClassIds || {}) };
+      const afterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = { ...(student.afterSchoolDestinations || {}) };
+      const vacationAfterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = { ...(student.vacationAfterSchoolClassIds || {}) };
+      const vacationAfterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = { ...(student.vacationAfterSchoolDestinations || {}) };
+      const enrolledCourseTitles: string[] = [];
+
+      studentEnrollments.forEach(enrollment => {
+        const course = afterschoolCourses.find(c => c.id === enrollment.courseId);
+        const cTitle = course?.title || enrollment.courseTitle || '';
+        if (cTitle && !enrolledCourseTitles.includes(cTitle)) {
+          enrolledCourseTitles.push(cTitle);
+        }
+        if (!course) return;
+
+        const classDays = extractCourseDays(course);
+        if (classDays.length === 0) return;
+
+        const isSat = classDays.includes('토') || Boolean(
+          course.period?.includes('토') ||
+          course.title?.includes('토요') ||
+          course.title?.includes('토요일')
+        );
+
+        if (enrollment.kisbusNo === '-' || enrollment.kisbusNo === '미신청' || enrollment.needsBus === false) {
+          return;
+        }
+        if (isSat && (!enrollment.kisbusNo || enrollment.kisbusNo === '-' || enrollment.kisbusNo === '미신청')) {
+          return;
+        }
+
+        const targetDays = classDays.map((d: string) => dayMap[d]).filter(Boolean) as DayOfWeek[];
+
+        let realDestId = (
+          (isSat ? (student.satAfternoonDestinationId || student.satMorningDestinationId) : null) ||
+          student.afternoonDestinationId ||
+          student.suggestedAfternoonDestination ||
+          student.morningDestinationId ||
+          'UNSPECIFIED'
+        );
+
+        if (realDestId && (realDestId.includes('호차') || realDestId === '미배정' || realDestId === '방과후 미배정')) {
+          realDestId = student.afternoonDestinationId || student.morningDestinationId || 'UNSPECIFIED';
+        }
+
+        targetDays.forEach(day => {
+          if (!afterSchoolClassIds[day]) afterSchoolClassIds[day] = course.id;
+          if (!vacationAfterSchoolClassIds[day]) vacationAfterSchoolClassIds[day] = course.id;
+          if (!afterSchoolDestinations[day]) afterSchoolDestinations[day] = realDestId;
+          if (!vacationAfterSchoolDestinations[day]) vacationAfterSchoolDestinations[day] = realDestId;
+        });
+      });
+
+      return {
+        ...student,
+        afterSchoolCourseTitle: enrolledCourseTitles.join(', '),
+        afterSchoolCourseTitles: enrolledCourseTitles,
+        enrolledCourseTitles,
+        afterSchoolClassIds,
+        afterSchoolDestinations,
+        vacationAfterSchoolClassIds,
+        vacationAfterSchoolDestinations
+      };
+    });
+
+    setStudents(merged);
+  }, [rawStudents, afterschoolCourses, afterschoolEnrollments]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -2191,7 +2348,7 @@ updates.disembarked = arrayUnion(student.id);
           afterSchoolTeachers={afterSchoolTeachers}
           students={students}
           buses={buses}
-          routes={allRoutes}
+          routes={allRoutes.length > 0 ? allRoutes : allStaticRoutes}
           destinations={destinations}
           semesterMode={semesterMode}
           isAfterSchoolActive={isAfterSchoolActive}
@@ -2248,6 +2405,76 @@ updates.disembarked = arrayUnion(student.id);
       hideMobileBottomNav={!user}
     >
         <div onContextMenu={(e) => { e.preventDefault(); setSwapSourceSeat(null); }} className="min-h-full">
+        {selectedStudent && selectedBusId === 'all' && (
+            <div className="mb-6 max-w-xl">
+                <Card id="student-info-card" className="no-print border-primary/20 bg-primary/5 animate-in fade-in slide-in-from-top-2">
+                    <CardHeader className="pb-3">
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                                <CardTitle className="text-lg font-bold truncate">{formatStudentName(selectedStudent)}</CardTitle>
+                            </div>
+                            <Button variant="ghost" size="sm" onClick={() => setSelectedStudent(null)} className="h-7 text-xs">닫기</Button>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="pb-3 space-y-2">
+                        <p className="text-sm text-muted-foreground">학년/반: {selectedStudent.grade}학년 {selectedStudent.class}반</p>
+                        {selectedStudent.contact && (
+                            <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                                <Phone className="w-3.5 h-3.5 text-primary shrink-0" />
+                                <span>연락처:</span>
+                                <a href={`tel:${selectedStudent.contact}`} className="font-medium text-blue-600 hover:underline">{selectedStudent.contact}</a>
+                            </p>
+                        )}
+                        <p className="text-sm text-muted-foreground">목적지: {destinations.find(d => d.id === (selectedDay === 'Saturday' ? (selectedRouteType === 'Morning' ? selectedStudent.satMorningDestinationId : selectedStudent.satAfternoonDestinationId) : (selectedRouteType === 'Morning' ? selectedStudent.morningDestinationId : selectedRouteType === 'Afternoon' ? selectedStudent.afternoonDestinationId : selectedStudent.afterSchoolDestinations?.[selectedDay])))?.name || t('unassigned')}</p>
+                        {(() => {
+                            const classId = selectedStudent.afterSchoolClassIds?.[selectedDay];
+                            if (classId) {
+                                const afterSchoolClass = activeAfterSchoolClasses.find(c => c.id === classId);
+                                if (afterSchoolClass) {
+                                    return (
+                                        <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                                            <GraduationCap className="w-3.5 h-3.5 text-primary shrink-0" />
+                                            <span>방과후 ({t(`day_short.${selectedDay.toLowerCase()}`)}):</span>
+                                            <span className="font-medium text-foreground">{afterSchoolClass.name}</span>
+                                            {afterSchoolClass.teacherName && (
+                                                <span className="text-xs text-muted-foreground/70">({afterSchoolClass.teacherName})</span>
+                                            )}
+                                        </p>
+                                    );
+                                }
+                            }
+                            const destBasedClass = activeAfterSchoolClasses.find(
+                                c => c.id === selectedStudent.afterSchoolDestinations?.[selectedDay] && c.dayOfWeek === selectedDay
+                            );
+                            if (destBasedClass) {
+                                return (
+                                    <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                                        <GraduationCap className="w-3.5 h-3.5 text-primary shrink-0" />
+                                        <span>방과후 ({t(`day_short.${selectedDay.toLowerCase()}`)}):</span>
+                                        <span className="font-medium text-foreground">{destBasedClass.name}</span>
+                                        {destBasedClass.teacherName && (
+                                            <span className="text-xs text-muted-foreground/70">({destBasedClass.teacherName})</span>
+                                        )}
+                                    </p>
+                                );
+                            }
+                            const fallbackTitle = (selectedStudent as any).afterSchoolCourseTitle || 
+                                ((selectedStudent as any).enrolledCourseTitles && (selectedStudent as any).enrolledCourseTitles.join(', '));
+                            if (fallbackTitle) {
+                                return (
+                                    <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                                        <GraduationCap className="w-3.5 h-3.5 text-primary shrink-0" />
+                                        <span>방과후 ({t(`day_short.${selectedDay.toLowerCase()}`)}):</span>
+                                        <span className="font-medium text-foreground">{fallbackTitle}</span>
+                                    </p>
+                                );
+                            }
+                            return null;
+                        })()}
+                    </CardContent>
+                </Card>
+            </div>
+        )}
         {selectedBusId === 'all' ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start w-full">
                 <AllStudentsBoardingStatus relevantRoutes={relevantRoutesForDay} students={students} buses={filteredBuses} allAttendance={allAttendance} formatStudentName={formatStudentName} t={t} afterschoolAbsentStudentIds={afterschoolAbsentStudentIds}/>

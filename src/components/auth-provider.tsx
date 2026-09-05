@@ -234,6 +234,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           userProfile.isAdmin = true; // 즉시 반영
       }
 
+      // 3-1. 학년도+이름 등 학생/학부모 패턴 계정은 예외 없이 학부모/학생으로 취급 (교직원/관리자 권한 원천 차단)
+      if (isStudentPattern(firebaseUser.email)) {
+        if (userProfile.role !== '학부모' && userProfile.role !== '학생') {
+          console.log("Enforcing parent role for student pattern account:", firebaseUser.email);
+          needsSave = true;
+          profileUpdates.role = '학부모';
+          userProfile.role = '학부모';
+        }
+        if (userProfile.isAdmin) {
+          needsSave = true;
+          profileUpdates.isAdmin = false;
+          userProfile.isAdmin = false;
+        }
+        if (userProfile.isFaculty) {
+          needsSave = true;
+          profileUpdates.isFaculty = false;
+          userProfile.isFaculty = false;
+        }
+        if (userProfile.dept) {
+          needsSave = true;
+          profileUpdates.dept = undefined;
+          userProfile.dept = undefined;
+        }
+      }
+
       // 4. 변경사항이 있으면 저장
       if (needsSave) {
           const combinedUpdates = { ...userProfile, ...profileUpdates };
@@ -297,7 +322,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             const fetchedProfile = await fetchProfile(firebaseUser);
             if (fetchedProfile) {
-              const isTeacher = Boolean(fetchedProfile.isFaculty || fetchedProfile.dept || (fetchedProfile.role && fetchedProfile.role !== '학부모' && fetchedProfile.role !== '학생') || !isStudentPattern(firebaseUser.email));
+              const isStudentOrParent = isStudentPattern(firebaseUser.email);
+              const isTeacher = !isStudentOrParent && Boolean(
+                fetchedProfile.isFaculty || 
+                fetchedProfile.dept || 
+                (fetchedProfile.role && !['학부모', '학생', 'parent', 'student'].includes(fetchedProfile.role))
+              );
               const mfaSessionKey = `mfa_verified_${firebaseUser.email.trim().toLowerCase()}`;
               let isAlreadyVerified = false;
               try {
@@ -386,8 +416,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   };
 
-  const isStaffUser = Boolean(profile?.isFaculty || profile?.dept || (profile?.role && profile.role !== '학부모' && profile.role !== '학생') || profile?.isAdmin);
-  const isParent = !isStaffUser && (profile?.role === '학부모' || profile?.role === '학생' || isStudentPattern(user?.email || profile?.email || null));
+  const isStudentOrParentEmail = isStudentPattern(user?.email || profile?.email || null);
+  const isStaffUser = !isStudentOrParentEmail && Boolean(
+    profile?.isAdmin || 
+    profile?.isFaculty || 
+    profile?.dept || 
+    (profile?.role && !['학부모', '학생', 'parent', 'student'].includes(profile.role))
+  );
+  const isParent = isStudentOrParentEmail || (!isStaffUser && Boolean(profile?.role && ['학부모', '학생', 'parent', 'student'].includes(profile.role)));
 
   const bypassLogin = async (role: 'admin' | 'parent') => {
     if (process.env.NODE_ENV !== 'development') return;

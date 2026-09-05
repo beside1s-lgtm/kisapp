@@ -33,14 +33,24 @@ export const getAllMasterStudents = async (): Promise<MasterStudent[]> => {
     userSnap.docs.forEach(doc => {
       const u = doc.data();
       const email = (u.email || doc.id || '').trim().toLowerCase();
+      // 교직원 계정 배제
+      const isStaff = Boolean(u.isFaculty || u.dept || (u.role && !['학부모', '학생', 'parent', 'student'].includes(u.role)));
+      if (isStaff) return;
+
+      // 학년 정보가 없으면 임의로 1학년 1반에 배치하지 않고 배제
+      const grade = u.grade || u.studentGrade;
+      if (!grade) return;
+
       if (email && isStudentEmail(email)) {
-        const studentName = u.studentName || u.name || u.nameKo || '';
+        const studentName = u.studentName || u.nameKo || u.name || '';
+        if (!studentName || studentName === '사용자' || studentName === '학생') return;
+
         map.set(email, {
           studentEmail: email,
           studentId: doc.id,
           name: studentName,
           nameKo: studentName,
-          grade: String(u.grade || u.studentGrade || '1'),
+          grade: String(grade),
           classNum: String(u.classNum || u.class || u.studentClass || '1'),
           studentNum: String(u.studentNum || u.number || u.studentNumber || ''),
           gender: u.gender === 'Female' || u.gender === 'female' || u.gender === '여' ? 'Female' : 'Male',
@@ -94,6 +104,9 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
   let destinationList: any[] = [];
   let routeList: any[] = [];
   let busList: any[] = [];
+  let afterschoolCourseList: any[] = [];
+  let afterschoolEnrollmentList: any[] = [];
+  let afterschoolClassroomList: any[] = [];
 
   const mergeAndEmit = () => {
     const map = new Map<string, MasterStudent>();
@@ -105,6 +118,16 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
     const busNameMap = new Map<string, string>();
     busList.forEach(b => {
       if (b.id) busNameMap.set(b.id, b.name || b.id);
+    });
+
+    const classroomMap = new Map<string, string>();
+    afterschoolClassroomList.forEach(c => {
+      if (c.id) classroomMap.set(c.id, c.name || c.id);
+    });
+
+    const courseMap = new Map<string, any>();
+    afterschoolCourseList.forEach(c => {
+      if (c.id) courseMap.set(c.id, c);
     });
 
     // 1. users 컬렉션 (시스템에 직접 등록된 실제 학생 계정만 필터링)
@@ -124,14 +147,52 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
       }
     });
 
-    // 3. 스쿨버스 학생 & 목적지 & 노선 정보와 양방향 100% 통합 매칭
+    // 3. 방과후 수강 신청 및 스쿨버스 학생 & 목적지 & 노선 정보와 양방향 100% 통합 매칭
     map.forEach((master, key) => {
-      // 1. 기존 address 값이 ID 값인 경우 정류장 실제 명칭으로 변환
+      // (1) 방과후 수강 신청 실시간 연동 매칭
+      const matchedEnrollments = afterschoolEnrollmentList.filter(e => {
+        if (e.status === 'CANCELLED') return false;
+        const idMatches = e.studentId && (e.studentId === master.studentId || e.studentId.toLowerCase() === master.studentEmail.toLowerCase());
+        const nameMatches = (e.name === master.name || e.name === master.nameKo);
+        const gradeClassMatches = String(e.grade) === String(master.grade) && String(e.classNum || e.class) === String(master.classNum);
+        const phoneMatches = master.contact && e.parentPhone && master.contact.replace(/\D/g, '') === e.parentPhone.replace(/\D/g, '');
+        const kisbusNoMatches = master.kisbusNo && e.kisbusNo && master.kisbusNo === e.kisbusNo;
+        return idMatches || (nameMatches && gradeClassMatches) || (nameMatches && phoneMatches) || kisbusNoMatches;
+      });
+
+      const enrolledCourses = matchedEnrollments.map(e => {
+        const c = courseMap.get(e.courseId) || {} as any;
+        const days = (e.selectedDays && e.selectedDays.length > 0) ? e.selectedDays : (c.classDays || []);
+        const classroom = c.classroom || (c.classroomId ? classroomMap.get(c.classroomId) : '') || '';
+        return {
+          courseId: e.courseId,
+          title: c.title || e.courseTitle || '방과후 강좌',
+          days: Array.isArray(days) ? days : [String(days)],
+          classroom: classroom || undefined,
+          classTime: c.classTime || undefined,
+          instructorName: c.instructorName || undefined,
+          kisbusNo: e.kisbusNo || c.kisbusDepartureTime || undefined,
+        };
+      });
+
+      const enrolledCourseIds = enrolledCourses.map(c => c.courseId);
+      const enrolledCourseTitles = enrolledCourses.map(c => c.title);
+      const totalTuition = matchedEnrollments.reduce((sum, e) => sum + (Number(e.tuition) || 0) + (Number(e.materialFee) || 0) + (Number(e.textbookFee) || 0), 0);
+
+      master.afterschoolSummary = {
+        enrolledCourseIds,
+        enrolledCourseTitles,
+        enrolledCourses,
+        totalTuition,
+        paymentStatus: (master.afterschoolSummary?.paymentStatus as any) || (totalTuition > 0 ? 'UNPAID' : 'PAID')
+      };
+
+      // (2) 스쿨버스 거주지(주소) 명칭 동기화
       if (master.address && destMap.has(master.address)) {
         master.address = destMap.get(master.address)!;
       }
 
-      // 이름, 학년/반, 또는 연락처/카드번호로 매칭
+      // 스쿨버스 학생 매칭
       const matchedBusStudent = busStudentList.find(bs => {
         const nameMatches = bs.name === master.name || bs.nameKo === master.name || (bs.name && bs.name.includes(master.name));
         const gradeClassMatches = String(bs.grade) === String(master.grade) && String(bs.class) === String(master.classNum);
@@ -140,22 +201,21 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
         return (nameMatches && gradeClassMatches) || (nameMatches && contactMatches) || kisbusNoMatches || nameMatches;
       });
 
+      let morningDestId: string | null = null;
+      let afternoonDestId: string | null = null;
+      let assignedBusName: string | null = null;
+      let assignedBusId: string | null = null;
+      let assignedSeatNumber: number | null = null;
+
       if (matchedBusStudent) {
-        // 목적지 ID -> 목적지명 변환
-        const morningDestId = matchedBusStudent.morningDestinationId || matchedBusStudent.suggestedMorningDestination || null;
-        const afternoonDestId = matchedBusStudent.afternoonDestinationId || matchedBusStudent.suggestedAfternoonDestination || null;
+        morningDestId = matchedBusStudent.morningDestinationId || matchedBusStudent.suggestedMorningDestination || null;
+        afternoonDestId = matchedBusStudent.afternoonDestinationId || matchedBusStudent.suggestedAfternoonDestination || null;
         const destName = (morningDestId ? (destMap.get(morningDestId) || morningDestId) : null) || 
                          (afternoonDestId ? (destMap.get(afternoonDestId) || afternoonDestId) : null);
 
-        // 등하교 목적지(주소)가 비어있거나 ID 형식이면 스쿨버스 목적지명으로 자동 연동
         if ((!master.address || destMap.has(master.address)) && destName) {
           master.address = destName;
         }
-
-        // 스쿨버스 노선 및 배정 버스/좌석 조회
-        let assignedBusName: string | null = null;
-        let assignedBusId: string | null = null;
-        let assignedSeatNumber: number | null = null;
 
         for (const route of routeList) {
           const seat = (route.seating || []).find((se: any) => se.studentId === matchedBusStudent.id);
@@ -166,16 +226,88 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
             break;
           }
         }
-
-        master.busSummary = {
-          morningDestinationId: morningDestId,
-          afternoonDestinationId: afternoonDestId,
-          assignedBusId,
-          assignedBusName: assignedBusName || master.busSummary?.assignedBusName || null,
-          assignedSeatNumber,
-          afterSchoolDestinations: matchedBusStudent.afterSchoolDestinations || {}
-        };
       }
+
+      // (3) 다중 스쿨버스 노선 분리 산출 (정규 하교 버스 + 방과후 수강 요일별 버스)
+      const afterSchoolDays = Array.from(new Set(enrolledCourses.flatMap(c => c.days || [])));
+      const weekdays = ['월', '화', '수', '목', '금'];
+      const regularBusDays = weekdays.filter(day => !afterSchoolDays.includes(day));
+
+      let regularBusName: string | null = null;
+      if (matchedBusStudent) {
+        const afternoonRoute = routeList.find((r: any) => 
+          r.type === 'Afternoon' && (r.seating || []).some((se: any) => se.studentId === matchedBusStudent.id)
+        );
+        if (afternoonRoute) {
+          regularBusName = busNameMap.get(afternoonRoute.busId) || afternoonRoute.name || null;
+        } else if (matchedBusStudent.afternoonDestinationId) {
+          const destRoute = routeList.find((r: any) => 
+            r.type === 'Afternoon' && (r.destinationIds || []).includes(matchedBusStudent.afternoonDestinationId)
+          );
+          if (destRoute) {
+            regularBusName = busNameMap.get(destRoute.busId) || destRoute.name || null;
+          }
+        }
+      }
+      if (!regularBusName) {
+        regularBusName = assignedBusName || master.busSummary?.assignedBusName || null;
+      }
+
+      const afterSchoolBuses: { day: string; busName: string; courseTitle?: string }[] = [];
+      for (const day of afterSchoolDays) {
+        const courseOnDay = enrolledCourses.find(c => c.days?.includes(day));
+        let busForDay: string | null = null;
+
+        if (matchedBusStudent) {
+          const asRoute = routeList.find((r: any) => {
+            if (r.type !== 'AfterSchool') return false;
+            if (r.operatingDays && Array.isArray(r.operatingDays) && !r.operatingDays.includes(day)) return false;
+            return (r.seating || []).some((se: any) => {
+              if (se.studentId !== matchedBusStudent.id) return false;
+              if (se.days && Array.isArray(se.days) && !se.days.includes(day)) return false;
+              return true;
+            });
+          });
+          if (asRoute) {
+            busForDay = busNameMap.get(asRoute.busId) || asRoute.name || null;
+          }
+
+          if (!busForDay && matchedBusStudent.afterSchoolDestinations?.[day]) {
+            const destId = matchedBusStudent.afterSchoolDestinations[day];
+            const destRoute = routeList.find((r: any) => 
+              r.type === 'AfterSchool' && (r.destinationIds || []).includes(destId)
+            );
+            if (destRoute) {
+              busForDay = busNameMap.get(destRoute.busId) || destRoute.name || null;
+            }
+          }
+        }
+
+        if (!busForDay && courseOnDay?.kisbusNo) {
+          busForDay = courseOnDay.kisbusNo;
+        }
+
+        if (busForDay) {
+          afterSchoolBuses.push({
+            day,
+            busName: busForDay,
+            courseTitle: courseOnDay?.title
+          });
+        }
+      }
+
+      master.busSummary = {
+        ...(master.busSummary || {}),
+        morningDestinationId: morningDestId,
+        afternoonDestinationId: afternoonDestId,
+        assignedBusId,
+        assignedBusName: assignedBusName || regularBusName || master.busSummary?.assignedBusName || null,
+        assignedSeatNumber,
+        afterSchoolDestinations: matchedBusStudent?.afterSchoolDestinations || master.busSummary?.afterSchoolDestinations || {},
+        regularBusName: regularBusName || null,
+        regularBusDays,
+        afterSchoolBuses,
+      };
     });
 
     callback(Array.from(map.values()));
@@ -202,15 +334,26 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
       };
     });
 
-    const filtered = rawUsers.filter((u: any) => isStudentEmail(u.email));
+    const filtered = rawUsers.filter((u: any) => {
+      if (!isStudentEmail(u.email)) return false;
+      const isStaff = Boolean(u.isFaculty || u.dept || (u.role && !['학부모', '학생', 'parent', 'student'].includes(u.role)));
+      if (isStaff) return false;
+      // 학년 정보가 없는 계정은 1학년 1반 기본값으로 생성하지 않고 제외
+      const grade = u.grade || u.studentGrade;
+      if (!grade) return false;
+      const studentName = u.studentName || u.nameKo || u.name || '';
+      if (!studentName || studentName === '사용자' || studentName === '학생') return false;
+      return true;
+    });
     
     userList = filtered.map((u: any) => ({
       studentEmail: u.email,
       studentId: u.docId || u.email,
-      name: u.studentName || u.name || '학생',
-      grade: String(u.grade || u.studentGrade || '1'),
-      classNum: String(u.class || u.studentClass || '1'),
-      studentNum: String(u.number || u.studentNumber || ''),
+      name: u.studentName || u.nameKo || u.name,
+      nameKo: u.studentName || u.nameKo || u.name,
+      grade: String(u.grade || u.studentGrade),
+      classNum: String(u.class || u.classNum || u.studentClass || '1'),
+      studentNum: String(u.number || u.studentNum || u.studentNumber || ''),
       gender: u.gender === 'Female' || u.gender === '여' ? 'Female' : 'Male',
       contact: u.phone || u.parentPhone || u.contact || '',
       parentEmail: u.parentEmail || '',
@@ -219,6 +362,7 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
       afterschoolSummary: {
         enrolledCourseIds: [],
         enrolledCourseTitles: [],
+        enrolledCourses: [],
       },
       busSummary: {
         assignedBusName: u.busName || null,
@@ -252,6 +396,24 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
     mergeAndEmit();
   }, (err) => console.error('kisbus buses snapshot error:', err));
 
+  // 7. 방과후 courses 실시간 리스너
+  const unsubCourses = onSnapshot(collection(getDb(), 'afterschool_courses'), (snapshot) => {
+    afterschoolCourseList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    mergeAndEmit();
+  }, (err) => console.error('afterschool_courses snapshot error:', err));
+
+  // 8. 방과후 enrollments 실시간 리스너
+  const unsubEnrollments = onSnapshot(collection(getDb(), 'afterschool_enrollments'), (snapshot) => {
+    afterschoolEnrollmentList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    mergeAndEmit();
+  }, (err) => console.error('afterschool_enrollments snapshot error:', err));
+
+  // 9. 방과후 classrooms 실시간 리스너
+  const unsubClassrooms = onSnapshot(collection(getDb(), 'afterschool_classrooms'), (snapshot) => {
+    afterschoolClassroomList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    mergeAndEmit();
+  }, (err) => console.error('afterschool_classrooms snapshot error:', err));
+
   return () => {
     unsubMaster();
     unsubUsers();
@@ -259,6 +421,9 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
     unsubDestinations();
     unsubRoutes();
     unsubBuses();
+    unsubCourses();
+    unsubEnrollments();
+    unsubClassrooms();
   };
 };
 

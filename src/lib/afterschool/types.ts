@@ -95,6 +95,7 @@ export interface Enrollment {
   status: any;
   timestampMs?: number;
   kisbusNo?: string;
+  selectedDays?: string[]; // 주 2회 강좌 등에서 학생이 특정 요일만 수강할 경우 (예: ['월'])
   [key: string]: any;
 }
 

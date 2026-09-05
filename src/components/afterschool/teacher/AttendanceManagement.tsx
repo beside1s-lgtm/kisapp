@@ -86,7 +86,17 @@ const AttendMarkCell: React.FC<{
   isActiveSession: boolean;
 }> = ({ mark, onSelect, isActiveSession }) => {
   const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const ref = useRef<HTMLTableCellElement>(null);
+
+  const handleToggleOpen = () => {
+    if (!open && ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setDropUp(spaceBelow < 190);
+    }
+    setOpen((v) => !v);
+  };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -95,6 +105,19 @@ const AttendMarkCell: React.FC<{
     if (open) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open]);
+
+  // 해당 요일 미수강 학생 (주 1회 선택 학생)인 경우 비활성화 셀 렌더링
+  if (mark === '―') {
+    return (
+      <td
+        className="border-r text-center select-none bg-slate-100/70 text-slate-300 font-bold"
+        style={{ minWidth: '36px', padding: '4px 2px' }}
+        title="수강 요일이 아닙니다 (주 1회 수강생)"
+      >
+        <span className="text-sm">―</span>
+      </td>
+    );
+  }
 
   let display = '·';
   let colorClass = 'text-slate-300';
@@ -106,7 +129,7 @@ const AttendMarkCell: React.FC<{
     { val: 'O', label: '○ 출석', color: 'text-emerald-700 hover:bg-emerald-50' },
     { val: 'V', label: '△ 지각/개별하교', color: 'text-purple-700 hover:bg-purple-50' },
     { val: 'X', label: '× 결석', color: 'text-rose-700 hover:bg-rose-50' },
-    { val: '', label: '― 미체크', color: 'text-slate-500 hover:bg-slate-50' },
+    { val: '', label: '· 미체크', color: 'text-slate-500 hover:bg-slate-50' },
   ];
 
   return (
@@ -115,11 +138,13 @@ const AttendMarkCell: React.FC<{
       className={`relative border-r text-center select-none cursor-pointer transition
         ${isActiveSession ? 'bg-indigo-50/50' : ''}`}
       style={{ minWidth: '36px', padding: '4px 2px' }}
-      onClick={() => setOpen((v) => !v)}
+      onClick={handleToggleOpen}
     >
       <span className={`text-sm ${colorClass}`}>{display}</span>
       {open && (
-        <div className="absolute z-50 left-1/2 -translate-x-1/2 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl min-w-max overflow-hidden">
+        <div className={`absolute z-50 left-1/2 -translate-x-1/2 ${
+          dropUp ? 'bottom-full mb-1' : 'top-full mt-1'
+        } bg-white border border-slate-200 rounded-xl shadow-2xl min-w-max overflow-hidden ring-1 ring-black/5`}>
           {options.map((opt) => (
             <button
               key={opt.val}
@@ -159,11 +184,23 @@ const MobileMarkButton: React.FC<{
     return () => document.removeEventListener('mousedown', handleOut);
   }, [open]);
 
+  // 해당 요일 미수강 학생인 경우 비활성화 버튼 렌더링
+  if (mark === '―') {
+    return (
+      <div
+        className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs bg-slate-100 text-slate-400 min-w-[80px] justify-center select-none border border-slate-200"
+        title="수강 요일이 아닙니다 (주 1회 수강생)"
+      >
+        <span>미수강 (―)</span>
+      </div>
+    );
+  }
+
   const getDisplay = () => {
     if (mark === 'O' || mark === '○') return { symbol: '○', bg: 'bg-emerald-500', text: 'text-white', label: '출석' };
     if (mark === 'V' || mark === '△') return { symbol: '△', bg: 'bg-purple-500', text: 'text-white', label: '지각' };
     if (mark === 'X' || mark === '×') return { symbol: '×', bg: 'bg-rose-500', text: 'text-white', label: '결석' };
-    return { symbol: '―', bg: 'bg-slate-100', text: 'text-slate-400', label: '미체크' };
+    return { symbol: '·', bg: 'bg-slate-100', text: 'text-slate-400', label: '미체크' };
   };
 
   const { symbol, bg, text, label } = getDisplay();
@@ -523,9 +560,32 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     }, 50);
   };
 
+  // 한글 요일 파싱 헬퍼 (예: "09/09(월)" -> "월")
+  const getDayKor = (day: ScheduleDay): string => {
+    if (!day) return '';
+    const match = day.dateStr?.match(/\(([월화수목금토일])\)/);
+    if (match) return match[1];
+    if (day.fullDate) {
+      const koreanDays = ['일', '월', '화', '수', '목', '금', '토'];
+      const d = new Date(day.fullDate + 'T12:00:00');
+      return koreanDays[d.getDay()];
+    }
+    return '';
+  };
+
   const getDayMark = (studentId: string, dayIndex: number): string => {
     const day = scheduleDays.find((d) => d.dayIndex === dayIndex);
     if (!day) return '';
+
+    // 주 2회 등 복수 요일 강좌에서 특정 요일만 수강(주 1회)하는 학생 판별
+    const student = courseStudents.find((s) => s.studentId === studentId);
+    if (student?.selectedDays && student.selectedDays.length > 0) {
+      const dayKor = getDayKor(day);
+      if (dayKor && !student.selectedDays.includes(dayKor)) {
+        return '―'; // 해당 요일 미수강 학생은 비활성화 대시 표시
+      }
+    }
+
     const firstSessionNo = day.startSessionNo;
     const record = attendanceRecords.find(
       (r) => r.courseId === currentCourse.id && r.studentId === studentId && r.sessionNo === firstSessionNo
@@ -546,6 +606,14 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     if (!day) return;
     const student = courseStudents.find((s) => s.studentId === studentId);
     const studentName = student ? student.name : '학생';
+
+    // 주 1회 선택 학생 중 해당 요일 미수강생은 버스 연동 제외
+    if (student?.selectedDays && student.selectedDays.length > 0) {
+      const dayKor = getDayKor(day);
+      if (dayKor && !student.selectedDays.includes(dayKor)) {
+        return;
+      }
+    }
 
     // 정확한 YYYY-MM-DD 날짜 문자열 사용
     const targetDateStr = day.fullDate || (day.dateStr?.includes('-') ? day.dateStr : new Date().toISOString().split('T')[0]);
@@ -601,6 +669,15 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     const day = scheduleDays.find((d) => d.dayIndex === dayIndex);
     if (!day) return;
 
+    // 미수강 요일 학생인 경우 출결 체크 방지
+    const student = courseStudents.find((s) => s.studentId === studentId);
+    if (student?.selectedDays && student.selectedDays.length > 0) {
+      const dayKor = getDayKor(day);
+      if (dayKor && !student.selectedDays.includes(dayKor)) {
+        return;
+      }
+    }
+
     // 버스 결석 연동 전송
     syncBusAbsenceForDay(studentId, dayIndex, nextMark);
 
@@ -631,8 +708,17 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   const handleBulkAttendDay = (dayIndex: number) => {
     const day = scheduleDays.find((d) => d.dayIndex === dayIndex);
     if (!day) return;
+    const dayKor = getDayKor(day);
 
-    courseStudents.forEach((st) => {
+    // 해당 요일에 수강하는 학생만 출석 처리 (주 1회 선택 학생 중 미수강 요일 제외)
+    const attendingStudents = courseStudents.filter((st) => {
+      if (st.selectedDays && st.selectedDays.length > 0 && dayKor) {
+        return st.selectedDays.includes(dayKor);
+      }
+      return true;
+    });
+
+    attendingStudents.forEach((st) => {
       syncBusAbsenceForDay(st.studentId, dayIndex, 'O');
       setAttendanceRecords((prev) => {
         const filtered = prev.filter(
@@ -904,6 +990,11 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                           <span className="font-extrabold text-slate-900 text-sm group-hover:text-indigo-600 transition">
                             {sInfo.name}
                           </span>
+                          {enrollment.selectedDays && enrollment.selectedDays.length > 0 && (
+                            <span className="text-[10px] bg-amber-100 text-amber-900 font-black px-1.5 py-0.5 rounded border border-amber-300">
+                              주1회({enrollment.selectedDays.join(',')})
+                            </span>
+                          )}
                           <span className="text-[11px] text-slate-500 font-semibold">
                             {sInfo.grade}-{sInfo.classNum}
                           </span>
@@ -934,7 +1025,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
 
             {/* Summary footer */}
             {courseStudents.length > 0 && (
-              <div className="px-4 py-3 bg-slate-50 flex gap-4 text-xs font-bold border-t border-slate-200">
+              <div className="px-4 py-3 bg-slate-50 flex flex-wrap items-center gap-3 sm:gap-4 text-xs font-bold border-t border-slate-200">
                 <span className="text-emerald-700">
                   출석 {courseStudents.filter(e => {
                     const m = getDayMark(e.studentId, activeSessionNo);
@@ -953,6 +1044,11 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                     return m === 'X' || m === '×';
                   }).length}명
                 </span>
+                {courseStudents.some(e => getDayMark(e.studentId, activeSessionNo) === '―') && (
+                  <span className="text-slate-500 bg-slate-200/80 px-1.5 py-0.5 rounded text-[11px]">
+                    미수강 {courseStudents.filter(e => getDayMark(e.studentId, activeSessionNo) === '―').length}명
+                  </span>
+                )}
                 <span className="text-slate-400 ml-auto">
                   미체크 {courseStudents.filter(e => !getDayMark(e.studentId, activeSessionNo)).length}명
                 </span>
@@ -1016,9 +1112,16 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                               )}
                             </Avatar>
                             <div className="flex flex-col items-start leading-tight">
-                              <span className="font-extrabold text-slate-900 text-xs group-hover:text-indigo-600 transition">
-                                {sInfo.name}
-                              </span>
+                              <div className="flex items-center gap-1">
+                                <span className="font-extrabold text-slate-900 text-xs group-hover:text-indigo-600 transition">
+                                  {sInfo.name}
+                                </span>
+                                {enrollment.selectedDays && enrollment.selectedDays.length > 0 && (
+                                  <span className="text-[9px] bg-amber-100 text-amber-900 font-black px-1 py-0.2 rounded border border-amber-300 whitespace-nowrap" title={`주 1회 (${enrollment.selectedDays.join(', ')}) 수강생`}>
+                                    주1회({enrollment.selectedDays.join(',')})
+                                  </span>
+                                )}
+                              </div>
                               <span className="text-[10px] bg-sky-100 text-sky-800 font-extrabold px-1.5 py-0.2 rounded-md mt-0.5 border border-sky-200">
                                 {sInfo.busNo}
                               </span>

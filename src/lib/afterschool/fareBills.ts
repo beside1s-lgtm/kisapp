@@ -244,6 +244,12 @@ export function calculateAllStudentsAfterschoolFare(params: {
           const totalSessions = matchedCourse?.totalSessions || 20;
           courseTuition = unitPrice * totalSessions;
         }
+
+        // 주 2회 이상 강좌에서 주 1회만 선택 수강하는 경우 50% 감액 (절반 적용)
+        const classDays = matchedCourse?.classDays || [];
+        if (classDays.length >= 2 && e.selectedDays && e.selectedDays.length === 1) {
+          courseTuition = Math.round(courseTuition / 2);
+        }
       }
 
       const courseTextbook = e.textbookFee || matchedCourse?.textbookFee || 0;

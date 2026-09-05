@@ -279,12 +279,21 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     const totalSessions = c?.totalSessions || (c?.operatingWeeks ? c.operatingWeeks * perSession : weeks * perSession);
     const standardTotalTuition = unitPrice * totalSessions; // 80,000 × 20 = 1,600,000 VND (4차시는 3,200,000 VND)
 
+    let baseTuition = standardTotalTuition;
     // 강좌 또는 학생 데이터에 500,000 VND 이상의 정상 총액이 지정되어 있다면 해당 금액 사용
-    if (c?.tuition && c.tuition >= 500000) return c.tuition;
-    if (enrollment.tuition && enrollment.tuition >= 500000) return enrollment.tuition;
+    if (c?.tuition && c.tuition >= 500000) {
+      baseTuition = c.tuition;
+    } else if (enrollment.tuition && enrollment.tuition >= 500000) {
+      baseTuition = enrollment.tuition;
+    }
 
-    // 과거의 150,000 VND 같은 1회분 단가 또는 미지정인 경우 표준 총 수강료(1,600,000 VND) 반환
-    return standardTotalTuition;
+    // 주 2회 이상 강좌에서 주 1회만 선택 수강하는 경우 50% 감액 (절반 적용)
+    const classDays = c?.classDays || [];
+    if (classDays.length >= 2 && enrollment.selectedDays && enrollment.selectedDays.length === 1) {
+      return Math.round(baseTuition / 2);
+    }
+
+    return baseTuition;
   };
 
   const handleSendBusDataToBusAdmin = async () => {
@@ -308,10 +317,11 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     }
   };
 
-  // Filtering / Search
+  // Filtering / Search (키 입력 시 딜레이 방지를 위해 입력값과 확정 검색어 분리)
   const [gradeFilter, setGradeFilter] = useState<string>('all');
   const [classFilter, setClassFilter] = useState<string>('all');
-  const [nameSearch, setNameSearch] = useState<string>('');
+  const [nameSearchInput, setNameSearchInput] = useState<string>('');
+  const [activeSearchKeyword, setActiveSearchKeyword] = useState<string>('');
 
   // Selected Checkboxes for Bulk operations
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -468,6 +478,24 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     }
   };
 
+  // 주 2회 이상 강좌 중 특정 요일만 수강(주 1회 선택) 또는 전체 수강 변경 핸들러
+  const handleSelectedDaysChange = async (enrollmentId: string, dayValue: string) => {
+    const target = enrollments.find((e) => e.id === enrollmentId);
+    if (!target) return;
+
+    const newSelectedDays = dayValue ? [dayValue] : undefined;
+    const updated: Enrollment = { ...target, selectedDays: newSelectedDays };
+
+    const nextEnrollments = enrollments.map((e) => (e.id === enrollmentId ? updated : e));
+    setEnrollments(nextEnrollments);
+
+    try {
+      await saveAfterschoolEnrollment(updated);
+    } catch (err) {
+      console.error('수강 요일 업데이트 실패:', err);
+    }
+  };
+
   // 수강 취소 및 대기자 승격 연동 처리
   const handleCancelEnrollmentWithPromotion = async (enrollmentId: string) => {
     const target = enrollments.find((e) => e.id === enrollmentId);
@@ -502,14 +530,14 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   const filteredEnrollments = courseEnrollments.filter((e) => {
     if (gradeFilter !== 'all' && e.grade !== Number(gradeFilter)) return false;
     if (classFilter !== 'all' && e.classNum !== Number(classFilter)) return false;
-    if (nameSearch && !e.name.includes(nameSearch)) return false;
+    if (activeSearchKeyword && !e.name.toLowerCase().includes(activeSearchKeyword.toLowerCase().trim())) return false;
     return true;
   });
 
   const filteredWaitingEnrollments = sortedWaitingList.filter((e) => {
     if (gradeFilter !== 'all' && e.grade !== Number(gradeFilter)) return false;
     if (classFilter !== 'all' && e.classNum !== Number(classFilter)) return false;
-    if (nameSearch && !e.name.includes(nameSearch)) return false;
+    if (activeSearchKeyword && !e.name.toLowerCase().includes(activeSearchKeyword.toLowerCase().trim())) return false;
     return true;
   });
 
@@ -1238,15 +1266,46 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
             </select>
           </div>
 
-          <div className="relative min-w-0">
+          <div className="relative min-w-0 flex items-center">
             <input
               type="text"
-              placeholder="이름 검색"
-              value={nameSearch}
-              onChange={(e) => setNameSearch(e.target.value)}
-              className="bg-white pl-5 sm:pl-6 pr-1.5 py-1 border border-slate-300 rounded-lg focus:outline-none text-[10px] sm:text-xs w-full"
+              placeholder="이름 검색 (엔터)"
+              value={nameSearchInput}
+              onChange={(e) => {
+                setNameSearchInput(e.target.value);
+                if (!e.target.value) setActiveSearchKeyword('');
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setActiveSearchKeyword(nameSearchInput);
+                }
+              }}
+              className="bg-white pl-5 sm:pl-6 pr-12 py-1 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 text-[10px] sm:text-xs w-full"
             />
-            <Search className="w-3 h-3 absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-3 h-3 absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+              {nameSearchInput && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNameSearchInput('');
+                    setActiveSearchKeyword('');
+                  }}
+                  className="p-0.5 text-slate-400 hover:text-slate-600 rounded focus:outline-none"
+                  title="검색어 지우기"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setActiveSearchKeyword(nameSearchInput)}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded transition shadow-2xs"
+                title="엔터 또는 검색 버튼 클릭"
+              >
+                검색
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1306,8 +1365,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                   <th className="py-2.5 px-2 text-center w-28 bg-emerald-50 text-emerald-800">방과후버스 배정</th>
                   <th className="py-2.5 px-2 text-right w-24">스쿨버스비</th>
                   <th className="py-2.5 px-2 text-right w-24">강의료</th>
-                  <th className="py-2.5 px-2 text-right w-20">교재비</th>
-                  <th className="py-2.5 px-2 text-right w-20">재료비</th>
+                  <th className="py-2.5 px-2 text-center w-36">수강 요일</th>
                   <th className="py-2.5 px-2 text-center w-24">등록일자</th>
                   <th className="py-2.5 px-2 text-center w-20">관리</th>
                 </tr>
@@ -1315,7 +1373,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {filteredEnrollments.length === 0 ? (
                   <tr>
-                    <td colSpan={selectedCourseId === 'all' ? 18 : 17} className="py-12 text-center text-slate-400">
+                    <td colSpan={selectedCourseId === 'all' ? 17 : 16} className="py-12 text-center text-slate-400">
                       수강 확정된 학생이 없습니다.
                     </td>
                   </tr>
@@ -1494,11 +1552,49 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                         <td className="py-2 px-2 text-right font-mono font-bold text-slate-800 text-[11px] whitespace-nowrap">
                           {getFareLabel(getStudentTuitionFee(item, matchedCourse))}
                         </td>
-                        <td className="py-2 px-2 text-right font-mono text-slate-600 text-[11px] whitespace-nowrap">
-                          {getFareLabel(item.textbookFee)}
-                        </td>
-                        <td className="py-2 px-2 text-right font-mono text-slate-600 text-[11px] whitespace-nowrap">
-                          {getFareLabel(item.materialFee)}
+                        <td className="py-1.5 px-2 text-center whitespace-nowrap">
+                          {(() => {
+                            let days = matchedCourse?.classDays || [];
+                            if (days.length === 0 && matchedCourse?.title) {
+                              const match = matchedCourse.title.match(/\(([월화수목금토일, ]+)\)/);
+                              if (match) {
+                                days = match[1].split(',').map(d => d.trim()).filter(Boolean);
+                              }
+                            }
+
+                            if (days.length >= 2) {
+                              const currentVal = item.selectedDays && item.selectedDays.length === 1 ? item.selectedDays[0] : 'all';
+                              return (
+                                <select
+                                  value={currentVal}
+                                  onChange={(e) => {
+                                    const val = e.target.value === 'all' ? '' : e.target.value;
+                                    handleSelectedDaysChange(item.id, val);
+                                  }}
+                                  className={`text-[11px] font-bold px-1.5 py-0.5 rounded border ${
+                                    currentVal !== 'all'
+                                      ? 'bg-amber-50 text-amber-800 border-amber-300 font-black'
+                                      : 'bg-white text-slate-700 border-slate-300'
+                                  } focus:outline-none cursor-pointer`}
+                                  title="주 2회 강좌 중 특정 요일만 수강(주 1회) 선택 시 강의료가 50%로 자동 감액됩니다."
+                                >
+                                  <option value="all">전체 (주{days.length}회)</option>
+                                  {days.map((d) => (
+                                    <option key={d} value={d}>
+                                      {d}요일만 (주1회, 50%)
+                                    </option>
+                                  ))}
+                                </select>
+                              );
+                            }
+
+                            const singleDay = days[0] || (matchedCourse?.period ? matchedCourse.period.slice(0, 1) : '');
+                            return (
+                              <span className="text-[11px] text-slate-400 font-medium">
+                                {singleDay ? `주1회 (${singleDay})` : '주1회'}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="py-2 px-2 text-center font-mono text-[10px] text-slate-400 whitespace-nowrap" title={item.registrationDate}>
                           {item.registrationDate ? item.registrationDate.split(' ')[0] : '-'}

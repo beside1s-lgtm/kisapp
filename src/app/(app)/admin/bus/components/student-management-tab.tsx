@@ -1720,6 +1720,64 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                                 toast({ title: t('error'), description: "제거 중 오류가 발생했습니다.", variant: 'destructive' });
                             }
                         }}
+                        onRevertToAfternoonRoute={async (studentId: string, day?: DayOfWeek) => {
+                            const targetStudent = students.find(s => s.id === studentId);
+                            if (!targetStudent) return;
+
+                            try {
+                                // 1. 방과후 노선(AfterSchool) 좌석에서 학생 제거
+                                const asRoutes = routes.filter(r => r.type === 'AfterSchool' && (!day || r.dayOfWeek === day));
+                                for (const r of asRoutes) {
+                                    if (r.seating.some(se => se.studentId === studentId)) {
+                                        const nextSeating = r.seating.map(se => se.studentId === studentId ? { ...se, studentId: null } : se);
+                                        await updateRouteSeatingWithVacationSync(r.id, nextSeating);
+                                    }
+                                }
+
+                                // 2. 학생의 방과후 목적지 및 반 ID 정리
+                                const updatedRegClassIds = { ...(targetStudent.afterSchoolClassIds || {}) };
+                                const updatedRegDestinations = { ...(targetStudent.afterSchoolDestinations || {}) };
+                                const updatedVacClassIds = { ...(targetStudent.vacationAfterSchoolClassIds || {}) };
+                                const updatedVacDestinations = { ...(targetStudent.vacationAfterSchoolDestinations || {}) };
+
+                                if (day) {
+                                    delete (updatedRegClassIds as any)[day];
+                                    delete (updatedRegDestinations as any)[day];
+                                    delete (updatedVacClassIds as any)[day];
+                                    delete (updatedVacDestinations as any)[day];
+                                } else {
+                                    Object.keys(updatedRegClassIds).forEach(k => delete (updatedRegClassIds as any)[k]);
+                                    Object.keys(updatedRegDestinations).forEach(k => delete (updatedRegDestinations as any)[k]);
+                                    Object.keys(updatedVacClassIds).forEach(k => delete (updatedVacClassIds as any)[k]);
+                                    Object.keys(updatedVacDestinations).forEach(k => delete (updatedVacDestinations as any)[k]);
+                                }
+
+                                const updatePayload: any = {
+                                    afterSchoolClassIds: updatedRegClassIds,
+                                    afterSchoolDestinations: updatedRegDestinations,
+                                    vacationAfterSchoolClassIds: updatedVacClassIds,
+                                    vacationAfterSchoolDestinations: updatedVacDestinations,
+                                };
+
+                                await updateStudent(studentId, updatePayload);
+
+                                setSelectedGlobalStudent(prev => {
+                                    if (!prev || prev.id !== studentId) return prev;
+                                    return {
+                                        ...prev,
+                                        ...updatePayload
+                                    };
+                                });
+
+                                toast({
+                                    title: "하교 노선으로 복귀 완료",
+                                    description: `${getStudentName(targetStudent, i18n.language)} 학생의 방과후 배정이 해제되고 정규 하교 노선으로 복귀되었습니다.`
+                                });
+                            } catch (error) {
+                                console.error('하교 노선 복귀 실패:', error);
+                                toast({ title: t('error'), description: "하교 노선 복귀 처리 중 오류가 발생했습니다.", variant: 'destructive' });
+                            }
+                        }}
                     />
                 </div>
             </div>

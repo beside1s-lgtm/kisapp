@@ -25,6 +25,22 @@ interface AfterSchoolInquiryDialogProps {
     afterschoolStageStatus?: string;
 }
 
+const getTodayDayOfWeek = (): DayOfWeek | 'all' => {
+    const dayMap: Record<number, DayOfWeek> = {
+        1: 'Monday',
+        2: 'Tuesday',
+        3: 'Wednesday',
+        4: 'Thursday',
+        5: 'Friday',
+        6: 'Saturday',
+    };
+    // 베트남/현지 시간대 기준 요일 계산
+    const now = new Date();
+    const vTime = new Date(now.getTime() + (now.getTimezoneOffset() + 420) * 60000);
+    const dayIdx = vTime.getDay();
+    return dayMap[dayIdx] || 'Monday'; // 일요일(0)인 경우 기본 월요일
+};
+
 export const AfterSchoolInquiryDialog = ({
     afterSchoolClasses,
     afterSchoolTeachers,
@@ -40,7 +56,7 @@ export const AfterSchoolInquiryDialog = ({
     const isVacationMode = semesterMode === 'vacation';
     const isOperating = isAfterSchoolActive ?? (afterschoolStageStatus ? (afterschoolStageStatus === 'CONFIRMED' || afterschoolStageStatus === 'OPERATING') : true);
 
-    const [selectedDay, setSelectedDay] = useState<DayOfWeek | 'all'>('all');
+    const [selectedDay, setSelectedDay] = useState<DayOfWeek | 'all'>(() => getTodayDayOfWeek());
     const [selectedTeacherId, setSelectedTeacherId] = useState<string | 'all'>('all');
     const [classSearchQuery, setClassSearchQuery] = useState('');
     const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
@@ -199,14 +215,32 @@ export const AfterSchoolInquiryDialog = ({
                         {/* 필터 영역 */}
                         {!isVacationMode && (
                             <div className="space-y-1">
-                                <Label className="text-xs font-bold text-slate-700">요일 선택</Label>
+                                <div className="flex items-center justify-between">
+                                    <Label className="text-xs font-bold text-slate-700">요일 선택</Label>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const today = getTodayDayOfWeek();
+                                            setSelectedDay(today);
+                                            setSelectedClassId(null);
+                                        }}
+                                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 hover:underline"
+                                    >
+                                        오늘 요일로 선택
+                                    </button>
+                                </div>
                                 <Select value={selectedDay} onValueChange={(v: any) => { setSelectedDay(v); setSelectedClassId(null); }}>
                                     <SelectTrigger className="h-8 text-xs font-medium"><SelectValue /></SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">전체</SelectItem>
-                                        {(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as DayOfWeek[]).map(d => (
-                                            <SelectItem key={d} value={d} className="text-xs">{t(`day.${d.toLowerCase()}`)}</SelectItem>
-                                        ))}
+                                        <SelectItem value="all">전체 요일</SelectItem>
+                                        {(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as DayOfWeek[]).map(d => {
+                                            const isToday = d === getTodayDayOfWeek();
+                                            return (
+                                                <SelectItem key={d} value={d} className="text-xs">
+                                                    {t(`day.${d.toLowerCase()}`)}{isToday ? ' (오늘)' : ''}
+                                                </SelectItem>
+                                            );
+                                        })}
                                     </SelectContent>
                                 </Select>
                             </div>

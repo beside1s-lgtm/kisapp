@@ -34,6 +34,15 @@ export type MasterStudent = {
   afterschoolSummary?: {
     enrolledCourseIds?: string[];
     enrolledCourseTitles?: string[];
+    enrolledCourses?: {
+      courseId: string;
+      title: string;
+      days: string[];
+      classroom?: string;
+      classTime?: string;
+      instructorName?: string;
+      kisbusNo?: string;
+    }[];
     totalTuition?: number;
     paymentStatus?: 'PAID' | 'UNPAID' | 'PARTIAL';
   };
@@ -48,6 +57,13 @@ export type MasterStudent = {
     assignedBusId?: string | null;
     assignedBusName?: string | null;
     assignedSeatNumber?: number | null;
+    regularBusName?: string | null;
+    regularBusDays?: string[];
+    afterSchoolBuses?: {
+      day: string;
+      busName: string;
+      courseTitle?: string;
+    }[];
   };
 
   // [서브도메인 3] 출결 관리 요약

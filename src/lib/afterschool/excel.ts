@@ -57,6 +57,7 @@ export function exportEnrollmentsToExcel(
       스쿨버스: item.kisbusNo || '-',
       방과후버스: item.afterschoolBusNo || (item.afterSchoolBusAssignment ? `${item.afterSchoolBusAssignment}호차` : '-'),
       목적지: item.destinationName || '-',
+      수강요일: item.selectedDays && item.selectedDays.length > 0 ? `주1회 (${item.selectedDays.join(', ')})` : '전체 (기본)',
       '수강료(VND)': tuition,
       '교재비(VND)': textbook,
       '재료비(VND)': material,

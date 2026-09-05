@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
@@ -18,7 +18,10 @@ import {
   Phone, 
   FileText,
   AlertTriangle,
-  ArrowRight
+  ArrowRight,
+  Edit3,
+  Camera,
+  Users
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,11 +31,16 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getDocConfig, onOrgStructureUpdate } from '@/lib/services/settingsService';
-import { onMasterStudentsUpdate } from '@/lib/services/masterStudentService';
+import { onMasterStudentsUpdate, updateMasterStudent } from '@/lib/services/masterStudentService';
 import { getStudentFieldTripDays, getStudentAbsenceDays, createDocument, approveDocument } from '@/lib/services/documentService';
 import { getApproversByGradeClass } from '@/lib/services/userService';
 import { getWorkingDaysCount } from '@/lib/utils';
+import { resizeStudentPhoto } from '@/lib/imageResize';
+import { BatchPhotoModal } from '@/app/(app)/admin/students/batch-photo-modal';
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import type { OrgStructure, DocConfig } from '@/lib/types';
 
@@ -49,6 +57,64 @@ export default function TeacherHomeroomApplyPage() {
 
   // 문서 유형 (체험학습 신청서 vs 결석계)
   const [docCategory, setDocCategory] = useState<'field-trip' | 'absence'>('field-trip');
+
+  // 상단 메인 탭: 'proxy' (출결/체험학습 대리 작성) | 'student-info' (학생 정보 확인)
+  const [activeMainTab, setActiveMainTab] = useState<'proxy' | 'student-info'>('proxy');
+  const [isBatchPhotoOpen, setIsBatchPhotoOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editStudentForm, setEditStudentForm] = useState<Partial<MasterStudent>>({});
+  const editPhotoInputRef = useRef<HTMLInputElement>(null);
+
+  const handleStartEditStudent = (student: MasterStudent) => {
+    setEditStudentForm({
+      ...student,
+      studentId: student.studentId || student.id,
+      name: student.nameKo || student.name || '',
+      studentEmail: student.studentEmail || '',
+      grade: String(student.grade || '1'),
+      classNum: String(student.classNum || '1'),
+      studentNum: String(student.studentNum || ''),
+      gender: student.gender || 'Male',
+      contact: student.contact || '',
+      address: student.address || '',
+      photoUrl: student.photoUrl || ''
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleEditPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const resizedBase64 = await resizeStudentPhoto(file);
+      setEditStudentForm(prev => ({ ...prev, photoUrl: resizedBase64 }));
+      toast({ title: '사진 규격 최적화 완료', description: '가로세로 2cm 규격으로 자동 압축되었습니다.' });
+    } catch (err) {
+      console.error(err);
+      toast({ title: '사진 변환 오류', description: '사진 변환 중 오류가 발생했습니다.', variant: 'destructive' });
+    }
+  };
+
+  const handleSaveEditStudent = async () => {
+    if (!editStudentForm.studentId) return;
+    try {
+      await updateMasterStudent(editStudentForm.studentId, {
+        name: editStudentForm.name,
+        grade: String(editStudentForm.grade || '1'),
+        classNum: String(editStudentForm.classNum || '1'),
+        studentNum: String(editStudentForm.studentNum || ''),
+        gender: editStudentForm.gender,
+        contact: editStudentForm.contact,
+        address: editStudentForm.address,
+        photoUrl: editStudentForm.photoUrl
+      });
+      setIsEditDialogOpen(false);
+      toast({ title: '학생 정보 수정 완료', description: '학생 정보가 성공적으로 반영되었습니다.' });
+    } catch (err) {
+      console.error(err);
+      toast({ title: '수정 실패', description: '학생 정보 수정 중 오류가 발생했습니다.', variant: 'destructive' });
+    }
+  };
 
   // 선택된 학급 키 (예: "4-4")
   const [selectedClassKey, setSelectedClassKey] = useState<string>('');
@@ -369,7 +435,7 @@ export default function TeacherHomeroomApplyPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-4 md:p-8 space-y-6 font-body">
+    <div className="w-full p-4 md:p-6 space-y-6 font-body">
       {/* 헤더 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
         <div>
@@ -378,17 +444,30 @@ export default function TeacherHomeroomApplyPage() {
               <Users2 className="w-6 h-6" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground font-headline">
-              담임 업무 · 출결/체험학습 대리 작성
+              담임 교사 업무 관리소
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            학부모 앱 사용이 어려운 가정을 위해 담임 교사가 반 학생의 결석계 및 교외체험학습 신청서를 대신 작성하고 결재를 진행합니다.
+            담당 학급 학생들의 계정 정보를 확인하고 사진을 관리하며, 출결 및 체험학습 신청을 대리 작성합니다.
           </p>
         </div>
       </div>
 
-      {/* 1. 학급 및 학생 선택 카드 */}
-      <Card className="border-border/80 shadow-xs">
+      {/* 상단 탭 네비게이션 */}
+      <Tabs value={activeMainTab} onValueChange={(val: any) => setActiveMainTab(val)} className="w-full space-y-6">
+        <TabsList className="grid grid-cols-2 w-full max-w-md bg-slate-100 p-1 rounded-xl">
+          <TabsTrigger value="proxy" className="text-xs font-bold py-2">
+            출결/체험학습 대리 작성
+          </TabsTrigger>
+          <TabsTrigger value="student-info" className="text-xs font-bold py-2">
+            학생 정보 확인 ({classStudents.length}명)
+          </TabsTrigger>
+        </TabsList>
+
+        {/* 탭 1: 출결/체험학습 대리 작성 */}
+        <TabsContent value="proxy" className="space-y-6">
+          {/* 1. 학급 및 학생 선택 카드 */}
+          <Card className="border-border/80 shadow-xs">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-bold flex items-center gap-2">
             <User className="w-4 h-4 text-primary" />
@@ -428,11 +507,14 @@ export default function TeacherHomeroomApplyPage() {
                   <SelectValue placeholder={classStudents.length === 0 ? "학급 학생 없음" : "학생을 선택하세요"} />
                 </SelectTrigger>
                 <SelectContent className="max-h-56">
-                  {classStudents.map(st => (
-                    <SelectItem key={st.id} value={st.id} className="text-xs">
-                      {st.studentNum ? `${st.studentNum}번 ` : ''}{st.name}
-                    </SelectItem>
-                  ))}
+                  {classStudents.map(st => {
+                    const valKey = st.studentId || st.id || st.studentEmail;
+                    return (
+                      <SelectItem key={valKey} value={valKey} className="text-xs">
+                        {st.studentNum ? `${st.studentNum}번 ` : ''}{st.name}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -688,6 +770,341 @@ export default function TeacherHomeroomApplyPage() {
           )}
         </Button>
       </div>
+        </TabsContent>
+
+        {/* 탭 2: 학생 정보 확인 (학급 학생 전용 뷰) */}
+        <TabsContent value="student-info" className="space-y-6">
+          <Card className="rounded-2xl border-slate-200/80 shadow-xs">
+            <CardHeader className="pb-3 border-b border-slate-100">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <Users className="w-4 h-4 text-indigo-600" />
+                    <span>{selectedClassKey ? `${selectedClassKey.replace('-', '학년 ')}반` : ''} 학생 계정 명단 ({classStudents.length}명)</span>
+                  </CardTitle>
+                  <CardDescription className="text-xs text-slate-500">
+                    담임 학급 학생들의 계정, 방과후 강좌, 스쿨버스 노선 정보를 확인하고 사진을 등록합니다.
+                  </CardDescription>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {availableClassKeys.length > 1 && (
+                    <div className="flex items-center gap-1.5 mr-2">
+                      <span className="text-xs font-bold text-slate-600">학급 선택:</span>
+                      <Select value={selectedClassKey} onValueChange={setSelectedClassKey}>
+                        <SelectTrigger className="h-8 text-xs w-[110px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableClassKeys.map(k => (
+                            <SelectItem key={k} value={k} className="text-xs">
+                              {k.replace('-', '학년 ')}반
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <Button 
+                    type="button"
+                    size="sm" 
+                    onClick={() => setIsBatchPhotoOpen(true)}
+                    className="h-8 text-xs px-2.5 font-bold whitespace-nowrap bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer"
+                  >
+                    <Camera className="w-3.5 h-3.5 mr-1" /> 사진 일괄 등록
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <div className="rounded-xl border border-slate-200 overflow-x-auto shadow-2xs">
+                <Table>
+                  <TableHeader className="bg-slate-50">
+                    <TableRow>
+                      <TableHead className="w-[80px] whitespace-nowrap font-bold text-slate-700">번호</TableHead>
+                      <TableHead className="whitespace-nowrap font-bold text-slate-700">학생 이름</TableHead>
+                      <TableHead className="whitespace-nowrap font-bold text-slate-700">학생 계정 이메일</TableHead>
+                      <TableHead className="whitespace-nowrap font-bold text-slate-700">보호자 연락처</TableHead>
+                      <TableHead className="whitespace-nowrap font-bold text-slate-700">방과후 수강 현황</TableHead>
+                      <TableHead className="whitespace-nowrap font-bold text-slate-700">스쿨버스 노선</TableHead>
+                      <TableHead className="text-right whitespace-nowrap font-bold text-slate-700">관리</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {classStudents.length > 0 ? (
+                      classStudents.map(student => (
+                        <TableRow key={student.studentId || student.id} className="hover:bg-slate-50/80 transition-colors">
+                          <TableCell className="whitespace-nowrap font-medium text-slate-700">
+                            {student.studentNum ? `${student.studentNum}번` : '-'}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            <div className="flex items-center gap-2.5">
+                              <Avatar className="w-9 h-9 rounded-xl border border-slate-200 shrink-0 shadow-2xs bg-white">
+                                {student.photoUrl ? (
+                                  <AvatarImage src={student.photoUrl} alt={student.name} className="object-cover rounded-xl" />
+                                ) : (
+                                  <AvatarFallback className="bg-indigo-50 text-indigo-700 font-extrabold text-xs rounded-xl">
+                                    {(student.name || '학생').slice(0, 2)}
+                                  </AvatarFallback>
+                                )}
+                              </Avatar>
+                              <div className="flex flex-col items-start leading-tight">
+                                <span className="font-extrabold text-slate-900">{student.name}</span>
+                                <span className="text-[10px] text-slate-400 font-normal">
+                                  {student.gender === 'Female' ? '여' : '남'}
+                                </span>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap font-mono text-xs text-slate-600">
+                            {student.studentEmail}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-xs text-slate-600">
+                            {student.contact || '-'}
+                          </TableCell>
+                          <TableCell className="whitespace-normal min-w-[140px] max-w-[220px]">
+                            {student.afterschoolSummary?.enrolledCourses && student.afterschoolSummary.enrolledCourses.length > 0 ? (
+                              <div className="flex flex-col gap-1 py-1">
+                                {student.afterschoolSummary.enrolledCourses.map((c, idx) => (
+                                  <Badge key={idx} variant="secondary" className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold py-0.5 px-2 w-fit">
+                                    <span className="font-bold text-emerald-950 mr-1">[{c.days.join(',')}]</span>
+                                    <span>{(c.title || '').slice(0, 5)}{(c.title || '').length > 5 ? '..' : ''}</span>
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : student.afterschoolSummary?.enrolledCourseTitles && student.afterschoolSummary.enrolledCourseTitles.length > 0 ? (
+                              <div className="flex flex-col gap-1">
+                                {student.afterschoolSummary.enrolledCourseTitles.map((t, idx) => (
+                                  <Badge key={idx} variant="secondary" className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] w-fit">
+                                    {(t || '').slice(0, 5)}{(t || '').length > 5 ? '..' : ''}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-400 italic whitespace-nowrap">미수강</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="whitespace-normal min-w-[130px] max-w-[200px]">
+                            {(() => {
+                              const bSum = student.busSummary;
+                              const afterschoolBuses = bSum?.afterSchoolBuses || [];
+                              const hasRegularBus = !!bSum?.regularBusName;
+                              const hasAfterschoolBuses = afterschoolBuses.length > 0;
+                              const hasEnrolledCourses = (student.afterschoolSummary?.enrolledCourses?.length ?? 0) > 0;
+
+                              if (!hasRegularBus && !hasAfterschoolBuses && !bSum?.assignedBusName) {
+                                return <span className="text-xs text-slate-400 italic whitespace-nowrap">자가 귀가</span>;
+                              }
+
+                              return (
+                                <div className="flex flex-col gap-1 py-1">
+                                  {hasRegularBus && (
+                                    <Badge variant="outline" className="bg-sky-50 text-sky-800 border-sky-200 text-[11px] font-semibold py-0.5 px-2 w-fit">
+                                      <span className="font-bold text-sky-950 mr-1">
+                                        {hasEnrolledCourses && bSum?.regularBusDays && bSum.regularBusDays.length > 0
+                                          ? `[${bSum.regularBusDays.join(',')}]`
+                                          : `[정규]`}
+                                      </span>
+                                      <span>{bSum.regularBusName}</span>
+                                    </Badge>
+                                  )}
+                                  {afterschoolBuses.map((asb, idx) => (
+                                    <Badge key={idx} variant="outline" className="bg-amber-50 text-amber-900 border-amber-200 text-[11px] font-semibold py-0.5 px-2 w-fit">
+                                      <span className="font-bold text-amber-950 mr-1">[{asb.day}]</span>
+                                      <span>{asb.busName}</span>
+                                    </Badge>
+                                  ))}
+                                  {!hasRegularBus && !hasAfterschoolBuses && bSum?.assignedBusName && (
+                                    <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-[11px] font-bold w-fit">
+                                      {bSum.assignedBusName}
+                                    </Badge>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </TableCell>
+                          <TableCell className="text-right whitespace-nowrap">
+                            <Button 
+                              type="button"
+                              variant="outline" 
+                              size="sm" 
+                              className="h-7 text-xs px-2.5 text-indigo-700 hover:bg-indigo-50 border-indigo-200 cursor-pointer font-medium"
+                              onClick={() => handleStartEditStudent(student)}
+                            >
+                              <Edit3 className="h-3.5 w-3.5 mr-1" /> 정보 수정
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={7} className="h-28 text-center text-slate-500 whitespace-nowrap">
+                          담당 학급에 등록된 학생이 없습니다.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* 사진 일괄 등록 모달 */}
+      <BatchPhotoModal 
+        isOpen={isBatchPhotoOpen}
+        onClose={() => setIsBatchPhotoOpen(false)}
+        students={allStudents}
+      />
+
+      {/* 개별 학생 정보 및 사진 수정 모달 */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[560px] w-[95vw] max-h-[88vh] overflow-y-auto p-6 rounded-2xl">
+          <DialogHeader className="pb-1">
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <Edit3 className="h-4 w-4 text-indigo-600 shrink-0" /> 학급 학생 정보 및 사진 수정
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              {editStudentForm.studentEmail} 학생의 프로필 사진 및 기본 정보를 수정합니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 text-xs">
+            {/* 사진 등록 섹션 (가로세로 2cm 규격) */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="font-bold text-slate-800 text-xs">학생 프로필 사진 (가로세로 2cm 규격)</span>
+                <Badge variant="outline" className="text-[10px] bg-indigo-50 border-indigo-200 text-indigo-700 font-medium px-2 py-0.5">
+                  PC 최적 160x160 자동 압축
+                </Badge>
+              </div>
+              <div className="flex items-center gap-4">
+                <Avatar className="rounded-2xl border-2 border-indigo-200 shadow-2xs shrink-0 bg-white" style={{ width: '2cm', height: '2cm' }}>
+                  {editStudentForm.photoUrl ? (
+                    <AvatarImage src={editStudentForm.photoUrl} alt={editStudentForm.name || '학생'} className="object-cover rounded-2xl" />
+                  ) : (
+                    <AvatarFallback className="bg-indigo-50 text-indigo-700 font-bold text-xs rounded-2xl">
+                      사진 없음
+                    </AvatarFallback>
+                  )}
+                </Avatar>
+                <div className="space-y-2 flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      type="file"
+                      ref={editPhotoInputRef}
+                      onChange={handleEditPhotoChange}
+                      accept="image/*"
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => editPhotoInputRef.current?.click()}
+                      className="h-8 text-xs px-3 bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold cursor-pointer shadow-2xs"
+                    >
+                      <Camera className="w-3.5 h-3.5 mr-1" />
+                      사진 업로드
+                    </Button>
+                    {editStudentForm.photoUrl && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditStudentForm(prev => ({ ...prev, photoUrl: '' }))}
+                        className="h-8 text-xs px-2.5 text-rose-600 hover:bg-rose-50 cursor-pointer"
+                      >
+                        사진 삭제
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-tight">
+                    사진을 선택하면 증명사진용 2cm 정사각형으로 자동 압축되어 즉시 적용됩니다.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 인적사항 입력 필드 */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-700">학생 이름</Label>
+                <Input
+                  value={editStudentForm.name || ''}
+                  onChange={(e) => setEditStudentForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="h-8 text-xs bg-white"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-700">출석 번호</Label>
+                <Input
+                  value={editStudentForm.studentNum || ''}
+                  onChange={(e) => setEditStudentForm(prev => ({ ...prev, studentNum: e.target.value }))}
+                  placeholder="예: 5"
+                  className="h-8 text-xs bg-white"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-700">보호자 연락처</Label>
+                <Input
+                  value={editStudentForm.contact || ''}
+                  onChange={(e) => setEditStudentForm(prev => ({ ...prev, contact: e.target.value }))}
+                  placeholder="010-0000-0000"
+                  className="h-8 text-xs bg-white"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-700">성별</Label>
+                <Select
+                  value={editStudentForm.gender || 'Male'}
+                  onValueChange={(val: any) => setEditStudentForm(prev => ({ ...prev, gender: val }))}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Male">남학생</SelectItem>
+                    <SelectItem value="Female">여학생</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-bold text-slate-700">거주지 주소 / 스쿨버스 정류장</Label>
+              <Input
+                value={editStudentForm.address || ''}
+                onChange={(e) => setEditStudentForm(prev => ({ ...prev, address: e.target.value }))}
+                placeholder="예: 현대아파트 앞"
+                className="h-8 text-xs bg-white"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2 border-t flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsEditDialogOpen(false)}
+              className="h-8 text-xs font-medium"
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSaveEditStudent}
+              className="h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              저장 완료
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -46,6 +46,7 @@ interface StudentGlobalSearchPanelProps {
     semesterMode?: 'regular' | 'vacation';
     onAddStudentToClass?: (studentId: string, classId: string) => Promise<void>;
     onRemoveStudentFromClass?: (studentId: string, className: string) => Promise<void>;
+    onRevertToAfternoonRoute?: (studentId: string, day?: DayOfWeek) => Promise<void>;
 }
 
 export const StudentGlobalSearchPanel = ({
@@ -58,7 +59,8 @@ export const StudentGlobalSearchPanel = ({
     afterSchoolClasses = [],
     semesterMode = 'regular',
     onAddStudentToClass,
-    onRemoveStudentFromClass
+    onRemoveStudentFromClass,
+    onRevertToAfternoonRoute
 }: StudentGlobalSearchPanelProps) => {
     const { t, i18n } = useTranslation();
     const { toast } = useToast();
@@ -997,13 +999,30 @@ export const StudentGlobalSearchPanel = ({
 
                             return (
                                 <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <Label className="text-xs flex items-center gap-1">
-                                            <GraduationCap className="w-3 h-3"/>
+                                    <div className="flex items-center justify-between flex-wrap gap-1">
+                                        <Label className="text-xs flex items-center gap-1 font-bold">
+                                            <GraduationCap className="w-3.5 h-3.5 text-indigo-600"/>
                                             방과후 등록 수업
                                         </Label>
-                                        {onAddStudentToClass && (
-                                            <Dialog open={isAddToClassDialogOpen} onOpenChange={setIsAddToClassDialogOpen}>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            {onRevertToAfternoonRoute && (
+                                                <Button 
+                                                    type="button"
+                                                    variant="outline" 
+                                                    size="sm" 
+                                                    className="h-6 text-[10px] px-2 gap-1 border-sky-300 text-sky-700 hover:bg-sky-50 font-bold cursor-pointer"
+                                                    title="방과후를 취소한 학생을 방과후 노선에서 제외하고 정규 하교 노선으로 복귀시킵니다."
+                                                    onClick={async () => {
+                                                        if (confirm(`${getStudentName(selectedGlobalStudent, i18n.language)} 학생의 방과후 노선 배정을 취소하고 정규 하교 노선으로 복귀시키겠습니까?`)) {
+                                                            await onRevertToAfternoonRoute(selectedGlobalStudent.id);
+                                                        }
+                                                    }}
+                                                >
+                                                    하교 노선으로 복귀
+                                                </Button>
+                                            )}
+                                            {onAddStudentToClass && (
+                                                <Dialog open={isAddToClassDialogOpen} onOpenChange={setIsAddToClassDialogOpen}>
                                                 <DialogTrigger asChild>
                                                     <Button variant="outline" size="sm" className="h-6 text-[10px] px-2 gap-1">
                                                         <UserPlus className="w-3 h-3" />
@@ -1065,6 +1084,7 @@ export const StudentGlobalSearchPanel = ({
                                                 </DialogContent>
                                             </Dialog>
                                         )}
+                                        </div>
                                     </div>
                                     {uniqueClassNames.length > 0 ? (
                                         <div className="flex flex-wrap gap-1">
@@ -1100,7 +1120,24 @@ export const StudentGlobalSearchPanel = ({
                         <Separator className="my-2" />
 
                         <div className="space-y-3">
-                            <Label className="text-xs">{t('student.after_school_destination')}</Label>
+                            <div className="flex items-center justify-between">
+                                <Label className="text-xs font-bold">{t('student.after_school_destination')}</Label>
+                                {onRevertToAfternoonRoute && (
+                                    <Button 
+                                        type="button"
+                                        variant="ghost" 
+                                        size="sm" 
+                                        className="h-5 text-[10px] px-1.5 text-sky-700 hover:bg-sky-50 font-semibold cursor-pointer"
+                                        onClick={async () => {
+                                            if (confirm(`모든 요일의 방과후 목적지를 초기화하고 정규 하교 노선으로 복귀시키겠습니까?`)) {
+                                                await onRevertToAfternoonRoute(selectedGlobalStudent.id);
+                                            }
+                                        }}
+                                    >
+                                        방과후 목적지 초기화 및 하교 복귀
+                                    </Button>
+                                )}
+                            </div>
                             <div className="grid grid-cols-2 gap-2">
                                 {dayOrder.filter(d => d !== 'Saturday').map(day => (
                                     <div key={day} className="space-y-1">

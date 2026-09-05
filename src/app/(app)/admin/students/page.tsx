@@ -46,6 +46,8 @@ export default function AdminMasterStudentsPage() {
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
+  const [selectedClass, setSelectedClass] = useState<string>('all');
+  const [selectedTypeFilter, setSelectedTypeFilter] = useState<'all' | 'afterschool' | 'bus'>('all');
 
   const handleExecuteSearch = () => {
     setSearchQuery(searchInput.trim());
@@ -115,10 +117,39 @@ export default function AdminMasterStudentsPage() {
     }));
   }, [destinations]);
 
+  // 선택된 학년 기준 사용 가능한 반 목록
+  const availableClasses = useMemo(() => {
+    const set = new Set<string>();
+    students.forEach(s => {
+      if (selectedGrade === 'all' || String(s.grade) === String(selectedGrade)) {
+        if (s.classNum) set.add(String(s.classNum));
+      }
+    });
+    return Array.from(set).sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0));
+  }, [students, selectedGrade]);
+
   // 필터링된 학생 목록
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
       if (selectedGrade !== 'all' && String(s.grade) !== String(selectedGrade)) return false;
+      if (selectedClass !== 'all' && String(s.classNum) !== String(selectedClass)) return false;
+
+      // 수강/탑승 유형 필터링
+      if (selectedTypeFilter === 'afterschool') {
+        const hasAfterschool = (s.afterschoolSummary?.enrolledCourses && s.afterschoolSummary.enrolledCourses.length > 0) ||
+                               (s.afterschoolSummary?.enrolledCourseIds && s.afterschoolSummary.enrolledCourseIds.length > 0);
+        if (!hasAfterschool) return false;
+      } else if (selectedTypeFilter === 'bus') {
+        const hasBus = !!(
+          s.busSummary?.regularBusName || 
+          s.busSummary?.assignedBusName || 
+          (s.busSummary?.afterSchoolBuses && s.busSummary.afterSchoolBuses.length > 0) ||
+          s.busSummary?.morningDestinationId ||
+          s.busSummary?.afternoonDestinationId
+        );
+        if (!hasBus) return false;
+      }
+
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
         const nameMatch = (s.name || '').toLowerCase().includes(q);
@@ -134,9 +165,12 @@ export default function AdminMasterStudentsPage() {
       const cA = parseInt(a.classNum) || 0;
       const cB = parseInt(b.classNum) || 0;
       if (cA !== cB) return cA - cB;
+      const nA = parseInt(a.studentNum || '0') || 0;
+      const nB = parseInt(b.studentNum || '0') || 0;
+      if (nA !== nB) return nA - nB;
       return (a.name || '').localeCompare(b.name || '', 'ko');
     });
-  }, [students, selectedGrade, searchQuery]);
+  }, [students, selectedGrade, selectedClass, selectedTypeFilter, searchQuery]);
 
   // 통계
   const stats = useMemo(() => {
@@ -974,23 +1008,57 @@ export default function AdminMasterStudentsPage() {
                   <Search className="w-3.5 h-3.5 mr-1" /> 검색
                 </Button>
               </div>
-              <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
-                <span className="text-xs font-bold text-slate-600 whitespace-nowrap">학년 필터:</span>
-                <Select value={selectedGrade} onValueChange={setSelectedGrade}>
-                  <SelectTrigger className="h-9 w-[110px] text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">전체 학년</SelectItem>
-                    <SelectItem value="1">1학년</SelectItem>
-                    <SelectItem value="2">2학년</SelectItem>
-                    <SelectItem value="3">3학년</SelectItem>
-                    <SelectItem value="4">4학년</SelectItem>
-                    <SelectItem value="5">5학년</SelectItem>
-                    <SelectItem value="6">6학년</SelectItem>
-                    <SelectItem value="졸업">졸업생</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-600 whitespace-nowrap">학년:</span>
+                  <Select value={selectedGrade} onValueChange={(val) => {
+                    setSelectedGrade(val);
+                    setSelectedClass('all');
+                  }}>
+                    <SelectTrigger className="h-9 w-[105px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">전체 학년</SelectItem>
+                      <SelectItem value="1">1학년</SelectItem>
+                      <SelectItem value="2">2학년</SelectItem>
+                      <SelectItem value="3">3학년</SelectItem>
+                      <SelectItem value="4">4학년</SelectItem>
+                      <SelectItem value="5">5학년</SelectItem>
+                      <SelectItem value="6">6학년</SelectItem>
+                      <SelectItem value="졸업">졸업생</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-600 whitespace-nowrap">반:</span>
+                  <Select value={selectedClass} onValueChange={setSelectedClass}>
+                    <SelectTrigger className="h-9 w-[95px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">전체 반</SelectItem>
+                      {availableClasses.map(c => (
+                        <SelectItem key={c} value={c}>{c}반</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-600 whitespace-nowrap">유형:</span>
+                  <Select value={selectedTypeFilter} onValueChange={(val: any) => setSelectedTypeFilter(val)}>
+                    <SelectTrigger className="h-9 w-[150px] text-xs font-medium">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">전체 학생</SelectItem>
+                      <SelectItem value="afterschool">방과후 수강생만</SelectItem>
+                      <SelectItem value="bus">스쿨버스 탑승생만</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -1048,23 +1116,67 @@ export default function AdminMasterStudentsPage() {
                         <TableCell className="whitespace-nowrap text-xs text-slate-600">
                           {student.contact || '-'}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          {student.afterschoolSummary?.enrolledCourseTitles && student.afterschoolSummary.enrolledCourseTitles.length > 0 ? (
-                            <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] whitespace-nowrap font-bold">
-                              {student.afterschoolSummary.enrolledCourseTitles.length}개 강좌 수강 중
-                            </Badge>
+                        <TableCell className="whitespace-normal min-w-[160px] max-w-[240px]">
+                          {student.afterschoolSummary?.enrolledCourses && student.afterschoolSummary.enrolledCourses.length > 0 ? (
+                            <div className="flex flex-col gap-1 py-1">
+                              {student.afterschoolSummary.enrolledCourses.map((c, idx) => (
+                                <Badge key={idx} variant="secondary" className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold py-0.5 px-2 w-fit">
+                                  <span className="font-bold text-emerald-950 mr-1">[{c.days.join(',')}]</span>
+                                  <span>{(c.title || '').slice(0, 5)}{(c.title || '').length > 5 ? '..' : ''}</span>
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : student.afterschoolSummary?.enrolledCourseTitles && student.afterschoolSummary.enrolledCourseTitles.length > 0 ? (
+                            <div className="flex flex-col gap-1">
+                              {student.afterschoolSummary.enrolledCourseTitles.map((t, idx) => (
+                                <Badge key={idx} variant="secondary" className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] w-fit">
+                                  {(t || '').slice(0, 5)}{(t || '').length > 5 ? '..' : ''}
+                                </Badge>
+                              ))}
+                            </div>
                           ) : (
                             <span className="text-xs text-slate-400 italic whitespace-nowrap">미수강</span>
                           )}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          {student.busSummary?.assignedBusName ? (
-                            <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-[11px] whitespace-nowrap font-bold">
-                              {student.busSummary.assignedBusName}
-                            </Badge>
-                          ) : (
-                            <span className="text-xs text-slate-400 italic whitespace-nowrap">자가 귀가</span>
-                          )}
+                        <TableCell className="whitespace-normal min-w-[140px] max-w-[220px]">
+                          {(() => {
+                            const bSum = student.busSummary;
+                            const afterschoolBuses = bSum?.afterSchoolBuses || [];
+                            const hasRegularBus = !!bSum?.regularBusName;
+                            const hasAfterschoolBuses = afterschoolBuses.length > 0;
+                            const hasEnrolledCourses = (student.afterschoolSummary?.enrolledCourses?.length ?? 0) > 0;
+
+                            if (!hasRegularBus && !hasAfterschoolBuses && !bSum?.assignedBusName) {
+                              return <span className="text-xs text-slate-400 italic whitespace-nowrap">자가 귀가</span>;
+                            }
+
+                            return (
+                              <div className="flex flex-col gap-1 py-1">
+                                {hasRegularBus && (
+                                  <Badge variant="outline" className="bg-sky-50 text-sky-800 border-sky-200 text-[11px] font-semibold py-0.5 px-2 w-fit">
+                                    <span className="font-bold text-sky-950 mr-1">
+                                      {hasEnrolledCourses && bSum?.regularBusDays && bSum.regularBusDays.length > 0
+                                        ? `[${bSum.regularBusDays.join(',')}]`
+                                        : `[정규]`}
+                                    </span>
+                                    <span>{bSum.regularBusName}</span>
+                                  </Badge>
+                                )}
+
+                                {afterschoolBuses.map((asb, idx) => (
+                                  <Badge key={idx} variant="outline" className="bg-amber-50 text-amber-900 border-amber-200 text-[11px] font-semibold py-0.5 px-2 w-fit">
+                                    <span className="font-bold text-amber-950 mr-1">[{asb.day}]</span>
+                                    <span>{asb.busName}</span>
+                                  </Badge>
+                                ))}
+                                {!hasRegularBus && !hasAfterschoolBuses && bSum?.assignedBusName && (
+                                  <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-[11px] font-bold w-fit">
+                                    {bSum.assignedBusName}
+                                  </Badge>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell className="text-right whitespace-nowrap">
                           <Button 
