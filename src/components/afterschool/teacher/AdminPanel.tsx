@@ -10,9 +10,11 @@ import { downloadClassroomTemplateExcel, parseClassroomExcel, downloadCourseTemp
 import { defaultTeacherApplySettings, getTeacherApplySettings, onTeacherApplySettingsUpdate, saveTeacherApplySettings, updateAfterschoolCourse, deleteAfterschoolCourse, saveAfterschoolCoursesBatch, addAfterschoolClassroom, deleteAfterschoolClassroom, saveAfterschoolClassroomsBatch, onMaterialRequestsUpdate, onExpenseProofsUpdate, sendSubmissionReminder, purgeAfterschoolOperationalData, onAttendanceRecordsUpdate, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord, onDocConfigUpdate, deleteAfterschoolApprovalDoc } from '@/lib/services/settingsService';
 import { countOperatingDays, getCourseSessionsPerClass, generateCalendarSchedule, generateCalendarScheduleByDateRange, ScheduleDay, extractHolidayDatesFromEvents } from '@/lib/afterschool/schedule';
 import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
-import type { DocConfig } from '@/lib/types';
+import type { DocConfig, UserProfile } from '@/lib/types';
+import { getUsersDirectory } from '@/lib/services/userService';
 import { StudentManagement } from './StudentManagement';
 import { OfficialSeal } from './AttendanceManagement';
+import { SignatureRegisterModal } from './SignatureRegisterModal';
 import { useAuth } from '@/hooks/use-auth';
 import { useTranslation } from '@/hooks/use-translation';
 
@@ -72,6 +74,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [expenseProofs, setExpenseProofs] = useState<ExpenseProof[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [substituteRecords, setSubstituteRecords] = useState<SubstituteRecord[]>([]);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [sigModalTarget, setSigModalTarget] = useState<{ teacherName: string; teacherEmail?: string; courseId?: string } | null>(null);
+
+  useEffect(() => {
+    getUsersDirectory().then(users => setAllUsers(users)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const unsub = onDocConfigUpdate((cfg) => {
@@ -2486,11 +2494,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {viewingDocCourse && viewingDocType && (() => {
         const c = viewingDocCourse;
         const targetDoc = (approvalDocs || []).find((d) => d.courseId === c.id);
-        const instructorSignature = (targetDoc as any)?.instructorSignature || (profile?.name === c.instructorName ? profile?.signature : '') || profile?.signature || '';
         const isManagerApproved = targetDoc?.status === 'APPROVED' || (targetDoc as any)?.managerApproved;
         const isVicePrincipalApproved = targetDoc?.status === 'APPROVED' && (targetDoc as any)?.vicePrincipalApproved;
         const managerSignature = (targetDoc as any)?.managerSignature || '';
         const vicePrincipalSignature = (targetDoc as any)?.vicePrincipalSignature || '';
+
+        // 주강사 및 보조강사 목록 추출
+        const mainInstructor = c.instructorName || '강사';
+        const assistantInstructors = [
+          c.instructor2,
+          c.instructor3,
+          c.instructor4,
+          ...(c.assistantTeachers || [])
+        ].filter((name): name is string => Boolean(name && name.trim() !== mainInstructor.trim()));
+        const allInstructors = [mainInstructor, ...assistantInstructors];
+
+        // 강사별 서명(도장) 조회: 관리자 도장 fallback 절대 금지!
+        const getInstructorSeal = (instName: string): string => {
+          if (!instName) return '';
+          const cleanName = instName.trim();
+          const docSigs = (targetDoc as any)?.instructorSignatures;
+          if (docSigs && docSigs[cleanName]) return docSigs[cleanName];
+          if (c.instructorName === cleanName && (targetDoc as any)?.instructorSignature) {
+            return (targetDoc as any).instructorSignature;
+          }
+          if (profile?.name === cleanName && profile?.signature) {
+            return profile.signature;
+          }
+          const u = allUsers.find(user => user.name === cleanName);
+          if (u?.signature) return u.signature;
+          return '';
+        };
 
         // 출석부용 달력 산출
         const sessionsPerClass = c.sessionsPerClass || 2;
@@ -2508,11 +2542,73 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         const courseStudents = enrollments.filter((e) => e.courseId === c.id && e.status === 'ENROLLED');
         const proof = expenseProofs.find((p) => p.courseId === c.id);
 
+        const handlePrint = () => {
+          if (!getInstructorSeal(mainInstructor)) {
+            if (confirm(`주강사 [${mainInstructor}] 선생님의 도장(서명)이 등록되지 않았습니다. 서명을 먼저 등록하시겠습니까?\n(취소 시 기본 원형 직인으로 인쇄됩니다)`)) {
+              setSigModalTarget({ teacherName: mainInstructor, courseId: c.id });
+              return;
+            }
+          }
+          window.print();
+        };
+
         return (
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 p-2 md:p-4 overflow-y-auto backdrop-blur-xs animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden border border-slate-200 flex flex-col my-auto">
-              {/* Modal Header */}
-              <div className="bg-slate-900 px-6 py-4 flex items-center justify-between text-white shrink-0">
+            {/* 인쇄 전용 스타일 태그 (A4 가로 방향 및 서식 외 요소 완전 숨김) */}
+            <style>{`
+              @media print {
+                @page {
+                  size: A4 landscape;
+                  margin: 7mm 5mm 7mm 5mm;
+                }
+                html, body {
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background: white !important;
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+                body * {
+                  visibility: hidden !important;
+                }
+                .print-container-only,
+                .print-container-only * {
+                  visibility: visible !important;
+                }
+                .print-container-only {
+                  position: fixed !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  max-width: 100% !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  border: none !important;
+                  box-shadow: none !important;
+                  background: white !important;
+                  z-index: 99999 !important;
+                }
+                .no-print {
+                  display: none !important;
+                }
+                table {
+                  width: 100% !important;
+                  border-collapse: collapse !important;
+                  page-break-inside: auto;
+                }
+                tr {
+                  page-break-inside: avoid;
+                  page-break-after: auto;
+                }
+                thead {
+                  display: table-header-group;
+                }
+              }
+            `}</style>
+
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden border border-slate-200 flex flex-col my-auto">
+              {/* Modal Header (인쇄 시 숨김) */}
+              <div className="no-print bg-slate-900 px-6 py-4 flex items-center justify-between text-white shrink-0">
                 <div className="flex items-center gap-2.5">
                   {viewingDocType === 'ATTENDANCE' && <ClipboardList className="w-5 h-5 text-emerald-400" />}
                   {viewingDocType === 'WORK_REGISTER' && <FileText className="w-5 h-5 text-amber-400" />}
@@ -2522,14 +2618,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       [{c.title}] {viewingDocType === 'ATTENDANCE' ? '공식 출석부 검토' : viewingDocType === 'WORK_REGISTER' ? '강사출근부 검토' : '학습준비물 지출증빙서 검토'}
                     </h3>
                     <p className="text-[11px] text-slate-400">
-                      강사: {c.instructorName || '-'} · 장소: {c.classroom || '-'} · 시간: {c.classTime}
+                      강사: {mainInstructor}{assistantInstructors.length > 0 ? ` (보조: ${assistantInstructors.join(', ')})` : ''} · 장소: {c.classroom || '-'} · 시간: {c.classTime}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => window.print()}
+                    onClick={handlePrint}
                     className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl flex items-center gap-1 transition shadow-xs cursor-pointer"
                   >
                     <Printer className="w-3.5 h-3.5" /> 인쇄
@@ -2545,29 +2641,72 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               {/* Modal Body */}
-              <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50">
+              <div className="p-4 md:p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50">
                 {/* 1. 출석부 서식 */}
                 {viewingDocType === 'ATTENDANCE' && (
-                  <div className="bg-white p-6 border border-slate-300 rounded-2xl font-serif space-y-4 text-slate-900 shadow-sm">
+                  <div id="print-official-attendance-sheet" className="print-container-only bg-white p-5 md:p-6 border border-slate-300 rounded-2xl font-serif space-y-3 text-slate-900 shadow-sm">
                     <div className="text-xs text-slate-600 font-bold font-sans">
                       {teacherApplySettings?.year || '2026'}-{teacherApplySettings?.semester || '1학기'} KIS방과후학교
                     </div>
-                    <div className="flex justify-between items-start flex-wrap gap-3 font-sans">
+                    <div className="flex justify-between items-start flex-wrap gap-2 font-sans">
                       <div>
                         <h2 className="text-xl font-bold text-slate-900">{c.title} 출석부</h2>
-                        <div className="text-xs text-slate-600 mt-1 space-y-0.5">
+                        <div className="text-xs text-slate-600 mt-1 space-y-1">
                           <div>기간: {c.startDate || '2026-03-30'} ~ {c.endDate || '2026-06-20'}</div>
-                          <div className="flex items-center gap-1.5">
-                            강사: <span className="font-bold text-slate-900">{c.instructorName || '강사'}</span>
-                            <OfficialSeal
-                              name={c.instructorName || '강사'}
-                              signatureUrl={instructorSignature}
-                              size="sm"
-                            />
+                          
+                          {/* 주강사 및 보조강사 도장 표기 (증빙 필수) */}
+                          <div className="flex items-center gap-3 flex-wrap pt-0.5">
+                            <div className="flex items-center gap-1">
+                              <span className="font-semibold text-slate-700">강사:</span>
+                              <span className="font-extrabold text-slate-900">{mainInstructor}</span>
+                              <OfficialSeal
+                                name={mainInstructor}
+                                signatureUrl={getInstructorSeal(mainInstructor)}
+                                size="sm"
+                              />
+                              {!getInstructorSeal(mainInstructor) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSigModalTarget({ teacherName: mainInstructor, courseId: c.id })}
+                                  className="no-print ml-1 text-[10px] text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded font-bold cursor-pointer transition"
+                                  title="도장/서명 등록"
+                                >
+                                  서명 등록
+                                </button>
+                              )}
+                            </div>
+
+                            {assistantInstructors.length > 0 && (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-slate-500 font-semibold">· 보조강사:</span>
+                                {assistantInstructors.map((asst) => (
+                                  <div key={asst} className="flex items-center gap-1">
+                                    <span className="font-bold text-slate-800">{asst}</span>
+                                    <OfficialSeal
+                                      name={asst}
+                                      signatureUrl={getInstructorSeal(asst)}
+                                      size="sm"
+                                    />
+                                    {!getInstructorSeal(asst) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSigModalTarget({ teacherName: asst, courseId: c.id })}
+                                        className="no-print ml-0.5 text-[10px] text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded font-bold cursor-pointer transition"
+                                        title="도장/서명 등록"
+                                      >
+                                        서명 등록
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
-                      <table className="border-collapse border border-slate-800 text-xs text-center">
+
+                      {/* 결재란 */}
+                      <table className="border-collapse border border-slate-800 text-xs text-center shrink-0">
                         <tbody>
                           <tr>
                             <td rowSpan={2} className="border border-slate-800 bg-slate-100 px-1.5 py-2 font-bold w-6 leading-tight text-[10px]">결<br/>재</td>
@@ -2590,23 +2729,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </table>
                     </div>
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse border border-slate-800 text-xs text-center font-sans">
+                    {/* 출석부 명단 테이블 (A4 가로 폭 최적화) */}
+                    <div className="overflow-x-auto print:overflow-visible">
+                      <table className="w-full border-collapse border border-slate-800 text-xs text-center font-sans print:text-[9.5px]">
                         <thead className="bg-slate-100 font-bold">
                           <tr>
-                            <th className="border border-slate-800 p-1 w-7">순</th>
-                            <th className="border border-slate-800 p-1 w-8">학년</th>
-                            <th className="border border-slate-800 p-1 w-8">반</th>
-                            <th className="border border-slate-800 p-1 w-8">번</th>
-                            <th className="border border-slate-800 p-1 min-w-[70px]">이름</th>
+                            <th className="border border-slate-800 p-0.5 w-6 print:w-5">순</th>
+                            <th className="border border-slate-800 p-0.5 w-6 print:w-5">학</th>
+                            <th className="border border-slate-800 p-0.5 w-6 print:w-5">반</th>
+                            <th className="border border-slate-800 p-0.5 w-6 print:w-5">번</th>
+                            <th className="border border-slate-800 p-1 w-16 print:w-14">이름</th>
                             {scheduleDays.map((d) => (
-                              <th key={d.dayIndex} className="border border-slate-800 p-0.5 text-[9px] min-w-[24px]">
+                              <th key={d.dayIndex} className="border border-slate-800 p-0.5 text-[8.5px] print:text-[8px] min-w-[20px]">
                                 <div>{d.dateStr}</div>
-                                <div className="text-[8px] font-normal text-slate-500">{d.dayIndex}회</div>
+                                <div className="text-[7.5px] font-normal text-slate-500">{d.dayIndex}회</div>
                               </th>
                             ))}
-                            <th className="border border-slate-800 p-1 min-w-[50px]">버스</th>
-                            <th className="border border-slate-800 p-1 min-w-[90px]">학부모</th>
+                            <th className="border border-slate-800 p-0.5 w-12 print:w-11 text-[10px]">버스</th>
+                            <th className="border border-slate-800 p-0.5 w-20 print:w-18 text-[10px]">학부모</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2631,25 +2771,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   String(s.class) === String(enr.classNum)
                                 );
                               return (
-                                <tr key={enr.id} className="h-7 hover:bg-slate-50">
-                                  <td className="border border-slate-800">{idx + 1}</td>
-                                  <td className="border border-slate-800">{enr.grade}</td>
-                                  <td className="border border-slate-800">{enr.classNum}</td>
-                                  <td className="border border-slate-800">{enr.studentNum}</td>
-                                  <td className="border border-slate-800 font-bold">{enr.name}</td>
+                                <tr key={enr.id} className="h-6 print:h-5 hover:bg-slate-50">
+                                  <td className="border border-slate-800 py-0.5 text-[10px]">{idx + 1}</td>
+                                  <td className="border border-slate-800 py-0.5 text-[10px]">{enr.grade}</td>
+                                  <td className="border border-slate-800 py-0.5 text-[10px]">{enr.classNum}</td>
+                                  <td className="border border-slate-800 py-0.5 text-[10px]">{enr.studentNum}</td>
+                                  <td className="border border-slate-800 py-0.5 font-bold text-[10.5px]">{enr.name}</td>
                                   {scheduleDays.map((d) => {
                                     const rec = attendanceRecords.find(
                                       (r) => r.courseId === c.id && r.studentId === enr.studentId && d.sessionNos.includes(r.sessionNo || 0)
                                     );
                                     const mark = rec?.status === 'ATTEND' ? 'O' : (rec?.status === 'LATE' || (rec as any)?.mark === 'V') ? 'V' : rec?.status === 'ABSENT' ? 'X' : '';
                                     return (
-                                      <td key={d.dayIndex} className="border border-slate-800 font-bold">
+                                      <td key={d.dayIndex} className="border border-slate-800 font-bold py-0.5">
                                         {mark || '·'}
                                       </td>
                                     );
                                   })}
-                                  <td className="border border-slate-800 text-[10px] text-slate-600">{matchedStudent?.kisbusNo || enr.kisbusNo || '-'}</td>
-                                  <td className="border border-slate-800 text-[10px] font-mono">{enr.parentPhone || matchedStudent?.parentPhone || '-'}</td>
+                                  <td className="border border-slate-800 py-0.5 text-[9px] text-slate-600">{matchedStudent?.kisbusNo || enr.kisbusNo || '-'}</td>
+                                  <td className="border border-slate-800 py-0.5 text-[9px] font-mono">{enr.parentPhone || matchedStudent?.parentPhone || '-'}</td>
                                 </tr>
                               );
                             })
@@ -2659,22 +2799,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                   </div>
                 )}
-
                 {/* 2. 강사출근부 서식 */}
                 {viewingDocType === 'WORK_REGISTER' && (
-                  <div className="bg-white p-6 border border-slate-300 rounded-2xl font-serif space-y-4 text-slate-900 shadow-sm max-w-2xl mx-auto">
+                  <div id="print-official-work-register" className="print-container-only bg-white p-5 md:p-6 border border-slate-300 rounded-2xl font-serif space-y-4 text-slate-900 shadow-sm max-w-3xl mx-auto">
                     <div className="text-xs text-slate-600 font-bold font-sans">
                       {teacherApplySettings?.year || '2026'}-{teacherApplySettings?.semester || '1학기'} KIS방과후학교
                     </div>
-                    <div className="flex justify-between items-start flex-wrap gap-3 font-sans">
+                    <div className="flex justify-between items-start flex-wrap gap-2 font-sans">
                       <div>
                         <h2 className="text-xl font-bold text-slate-900">강사출근부 ({c.title})</h2>
                         <div className="text-xs text-slate-600 mt-1 space-y-0.5">
-                          <div>강사: <strong className="text-slate-900">{c.instructorName || '강사'}</strong></div>
+                          <div>
+                            강사: <strong className="text-slate-900">{mainInstructor}</strong>
+                            {assistantInstructors.length > 0 && (
+                              <span className="text-slate-600 ml-1">
+                                (보조강사: {assistantInstructors.join(', ')})
+                              </span>
+                            )}
+                          </div>
                           <div>수업시간: {c.classTime}</div>
                         </div>
                       </div>
-                      <table className="border-collapse border border-slate-800 text-xs text-center">
+                      <table className="border-collapse border border-slate-800 text-xs text-center shrink-0">
                         <tbody>
                           <tr>
                             <td rowSpan={2} className="border border-slate-800 bg-slate-100 px-1.5 py-2 font-bold w-6 leading-tight text-[10px]">결<br/>재</td>
@@ -2700,10 +2846,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <table className="w-full border-collapse border border-slate-800 text-xs text-center font-sans">
                       <thead className="bg-indigo-50 font-bold">
                         <tr>
-                          <th className="border border-slate-800 p-2">회차 (차시)</th>
-                          <th className="border border-slate-800 p-2">수업 날짜</th>
+                          <th className="border border-slate-800 p-2 w-28">회차 (차시)</th>
+                          <th className="border border-slate-800 p-2 w-36">수업 날짜</th>
                           <th className="border border-slate-800 p-2">강사 서명 (출근 날인)</th>
-                          <th className="border border-slate-800 p-2 w-32">보결 / 결근 관리</th>
+                          <th className="border border-slate-800 p-2 w-32 no-print">보결 / 결근 관리</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2741,7 +2887,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               </td>
                               <td className="border border-slate-800 px-2 py-1">
                                 {hasChecked ? (
-                                  <div className="flex flex-col gap-1 items-center justify-center">
+                                  /* 강사 서명: 1줄에 2명이 적히도록 2열 그리드 배치 */
+                                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 items-center justify-items-center">
                                     {instructors.map((inst) => {
                                       const sub = daySubs.find(s => !s.targetInstructor || s.targetInstructor === inst);
                                       if (sub?.isAbsence) {
@@ -2758,7 +2905,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                           <div key={inst} className="flex items-center gap-1">
                                             <span className="text-[10px] bg-amber-200 text-amber-900 px-1 py-0.5 rounded font-bold">보결</span>
                                             <span className="font-bold text-[11px] text-amber-900">{sub.substituteInstructor}</span>
-                                            <OfficialSeal name={sub.substituteInstructor} signatureUrl="" size="sm" />
+                                            <OfficialSeal name={sub.substituteInstructor} signatureUrl={getInstructorSeal(sub.substituteInstructor)} size="sm" />
                                             <span className="text-[9px] text-slate-400 font-sans">(원: {inst})</span>
                                           </div>
                                         );
@@ -2766,7 +2913,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                       return (
                                         <div key={inst} className="flex items-center gap-1.5">
                                           <span className="font-bold text-[11px] text-slate-900">{inst}</span>
-                                          <OfficialSeal name={inst} signatureUrl={instructorSignature} size="sm" />
+                                          <OfficialSeal name={inst} signatureUrl={getInstructorSeal(inst)} size="sm" />
+                                          {!getInstructorSeal(inst) && (
+                                            <button
+                                              type="button"
+                                              onClick={() => setSigModalTarget({ teacherName: inst, courseId: c.id })}
+                                              className="no-print text-[9px] text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-1 py-0.2 rounded font-bold cursor-pointer transition"
+                                              title="도장/서명 등록"
+                                            >
+                                              등록
+                                            </button>
+                                          )}
                                         </div>
                                       );
                                     })}
@@ -2782,7 +2939,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   </div>
                                 )}
                               </td>
-                              <td className="border border-slate-800 px-1 py-1">
+                              <td className="border border-slate-800 px-1 py-1 no-print">
                                 <div className="flex flex-col gap-1 items-center justify-center">
                                   {instructors.map((inst) => {
                                     const sub = daySubs.find(s => !s.targetInstructor || s.targetInstructor === inst);
@@ -3104,6 +3261,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* 강사 서명/도장 등록 모달 */}
+      {sigModalTarget && (
+        <SignatureRegisterModal
+          open={!!sigModalTarget}
+          onOpenChange={(open) => !open && setSigModalTarget(null)}
+          teacherName={sigModalTarget.teacherName}
+          teacherEmail={sigModalTarget.teacherEmail}
+          courseId={sigModalTarget.courseId}
+          onSuccess={(savedSig) => {
+            setAllUsers((prev) =>
+              prev.map((u) =>
+                u.name === sigModalTarget.teacherName ? { ...u, signature: savedSig } : u
+              )
+            );
+          }}
+        />
       )}
 
       </div>

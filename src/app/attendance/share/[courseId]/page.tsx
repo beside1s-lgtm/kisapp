@@ -496,18 +496,23 @@ export default function SharedAttendancePage() {
               </div>
             </div>
 
-            {/* 날짜(회차) 버튼 스크롤 & 전원 출석 버튼 */}
-            <div ref={sessionScrollRef} className="flex items-center gap-2 overflow-x-auto pb-0.5">
-              {/* 전원 출석 버튼 */}
-              <button
-                onClick={() => handleBulkAttendDay(activeSessionNo)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer"
-                title="현재 선택한 날짜의 모든 수강생을 출석(○) 처리합니다"
-              >
-                <UserCheck className="w-3.5 h-3.5" />
-                전원 출석
-              </button>
-              <div className="h-5 w-[1px] bg-slate-300 shrink-0" />
+            {/* 고정 전원 출석 버튼 및 날짜(회차) 스크롤 영역 */}
+            <div className="flex items-center gap-1.5 sm:gap-2 w-full min-w-0">
+              {/* 날짜를 스크롤해도 항상 왼쪽에 고정되는 액션 버튼 그룹 */}
+              <div className="flex items-center shrink-0 z-10 bg-white pr-1.5 border-r border-slate-200">
+                <button
+                  onClick={() => handleBulkAttendDay(activeSessionNo)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2 sm:px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95"
+                  title="현재 선택한 날짜의 모든 수강생을 출석(○) 처리합니다"
+                >
+                  <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span className="sm:hidden">전원O</span>
+                  <span className="hidden sm:inline">전원 출석</span>
+                </button>
+              </div>
+
+              {/* 날짜(회차) 버튼 스크롤 */}
+              <div ref={sessionScrollRef} className="flex-1 min-w-0 flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 scroll-smooth">
 
               {scheduleDays.map((day) => {
                 const isSelected = day.dayIndex === activeSessionNo;
@@ -537,6 +542,7 @@ export default function SharedAttendancePage() {
                   </button>
                 );
               })}
+              </div>
             </div>
           </div>
 
@@ -548,7 +554,7 @@ export default function SharedAttendancePage() {
               courseStudents.map((enrollment) => {
                 const mark = getDayMark(enrollment.studentId, activeSessionNo);
                 const { symbol, colorClass } = getMarkDisplay(mark);
-                const busNo = getStudentBusNo(enrollment.studentId, enrollment.name, enrollment.grade, enrollment.classNum);
+                const busNo = getStudentBusNo(enrollment.studentId, enrollment.name, String(enrollment.grade ?? ''), String(enrollment.classNum ?? ''));
                 const isAssigned = busNo && busNo !== '미배정' && busNo !== '미지정';
 
                 return (

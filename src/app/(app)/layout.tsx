@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { AppHeader } from '@/components/layout/header';
 import AppSidebar from '@/components/layout/sidebar';
+import { AppFooter } from '@/components/layout/app-footer';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -53,14 +54,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="flex-1 min-w-0">
               {children}
             </div>
-            <footer className="border-t py-2 text-center text-xs text-muted-foreground bg-card/30 backdrop-blur-sm no-print print:hidden w-full overflow-x-hidden shrink-0 mt-2">
-              <div className="flex flex-col sm:flex-row justify-center items-center gap-1.5 sm:gap-6 px-2">
-                <span>© {new Date().getFullYear()} KIS 통합 포털. All rights reserved.</span>
-                <Link href="/privacy" className="font-semibold text-primary hover:underline transition-all">
-                  개인정보처리방침 (Privacy Policy)
-                </Link>
-              </div>
-            </footer>
+            <AppFooter />
           </main>
         </div>
       </div>

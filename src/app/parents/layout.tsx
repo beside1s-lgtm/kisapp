@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ParentSettingsDialog } from '@/components/parent-settings-dialog';
 import { LanguageSwitcher } from '@/components/layout/language-switcher';
+import { AppFooter } from '@/components/layout/app-footer';
 import { useTranslation } from '@/hooks/use-translation';
 
 export default function ParentsLayout({ children }: { children: React.ReactNode }) {
@@ -168,8 +169,11 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
         </Button>
       </div>
 
-      <main className="flex-1 p-2.5 sm:p-4 md:p-8 overflow-y-auto print:p-0 print:m-0 print:block print:overflow-visible">
-        {children}
+      <main className="flex-1 p-2.5 sm:p-4 md:p-8 overflow-y-auto print:p-0 print:m-0 print:block print:overflow-visible flex flex-col justify-between">
+        <div className="flex-1">
+          {children}
+        </div>
+        <AppFooter className="mt-6" />
       </main>
       </>
       )}

@@ -1,46 +1,37 @@
-# SESSION HANDOVER
+# SESSION_HANDOVER.md
 
-## Current Status
-모든 요청 작업 완료, 빌드 검증 완료 및 배포 진행 단계
+## Current Status (현재 상태)
+- 대시보드 구조 및 캘린더 동기화 개선 완료:
+  1. **업무 할 일 (Todo) 위젯 완전 제거**: 사용 빈도가 낮고 화면 공간을 차지하던 Todo 위젯 및 관련 로직을 제거하여 우측 '나의 업무'의 할당/요청 업무 목록이 380px 높이로 시원하게 확장됨.
+  2. **우측 '내 캘린더 동기화' 버튼 추가 (요청 업무 탭 오른쪽)**:
+     - 나에게 할당된 업무 중 마감기한(`deadline`: YYYY-MM-DD)이 있는 항목들을 마감일 당일 오전 08:30 정각 알림(`VALARM -PT0M`) 및 1일 전 사전 알림이 포함된 표준 `.ics` 캘린더 파일로 자동 생성 및 다운로드.
+  3. **좌측 '내 캘린더 동기화' 버튼 추가 (주간일정 버튼 왼쪽)**:
+     - 주간 부서/학년 업무 일정 및 월간 학사·교육활동 일정을 선택하여 내 캘린더(스마트폰 기본 캘린더, 구글 캘린더, 아웃룩 등)에 추가할 수 있는 전용 다이얼로그 모달(`ScheduleCalendarSyncModal`) 연동 완료.
+     - 기간 필터(전체/이번달/다음달/향후3개월) 및 당일 오전 08:30 알림 포함 옵션 제공.
+  4. **반응형 최적화**:
+     - 모바일 화면(375px)에서도 버튼들이 줄바꿈이나 겹침 없이 알맞은 축약형(`동기화`)으로 표시되도록 최적화 완료.
 
-## Recently Completed Work
+## Modified Files (수정 및 생성된 주요 파일)
+- `src/lib/services/calendarExportService.ts` (신규):
+  - `generateAssignedTasksIcs`: 마감일 오전 08:30 알림 포함 할당 업무 ICS 생성.
+  - `generateWeeklyMonthlyIcs`: 주간/월간 교육활동 일정 ICS 생성.
+  - `downloadIcsFile`: 브라우저 내 .ics 파일 자동 다운로드 처리.
+- `src/components/tasks/schedule-calendar-sync-modal.tsx` (신규):
+  - 주간 및 월간 일정을 선택하여 동기화할 수 있는 다이얼로그 컴포넌트.
+- `src/app/(app)/inbox/page.tsx`:
+  - `업무 할 일 (Todo)` 섹션 및 상태 로직 제거.
+  - 우측 업무 탭 우측에 `[내 캘린더 동기화]` 버튼 배치 및 마감 알림 ICS 다운로드 연동.
+  - 좌측 주요 학교 일정 헤더 `[주간 일정]` 왼쪽에 `[내 캘린더 동기화]` 버튼 배치 및 모달 연동.
+  - 업무 목록 표시 높이 확장 (`max-h-[380px]`).
+- `src/app/attendance/share/[courseId]/page.tsx`:
+  - JSX 닫는 태그 누락 및 매개변수 타입 처리 수정.
 
-### 1. 방과후 수업 드롭다운 중복 Key 콘솔 에러 해결
-- **문제 원인**:
-  - 방과후 강좌 목록에 복수 요일 연동 또는 동일 강좌 ID(`c.id`)가 중복 로드되어 Radix UI의 `SelectItem`에서 `key={c.id}` 및 `value={c.id}`가 중복되어 발생 (`Encountered two children with the same key, 'c_1787909263750_ihell'`).
-- **수정 내역**:
-  - `src/app/(app)/admin/bus/components/after-school-management-tab.tsx`: `displayClasses` useMemo에서 `seenIds`를 활용해 강좌 ID 기준 중복 제거.
-  - `src/components/bus/after-school-inquiry-dialog.tsx`: `displayClasses` useMemo에서 강좌 ID 기준 중복 제거.
+## Verification (검증 내역)
+- Chrome DevTools MCP를 통한 실 브라우저 렌더링 검증 완료:
+  - 데스크톱(1440x900) 및 모바일(375x812) 뷰포트 스크린샷 캡처 및 레이아웃 무결성 확인.
+  - 주간일정 왼쪽 `[내 캘린더 동기화]` 클릭 시 다이얼로그 모달 오픈 및 ICS 다운로드 정상 동작 검증.
+  - 우측 업무 탭 우측 `[내 캘린더 동기화]` 클릭 시 할당 업무 마감 일정 다운로드 정상 동작 검증.
+  - 콘솔 에러 0건 확인.
 
-### 2. 방과후 학생 명단 버스 탑승자 필터링 기능 구현
-- **요청 사항**: "방과후 학생 명단을 검색할 때, 버스 탑승자만 볼 수 있게 필터링 기능을 만들어줘."
-- **수정 내역**:
-  - `after-school-management-tab.tsx`:
-    - 상단 `학생 이름으로 수업 검색` 영역에 `[v] 버스 탑승자만` 체크박스 필터 추가 (스쿨버스 번호 또는 방과후/방학 하교 목적지가 있는 학생의 수업만 필터링).
-    - 강좌 선택 시 나타나는 수강 학생 명단 테이블 상단에 `[버스 탑승자만 보기]` 토글 버튼 및 탑승자 카운트 뱃지 추가.
-    - 미배정('-') 학생을 제외하고 실제 버스 탑승자만 필터링되어 노출되도록 `displayedClassStudents` useMemo 구현.
-    - `[명단 다운로드]` 실행 시 현재 필터링된 상태(버스 탑승자만)로 엑셀 파일 다운로드 연동.
-  - `after-school-inquiry-dialog.tsx`:
-    - 방과후 조회 다이얼로그 테이블 상단에도 `[버스 탑승자만]` 토글 버튼 및 CSV 다운로드 연동 적용.
-
-### 3. 방과후 요일별 하교 목적지 상호 덮어쓰기 수정 및 where is not defined 해결
-- `src/lib/kisbus/students.ts`: `where` 미임포트 ReferenceError 해결 및 `syncKisbusDestinationToMasterAddress`에서 대상 요일 외의 타 요일 목적지를 보존하도록 수정.
-
-### 4. 다문화교육부 교직원 계정 오분류 및 중복 계정 정리
-- `2021tram@kshcm.net`, `2021kimhoa@kshcm.net` 등 숫자 시작 이메일의 학부모/학생 오분류 방지(`isFaculty` 플래그 보장).
-
-## Modified Files
-| 파일 | 주요 변경 내역 |
-|------|----------------|
-| `src/app/(app)/admin/bus/components/after-school-management-tab.tsx` | 중복 key 제거, 버스 탑승자 전용 필터링 UI 및 엑셀 연동 |
-| `src/components/bus/after-school-inquiry-dialog.tsx` | 중복 key 제거, 버스 탑승자 전용 필터링 및 CSV 연동 |
-| `src/lib/kisbus/students.ts` | where 임포트 수정, 요일별 방과후 목적지 보존 |
-| `src/lib/kisbus/assignments.ts` | 토요 방과후 노선 격리 및 좌석 배정 보호 |
-| `src/components/settings-modal.tsx` | 교직원 등록 시 isFaculty 설정 및 배지 표시 |
-| `src/lib/services/userService.ts` | 교직원 플래그 영구 동기화 |
-| `src/lib/types.ts` | UserProfile에 isFaculty, isStaff 추가 |
-
-## Build & Deployment Status
-- `npm run build`: Compiled successfully (44개 라우트 검증 통과)
-- Target Firebase Project: `studio-9153973571-7837c`
-- Deployment Channel: GitHub main push -> Firebase App Hosting 자동 배포
+## Next Steps (다음 작업 목표)
+- 사용자 추가 피드백 수렴 및 배포 요청 시 프로덕션 배포 진행.

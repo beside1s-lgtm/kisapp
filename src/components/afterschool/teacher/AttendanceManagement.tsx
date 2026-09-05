@@ -10,7 +10,9 @@ import {
 import { exportAttendanceToExcel } from '@/lib/afterschool/excel';
 import { getTeacherApplySettings, saveTeacherApplySettings, onTeacherApplySettingsUpdate, submitAfterschoolApprovalDoc, deleteAfterschoolApprovalDoc, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord, onDocConfigUpdate, getDocConfig } from '@/lib/services/settingsService';
 import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
-import type { DocConfig } from '@/lib/types';
+import type { DocConfig, UserProfile } from '@/lib/types';
+import { getUsersDirectory } from '@/lib/services/userService';
+import { SignatureRegisterModal } from './SignatureRegisterModal';
 import { useTranslation } from '@/hooks/use-translation';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -35,7 +37,8 @@ interface AttendanceManagementProps {
 
 type MarkSymbol = 'O' | 'V' | 'X' | '';
 
-// 대한민국 학교 공식 붉은색 원형 직인/서명 도장 컴포넌트
+// 대한민국 학교 공식 붉은색 원형 직인/서명 컴포넌트
+// [사용자 요구사항]: 인쇄 시 도장은 지름 1.5cm의 원, 서명(사인)은 가로 2.0cm, 세로 1.5cm 이내 실물 규격 적용
 export const OfficialSeal: React.FC<{ name: string; signatureUrl?: string; size?: 'sm' | 'md' }> = ({
   name,
   signatureUrl,
@@ -45,18 +48,26 @@ export const OfficialSeal: React.FC<{ name: string; signatureUrl?: string; size?
     return (
       <img
         src={signatureUrl}
-        alt={`${name} 직인`}
-        className={size === 'md' ? 'w-8 h-8 object-contain mx-auto' : 'w-6 h-6 object-contain inline-block shrink-0'}
+        alt={`${name} 서명`}
+        className="object-contain inline-block shrink-0 max-w-[20mm] max-h-[15mm] w-auto h-auto print:max-w-[20mm] print:max-h-[15mm]"
+        style={{
+          maxWidth: '20mm',
+          maxHeight: '15mm',
+        }}
       />
     );
   }
   const char = name ? (name.length >= 3 ? name.slice(-2) : name) : '인';
   return (
     <span
-      className={`inline-flex items-center justify-center rounded-full border border-red-600 font-serif font-black text-red-600 select-none shrink-0 bg-red-50/50 leading-none shadow-2xs ${
-        size === 'md' ? 'w-7 h-7 text-[10px] border-[1.5px]' : 'w-5 h-5 text-[8.5px]'
-      }`}
-      style={{ letterSpacing: '-0.06em' }}
+      className="inline-flex items-center justify-center rounded-full border border-red-600 font-serif font-black text-red-600 select-none shrink-0 bg-red-50/50 leading-none shadow-2xs w-[15mm] h-[15mm] min-w-[15mm] min-h-[15mm] text-[11px] border-[1.5px] print:w-[15mm] print:h-[15mm]"
+      style={{
+        width: '15mm',
+        height: '15mm',
+        minWidth: '15mm',
+        minHeight: '15mm',
+        letterSpacing: '-0.06em'
+      }}
       title={`${name} 직인`}
     >
       {char}
@@ -238,8 +249,14 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   const [subReason, setSubReason] = useState<string>('');
   const [subRecordType, setSubRecordType] = useState<'SUBSTITUTE' | 'ABSENCE'>('SUBSTITUTE');
   const [subTargetInstructor, setSubTargetInstructor] = useState<string>('');
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [sigModalTarget, setSigModalTarget] = useState<{ teacherName: string; teacherEmail?: string; courseId?: string } | null>(null);
 
   useEffect(() => {
+    getUsersDirectory().then(users => {
+      if (users && Array.isArray(users)) setAllUsers(users as UserProfile[]);
+    }).catch(console.error);
+
     getTeacherApplySettings().then(settings => {
       if (settings?.afterschoolStageStatus) {
         setStageStatus(settings.afterschoolStageStatus);
@@ -352,8 +369,24 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     setIsSubModalOpen(false);
   };
   
-  // 로그인한 사용자(강사) 프로필에 등록된 공식 서명/도장 연동
-  const instructorSignature = profile?.signature || '';
+  // 강사별 서명(도장) 조회 (타 강사에게 관리자/로그인유저 도장 fallback 오출력 방지)
+  const getInstructorSeal = (instName: string): string => {
+    if (!instName) return '';
+    const cleanName = instName.trim();
+    const docSigs = (targetApprovalDoc as any)?.instructorSignatures;
+    if (docSigs && docSigs[cleanName]) return docSigs[cleanName];
+    if (currentCourse?.instructorName === cleanName && (targetApprovalDoc as any)?.instructorSignature) {
+      return (targetApprovalDoc as any).instructorSignature;
+    }
+    if (profile?.name === cleanName && profile?.signature) {
+      return profile.signature;
+    }
+    const u = allUsers.find(user => user.name === cleanName);
+    if (u?.signature) return u.signature;
+    return '';
+  };
+
+  const instructorSignature = getInstructorSeal(currentCourse?.instructorName || '');
 
   // 부장/교감 결재 문서 승인 상태 연동
   const targetApprovalDoc = approvalDocs.find((d) => d.courseId === currentCourse?.id);
@@ -768,61 +801,64 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
               </div>
             </div>
 
-            {/* Session selector & Fixed Bulk Attend Button */}
-            <div ref={sessionScrollRef} className="flex items-center gap-2 overflow-x-auto pb-0.5">
-              {/* 맨 왼쪽에 전원출석 버튼 고정 */}
-              <button
-                onClick={() => handleBulkAttendDay(activeSessionNo)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-sm shrink-0 flex items-center gap-1 cursor-pointer"
-                title="현재 선택한 날짜의 모든 수강 확정생을 출석(○) 처리합니다"
-              >
-                <UserCheck className="w-3.5 h-3.5" />
-                전원출석
-              </button>
-              {/* 외부 강사용 공유 출석부 링크 복사 버튼 */}
-              <button
-                onClick={handleCopyShareLink}
-                className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-sm shrink-0 flex items-center gap-1 cursor-pointer"
-                title="외부 강사가 로그인 없이 접속하여 출석 체크만 할 수 있는 전용 링크를 클립보드에 복사합니다"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-                출석부 공유
-              </button>
-              <div className="h-5 w-[1px] bg-slate-300 shrink-0" />
-
+            {/* 고정 액션 버튼(전원 출석, 출석부 공유) 및 날짜(회차) 스크롤 영역 */}
+            <div className="flex items-center gap-1.5 sm:gap-2 w-full min-w-0">
+              {/* 날짜를 스크롤해도 항상 왼쪽에 고정되는 액션 버튼 그룹 */}
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 z-10 bg-white pr-1 sm:pr-1.5 border-r border-slate-200">
+                <button
+                  onClick={() => handleBulkAttendDay(activeSessionNo)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2 sm:px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95"
+                  title="현재 선택한 날짜의 모든 수강 확정생을 출석(○) 처리합니다"
+                >
+                  <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span className="sm:hidden">전원O</span>
+                  <span className="hidden sm:inline">전원출석</span>
+                </button>
+                <button
+                  onClick={handleCopyShareLink}
+                  className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs px-2 sm:px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95"
+                  title="외부 강사가 로그인 없이 접속하여 출석 체크만 할 수 있는 전용 링크를 클립보드에 복사합니다"
+                >
+                  <Share2 className="w-3.5 h-3.5 shrink-0" />
+                  <span className="sm:hidden">공유</span>
+                  <span className="hidden sm:inline">출석부 공유</span>
+                </button>
+              </div>
 
               {/* 날짜(회차) 중심 버튼 스크롤 */}
-              {scheduleDays.map((day) => {
-                const isSelected = day.dayIndex === activeSessionNo;
-                const now = new Date();
-                const todayFormatted = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                const isToday = day.fullDate === todayFormatted;
+              <div ref={sessionScrollRef} className="flex-1 min-w-0 flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 scroll-smooth">
+                {scheduleDays.map((day) => {
+                  const isSelected = day.dayIndex === activeSessionNo;
+                  const now = new Date();
+                  const todayFormatted = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                  const isToday = day.fullDate === todayFormatted;
 
-                return (
-                  <button
-                    key={day.dayIndex}
-                    id={`session-btn-${day.dayIndex}`}
-                    onClick={() => handleSelectDay(day.dayIndex)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0 flex flex-col items-center cursor-pointer ${
-                      isSelected
-                        ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-300'
-                        : isToday
-                        ? 'bg-amber-50/80 border-2 border-amber-400 text-slate-800 hover:bg-amber-100'
-                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    {isToday && (
-                      <span className={`text-[8.5px] font-black px-1 rounded-xs mb-0.5 ${isSelected ? 'bg-amber-300 text-amber-950' : 'bg-amber-500 text-white'}`}>
-                        오늘
+                  return (
+                    <button
+                      key={day.dayIndex}
+                      id={`session-btn-${day.dayIndex}`}
+                      onClick={() => handleSelectDay(day.dayIndex)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0 flex flex-col items-center cursor-pointer ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-300'
+                          : isToday
+                          ? 'bg-amber-50/80 border-2 border-amber-400 text-slate-800 hover:bg-amber-100'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {isToday && (
+                        <span className={`text-[8.5px] font-black px-1 rounded-xs mb-0.5 ${isSelected ? 'bg-amber-300 text-amber-950' : 'bg-amber-500 text-white'}`}>
+                          오늘
+                        </span>
+                      )}
+                      <span className="text-xs leading-none font-extrabold">{day.dateStr}</span>
+                      <span className="text-[9px] opacity-90 font-normal mt-0.5">
+                        {day.dayIndex}회차
                       </span>
-                    )}
-                    <span className="text-xs leading-none font-extrabold">{day.dateStr}</span>
-                    <span className="text-[9px] opacity-90 font-normal mt-0.5">
-                      {day.dayIndex}회차
-                    </span>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -1103,14 +1139,14 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                           </div>
                         ))}
                       </td>
-                      <td className="border border-slate-800 px-2 py-1">
+                      <td className="border border-slate-800 px-2 py-1.5">
                         {hasChecked ? (
-                          <div className="flex flex-col gap-1 items-center justify-center">
+                          <div className={`grid ${instructors.length > 1 ? 'grid-cols-2 gap-x-3 gap-y-1.5' : 'grid-cols-1'} items-center justify-items-center`}>
                             {instructors.map((inst) => {
                               const sub = daySubs.find(s => !s.targetInstructor || s.targetInstructor === inst);
                               if (sub?.isAbsence) {
                                 return (
-                                  <div key={inst} className="flex items-center gap-1">
+                                  <div key={inst} className="flex items-center gap-1 justify-center">
                                     <span className="text-[10px] bg-rose-100 text-rose-800 border border-rose-300 px-1 py-0.5 rounded font-bold">결근</span>
                                     <span className="line-through text-slate-400 font-bold text-[11px]">{inst}</span>
                                     <span className="text-[10px] text-slate-500">({sub.reason || '사유미기재'})</span>
@@ -1119,18 +1155,29 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                               }
                               if (sub) {
                                 return (
-                                  <div key={inst} className="flex items-center gap-1">
+                                  <div key={inst} className="flex items-center gap-1 justify-center">
                                     <span className="text-[10px] bg-amber-200 text-amber-900 px-1 py-0.5 rounded font-bold">보결</span>
                                     <span className="font-bold text-[11px] text-amber-900">{sub.substituteInstructor}</span>
-                                    <OfficialSeal name={sub.substituteInstructor} signatureUrl="" size="sm" />
+                                    <OfficialSeal name={sub.substituteInstructor} signatureUrl={getInstructorSeal(sub.substituteInstructor)} size="sm" />
                                     <span className="text-[9px] text-slate-400 font-sans">(원: {inst})</span>
                                   </div>
                                 );
                               }
+                              const seal = getInstructorSeal(inst);
                               return (
-                                <div key={inst} className="flex items-center gap-1.5">
+                                <div key={inst} className="flex items-center gap-1.5 justify-center">
                                   <span className="font-bold text-[11px] text-slate-900">{inst}</span>
-                                  <OfficialSeal name={inst} signatureUrl={instructorSignature} size="sm" />
+                                  <OfficialSeal name={inst} signatureUrl={seal} size="sm" />
+                                  {!seal && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSigModalTarget({ teacherName: inst, courseId: currentCourse?.id })}
+                                      className="text-[9px] font-bold text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-1 py-0.5 rounded border border-amber-200 transition"
+                                      title="도장/서명 등록"
+                                    >
+                                      등록
+                                    </button>
+                                  )}
                                 </div>
                               );
                             })}
@@ -1339,39 +1386,147 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
       )}
 
       {/* ===== A4 PRINT MODAL ===== */}
-      {isPrintModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 md:p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full border border-slate-200 p-4 md:p-6 space-y-4 my-4">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Printer className="w-4 h-4 text-indigo-600" />공식 A4 출석부 & 강사출근부
-              </h3>
-              <div className="flex gap-2">
-                <button onClick={() => window.print()} className="bg-indigo-600 text-white font-bold text-xs px-3 py-1.5 rounded-xl flex items-center gap-1">
-                  <Printer className="w-3.5 h-3.5" />인쇄
-                </button>
-                <button onClick={() => setIsPrintModalOpen(false)} className="text-slate-400 p-1"><X className="w-5 h-5" /></button>
-              </div>
-            </div>
+      {/* ===== A4 PRINT MODAL ===== */}
+      {isPrintModalOpen && (() => {
+        const mainInstructor = currentCourse?.instructorName || '강사';
+        const assistantInstructors = [
+          currentCourse?.instructor2,
+          currentCourse?.instructor3,
+          currentCourse?.instructor4,
+          ...(currentCourse?.assistantTeachers || [])
+        ].filter((name): name is string => Boolean(name && name.trim() !== mainInstructor.trim()));
+        const allCourseInstructors = [mainInstructor, ...assistantInstructors];
 
-            {/* A4 Print Area - Student Attendance */}
-            <div className="bg-white p-6 border border-slate-300 rounded-lg font-serif space-y-3 text-slate-900">
-              <div className="text-xs text-slate-700 font-bold">2026-1 KIS방과후학교</div>
-              <div className="flex justify-between items-start">
-                <div>
-                  <h2 className="text-xl font-bold">{currentCourse.title}</h2>
-                  <div className="text-xs mt-1 space-y-0.5 font-sans">
-                    <div>기간: {currentCourse.period || '2026/03/30-06/20'}</div>
-                    <div className="flex items-center gap-1.5">
-                      강사: <span className="font-bold text-slate-900">{[currentCourse.instructorName, currentCourse.instructor2, currentCourse.instructor3, currentCourse.instructor4, ...(currentCourse.assistantTeachers || [])].filter(Boolean).join(' · ') || '강사'}</span>
-                      <OfficialSeal
-                        name={currentCourse.instructorName || '강사'}
-                        signatureUrl={instructorSignature}
-                        size="sm"
-                      />
+        const handlePrint = () => {
+          if (!getInstructorSeal(mainInstructor)) {
+            if (confirm(`주강사 [${mainInstructor}] 선생님의 도장(서명)이 등록되지 않았습니다. 서명을 먼저 등록하시겠습니까?\n(취소 시 기본 원형 직인으로 인쇄됩니다)`)) {
+              setSigModalTarget({ teacherName: mainInstructor, courseId: currentCourse?.id });
+              return;
+            }
+          }
+          window.print();
+        };
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 md:p-4 overflow-y-auto">
+            {/* 인쇄 전용 스타일 태그 (A4 가로 방향 및 서식 외 요소 완전 숨김) */}
+            <style>{`
+              @media print {
+                @page {
+                  size: A4 landscape;
+                  margin: 7mm 5mm 7mm 5mm;
+                }
+                html, body {
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background: white !important;
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+                body * {
+                  visibility: hidden !important;
+                }
+                .print-container-only,
+                .print-container-only * {
+                  visibility: visible !important;
+                }
+                .print-container-only {
+                  position: fixed !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  max-width: 100% !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  border: none !important;
+                  box-shadow: none !important;
+                  background: white !important;
+                  z-index: 99999 !important;
+                }
+                .no-print {
+                  display: none !important;
+                }
+                table {
+                  width: 100% !important;
+                  border-collapse: collapse !important;
+                  page-break-inside: auto;
+                }
+                tr {
+                  page-break-inside: avoid;
+                }
+              }
+            `}</style>
+
+            <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full border border-slate-200 p-4 md:p-6 space-y-4 my-4">
+              <div className="flex justify-between items-center border-b pb-3 no-print">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Printer className="w-4 h-4 text-indigo-600" />공식 A4 출석부 인쇄
+                </h3>
+                <div className="flex gap-2">
+                  <button onClick={handlePrint} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl flex items-center gap-1 cursor-pointer transition shadow">
+                    <Printer className="w-3.5 h-3.5" />인쇄하기
+                  </button>
+                  <button onClick={() => setIsPrintModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"><X className="w-5 h-5" /></button>
+                </div>
+              </div>
+
+              {/* A4 Print Area - Student Attendance */}
+              <div className="print-container-only bg-white p-6 border border-slate-300 rounded-lg font-serif space-y-3 text-slate-900">
+                <div className="text-xs text-slate-700 font-bold">2026학년도 방과후학교</div>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h2 className="text-xl font-bold">{currentCourse.title} 출석부</h2>
+                    <div className="text-xs mt-1 space-y-1 font-sans">
+                      <div>기간: {currentCourse.period || '2026/03/30-06/20'}</div>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-600 font-medium">강사:</span>
+                          <span className="font-bold text-slate-900">{mainInstructor}</span>
+                          <OfficialSeal
+                            name={mainInstructor}
+                            signatureUrl={getInstructorSeal(mainInstructor)}
+                            size="sm"
+                          />
+                          {!getInstructorSeal(mainInstructor) && (
+                            <button
+                              type="button"
+                              onClick={() => setSigModalTarget({ teacherName: mainInstructor, courseId: currentCourse.id })}
+                              className="no-print text-[9px] font-bold text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-1 py-0.5 rounded border border-amber-200 transition"
+                              title="도장/서명 등록"
+                            >
+                              서명 등록
+                            </button>
+                          )}
+                        </div>
+
+                        {assistantInstructors.length > 0 && (
+                          <div className="flex items-center gap-2 flex-wrap text-slate-700">
+                            <span className="text-slate-400 font-normal">|</span>
+                            <span className="text-slate-600 font-medium">보조강사:</span>
+                            {assistantInstructors.map(asst => {
+                              const seal = getInstructorSeal(asst);
+                              return (
+                                <span key={asst} className="inline-flex items-center gap-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                                  <span className="font-bold text-slate-800 text-xs">{asst}</span>
+                                  <OfficialSeal name={asst} signatureUrl={seal} size="sm" />
+                                  {!seal && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSigModalTarget({ teacherName: asst, courseId: currentCourse.id })}
+                                      className="no-print text-[9px] font-bold text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-1 py-0.5 rounded border border-amber-200 transition"
+                                      title="도장/서명 등록"
+                                    >
+                                      서명 등록
+                                    </button>
+                                  )}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
                 <table className="border-collapse border border-slate-800 text-xs text-center font-sans">
                   <tbody>
                     <tr>
@@ -1379,72 +1534,101 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                       <td className="border border-slate-800 px-2 py-0.5 font-bold w-12 bg-slate-50 text-[11px]">부장</td>
                       <td className="border border-slate-800 px-2 py-0.5 font-bold w-12 bg-slate-50 text-[11px]">교감</td>
                     </tr>
-                    <tr className="h-9">
+                    <tr className="h-10">
                       <td className="border border-slate-800 p-0.5">
                         {isManagerApproved ? (
-                          managerSignature ? (
-                            <img src={managerSignature} alt="부장" className="w-8 h-8 object-contain mx-auto" />
-                          ) : (
-                            <span className="text-[10px] font-bold text-emerald-800">승인</span>
-                          )
-                        ) : null}
+                          <OfficialSeal name="부장" signatureUrl={managerSignature} size="md" />
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
                       </td>
                       <td className="border border-slate-800 p-0.5">
                         {isVicePrincipalApproved ? (
-                          vicePrincipalSignature ? (
-                            <img src={vicePrincipalSignature} alt="교감" className="w-8 h-8 object-contain mx-auto" />
-                          ) : (
-                            <span className="text-[10px] font-bold text-emerald-800">승인</span>
-                          )
-                        ) : null}
+                          <OfficialSeal name="교감" signatureUrl={vicePrincipalSignature} size="md" />
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
                       </td>
                     </tr>
                   </tbody>
                 </table>
+              {/* 출석부 명단 테이블 (A4 가로 폭 최적화) */}
+              <div className="overflow-x-auto print:overflow-visible">
+                <table className="w-full border-collapse border border-slate-800 text-xs text-center font-sans print:text-[9.5px]">
+                  <thead className="bg-slate-100 font-bold">
+                    <tr>
+                      <th className="border border-slate-800 p-0.5 w-6 print:w-5">순</th>
+                      <th className="border border-slate-800 p-0.5 w-6 print:w-5">학</th>
+                      <th className="border border-slate-800 p-0.5 w-6 print:w-5">반</th>
+                      <th className="border border-slate-800 p-0.5 w-6 print:w-5">번</th>
+                      <th className="border border-slate-800 p-1 w-16 print:w-14">이름</th>
+                      {scheduleDays.map((d) => (
+                        <th key={d.dayIndex} className="border border-slate-800 p-0.5 text-[8.5px] print:text-[8px] min-w-[20px]">
+                          <div>{d.dateStr}</div>
+                          <div className="text-[7.5px] font-normal text-slate-500">{d.dayIndex}회</div>
+                        </th>
+                      ))}
+                      <th className="border border-slate-800 p-0.5 w-12 print:w-11 text-[10px]">버스</th>
+                      <th className="border border-slate-800 p-0.5 w-20 print:w-18 text-[10px]">학부모</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {courseStudents.map((enrollment, idx) => {
+                      const matchedStudent = studentsList.find((s) => s.id === enrollment.studentId);
+                      return (
+                        <tr key={enrollment.id} className="h-6 hover:bg-slate-50">
+                          <td className="border border-slate-800 text-slate-500">{idx + 1}</td>
+                          <td className="border border-slate-800">{enrollment.grade}</td>
+                          <td className="border border-slate-800">{enrollment.classNum}</td>
+                          <td className="border border-slate-800">{enrollment.studentNum}</td>
+                          <td className="border border-slate-800 font-bold text-center text-slate-900">{enrollment.name}</td>
+                          {scheduleDays.map((d) => {
+                            const mark = getDayMark(enrollment.studentId, d.dayIndex);
+                            const { symbol } = markDisplay(mark);
+                            return (
+                              <td
+                                key={d.dayIndex}
+                                className={`border border-slate-800 font-bold text-xs ${
+                                  symbol === 'O' ? 'text-slate-900 font-black' :
+                                  symbol === '△' ? 'text-purple-700' :
+                                  symbol === '×' ? 'text-rose-600' : 'text-slate-300'
+                                }`}
+                              >
+                                {symbol}
+                              </td>
+                            );
+                          })}
+                          <td className="border border-slate-800 text-[10px] text-slate-700">{matchedStudent?.kisbusNo || enrollment.kisbusNo || '-'}</td>
+                          <td className="border border-slate-800 text-[10px] font-mono text-slate-600">{enrollment.parentPhone || matchedStudent?.parentPhone || '-'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <table className="w-full border-collapse border border-slate-800 text-xs text-center font-sans table-fixed">
-                <thead className="bg-slate-100 font-bold">
-                  <tr>
-                    <th className="border border-slate-800 p-1 w-6">순</th>
-                    <th className="border border-slate-800 p-1 w-6">학년</th>
-                    <th className="border border-slate-800 p-1 w-6">반</th>
-                    <th className="border border-slate-800 p-1 w-6">번</th>
-                    <th className="border border-slate-800 p-1 w-16">이름</th>
-                    {scheduleDays.map((d) => (
-                      <th key={d.dayIndex} className="border border-slate-800 p-0.5 text-[9px] min-w-[20px]">
-                        <div>{d.dateStr}</div>
-                        <div className="text-[8px] font-normal">{d.dayIndex}회</div>
-                      </th>
-                    ))}
-                    <th className="border border-slate-800 p-1 w-10">버스</th>
-                    <th className="border border-slate-800 p-1 w-20">학부모</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {courseStudents.map((enrollment, idx) => {
-                    const matchedStudent = studentsList.find((s) => s.id === enrollment.studentId);
-                    return (
-                      <tr key={enrollment.id} className="h-6">
-                        <td className="border border-slate-800">{idx + 1}</td>
-                        <td className="border border-slate-800">{enrollment.grade}</td>
-                        <td className="border border-slate-800">{enrollment.classNum}</td>
-                        <td className="border border-slate-800">{enrollment.studentNum}</td>
-                        <td className="border border-slate-800 font-bold text-center">{enrollment.name}</td>
-                        {scheduleDays.map((d) => {
-                          const mark = getDayMark(enrollment.studentId, d.dayIndex);
-                          const { symbol } = markDisplay(mark);
-                          return <td key={d.dayIndex} className="border border-slate-800 font-bold">{symbol !== '·' ? symbol : ''}</td>;
-                        })}
-                        <td className="border border-slate-800 text-[10px]">{matchedStudent?.kisbusNo || enrollment.kisbusNo || ''}</td>
-                        <td className="border border-slate-800 text-[10px]">{enrollment.parentPhone || matchedStudent?.parentPhone || ''}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            </div>
             </div>
           </div>
-        </div>
+          </div>
+        );
+      })()}
+
+      {/* 강사 서명/도장 등록 모달 */}
+      {sigModalTarget && (
+        <SignatureRegisterModal
+          open={!!sigModalTarget}
+          onOpenChange={(open) => !open && setSigModalTarget(null)}
+          teacherName={sigModalTarget.teacherName}
+          teacherEmail={sigModalTarget.teacherEmail}
+          courseId={sigModalTarget.courseId}
+          onSuccess={(savedSig) => {
+            setAllUsers((prev) =>
+              prev.map((u) =>
+                u.name === sigModalTarget.teacherName ? { ...u, signature: savedSig } : u
+              )
+            );
+          }}
+        />
       )}
 
       {/* ===== SUBSTITUTE & ABSENCE REGISTRATION MODAL ===== */}

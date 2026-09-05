@@ -35,9 +35,10 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Inbox, Send, Briefcase, Users, Loader2, Clock, BookOpen, Bus, 
-  ShieldAlert, Navigation, Calendar, CalendarDays, CalendarPlus, ClipboardList, CheckCircle2, 
+  ShieldAlert, Navigation, Calendar, CalendarDays, CalendarPlus, CalendarCheck, ClipboardList, CheckCircle2, 
   Plus, Trash2, CheckSquare, Sparkles, Building2, School, FileUp, 
-  FileText, FolderOpen, ArrowRight, ArrowLeft, AlertCircle, CheckCircle, UserCheck, Lock, Eye, MessageSquare
+  FileText, FolderOpen, ArrowRight, ArrowLeft, AlertCircle, CheckCircle, UserCheck, Lock, Eye, MessageSquare,
+  SlidersHorizontal
 } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
@@ -58,9 +59,17 @@ import { CreateWeeklyProposalDialog } from "@/components/tasks/create-weekly-pro
 import { ReviewWeeklyProposalDialog } from "@/components/tasks/review-weekly-proposal-dialog";
 import { SubmitDepartmentTaskDialog } from "@/components/tasks/submit-department-task-dialog";
 import { TaskSubmissionsDialog } from "@/components/tasks/task-submissions-dialog";
+import { 
+  MajorTasksModal, 
+  ALL_MAJOR_TASKS, 
+  getSavedMajorTaskIds, 
+  MajorTaskDefinition 
+} from "@/components/dashboard/major-tasks-modal";
 import { MainLayout } from "@/components/layout/main-layout";
 import { WeeklyEducationPlanModal } from "@/components/tasks/weekly-education-plan-modal";
 import { MonthlyEducationPlanModal } from "@/components/tasks/monthly-education-plan-modal";
+import { ScheduleCalendarSyncModal } from "@/components/tasks/schedule-calendar-sync-modal";
+import { generateAssignedTasksIcs, downloadIcsFile } from "@/lib/services/calendarExportService";
 
 // ─── 순수 SVG 막대 차트 컴포넌트 ─────────────────────────────────────
 function OvertimeBarChart({ data }: { data: { month: string; hours: number }[] }) {
@@ -191,6 +200,7 @@ export default function InboxPage() {
     const [isCreateWeeklyScheduleOpen, setIsCreateWeeklyScheduleOpen] = useState(false);
     const [isWeeklyPlanModalOpen, setIsWeeklyPlanModalOpen] = useState(false);
     const [isMonthlyPlanModalOpen, setIsMonthlyPlanModalOpen] = useState(false);
+    const [isScheduleSyncModalOpen, setIsScheduleSyncModalOpen] = useState(false);
 
     // 부서원 주간 일정 제안 상태
     const [weeklyProposals, setWeeklyProposals] = useState<DepartmentWeeklyProposal[]>([]);
@@ -202,9 +212,13 @@ export default function InboxPage() {
     const [afterschoolEnrollments, setAfterschoolEnrollments] = useState<any[]>([]);
     const [afterschoolTimer, setAfterschoolTimer] = useState<any>(null);
 
-    // 나의 업무 할 일 (Todo) 상태
-    const [myTasks, setMyTasks] = useState<Array<{ id: string; text: string; completed: boolean; createdAt: string }>>([]);
-    const [newTaskText, setNewTaskText] = useState("");
+    // 대시보드 주요 업무 바로가기 개인화 설정 상태
+    const [isMajorTasksModalOpen, setIsMajorTasksModalOpen] = useState(false);
+    const [selectedMajorTaskIds, setSelectedMajorTaskIds] = useState<string[]>(['afterschool', 'bus']);
+
+    useEffect(() => {
+        setSelectedMajorTaskIds(getSavedMajorTaskIds());
+    }, []);
 
     // 1. 실시간 부서 업무 구독
     useEffect(() => {
@@ -273,58 +287,35 @@ export default function InboxPage() {
         };
     }, []);
 
-    // Load & Persist My Tasks (Todo list)
-    useEffect(() => {
-        if (profile?.email && typeof window !== 'undefined') {
-            const storageKey = `my_dept_tasks_${profile.email.toLowerCase()}`;
-            const saved = localStorage.getItem(storageKey);
-            if (saved) {
-                try {
-                    setMyTasks(JSON.parse(saved));
-                } catch {
-                    // fallback
-                }
-            } else {
-                const starterTasks = [
-                    { id: '1', text: '2026학년도 학사 및 등교지도 캘린더 동기화 확인', completed: false, createdAt: new Date().toISOString() },
-                    { id: '2', text: '소속 부서 및 학급 주간 계획 검토', completed: false, createdAt: new Date().toISOString() },
-                    { id: '3', text: '결재 대기 문서 확인 및 처리', completed: false, createdAt: new Date().toISOString() }
-                ];
-                setMyTasks(starterTasks);
-                localStorage.setItem(storageKey, JSON.stringify(starterTasks));
-            }
+    // 나에게 할당된 업무 캘린더 동기화 (마감일 오전 08:30 알림 포함 ICS)
+    const handleSyncAssignedTasksToCalendar = () => {
+        const myEmail = profile?.email?.toLowerCase() || '';
+        const myAssignedList = deptTasks.filter(t => t.targetEmails?.some(e => e.toLowerCase() === myEmail));
+        const tasksWithDeadline = myAssignedList.filter(t => t.deadline && /^\d{4}-\d{2}-\d{2}$/.test(t.deadline.trim()));
+
+        if (tasksWithDeadline.length === 0) {
+            toast({
+                title: "동기화할 업무 없음",
+                description: "마감기한(날짜)이 지정된 할당 업무가 없습니다."
+            });
+            return;
         }
-    }, [profile?.email]);
 
-    const saveTasks = (tasks: typeof myTasks) => {
-        setMyTasks(tasks);
-        if (profile?.email && typeof window !== 'undefined') {
-            localStorage.setItem(`my_dept_tasks_${profile.email.toLowerCase()}`, JSON.stringify(tasks));
+        try {
+            const ics = generateAssignedTasksIcs(tasksWithDeadline);
+            const userPrefix = myEmail ? myEmail.split('@')[0] : 'user';
+            downloadIcsFile(ics, `kis_assigned_tasks_${userPrefix}.ics`);
+            toast({
+                title: "할당 업무 캘린더 동기화 완료",
+                description: `마감 업무 ${tasksWithDeadline.length}건이 담긴 캘린더 파일이 다운로드되었습니다. 마감 당일 오전 08:30 알림이 제공됩니다.`
+            });
+        } catch (e: any) {
+            toast({
+                variant: "destructive",
+                title: "동기화 오류",
+                description: e?.message || "캘린더 파일 생성 중 오류가 발생했습니다."
+            });
         }
-    };
-
-    const handleToggleTask = (id: string) => {
-        const updated = myTasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t);
-        saveTasks(updated);
-    };
-
-    const handleAddTask = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!newTaskText.trim()) return;
-        const newTask = {
-            id: Date.now().toString(),
-            text: newTaskText.trim(),
-            completed: false,
-            createdAt: new Date().toISOString()
-        };
-        const updated = [newTask, ...myTasks];
-        saveTasks(updated);
-        setNewTaskText("");
-    };
-
-    const handleDeleteTask = (id: string) => {
-        const updated = myTasks.filter(t => t.id !== id);
-        saveTasks(updated);
     };
 
     useEffect(() => {
@@ -639,9 +630,9 @@ export default function InboxPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0 items-stretch overflow-y-auto lg:overflow-hidden">
                 {/* 1. 좌측 (50%): [결재 대기 문서 목록] (상단) + [주요 학교 일정] (하단) */}
                 <div className="flex flex-col gap-3 flex-1 min-h-0 h-full">
-                    {/* 1-1. 상단 (절반): 결재 대기 문서 목록 카드 */}
-                    <Card className="rounded-2xl border bg-card shadow-xs flex flex-col lg:flex-1 min-h-0 overflow-hidden">
-                        <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-2 shrink-0 bg-slate-50/70 rounded-t-2xl">
+                    {/* 1-1. 상단: 결재 대기 문서 목록 카드 (높이를 절반으로 줄여 콤팩트화) */}
+                    <Card className="rounded-2xl border bg-card shadow-xs flex flex-col shrink-0 overflow-hidden">
+                        <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-2 shrink-0 bg-slate-50/70 rounded-t-2xl min-h-[53px]">
                             <div className="flex items-center gap-2 min-w-0">
                                 <div className="p-1.5 bg-blue-500/10 rounded-xl text-blue-600 shrink-0">
                                     <Inbox className="h-4 w-4" />
@@ -672,7 +663,7 @@ export default function InboxPage() {
                             </div>
                         </div>
 
-                        <div className={cn("p-2 sm:p-3", inboxDocs.length > 0 ? "overflow-y-auto scrollbar-thin lg:flex-1 min-h-0" : "flex flex-col")}>
+                        <div className={cn("p-2 sm:p-3", inboxDocs.length > 0 ? "max-h-[160px] overflow-y-auto scrollbar-thin" : "flex flex-col")}>
                             {inboxDocs.length === 0 ? (
                                 <div className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-slate-50/60 rounded-xl border border-dashed text-slate-400">
                                     <Inbox className="w-4 h-4 text-slate-400 shrink-0 stroke-[1.5]" />
@@ -684,8 +675,8 @@ export default function InboxPage() {
                         </div>
                     </Card>
 
-                    {/* 1-2. 하단 (절반): 주요 학교 일정 (최근 3일 ~ D-day 당일) */}
-                    <Card className="rounded-2xl border bg-card shadow-xs flex flex-col lg:flex-1 min-h-0 overflow-hidden">
+                    {/* 1-2. 하단: 주요 학교 일정 (위로 끌어올려 충분한 세로 공간 확보) */}
+                    <Card className="rounded-2xl border bg-card shadow-xs flex flex-col flex-1 min-h-0 overflow-hidden">
                         <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-2 shrink-0 bg-blue-50/50 rounded-t-2xl">
                             <div className="flex items-center gap-2 min-w-0">
                                 <div className="p-1.5 bg-blue-600/10 rounded-xl text-blue-600 shrink-0">
@@ -706,6 +697,17 @@ export default function InboxPage() {
                             </div>
 
                             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 flex-nowrap">
+                                <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    onClick={() => setIsScheduleSyncModalOpen(true)}
+                                    className="h-7 px-2 sm:px-2.5 border-blue-200 text-blue-700 hover:bg-blue-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                    title="주간 및 월간 교육 일정을 내 캘린더에 동기화"
+                                >
+                                    <CalendarCheck className="w-3 h-3 text-blue-600 shrink-0" />
+                                    <span className="sm:hidden">동기화</span>
+                                    <span className="hidden sm:inline">내 캘린더 동기화</span>
+                                </Button>
                                 <Button 
                                     size="sm" 
                                     variant="outline"
@@ -829,7 +831,7 @@ export default function InboxPage() {
 
                 {/* 2. 우측 (50%): 나의 업무 (부서/학급 현행 업무 + 워크플로우 + Todo) 카드 */}
                 <Card className="rounded-2xl border bg-card shadow-xs flex flex-col flex-1 min-h-0 h-full overflow-hidden">
-                    <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-2 shrink-0 bg-indigo-50/50 rounded-t-2xl min-w-0">
+                    <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-2 shrink-0 bg-indigo-50/50 rounded-t-2xl min-w-0 min-h-[53px]">
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                             <div className="p-1.5 bg-indigo-500/10 rounded-xl text-indigo-600 shrink-0">
                                 <ClipboardList className="h-4 w-4" />
@@ -838,11 +840,23 @@ export default function InboxPage() {
                                 <h2 className="text-sm sm:text-base font-bold text-slate-900 font-headline">
                                     나의 업무
                                 </h2>
-                                <p className="text-[11px] text-muted-foreground truncate">소속 부서 및 학급 현행 업무 관리</p>
                             </div>
                         </div>
 
                         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 flex-nowrap">
+                            {/* 주요 업무 바로가기 설정 버튼 (일정 건의 왼쪽) */}
+                            <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => setIsMajorTasksModalOpen(true)}
+                                className="h-7 px-2 sm:px-2.5 border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                title="대시보드 주요 업무 바로가기 설정"
+                            >
+                                <SlidersHorizontal className="w-3 h-3 text-indigo-600 shrink-0" />
+                                <span className="hidden sm:inline">주요 업무 설정</span>
+                                <span className="sm:hidden">설정</span>
+                            </Button>
+
                             {isDepartmentHead ? (
                                 <Button 
                                     size="sm" 
@@ -890,7 +904,7 @@ export default function InboxPage() {
                         </div>
                     </div>
 
-                    <div className="p-3 sm:p-3.5 flex-1 flex flex-col justify-between overflow-y-auto scrollbar-thin gap-2.5">
+                    <div className="p-3 sm:p-3.5 flex-1 flex flex-col justify-start overflow-y-auto scrollbar-thin gap-3">
                         {/* 2-0. 부장 전용: 부서원 주간 일정 제안 검토 대기 알림 배너 */}
                         {pendingProposalsForHead.length > 0 && (
                             <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200 shadow-2xs space-y-2 shrink-0">
@@ -981,97 +995,132 @@ export default function InboxPage() {
                             </div>
                         )}
 
-                        {/* 2-1. 현행 학급/부서 업무 (한 줄 2~3개 나란히 배치) */}
-                        <div className="space-y-2">
-                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                                현행 학급/부서 업무
-                            </h3>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                {/* 방과후학교 동적 단계 컴팩트 카드 */}
-                                {(isAfterschoolManager || myBelongingInfo.department?.includes('방과후') || myBelongingInfo.managerList.includes('방과후학교')) && (() => {
+                        {/* 2-1. 개인화 주요 업무 바로가기 (최대 3개 나란히 배치) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                            {selectedMajorTaskIds.map((taskId) => {
+                                if (taskId === 'afterschool') {
                                     const pendingCourses = afterschoolCourses.filter(c => c.status === 'PENDING');
                                     const openCourses = afterschoolCourses.filter(c => c.status === 'OPEN');
                                     const isTimerOpen = afterschoolTimer?.masterStatus === 'OPEN';
 
-                                    let stageBadge = '강좌 개설·심사';
-                                    let stageTitle = '방과후학교 관리자';
-                                    let stageDesc = `신규 강좌 ${pendingCourses.length}건 심사 대기 중`;
+                                    let stageBadge = '강좌 개설';
+                                    let stageTitle = '방과후학교';
+                                    let stageDesc = `신규 강좌 ${pendingCourses.length}건 심사 대기`;
 
                                     if (isTimerOpen) {
                                         stageBadge = '수강신청 접수';
-                                        stageTitle = '방과후학교 관리자';
-                                        stageDesc = `학생 수강신청 총 ${afterschoolEnrollments.length}건 관리`;
+                                        stageDesc = `수강신청 총 ${afterschoolEnrollments.length}건 접수`;
                                     } else if (pendingCourses.length > 0) {
-                                        stageBadge = '강좌 심사 기간';
-                                        stageTitle = '방과후학교 관리자';
-                                        stageDesc = `강좌 계획서 ${pendingCourses.length}건 검토·승인`;
+                                        stageBadge = '강좌 심사';
+                                        stageDesc = `계획서 ${pendingCourses.length}건 검토·승인`;
                                     } else if (openCourses.length > 0) {
-                                        stageBadge = '학기 운영 관리';
-                                        stageTitle = '방과후학교 관리자';
-                                        stageDesc = `총 ${openCourses.length}개 강좌 개설·수강생·정산 총괄`;
+                                        stageBadge = '운영 관리';
+                                        stageDesc = `총 ${openCourses.length}개 강좌·출석 관리`;
                                     } else {
                                         stageBadge = '방과후 총괄';
-                                        stageTitle = '방과후학교 관리자';
-                                        stageDesc = '강좌 개설, 수강 확정, 정산 및 운영 총괄';
+                                        stageDesc = '강좌 개설, 수강 확정, 출석부';
                                     }
 
                                     return (
                                         <Link 
+                                            key={taskId}
                                             href={isAfterschoolManager ? "/admin/afterschool" : "/teacher/afterschool"} 
                                             className="group block" 
                                             onClick={handleAfterschoolClick}
                                         >
-                                            <div className="p-2.5 rounded-xl border border-teal-200 bg-linear-to-br from-teal-50/70 via-white to-white hover:border-teal-400 hover:shadow-xs transition-all h-full flex flex-col justify-between">
-                                                <div className="space-y-1">
+                                            <div className="p-2 sm:p-2.5 rounded-xl border border-teal-200 bg-linear-to-br from-teal-50/70 via-white to-white hover:border-teal-400 hover:shadow-2xs transition-all h-full flex flex-col justify-between">
+                                                <div className="space-y-0.5 min-w-0">
                                                     <div className="flex items-center justify-between">
-                                                        <Badge className="bg-teal-600 text-white text-[9px] px-1.5 py-0 font-bold">
+                                                        <Badge className="bg-teal-600 text-white text-[9px] px-1.5 py-0 font-bold leading-tight">
                                                             {stageBadge}
                                                         </Badge>
-                                                        <span className="text-[11px] text-teal-600 font-bold group-hover:translate-x-0.5 transition-transform">
+                                                        <span className="text-[10px] text-teal-600 font-bold group-hover:translate-x-0.5 transition-transform">
                                                             →
                                                         </span>
                                                     </div>
                                                     <h4 className="font-bold text-slate-900 text-xs truncate mt-0.5">{stageTitle}</h4>
-                                                    <p className="text-[11px] text-slate-500 truncate">
+                                                    <p className="text-[10.5px] text-slate-500 truncate">
                                                         {stageDesc}
                                                     </p>
                                                 </div>
                                             </div>
                                         </Link>
                                     );
-                                })()}
+                                }
 
-                                {/* 스쿨버스 관리 / 탑승 관리 컴팩트 카드 */}
-                                {(isBusManager || myBelongingInfo.managerList.includes('스쿨버스')) && (
-                                    <Link href={isBusManager ? "/admin/bus" : "/teacher/bus"} className="group block" onClick={handleBusClick}>
-                                        <div className="p-2.5 rounded-xl border border-blue-200 bg-linear-to-br from-blue-50/70 via-white to-white hover:border-blue-400 hover:shadow-xs transition-all h-full flex flex-col justify-between">
-                                            <div className="space-y-1">
+                                if (taskId === 'bus') {
+                                    return (
+                                        <Link 
+                                            key={taskId}
+                                            href={isBusManager ? "/admin/bus" : "/teacher/bus"} 
+                                            className="group block" 
+                                            onClick={handleBusClick}
+                                        >
+                                            <div className="p-2 sm:p-2.5 rounded-xl border border-blue-200 bg-linear-to-br from-blue-50/70 via-white to-white hover:border-blue-400 hover:shadow-2xs transition-all h-full flex flex-col justify-between">
+                                                <div className="space-y-0.5 min-w-0">
+                                                    <div className="flex items-center justify-between">
+                                                        <Badge className="bg-blue-600 text-white text-[9px] px-1.5 py-0 font-bold leading-tight">
+                                                            {isBusManager ? '스쿨버스 관리' : '스쿨버스 탑승'}
+                                                        </Badge>
+                                                        <span className="text-[10px] text-blue-600 font-bold group-hover:translate-x-0.5 transition-transform">
+                                                            →
+                                                        </span>
+                                                    </div>
+                                                    <h4 className="font-bold text-slate-900 text-xs truncate mt-0.5">
+                                                        스쿨버스
+                                                    </h4>
+                                                    <p className="text-[10.5px] text-slate-500 truncate">
+                                                        {isBusManager ? '버스 등록, 노선, 좌석 및 탑승 관리' : '호차별 탑승 명단 및 실시간 체크'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </Link>
+                                    );
+                                }
+
+                                const def = ALL_MAJOR_TASKS.find(t => t.id === taskId);
+                                if (!def) return null;
+
+                                const href = def.getHref(profile?.isAdmin, myBelongingInfo.isHead);
+                                const colorStyles: Record<string, { border: string; bg: string; badge: string; text: string }> = {
+                                    emerald: { border: 'border-emerald-200 hover:border-emerald-400', bg: 'from-emerald-50/70 via-white to-white', badge: 'bg-emerald-600', text: 'text-emerald-600' },
+                                    amber: { border: 'border-amber-200 hover:border-amber-400', bg: 'from-amber-50/70 via-white to-white', badge: 'bg-amber-600', text: 'text-amber-600' },
+                                    violet: { border: 'border-violet-200 hover:border-violet-400', bg: 'from-violet-50/70 via-white to-white', badge: 'bg-violet-600', text: 'text-violet-600' },
+                                    rose: { border: 'border-rose-200 hover:border-rose-400', bg: 'from-rose-50/70 via-white to-white', badge: 'bg-rose-600', text: 'text-rose-600' },
+                                    indigo: { border: 'border-indigo-200 hover:border-indigo-400', bg: 'from-indigo-50/70 via-white to-white', badge: 'bg-indigo-600', text: 'text-indigo-600' },
+                                    teal: { border: 'border-teal-200 hover:border-teal-400', bg: 'from-teal-50/70 via-white to-white', badge: 'bg-teal-600', text: 'text-teal-600' },
+                                    blue: { border: 'border-blue-200 hover:border-blue-400', bg: 'from-blue-50/70 via-white to-white', badge: 'bg-blue-600', text: 'text-blue-600' },
+                                };
+                                const cStyle = colorStyles[def.themeColor] || colorStyles.indigo;
+
+                                return (
+                                    <Link key={taskId} href={href} className="group block">
+                                        <div className={cn("p-2 sm:p-2.5 rounded-xl border bg-linear-to-br transition-all h-full flex flex-col justify-between shadow-2xs", cStyle.border, cStyle.bg)}>
+                                            <div className="space-y-0.5 min-w-0">
                                                 <div className="flex items-center justify-between">
-                                                    <Badge className="bg-blue-600 text-white text-[9px] px-1.5 py-0 font-bold">
-                                                        {isBusManager ? '스쿨버스 관리' : '스쿨버스 탑승'}
+                                                    <Badge className={cn("text-white text-[9px] px-1.5 py-0 font-bold leading-tight", cStyle.badge)}>
+                                                        {def.badge}
                                                     </Badge>
-                                                    <span className="text-[11px] text-blue-600 font-bold group-hover:translate-x-0.5 transition-transform">
+                                                    <span className={cn("text-[10px] font-bold group-hover:translate-x-0.5 transition-transform", cStyle.text)}>
                                                         →
                                                     </span>
                                                 </div>
                                                 <h4 className="font-bold text-slate-900 text-xs truncate mt-0.5">
-                                                    {isBusManager ? '스쿨버스 관리' : '스쿨버스 탑승 관리'}
+                                                    {def.name}
                                                 </h4>
-                                                <p className="text-[11px] text-slate-500 truncate">
-                                                    {isBusManager ? '버스 등록, 노선, 좌석 및 탑승 관리' : '호차별 탑승 명단 확인 및 실시간 승하차 체크'}
+                                                <p className="text-[10.5px] text-slate-500 truncate">
+                                                    {def.description}
                                                 </p>
                                             </div>
                                         </div>
                                     </Link>
-                                )}
-                            </div>
+                                );
+                            })}
                         </div>
 
                         {/* 2-2. 부서·학년 업무 할당/제출 워크플로우 탭 */}
-                        <div className="space-y-2 pt-1 border-t border-slate-100">
-                            <div className="flex items-center justify-between gap-1.5">
+                        <div className="space-y-2 pt-1 border-t border-slate-100 flex-1 flex flex-col min-h-0">
+                            <div className="flex items-center justify-between gap-1.5 shrink-0">
                                 {(() => {
                                     const myEmail = profile?.email?.toLowerCase() || '';
                                     // 내가 대상자(targetEmails)에 포함되어 있는 모든 업무를 '나에게 할당된 업무'로 표시 (본인이 직접 할당한 경우도 포함)
@@ -1116,6 +1165,19 @@ export default function InboxPage() {
                                         </div>
                                     );
                                 })()}
+
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleSyncAssignedTasksToCalendar}
+                                    className="h-7 px-2 sm:px-2.5 border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                    title="마감기한이 지정된 할당 업무를 내 캘린더(오전 08:30 알림)에 동기화"
+                                >
+                                    <CalendarCheck className="w-3 h-3 text-indigo-600 shrink-0" />
+                                    <span className="sm:hidden">동기화</span>
+                                    <span className="hidden sm:inline">내 캘린더 동기화</span>
+                                </Button>
                             </div>
 
                             {/* 업무 목록 뷰 (컴팩트 높이) */}
@@ -1133,7 +1195,7 @@ export default function InboxPage() {
                                 }
 
                                 return (
-                                    <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
+                                    <div className="space-y-1.5 flex-1 min-h-[220px] max-h-[520px] overflow-y-auto pr-1 scrollbar-thin">
                                         {myAssignedList.map((task) => {
                                             const sub = task.submissions?.[myEmail];
                                             const isSubmitted = !!sub;
@@ -1156,11 +1218,11 @@ export default function InboxPage() {
                                                             </span>
                                                             {isSubmitted ? (
                                                                 <Badge className="bg-emerald-500 text-white text-[8px] px-1 py-0 font-bold">
-                                                                    ✓ 완료
+                                                                    완료
                                                                 </Badge>
                                                             ) : (
                                                                 <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-[8px] px-1 py-0 font-semibold">
-                                                                    ⏳ 미제출
+                                                                    미제출
                                                                 </Badge>
                                                             )}
                                                         </div>
@@ -1205,7 +1267,7 @@ export default function InboxPage() {
                                 }
 
                                 return (
-                                    <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
+                                    <div className="space-y-1.5 flex-1 min-h-[220px] max-h-[520px] overflow-y-auto pr-1 scrollbar-thin">
                                         {myCreatedList.map((task) => {
                                             const emails = task.targetEmails || [];
                                             const targetNames = task.targetNames || {};
@@ -1271,70 +1333,6 @@ export default function InboxPage() {
                                     </div>
                                 );
                             })()}
-                        </div>
-
-                        {/* 2-3. 나의 빠른 업무 할 일 (Todo Widget) */}
-                        <div className="bg-slate-50/70 border rounded-xl p-3 shadow-2xs space-y-2">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-1.5">
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
-                                    <h3 className="font-bold text-xs text-slate-900">업무 할 일 (Todo)</h3>
-                                </div>
-                                <span className="text-[10px] text-muted-foreground font-semibold">
-                                    {myTasks.filter(t => t.completed).length}/{myTasks.length} 완료
-                                </span>
-                            </div>
-
-                            <div className="space-y-1 max-h-[105px] overflow-y-auto pr-1">
-                                {myTasks.map((task) => (
-                                    <div 
-                                        key={task.id}
-                                        className={cn(
-                                            "flex items-start justify-between gap-2 p-1 rounded-lg border text-[11px] transition-all",
-                                            task.completed ? "bg-slate-100/80 border-slate-200 text-slate-400 line-through" : "bg-white border-slate-200 text-slate-800"
-                                        )}
-                                    >
-                                        <div 
-                                            className="flex items-start gap-1.5 cursor-pointer flex-1 min-w-0"
-                                            onClick={() => handleToggleTask(task.id)}
-                                        >
-                                            <input 
-                                                type="checkbox" 
-                                                checked={task.completed} 
-                                                onChange={() => {}} 
-                                                className="mt-0.5 rounded text-primary focus:ring-0 cursor-pointer"
-                                            />
-                                            <span className="leading-snug break-all text-[11px]">{task.text}</span>
-                                        </div>
-                                        <button 
-                                            onClick={() => handleDeleteTask(task.id)}
-                                            className="text-slate-300 hover:text-rose-500 transition-colors p-0.5"
-                                            title="삭제"
-                                        >
-                                            <Trash2 className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                ))}
-
-                                {myTasks.length === 0 && (
-                                    <div className="text-center py-2 text-slate-400 text-[11px]">
-                                        등록된 할 일이 없습니다.
-                                    </div>
-                                )}
-                            </div>
-
-                            <form onSubmit={handleAddTask} className="flex gap-1.5 pt-1 border-t">
-                                <input 
-                                    type="text" 
-                                    placeholder="새 할 일 입력..." 
-                                    value={newTaskText} 
-                                    onChange={(e) => setNewTaskText(e.target.value)} 
-                                    className="flex-1 h-7 px-2 rounded-lg border text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary" 
-                                />
-                                <Button type="submit" size="sm" className="h-7 px-2 text-xs font-bold shrink-0">
-                                    <Plus className="w-3 h-3 mr-0.5" /> 추가
-                                </Button>
-                            </form>
                         </div>
                     </div>
                 </Card>
@@ -1492,6 +1490,22 @@ export default function InboxPage() {
               academicEvents={academicEvents}
               weeklySchedules={weeklySchedules}
               orgData={orgData}
+            />
+
+            {/* 8. 대시보드 주요 업무 바로가기 개인화 설정 모달 */}
+            <MajorTasksModal
+              open={isMajorTasksModalOpen}
+              onOpenChange={setIsMajorTasksModalOpen}
+              selectedIds={selectedMajorTaskIds}
+              onSave={(newIds) => setSelectedMajorTaskIds(newIds)}
+            />
+
+            {/* 9. 주간 및 월간 교육일정 캘린더 동기화 모달 */}
+            <ScheduleCalendarSyncModal
+              open={isScheduleSyncModalOpen}
+              onOpenChange={setIsScheduleSyncModalOpen}
+              weeklySchedules={weeklySchedules}
+              academicEvents={academicEvents}
             />
         </MainLayout>
     );
