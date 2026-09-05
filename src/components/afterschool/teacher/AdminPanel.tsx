@@ -14,6 +14,7 @@ import type { DocConfig, UserProfile } from '@/lib/types';
 import { getUsersDirectory } from '@/lib/services/userService';
 import { StudentManagement } from './StudentManagement';
 import { OfficialAttendanceSheet, OfficialSeal } from './OfficialAttendanceSheet';
+import { OfficialWorkRegister } from './OfficialWorkRegister';
 import { SignatureRegisterModal } from './SignatureRegisterModal';
 import { useAuth } from '@/hooks/use-auth';
 import { useTranslation } from '@/hooks/use-translation';
@@ -2590,6 +2591,48 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           );
         }
 
+        if (viewingDocType === 'WORK_REGISTER') {
+          return (
+            <OfficialWorkRegister
+              course={c}
+              scheduleDays={scheduleDays}
+              attendanceRecords={attendanceRecords}
+              substituteRecords={substituteRecords}
+              getInstructorSeal={getInstructorSeal}
+              managerSignature={managerSignature}
+              vicePrincipalSignature={vicePrincipalSignature}
+              isManagerApproved={isManagerApproved}
+              isVicePrincipalApproved={isVicePrincipalApproved}
+              onRequestSignature={(teacherName, courseId) => {
+                setSigModalTarget({ teacherName, courseId });
+              }}
+              onManageSubstitute={(day, targetInst) => {
+                handleOpenSubstituteModal(day as ScheduleDay, c, targetInst);
+              }}
+              onClose={() => {
+                setViewingDocCourse(null);
+                setViewingDocType(null);
+              }}
+              onDeleteApprovalDoc={targetDoc ? async () => {
+                if (!window.confirm(`[${c.title}] 제출된 결재 서류를 반려(삭제)하시겠습니까?\n삭제 시 강사 서류 제출함 및 관리자 검토 대기 목록에서 즉시 제거됩니다.`)) {
+                  return;
+                }
+                const res = await deleteAfterschoolApprovalDoc(targetDoc.id);
+                if (res.success) {
+                  setApprovalDocs((prev) => prev.filter((d) => d.id !== targetDoc.id));
+                  setViewingDocCourse(null);
+                  setViewingDocType(null);
+                  alert('제출된 서류가 성공적으로 반려(삭제)되었습니다.');
+                } else {
+                  alert(`서류 삭제 실패: ${res.error}`);
+                }
+              } : undefined}
+              deleteDocLabel="제출 서류 반려 및 삭제"
+              yearSemesterText={`${teacherApplySettings?.year || '2026'}-${teacherApplySettings?.semester || '1학기'} KIS방과후학교`}
+            />
+          );
+        }
+
         const handlePrint = () => {
           if (!getInstructorSeal(mainInstructor)) {
             if (confirm(`주강사 [${mainInstructor}] 선생님의 도장(서명)이 등록되지 않았습니다. 서명을 먼저 등록하시겠습니까?\n(취소 시 기본 원형 직인으로 인쇄됩니다)`)) {
@@ -2663,10 +2706,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               {/* Modal Header (인쇄 시 숨김) */}
               <div className="no-print bg-slate-900 px-6 py-4 flex items-center justify-between text-white shrink-0">
                 <div className="flex items-center gap-2.5">
-                  {viewingDocType === 'WORK_REGISTER' ? <FileText className="w-5 h-5 text-amber-400" /> : <DollarSign className="w-5 h-5 text-blue-400" />}
+                  <DollarSign className="w-5 h-5 text-blue-400" />
                   <div>
                     <h3 className="font-bold text-sm text-white">
-                      [{c.title}] {viewingDocType === 'WORK_REGISTER' ? '강사출근부 검토' : '학습준비물 지출증빙서 검토'}
+                      [{c.title}] 학습준비물 지출증빙서 검토
                     </h3>
                     <p className="text-[11px] text-slate-400">
                       강사: {mainInstructor}{assistantInstructors.length > 0 ? ` (보조: ${assistantInstructors.join(', ')})` : ''} · 장소: {c.classroom || '-'} · 시간: {c.classTime}
@@ -2693,178 +2736,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               {/* Modal Body */}
               <div className="p-4 md:p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50">
-              {/* 2. 강사출근부 서식 */}
-                {viewingDocType === 'WORK_REGISTER' && (
-                  <div id="print-official-work-register" className="print-container-only bg-white p-5 md:p-6 border border-slate-300 rounded-2xl font-serif space-y-4 text-slate-900 shadow-sm max-w-3xl mx-auto">
-                    <div className="text-xs text-slate-600 font-bold font-sans">
-                      {teacherApplySettings?.year || '2026'}-{teacherApplySettings?.semester || '1학기'} KIS방과후학교
-                    </div>
-                    <div className="flex justify-between items-start flex-wrap gap-2 font-sans">
-                      <div>
-                        <h2 className="text-xl font-bold text-slate-900">강사출근부 ({c.title})</h2>
-                        <div className="text-xs text-slate-600 mt-1 space-y-0.5">
-                          <div>
-                            강사: <strong className="text-slate-900">{mainInstructor}</strong>
-                            {assistantInstructors.length > 0 && (
-                              <span className="text-slate-600 ml-1">
-                                (보조강사: {assistantInstructors.join(', ')})
-                              </span>
-                            )}
-                          </div>
-                          <div>수업시간: {c.classTime}</div>
-                        </div>
-                      </div>
-                      <table className="border-collapse border border-slate-800 text-xs text-center shrink-0">
-                        <tbody>
-                          <tr>
-                            <td rowSpan={2} className="border border-slate-800 bg-slate-100 px-1.5 py-2 font-bold w-6 leading-tight text-[10px]">결<br/>재</td>
-                            <td className="border border-slate-800 px-3 py-0.5 font-bold w-14 bg-slate-50 text-[11px]">부장</td>
-                            <td className="border border-slate-800 px-3 py-0.5 font-bold w-14 bg-slate-50 text-[11px]">교감</td>
-                          </tr>
-                          <tr className="h-10">
-                            <td className="border border-slate-800 p-0.5">
-                              {isManagerApproved ? (
-                                <OfficialSeal name="부장" signatureUrl={managerSignature} size="md" />
-                              ) : <span className="text-slate-300">-</span>}
-                            </td>
-                            <td className="border border-slate-800 p-0.5">
-                              {isVicePrincipalApproved ? (
-                                <OfficialSeal name="교감" signatureUrl={vicePrincipalSignature} size="md" />
-                              ) : <span className="text-slate-300">-</span>}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <table className="w-full border-collapse border border-slate-800 text-xs text-center font-sans">
-                      <thead className="bg-indigo-50 font-bold">
-                        <tr>
-                          <th className="border border-slate-800 p-2 w-28">회차 (차시)</th>
-                          <th className="border border-slate-800 p-2 w-36">수업 날짜</th>
-                          <th className="border border-slate-800 p-2">강사 서명 (출근 날인)</th>
-                          <th className="border border-slate-800 p-2 w-32 no-print">보결 / 결근 관리</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {scheduleDays.map((day) => {
-                          const records = attendanceRecords.filter(
-                            (r) => r.courseId === c.id && day.sessionNos.includes(r.sessionNo || 0) && Boolean(r.status || (r as any).markSymbol)
-                          );
-                          const hasChecked = records.length > 0;
-
-                          const allCourseInstructors = [
-                            c.instructorName,
-                            c.instructor2,
-                            c.instructor3,
-                            c.instructor4,
-                            ...(c.assistantTeachers || [])
-                          ].filter(Boolean) as string[];
-                          const instructors = allCourseInstructors.length > 0 ? allCourseInstructors : [c.instructorName || '강사'];
-
-                          const daySubs = substituteRecords.filter(
-                            (s) => s.courseId === c.id && s.dayIndex === day.dayIndex
-                          );
-
-                          return (
-                            <tr key={day.dayIndex} className={`h-10 hover:bg-slate-50 ${daySubs.length > 0 ? 'bg-amber-50/50' : ''}`}>
-                              <td className="border border-slate-800 font-mono font-bold bg-slate-50 text-[11px] px-2 py-1">
-                                {day.dayIndex}회차 ({day.startSessionNo}~{day.endSessionNo}차시)
-                              </td>
-                              <td className="border border-slate-800 font-mono text-[11px] text-indigo-900 px-2 py-1">
-                                <div>{day.dateStr} ({day.fullDate})</div>
-                                {daySubs.map(s => (
-                                  <div key={s.id} className="text-[10px] text-amber-800 font-sans font-medium">
-                                    {s.targetInstructor ? `[${s.targetInstructor}] ` : ''}{s.isAbsence ? '결근' : `보결(${s.substituteInstructor})`}: {s.reason || '-'}
-                                  </div>
-                                ))}
-                              </td>
-                              <td className="border border-slate-800 px-2 py-1">
-                                {hasChecked ? (
-                                  /* 강사 서명: 1줄에 2명이 적히도록 2열 그리드 배치 */
-                                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 items-center justify-items-center">
-                                    {instructors.map((inst) => {
-                                      const sub = daySubs.find(s => !s.targetInstructor || s.targetInstructor === inst);
-                                      if (sub?.isAbsence) {
-                                        return (
-                                          <div key={inst} className="flex items-center gap-1">
-                                            <span className="text-[10px] bg-rose-100 text-rose-800 border border-rose-300 px-1 py-0.5 rounded font-bold">결근</span>
-                                            <span className="line-through text-slate-400 font-bold text-[11px]">{inst}</span>
-                                            <span className="text-[10px] text-slate-500">({sub.reason || '사유미기재'})</span>
-                                          </div>
-                                        );
-                                      }
-                                      if (sub) {
-                                        return (
-                                          <div key={inst} className="flex items-center gap-1">
-                                            <span className="text-[10px] bg-amber-200 text-amber-900 px-1 py-0.5 rounded font-bold">보결</span>
-                                            <span className="font-bold text-[11px] text-amber-900">{sub.substituteInstructor}</span>
-                                            <OfficialSeal name={sub.substituteInstructor} signatureUrl={getInstructorSeal(sub.substituteInstructor)} size="sm" />
-                                            <span className="text-[9px] text-slate-400 font-sans">(원: {inst})</span>
-                                          </div>
-                                        );
-                                      }
-                                      return (
-                                        <div key={inst} className="flex items-center gap-1.5">
-                                          <span className="font-bold text-[11px] text-slate-900">{inst}</span>
-                                          <OfficialSeal name={inst} signatureUrl={getInstructorSeal(inst)} size="sm" />
-                                          {!getInstructorSeal(inst) && (
-                                            <button
-                                              type="button"
-                                              onClick={() => setSigModalTarget({ teacherName: inst, courseId: c.id })}
-                                              className="no-print text-[9px] text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-1 py-0.2 rounded font-bold cursor-pointer transition"
-                                              title="도장/서명 등록"
-                                            >
-                                              등록
-                                            </button>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-col gap-0.5 items-center justify-center text-slate-400 text-[11px]">
-                                    {daySubs.map(s => (
-                                      <span key={s.id} className="text-amber-700 font-bold">
-                                        [{s.targetInstructor || '강사'} {s.isAbsence ? '결근' : `보결: ${s.substituteInstructor}`}]
-                                      </span>
-                                    ))}
-                                    <span>미출근 (체크 전)</span>
-                                  </div>
-                                )}
-                              </td>
-                              <td className="border border-slate-800 px-1 py-1 no-print">
-                                <div className="flex flex-col gap-1 items-center justify-center">
-                                  {instructors.map((inst) => {
-                                    const sub = daySubs.find(s => !s.targetInstructor || s.targetInstructor === inst);
-                                    return (
-                                      <button
-                                        key={inst}
-                                        type="button"
-                                        onClick={() => handleOpenSubstituteModal(day, c, inst)}
-                                        className={`text-[10.5px] font-bold px-1.5 py-0.5 rounded border transition flex items-center justify-center gap-1 w-full max-w-[120px] ${
-                                          sub
-                                            ? sub.isAbsence
-                                              ? 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
-                                              : 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
-                                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                                        }`}
-                                        title={sub ? '보결/결근 정보 수정/삭제' : `${inst} 보결 등록 또는 결근 처리`}
-                                      >
-                                        <UserPlus className="w-2.5 h-2.5 text-amber-600 shrink-0" />
-                                        <span className="truncate">{instructors.length > 1 ? `${inst}: ` : ''}{sub ? (sub.isAbsence ? '결근 수정' : '보결 수정') : '보결/결근'}</span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
 
                 {/* 3. 학습준비물 지출증빙 서식 */}
                 {viewingDocType === 'EXPENSE_PROOF' && (

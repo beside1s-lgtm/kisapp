@@ -14,6 +14,7 @@ import type { DocConfig, UserProfile } from '@/lib/types';
 import { getUsersDirectory } from '@/lib/services/userService';
 import { SignatureRegisterModal } from './SignatureRegisterModal';
 import { OfficialAttendanceSheet } from './OfficialAttendanceSheet';
+import { OfficialWorkRegister } from './OfficialWorkRegister';
 import { useTranslation } from '@/hooks/use-translation';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -229,6 +230,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   const activeSubTab = externalActiveSubTab || internalActiveSubTab;
   const setActiveSubTab = externalSetActiveSubTab || setInternalActiveSubTab;
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [isWorkRegisterPrintModalOpen, setIsWorkRegisterPrintModalOpen] = useState(false);
   const [activeSessionNo, setActiveSessionNo] = useState<number>(1);
 
   // 학생 카드 모달 팝업 상태 (요청 6: 학생 이름 클릭 시 사진/학년/반/이름/버스번호/학부모연락처 팝업)
@@ -1063,175 +1065,35 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
               <span className="font-bold text-indigo-900">강사출근부 실시간 차시 연동 작동 중</span>
               <p className="text-indigo-700 mt-0.5">학생 출석부 체크 시 해당 날짜 회차에 강사 서명이 자동 연동되어 기입됩니다.</p>
             </div>
+            <button
+              type="button"
+              onClick={() => setIsWorkRegisterPrintModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow cursor-pointer shrink-0"
+            >
+              <Printer className="w-4 h-4" />
+              <span>강사출근부 인쇄</span>
+            </button>
           </div>
 
-          <div className="max-w-2xl mx-auto bg-white p-5 border border-slate-300 rounded-xl shadow space-y-4">
-            <div className="flex justify-between items-start flex-wrap gap-2">
-              <div>
-                <div className="text-[11px] text-slate-500">2026학년도 1학기 방과후학교</div>
-                <h3 className="text-lg font-bold text-slate-900 mt-0.5">강사출근부 ({currentCourse.title})</h3>
-              </div>
-              <table className="border-collapse border border-slate-800 text-xs text-center">
-                <tbody>
-                  <tr>
-                    <td rowSpan={2} className="border border-slate-800 bg-slate-100 px-1 py-2 font-bold w-5 leading-tight text-[10px]">결<br />재</td>
-                    <td className="border border-slate-800 px-2 py-0.5 font-bold w-12 bg-slate-50 text-[11px]">부장</td>
-                    <td className="border border-slate-800 px-2 py-0.5 font-bold w-12 bg-slate-50 text-[11px]">교감</td>
-                  </tr>
-                  <tr className="h-9">
-                    <td className="border border-slate-800 p-0.5">
-                      {isManagerApproved ? (
-                        managerSignature ? (
-                          <img src={managerSignature} alt="부장" className="w-7 h-7 object-contain mx-auto" />
-                        ) : (
-                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-300">승인</span>
-                        )
-                      ) : (
-                        <span className="text-slate-300">-</span>
-                      )}
-                    </td>
-                    <td className="border border-slate-800 p-0.5">
-                      {isVicePrincipalApproved ? (
-                        vicePrincipalSignature ? (
-                          <img src={vicePrincipalSignature} alt="교감" className="w-7 h-7 object-contain mx-auto" />
-                        ) : (
-                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-300">승인</span>
-                        )
-                      ) : (
-                        <span className="text-slate-300">-</span>
-                      )}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <table className="w-full border-collapse border border-slate-800 text-xs text-center">
-              <thead className="bg-indigo-50 font-bold">
-                <tr>
-                  <th className="border border-slate-800 p-2">회차 (차시)</th>
-                  <th className="border border-slate-800 p-2">수업 날짜</th>
-                  <th className="border border-slate-800 p-2">강사 서명 (출근 날인)</th>
-                  <th className="border border-slate-800 p-2 w-32">보결 / 결근 관리</th>
-                </tr>
-              </thead>
-              <tbody>
-                {scheduleDays.map((day) => {
-                  const records = attendanceRecords.filter(
-                    (r) => r.courseId === currentCourse.id && day.sessionNos.includes(r.sessionNo || 0) && Boolean(r.status || (r as any).markSymbol)
-                  );
-                  const hasChecked = records.length > 0;
-
-                  // 강좌에 배정된 모든 강사 목록 (복수 강사 지원: 주강사 + 강사2 + 보조강사 등)
-                  const allCourseInstructors = [
-                    currentCourse.instructorName,
-                    currentCourse.instructor2,
-                    currentCourse.instructor3,
-                    currentCourse.instructor4,
-                    ...(currentCourse.assistantTeachers || [])
-                  ].filter(Boolean) as string[];
-                  const instructors = allCourseInstructors.length > 0 ? allCourseInstructors : [currentCourse.instructorName || '강사'];
-
-                  // 해당 회차의 모든 보결/결근 기록 조회
-                  const daySubs = substituteRecords.filter(
-                    (s) => s.courseId === currentCourse.id && s.dayIndex === day.dayIndex
-                  );
-
-                  return (
-                    <tr key={day.dayIndex} className={`h-10 hover:bg-slate-50 ${daySubs.length > 0 ? 'bg-amber-50/40' : ''}`}>
-                      <td className="border border-slate-800 font-mono font-bold bg-slate-50 text-[11px] px-2 py-1">
-                        {day.dayIndex}회차 ({day.startSessionNo}~{day.endSessionNo}차시)
-                      </td>
-                      <td className="border border-slate-800 font-mono text-[11px] text-indigo-900 px-2 py-1">
-                        <div>{day.dateStr} ({day.fullDate})</div>
-                        {daySubs.map(s => (
-                          <div key={s.id} className="text-[10px] text-amber-800 font-sans font-medium">
-                            {s.targetInstructor ? `[${s.targetInstructor}] ` : ''}{s.isAbsence ? '결근' : `보결(${s.substituteInstructor})`}: {s.reason || '-'}
-                          </div>
-                        ))}
-                      </td>
-                      <td className="border border-slate-800 px-2 py-1.5">
-                        {hasChecked ? (
-                          <div className={`grid ${instructors.length > 1 ? 'grid-cols-2 gap-x-3 gap-y-1.5' : 'grid-cols-1'} items-center justify-items-center`}>
-                            {instructors.map((inst) => {
-                              const sub = daySubs.find(s => !s.targetInstructor || s.targetInstructor === inst);
-                              if (sub?.isAbsence) {
-                                return (
-                                  <div key={inst} className="flex items-center gap-1 justify-center">
-                                    <span className="text-[10px] bg-rose-100 text-rose-800 border border-rose-300 px-1 py-0.5 rounded font-bold">결근</span>
-                                    <span className="line-through text-slate-400 font-bold text-[11px]">{inst}</span>
-                                    <span className="text-[10px] text-slate-500">({sub.reason || '사유미기재'})</span>
-                                  </div>
-                                );
-                              }
-                              if (sub) {
-                                return (
-                                  <div key={inst} className="flex items-center gap-1 justify-center">
-                                    <span className="text-[10px] bg-amber-200 text-amber-900 px-1 py-0.5 rounded font-bold">보결</span>
-                                    <span className="font-bold text-[11px] text-amber-900">{sub.substituteInstructor}</span>
-                                    <OfficialSeal name={sub.substituteInstructor} signatureUrl={getInstructorSeal(sub.substituteInstructor)} size="sm" />
-                                    <span className="text-[9px] text-slate-400 font-sans">(원: {inst})</span>
-                                  </div>
-                                );
-                              }
-                              const seal = getInstructorSeal(inst);
-                              return (
-                                <div key={inst} className="flex items-center gap-1.5 justify-center">
-                                  <span className="font-bold text-[11px] text-slate-900">{inst}</span>
-                                  <OfficialSeal name={inst} signatureUrl={seal} size="sm" />
-                                  {!seal && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setSigModalTarget({ teacherName: inst, courseId: currentCourse?.id })}
-                                      className="text-[9px] font-bold text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-1 py-0.5 rounded border border-amber-200 transition"
-                                      title="도장/서명 등록"
-                                    >
-                                      등록
-                                    </button>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-0.5 items-center justify-center text-slate-400">
-                            {daySubs.map(s => (
-                              <span key={s.id} className="text-[10px] text-amber-700 font-bold">
-                                [{s.targetInstructor || '강사'} {s.isAbsence ? '결근' : `보결: ${s.substituteInstructor}`}]
-                              </span>
-                            ))}
-                            <span>미출근 (체크 전)</span>
-                          </div>
-                        )}
-                      </td>
-                      <td className="border border-slate-800 px-1 py-1">
-                        <div className="flex flex-col gap-1 items-center justify-center">
-                          {instructors.map((inst) => {
-                            const sub = daySubs.find(s => !s.targetInstructor || s.targetInstructor === inst);
-                            return (
-                              <button
-                                key={inst}
-                                onClick={() => handleOpenSubstituteModal(day, inst)}
-                                className={`text-[10.5px] font-bold px-1.5 py-0.5 rounded border transition flex items-center justify-center gap-1 w-full max-w-[120px] ${
-                                  sub
-                                    ? sub.isAbsence
-                                      ? 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
-                                      : 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
-                                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                                }`}
-                                title={sub ? '보결/결근 정보 수정/삭제' : `${inst} 보결 등록 또는 결근 처리`}
-                              >
-                                <UserPlus className="w-2.5 h-2.5 text-amber-600 shrink-0" />
-                                <span className="truncate">{instructors.length > 1 ? `${inst}: ` : ''}{sub ? (sub.isAbsence ? '결근 수정' : '보결 수정') : '보결/결근'}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="max-w-4xl mx-auto">
+            <OfficialWorkRegister
+              course={currentCourse}
+              scheduleDays={scheduleDays}
+              attendanceRecords={attendanceRecords}
+              substituteRecords={substituteRecords}
+              getInstructorSeal={getInstructorSeal}
+              managerSignature={managerSignature}
+              vicePrincipalSignature={vicePrincipalSignature}
+              isManagerApproved={isManagerApproved}
+              isVicePrincipalApproved={isVicePrincipalApproved}
+              onRequestSignature={(teacherName, courseId) => {
+                setSigModalTarget({ teacherName, courseId });
+              }}
+              onManageSubstitute={(day, targetInst) => {
+                handleOpenSubstituteModal(day as ScheduleDay, targetInst);
+              }}
+              isModal={false}
+            />
           </div>
         </div>
       )}
@@ -1422,6 +1284,29 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
             setSigModalTarget({ teacherName, courseId });
           }}
           onClose={() => setIsPrintModalOpen(false)}
+        />
+      )}
+
+      {/* ===== A4 세로 공식 강사출근부 인쇄 모달 (OfficialWorkRegister) ===== */}
+      {isWorkRegisterPrintModalOpen && currentCourse && (
+        <OfficialWorkRegister
+          course={currentCourse}
+          scheduleDays={scheduleDays}
+          attendanceRecords={attendanceRecords}
+          substituteRecords={substituteRecords}
+          getInstructorSeal={getInstructorSeal}
+          managerSignature={managerSignature}
+          vicePrincipalSignature={vicePrincipalSignature}
+          isManagerApproved={isManagerApproved}
+          isVicePrincipalApproved={isVicePrincipalApproved}
+          onRequestSignature={(teacherName, courseId) => {
+            setSigModalTarget({ teacherName, courseId });
+          }}
+          onManageSubstitute={(day, targetInst) => {
+            handleOpenSubstituteModal(day as ScheduleDay, targetInst);
+          }}
+          onClose={() => setIsWorkRegisterPrintModalOpen(false)}
+          isModal={true}
         />
       )}
 
