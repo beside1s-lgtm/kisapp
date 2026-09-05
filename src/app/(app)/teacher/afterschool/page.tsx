@@ -1,11 +1,11 @@
 'use client';
 
 import { Suspense, useState, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Plus, BookOpen, Users, ClipboardCheck } from 'lucide-react';
+import { Loader2, Plus, BookOpen, Users, ClipboardCheck, UserCheck, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useTranslation } from '@/hooks/use-translation';
 import { MainLayout } from '@/components/layout/main-layout';
@@ -72,8 +72,21 @@ const initialClassrooms: Classroom[] = [
 
 function AfterschoolConsole() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const queryCourseId = searchParams.get('courseId');
   const { user, profile } = useAuth();
   const { t } = useTranslation();
+
+  // 관리자 권한 확인 (강사 로그인 불가 시 대리 출석체크 권한 부여)
+  const isAdmin = Boolean(
+    profile?.isAdmin === true ||
+    profile?.role === 'admin' ||
+    profile?.role === '관리자' ||
+    profile?.role === '부장' ||
+    profile?.role === '교감' ||
+    profile?.role === '교장' ||
+    user?.email?.toLowerCase() === 'beside1s@kshcm.net'
+  );
 
   const [activeTab, setActiveTab] = useState<string>('course');
 
@@ -203,6 +216,15 @@ function AfterschoolConsole() {
 
   const myName = (profile?.name || user?.displayName || '').trim();
   const teacherCourses = useMemo(() => {
+    // 관리자는 강사 로그인 불가 시 대리 출석체크를 위해 전체 강좌를 열람 및 관리 가능
+    if (isAdmin) {
+      return [...courses].sort((a, b) => {
+        const instA = a.instructorName || '';
+        const instB = b.instructorName || '';
+        if (instA !== instB) return instA.localeCompare(instB);
+        return a.title.localeCompare(b.title);
+      });
+    }
     if (!myName) return courses;
     const filtered = courses.filter(c => {
       const instructors = [
@@ -215,57 +237,79 @@ function AfterschoolConsole() {
       return instructors.includes(myName);
     });
     return filtered.length > 0 ? filtered : courses;
-  }, [courses, myName]);
+  }, [courses, myName, isAdmin]);
 
   const myCourses = teacherCourses;
 
-  // 교사 본인 강좌 ID 목록
+  // 교사 본인/관리 대상 강좌 ID 목록
   const myCourseIds = useMemo(() => myCourses.map(c => c.id), [myCourses]);
 
-  // 교사 본인 강좌의 수강신청 정보들만 필터링
+  // 해당 강좌의 수강신청 정보들 필터링
   const myEnrollments = useMemo(() => {
     return enrollments.filter(e => myCourseIds.includes(e.courseId));
   }, [enrollments, myCourseIds]);
 
-  // 교사 본인 강좌의 출석체크 정보들만 필터링
+  // 해당 강좌의 출석체크 정보들 필터링
   const myAttendanceRecords = useMemo(() => {
     return attendanceRecords.filter(a => myCourseIds.includes(a.courseId));
   }, [attendanceRecords, myCourseIds]);
 
   useEffect(() => {
+    // URL 파라미터로 지정된 강좌가 있으면 최우선 선택
+    if (queryCourseId && courses.some(c => c.id === queryCourseId)) {
+      setSelectedCourseId(queryCourseId);
+      setActiveSubTab('studentSheet');
+      return;
+    }
     if (myCourses.length > 0 && (!selectedCourseId || !myCourses.some(c => c.id === selectedCourseId))) {
       setSelectedCourseId(myCourses[0].id);
     }
-  }, [myCourses, selectedCourseId]);
+  }, [myCourses, selectedCourseId, queryCourseId, courses]);
 
   return (
     <MainLayout
       title={
         <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-nowrap">
+          {/* 관리자 대리 출석 모드 표시 및 관리자 홈 버튼 */}
+          {isAdmin && (
+            <div className="flex items-center gap-1.5 shrink-0 mr-1">
+              <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-2xs">
+                <UserCheck className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                <span className="hidden sm:inline">관리자 대리 출석체크 모드</span>
+                <span className="sm:hidden">대리출석</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => router.push('/admin/afterschool')}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-2 py-1 rounded-lg border border-slate-300 flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                title="관리자 페이지로 돌아가기"
+              >
+                <ArrowLeft className="w-3 h-3 shrink-0" />
+                <span className="hidden sm:inline">관리자 홈</span>
+              </button>
+            </div>
+          )}
+
           {/* 1. 강의 선택 드롭다운 버튼 */}
           {myCourses.length > 0 && (
             <Select
               value={selectedCourseId}
               onValueChange={(val) => {
                 setSelectedCourseId(val);
-                setActiveSubTab('course');
+                setActiveSubTab('studentSheet');
               }}
             >
-              <SelectTrigger className="h-7 text-xs bg-white border-slate-300 font-bold px-2 min-w-[90px] max-w-[130px] sm:max-w-[160px] shrink-0 rounded-lg shadow-2xs text-slate-800">
+              <SelectTrigger className="h-7 text-xs bg-white border-slate-300 font-bold px-2 min-w-[120px] max-w-[180px] sm:max-w-[240px] shrink-0 rounded-lg shadow-2xs text-slate-800">
                 <SelectValue placeholder="강좌 선택" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="max-h-80">
                 {myCourses.map(c => (
                   <SelectItem
                     key={c.id}
                     value={c.id}
                     className="text-xs font-semibold cursor-pointer"
-                    onClick={() => {
-                      setSelectedCourseId(c.id);
-                      setActiveSubTab('course');
-                    }}
                   >
-                    {c.title}
+                    {isAdmin && c.instructorName ? `[${c.instructorName}] ` : ''}{c.title}
                   </SelectItem>
                 ))}
                 <div

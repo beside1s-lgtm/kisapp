@@ -3,7 +3,7 @@ import { useRouter } from 'next/navigation';
 import type { Course, Classroom, SubmittedApprovalDoc, SessionPeriod, Enrollment, Student, MaterialRequest, ExpenseProof, SubmissionReminder, AttendanceRecord, SubstituteRecord } from '@/lib/afterschool/types';
 import {
   X, Plus, Trash2, CheckCircle2, XCircle, Building2,
-  ClipboardList, BookOpen, Send, Shield, FileText, Download, Upload, Clock, Edit3, Calendar, Settings, Save, Lock, Unlock, Pause, UserPlus, Filter, Activity, Play, ChevronUp, ChevronDown, DollarSign, Bell, Square, AlertCircle, Loader2, Printer, Eye, ExternalLink, Image as ImageIcon
+  ClipboardList, BookOpen, Send, Shield, FileText, Download, Upload, Clock, Edit3, Calendar, Settings, Save, Lock, Unlock, Pause, UserPlus, UserCheck, Filter, Activity, Play, ChevronUp, ChevronDown, DollarSign, Bell, Square, AlertCircle, Loader2, Printer, Eye, ExternalLink, Image as ImageIcon
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { downloadClassroomTemplateExcel, parseClassroomExcel, downloadCourseTemplateExcel, parseCourseExcel } from '@/lib/afterschool/excel';
@@ -1671,17 +1671,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                     </button>
                                   ) : (
                                     <button
-                                      type="button"
-                                      onClick={() => {
-                                        setViewingDocCourse(c);
-                                        setViewingDocType('ATTENDANCE');
-                                      }}
-                                      className="bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 transition shadow-2xs cursor-pointer hover:shadow-xs"
-                                      title="클릭하여 현재까지의 출석부 현황 확인"
+                                    type="button"
+                                    onClick={() => {
+                                    setViewingDocCourse(c);
+                                    setViewingDocType('ATTENDANCE');
+                                    }}
+                                    className="bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 transition shadow-2xs cursor-pointer hover:shadow-xs"
+                                    title="클릭하여 현재까지의 출석부 현황 확인"
                                     >
-                                      <Square className="w-3 h-3 text-rose-600" /> 출석부 미제출 (조회)
+                                    <Square className="w-3 h-3 text-rose-600" /> 출석부 미제출 (조회)
                                     </button>
-                                  )}
+                                    )}
+
+                                    {/* 관리자 대리 출석체크 바로가기 */}
+                                    <button
+                                      type="button"
+                                      onClick={() => router.push(`/teacher/afterschool?courseId=${c.id}`)}
+                                      className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-300 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 transition shadow-2xs cursor-pointer hover:shadow-xs"
+                                      title="강사 로그인 불가 시 관리자가 직접 실시간 출석체크 수행"
+                                    >
+                                      <UserCheck className="w-3 h-3 text-indigo-600" /> 대리 출석체크
+                                    </button>
 
                                   {/* 3. 출근부 */}
                                   {hasWorkRegister ? (
