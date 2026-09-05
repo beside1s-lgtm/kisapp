@@ -72,13 +72,13 @@ function AfterschoolEnrollment() {
   return (
     <div className="max-w-7xl mx-auto p-2.5 sm:p-4 md:p-8 space-y-3 sm:space-y-6">
       {/* 통일된 상단 네비게이션 헤더 */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 print:hidden mb-2">
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.back()}>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 print:hidden mb-2 w-full max-w-full min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs shrink-0" onClick={() => router.back()}>
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
             {t('back') || '뒤로가기'}
           </Button>
-          <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs" onClick={() => router.push('/parents')}>
+          <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm bg-white hover:bg-slate-50 text-muted-foreground hover:text-foreground shadow-xs shrink-0" onClick={() => router.push('/parents')}>
             <Home className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
             {t('page.title.home') || '홈'}
           </Button>
@@ -87,12 +87,14 @@ function AfterschoolEnrollment() {
         <Button
           variant="ghost"
           size="sm"
-          className="text-xs text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200/80 bg-white shadow-xs flex items-center gap-1.5 self-start sm:self-auto h-8"
+          className="text-xs text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200/80 bg-white shadow-xs flex items-center gap-1.5 w-full md:w-auto h-auto min-h-8 py-1.5 px-2.5 sm:px-3 max-w-full min-w-0 justify-between md:justify-start shrink-0"
           onClick={() => setIsConsentModalOpen(true)}
         >
-          <ShieldCheck className="h-3.5 w-3.5 text-indigo-500" />
-          <span>{t('parents.privacy_consent') || '개인정보 동의서 (Decree 13)'}</span>
-          {hasConsented && <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.2 rounded">{t('parents.consent_granted') || '동의완료'}</span>}
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <ShieldCheck className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+            <span className="truncate min-w-0 font-medium">{t('parents.privacy_consent') || '개인정보 동의서 (Decree 13)'}</span>
+          </div>
+          {hasConsented && <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded shrink-0 ml-1.5 whitespace-nowrap">{t('parents.consent_granted') || '동의완료'}</span>}
         </Button>
       </div>
 

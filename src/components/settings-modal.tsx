@@ -1,6 +1,6 @@
 'use client';
 
-import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache, normalizeGrade, resolveDepartment, syncAllUsersToOrgStructure, isFacultyMember } from '@/lib/services/userService';
+import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache, normalizeGrade, resolveDepartment, syncAllUsersToOrgStructure, isFacultyMember, resetParentPin } from '@/lib/services/userService';
 import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES, getGoogleDriveConfig, saveGoogleDriveConfig, DEFAULT_GOOGLE_DRIVE_CONFIG } from '@/lib/services/settingsService';
 import { getAuditLogs } from '@/lib/services/documentService';
 import { DocConfig, UserProfile, OrgStructure, DelegationRule, AcademicCalendarConfig, AcademicEvent, AcademicSemesterPeriod, FieldTripBlackoutPeriod, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, CustomDutyRole, DutyRolePermission, DutyRoleAttendanceScope, ClassPeriodSchedule, DEFAULT_PERIOD_SCHEDULES, GoogleDriveConfig } from '@/lib/types';
@@ -48,6 +48,7 @@ import {
   Globe, 
   Sparkles, 
   RotateCcw,
+  KeyRound,
   ChevronDown,
   ChevronUp,
   Briefcase,
@@ -1072,6 +1073,32 @@ export function SettingsModal() {
   const [studentFilterClass, setStudentFilterClass] = useState('all');
   const [studentPage, setStudentPage] = useState(1);
   const STUDENTS_PER_PAGE = 50;
+
+  // 학부모 PIN 리셋 상태
+  const [resetPinTarget, setResetPinTarget] = useState<UserProfile | null>(null);
+  const [isResettingPin, setIsResettingPin] = useState(false);
+
+  const handleConfirmResetPin = async () => {
+    if (!resetPinTarget?.email) return;
+    setIsResettingPin(true);
+    try {
+      const res = await resetParentPin(resetPinTarget.email);
+      if (res.success) {
+        setUsers(prev => prev.map(u => u.email === resetPinTarget.email ? { ...u, hashedPin: undefined } : u));
+        toast({
+          title: 'PIN 초기화 완료',
+          description: `${resetPinTarget.studentName || resetPinTarget.name} 학생(학부모)의 PIN 번호가 초기화되었습니다. 학부모 로그인 시 핀 번호 최초 등록 화면이 표시됩니다.`
+        });
+        setResetPinTarget(null);
+      } else {
+        toast({ variant: 'destructive', title: 'PIN 초기화 실패', description: res.error });
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'PIN 초기화 실패', description: err.message });
+    } finally {
+      setIsResettingPin(false);
+    }
+  };
 
   const fetchOrgStructure = async () => {
     try {
@@ -4574,7 +4601,32 @@ export function SettingsModal() {
                           <TabsTrigger value="teachers">교직원 ({teacherCount})</TabsTrigger>
                           <TabsTrigger value="students">학생 계정 ({studentCount})</TabsTrigger>
                         </TabsList>
-                        <div className="flex gap-2">
+                        <div className="flex items-center gap-2">
+                          {userSubTab === 'students' && (
+                            <div className="flex items-center gap-2 px-2.5 py-1 bg-slate-50 border rounded-md shadow-2xs">
+                              <Label htmlFor="require-parent-pin-toggle" className="text-xs font-semibold text-slate-700 cursor-pointer whitespace-nowrap select-none">
+                                학부모 PIN 인증 사용
+                              </Label>
+                              <Switch
+                                id="require-parent-pin-toggle"
+                                checked={config.requireParentPin !== false}
+                                onCheckedChange={async (checked) => {
+                                  setConfig(prev => ({ ...prev, requireParentPin: checked }));
+                                  const res = await saveDocConfig({ requireParentPin: checked });
+                                  if (res.success) {
+                                    toast({
+                                      title: checked ? 'PIN 인증 활성화' : 'PIN 인증 비활성화 (생략 모드)',
+                                      description: checked
+                                        ? '학부모 최초 로그인 시 PIN 등록 및 신청서 제출 시 PIN 입력 인증이 적용됩니다.'
+                                        : '학부모 PIN 번호 입력 과정이 모두 생략됩니다. 신청서 제출 시 확인 메시지가 표시됩니다.'
+                                    });
+                                  } else {
+                                    toast({ variant: 'destructive', title: '설정 저장 실패', description: res.error });
+                                  }
+                                }}
+                              />
+                            </div>
+                          )}
                           <Button variant="outline" size="sm" onClick={() => setIsBulkUploadOpen(true)}>
                             <FileUp className="mr-2 h-4 w-4" />일괄 등록
                           </Button>
@@ -4925,7 +4977,17 @@ export function SettingsModal() {
                                     <TableCell className="p-1"><Input placeholder="학부모 이름" value={editStudentForm.parentName} onChange={(e) => setEditStudentForm(p => ({...p, parentName: e.target.value}))} className="h-7 text-xs"/></TableCell>
                                     <TableCell className="p-1 text-xs text-slate-500">{user.email}</TableCell>
                                     <TableCell className="p-1"><Input placeholder="연락처" value={editStudentForm.phone} onChange={(e) => setEditStudentForm(p => ({...p, phone: e.target.value}))} className="h-7 text-xs"/></TableCell>
-                                    <TableCell className="text-center text-xs">{user.hashedPin ? '✅ 설정됨' : '❌ 미설정'}</TableCell>
+                                    <TableCell className="text-center text-xs">
+                                      {user.hashedPin ? (
+                                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[11px] font-semibold px-1.5 py-0.5">
+                                          설정완료
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-200 text-[11px] font-medium px-1.5 py-0.5">
+                                          미설정
+                                        </Badge>
+                                      )}
+                                    </TableCell>
                                     <TableCell className="text-right p-1">
                                       <div className="flex justify-end gap-1">
                                         <Button size="icon" variant="ghost" className="h-7 w-7" onClick={handleSaveEditStudent}><Save className="h-3.5 w-3.5 text-primary"/></Button>
@@ -4943,10 +5005,40 @@ export function SettingsModal() {
                                     <TableCell className="text-slate-600 text-xs">{user.email}</TableCell>
                                     <TableCell className="text-slate-600 text-xs">{user.parentPhone || '-'}</TableCell>
                                     <TableCell className="text-center text-xs">
-                                      {user.hashedPin ? '✅ 설정됨' : '❌ 미설정'}
+                                      {user.hashedPin ? (
+                                        <div className="flex items-center justify-center gap-1">
+                                          <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[11px] font-semibold px-1.5 py-0.5">
+                                            설정완료
+                                          </Badge>
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded"
+                                            title="학부모 PIN 번호 초기화"
+                                            onClick={() => setResetPinTarget(user)}
+                                          >
+                                            <RotateCcw className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      ) : (
+                                        <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-200 text-[11px] font-medium px-1.5 py-0.5">
+                                          미설정
+                                        </Badge>
+                                      )}
                                     </TableCell>
                                     <TableCell className="text-right">
                                       <div className="flex justify-end gap-1">
+                                        {user.hashedPin && (
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                                            title="학부모 PIN 번호 초기화"
+                                            onClick={() => setResetPinTarget(user)}
+                                          >
+                                            <KeyRound className="h-4 w-4" />
+                                          </Button>
+                                        )}
                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-slate-900" onClick={() => handleStartEditStudent(user)}>
                                           <Pencil className="h-4 w-4" />
                                         </Button>
@@ -5257,6 +5349,38 @@ export function SettingsModal() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* 학부모 PIN 번호 초기화 확인 모달 */}
+        <AlertDialog open={!!resetPinTarget} onOpenChange={(open) => !open && setResetPinTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <KeyRound className="h-5 w-5 text-amber-600" />
+                학부모 PIN 번호 초기화
+              </AlertDialogTitle>
+              <AlertDialogDescription className="space-y-2 text-xs text-slate-600">
+                <span className="block font-bold text-slate-900 text-sm">
+                  {resetPinTarget?.studentName || resetPinTarget?.name} 학생 (학부모: {resetPinTarget?.parentName || '학부모'})
+                </span>
+                <span>
+                  해당 학생 계정의 등록된 PIN 번호를 초기화하시겠습니까?
+                  초기화하면 학부모가 다음에 로그인할 때 핀 번호 최초 등록 화면이 다시 나타납니다.
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isResettingPin}>취소</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmResetPin}
+                disabled={isResettingPin}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+              >
+                {isResettingPin && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                초기화 실행
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

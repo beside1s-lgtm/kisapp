@@ -8,11 +8,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { format } from 'date-fns';
 import { createDocument, getStudentFieldTripDays, getStudentAbsenceDays, getDocumentById, submitFieldTripReport } from '@/lib/services/documentService';
-import { getDocConfig } from '@/lib/services/settingsService';
+import { getDocConfig, onDocConfigUpdate } from '@/lib/services/settingsService';
 import { getWorkingDaysCount, getExcludedDaysInRange } from '@/lib/utils';
 import { useAcademicCalendar } from '@/lib/services/academicCalendarService';
 import { getApproversByGradeClass } from '@/lib/services/userService';
-import { ParentFormData, ApprovalDoc, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, FieldTripBlackoutPeriod } from '@/lib/types';
+import { ParentFormData, ApprovalDoc, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, FieldTripBlackoutPeriod, DocConfig } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -99,8 +99,19 @@ function ApplyForm() {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pendingData, setPendingData] = useState<FormValues | null>(null);
+  const [docConfig, setDocConfig] = useState<DocConfig | null>(null);
+
+  useEffect(() => {
+    const unsub = onDocConfigUpdate((cfg) => {
+      setDocConfig(cfg as DocConfig);
+    });
+    return () => unsub();
+  }, []);
+
+  const requirePin = docConfig ? docConfig.requireParentPin !== false : true;
   
   let defaultType: 'absence' | 'field-trip' | 'field-trip-report' = 'absence';
   const paramType = searchParams.get('type');
@@ -113,7 +124,7 @@ function ApplyForm() {
   const [originalApplyDoc, setOriginalApplyDoc] = useState<ApprovalDoc | null>(null);
   const [loadingOriginal, setLoadingOriginal] = useState(false);
 
-  const { register, handleSubmit, watch, setValue, formState: { errors }, clearErrors } = useForm<FormValues>({
+  const { handleSubmit, watch, setValue, formState: { errors }, clearErrors } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       type: defaultType,
@@ -163,12 +174,7 @@ function ApplyForm() {
   const [accumulatedFieldTripDays, setAccumulatedFieldTripDays] = useState<number>(0);
   const [accumulatedAbsenceDays, setAccumulatedAbsenceDays] = useState<number>(0);
   const [isLoadingLimits, setIsLoadingLimits] = useState<boolean>(false);
-  const [docConfig, setDocConfig] = useState<any>(null);
 
-  // 설정 로드
-  useEffect(() => {
-    getDocConfig().then(cfg => setDocConfig(cfg));
-  }, []);
 
   const annualSchoolDays = docConfig?.annualSchoolDays || 190;
   const maxFieldTripDays = Math.floor(annualSchoolDays * 0.1); // 연간 10%
@@ -421,6 +427,26 @@ function ApplyForm() {
     router.push(`/parents/apply?type=${val}`);
   };
 
+  const onInvalid = (fieldErrors: any) => {
+    console.error('[Apply] Form validation errors:', fieldErrors);
+    const getFirstMsg = (obj: any): string | null => {
+      for (const key in obj) {
+        if (obj[key]?.message) return obj[key].message;
+        if (typeof obj[key] === 'object' && obj[key] !== null) {
+          const nested = getFirstMsg(obj[key]);
+          if (nested) return nested;
+        }
+      }
+      return null;
+    };
+    const msg = getFirstMsg(fieldErrors) || '필수 입력 항목을 모두 확인해주세요.';
+    toast({
+      variant: 'destructive',
+      title: '입력 항목 확인',
+      description: msg,
+    });
+  };
+
   const onSubmit = (data: FormValues) => {
     if (currentType === 'field-trip' && overlappedBlackoutPeriod) {
       toast({
@@ -459,19 +485,25 @@ function ApplyForm() {
       return;
     }
     setPendingData(data);
-    setShowPinModal(true);
+    if (requirePin) {
+      setShowPinModal(true);
+    } else {
+      setShowConfirmModal(true);
+    }
   };
 
-  const confirmSubmit = async () => {
+  const confirmSubmit = async (skipPinCheck = false) => {
     if (!user || !profile || !pendingData) return;
     
     if (!profile.parentName) {
       toast({ variant: 'destructive', title: '설정 오류', description: '설정에서 학부모 이름을 등록해 주세요.' });
       setShowPinModal(false);
+      setShowConfirmModal(false);
       return;
     }
     
-    if (pinInput.length !== 4) {
+    const shouldVerifyPin = requirePin && !skipPinCheck;
+    if (shouldVerifyPin && pinInput.length !== 4) {
       toast({ variant: 'destructive', title: '입력 오류', description: 'PIN 4자리를 입력해주세요.' });
       return;
     }
@@ -493,6 +525,7 @@ function ApplyForm() {
           });
           setIsSubmitting(false);
           setShowPinModal(false);
+          setShowConfirmModal(false);
           return;
         }
 
@@ -508,6 +541,7 @@ function ApplyForm() {
           });
           setIsSubmitting(false);
           setShowPinModal(false);
+          setShowConfirmModal(false);
           return;
         }
       } else if (data.type === 'absence' && data.absenceType !== '출석인정') {
@@ -523,15 +557,18 @@ function ApplyForm() {
           });
           setIsSubmitting(false);
           setShowPinModal(false);
+          setShowConfirmModal(false);
           return;
         }
       }
 
-      const hashedInput = await hashPIN(pinInput);
-      if (profile.hashedPin !== hashedInput) {
-        toast({ variant: 'destructive', title: '인증 실패', description: 'PIN 번호가 일치하지 않습니다.' });
-        setIsSubmitting(false);
-        return;
+      if (shouldVerifyPin) {
+        const hashedInput = await hashPIN(pinInput);
+        if (profile.hashedPin !== hashedInput) {
+          toast({ variant: 'destructive', title: '인증 실패', description: 'PIN 번호가 일치하지 않습니다.' });
+          setIsSubmitting(false);
+          return;
+        }
       }
 
       const isAbsence = data.type === 'absence';
@@ -596,6 +633,7 @@ function ApplyForm() {
         description: '성공적으로 제출되었습니다.',
       });
       setShowPinModal(false);
+      setShowConfirmModal(false);
       setPinInput('');
       router.push('/parents/history');
     } catch (error) {
@@ -672,7 +710,7 @@ function ApplyForm() {
       </div>
 
       <div className="w-full max-w-[210mm] min-h-0 sm:min-h-[297mm] mx-auto bg-white shadow-md sm:shadow-2xl border border-slate-200/80 rounded-xl sm:rounded-sm print:shadow-none print:border-none print:w-[170mm] print:mx-auto print:min-h-0">
-        <form onSubmit={handleSubmit(onSubmit)}>
+        <form onSubmit={handleSubmit(onSubmit, onInvalid)}>
 
           {/* ========== 모바일 전용 간소화 카드 UI (sm 미만에서만 표시) ========== */}
           <div className="sm:hidden p-4 space-y-4">
@@ -688,9 +726,19 @@ function ApplyForm() {
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">{t('parents.apply.absence_period') || '결석 기간'} <span className="text-red-500">*</span></label>
                   <div className="flex items-center gap-2">
-                    <input type="date" {...register('absencePeriod.startDate')} className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-indigo-400" />
+                    <input 
+                      type="date" 
+                      value={watchAbsenceStartDate || ''} 
+                      onChange={(e) => setValue('absencePeriod.startDate', e.target.value, { shouldValidate: true })}
+                      className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-indigo-400" 
+                    />
                     <span className="text-slate-400 text-xs">~</span>
-                    <input type="date" {...register('absencePeriod.endDate')} className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-indigo-400" />
+                    <input 
+                      type="date" 
+                      value={watchAbsenceEndDate || ''} 
+                      onChange={(e) => setValue('absencePeriod.endDate', e.target.value, { shouldValidate: true })}
+                      className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-indigo-400" 
+                    />
                   </div>
                   {watchAbsenceTotalDays > 0 && (
                     <p className="text-[11px] text-indigo-600 font-semibold">
@@ -706,7 +754,7 @@ function ApplyForm() {
                   <label className="block text-xs font-bold text-slate-700">{t('parents.apply.absence_type') || '결석 종류'} <span className="text-red-500">*</span></label>
                   <select
                     value={watch('absenceType')}
-                    onChange={(e) => setValue('absenceType', e.target.value as any)}
+                    onChange={(e) => setValue('absenceType', e.target.value as any, { shouldValidate: true })}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-indigo-400 bg-white"
                   >
                     <option value="병결">{t('parents.apply.absence_type_illness') || '병결'}</option>
@@ -719,7 +767,8 @@ function ApplyForm() {
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">{t('parents.apply.absence_reason') || '결석 사유'} <span className="text-red-500">*</span></label>
                   <textarea
-                    {...register('absenceReason')}
+                    value={watch('absenceReason') || ''}
+                    onChange={(e) => setValue('absenceReason', e.target.value, { shouldValidate: true })}
                     placeholder={t('parents.apply.absence_reason_ph') || '결석 사유를 자세히 입력해주세요.'}
                     rows={4}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-indigo-400 resize-none placeholder:text-slate-400"
@@ -760,13 +809,31 @@ function ApplyForm() {
                     <span className="ml-1 text-slate-600">{originalApplyDoc.docNo} ({originalApplyDoc.parentFormData?.tripPeriod?.startDate} ~ {originalApplyDoc.parentFormData?.tripPeriod?.endDate})</span>
                   </div>
                 )}
+                {loadingOriginal && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-center text-slate-500">
+                    신청서 정보를 불러오는 중입니다...
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">{t('parents.apply.report_title_label') || '보고서 제목'} <span className="text-red-500">*</span></label>
-                  <input {...register('reportTitle')} placeholder={t('parents.apply.report_title_ph') || '보고서 제목 입력'} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-indigo-400" />
+                  <input 
+                    value={watch('reportTitle') || ''} 
+                    onChange={(e) => setValue('reportTitle', e.target.value, { shouldValidate: true })}
+                    placeholder={t('parents.apply.report_title_ph') || '보고서 제목 입력'} 
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-indigo-400" 
+                  />
+                  {(errors as any).reportTitle && <p className="text-[11px] text-red-500">{(errors as any).reportTitle.message}</p>}
                 </div>
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">{t('parents.apply.report_content_label') || '결과 보고 내용'} <span className="text-red-500">*</span></label>
-                  <textarea {...register('reportContent')} placeholder={t('parents.apply.report_content_ph') || '체험학습의 결과 및 느낀 점을 작성해주세요.'} rows={6} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-indigo-400 resize-none" />
+                  <textarea 
+                    value={watch('reportContent') || ''} 
+                    onChange={(e) => setValue('reportContent', e.target.value, { shouldValidate: true })}
+                    placeholder={t('parents.apply.report_content_ph') || '체험학습의 결과 및 느낀 점을 작성해주세요.'} 
+                    rows={6} 
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-indigo-400 resize-none" 
+                  />
+                  {(errors as any).reportContent && <p className="text-[11px] text-red-500">{(errors as any).reportContent.message}</p>}
                 </div>
               </>
             ) : (
@@ -781,9 +848,19 @@ function ApplyForm() {
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">{t('parents.apply.period') || '신청 기간'} <span className="text-red-500">*</span></label>
                   <div className="flex items-center gap-2">
-                    <input type="date" {...register('tripPeriod.startDate')} className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-indigo-400" />
+                    <input 
+                      type="date" 
+                      value={watchFieldTripStartDate || ''} 
+                      onChange={(e) => setValue('tripPeriod.startDate', e.target.value, { shouldValidate: true })}
+                      className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-indigo-400" 
+                    />
                     <span className="text-slate-400 text-xs">~</span>
-                    <input type="date" {...register('tripPeriod.endDate')} className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-indigo-400" />
+                    <input 
+                      type="date" 
+                      value={watchFieldTripEndDate || ''} 
+                      onChange={(e) => setValue('tripPeriod.endDate', e.target.value, { shouldValidate: true })}
+                      className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-indigo-400" 
+                    />
                   </div>
                   {watchFieldTripTotalDays > 0 && (
                     <p className="text-[11px] text-indigo-600 font-semibold">{t('parents.apply.total_days', { days: watchFieldTripTotalDays }) || `총 ${watchFieldTripTotalDays}일`} (주말·공휴일 제외 수업일수)</p>
@@ -831,7 +908,7 @@ function ApplyForm() {
                   <label className="block text-xs font-bold text-slate-700">{t('parents.apply.trip_type') || '학습 형태'} <span className="text-red-500">*</span></label>
                   <select
                     value={watch('tripType')}
-                    onChange={(e) => setValue('tripType', e.target.value as any)}
+                    onChange={(e) => setValue('tripType', e.target.value as any, { shouldValidate: true })}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-indigo-400 bg-white"
                   >
                     <option value="가족동반여행">{t('parents.apply.trip_type_family') || '가족동반여행'}</option>
@@ -845,7 +922,8 @@ function ApplyForm() {
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">{t('parents.apply.destination') || '방문 장소'} <span className="text-red-500">*</span></label>
                   <input
-                    {...register('destination')}
+                    value={watch('destination') || ''}
+                    onChange={(e) => setValue('destination', e.target.value, { shouldValidate: true })}
                     placeholder={t('parents.apply.destination_ph') || '방문할 국가 및 도시명'}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-indigo-400"
                   />
@@ -856,7 +934,8 @@ function ApplyForm() {
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">{t('parents.apply.purpose') || '목적'} <span className="text-red-500">*</span></label>
                   <input
-                    {...register('purpose')}
+                    value={watch('purpose') || ''}
+                    onChange={(e) => setValue('purpose', e.target.value, { shouldValidate: true })}
                     placeholder={t('parents.apply.purpose_ph') || '체험학습을 통해 달성하고자 하는 목적'}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-indigo-400"
                   />
@@ -867,7 +946,8 @@ function ApplyForm() {
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">{t('parents.apply.plan') || '학습 계획'} <span className="text-red-500">*</span></label>
                   <textarea
-                    {...register('detailedPlan')}
+                    value={watch('detailedPlan') || ''}
+                    onChange={(e) => setValue('detailedPlan', e.target.value, { shouldValidate: true })}
                     placeholder={t('parents.apply.plan_ph') || '일자별 이동 경로, 방문 장소 및 예상 활동'}
                     rows={4}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-indigo-400 resize-none placeholder:text-slate-400"
@@ -902,7 +982,11 @@ function ApplyForm() {
 
             {/* 모바일 제출 버튼 */}
             <div className="pt-2">
-              <Button type="submit" disabled={isSubmitting || isOverLimit} className="w-full h-10 font-bold bg-primary text-primary-foreground text-xs sm:text-sm">
+              <Button 
+                type="submit" 
+                disabled={isSubmitting || isOverLimit || (currentType === 'field-trip-report' && loadingOriginal)} 
+                className="w-full h-10 font-bold bg-primary text-primary-foreground text-xs sm:text-sm"
+              >
                 {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                 {currentType === 'field-trip-report' ? (t('parents.apply.submit_report_btn') || '결과보고서 제출') : (t('parents.apply.submit_btn') || '신청서 제출')}
               </Button>
@@ -959,7 +1043,8 @@ function ApplyForm() {
                           <div className="flex items-center gap-1">
                             <span className="text-[11px] sm:text-xs whitespace-nowrap">학년-반-번:</span>
                             <input 
-                              {...register('gradeClassNumber')} 
+                              value={watchGradeClassNumber || ''} 
+                              onChange={(e) => setValue('gradeClassNumber', e.target.value, { shouldValidate: true })}
                               className={`flex-1 max-w-[120px] sm:max-w-[150px] bg-transparent border-b border-gray-300 focus:border-black focus:outline-none text-center text-xs sm:text-sm ${errors.gradeClassNumber ? 'border-destructive' : ''}`}
                               placeholder="예: 4-4-2"
                               readOnly={!!(profile?.studentGrade && profile?.studentClass && profile?.studentNumber)}
@@ -968,7 +1053,8 @@ function ApplyForm() {
                           <div className="flex items-center gap-1 sm:ml-4">
                             <span className="text-[11px] sm:text-xs whitespace-nowrap">성 명:</span>
                             <input 
-                              {...register('studentName')} 
+                              value={watchStudentName || ''} 
+                              onChange={(e) => setValue('studentName', e.target.value, { shouldValidate: true })}
                               className={`flex-1 max-w-[120px] sm:max-w-[150px] bg-transparent border-b border-gray-300 focus:border-black focus:outline-none font-bold text-center text-xs sm:text-sm ${errors.studentName ? 'border-destructive' : ''}`}
                               placeholder="학생 이름"
                               readOnly={!!profile?.studentName}
@@ -981,11 +1067,27 @@ function ApplyForm() {
                       <th className="border border-black bg-slate-50/50 py-2 sm:py-2.5 font-bold text-center text-[11px] sm:text-xs">결석 기간</th>
                       <td className="border border-black px-2 sm:px-3 py-2 sm:py-2.5">
                         <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 text-xs sm:text-sm">
-                          <input type="date" {...register('absencePeriod.startDate')} className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none font-sans text-xs" />
+                          <input 
+                            type="date" 
+                            value={watchAbsenceStartDate || ''} 
+                            onChange={(e) => setValue('absencePeriod.startDate', e.target.value, { shouldValidate: true })}
+                            className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none font-sans text-xs" 
+                          />
                           <span>~</span>
-                          <input type="date" {...register('absencePeriod.endDate')} className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none font-sans text-xs" />
+                          <input 
+                            type="date" 
+                            value={watchAbsenceEndDate || ''} 
+                            onChange={(e) => setValue('absencePeriod.endDate', e.target.value, { shouldValidate: true })}
+                            className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none font-sans text-xs" 
+                          />
                           <span className="ml-1 sm:ml-2">대략 (</span>
-                          <input type="number" min="1" {...register('absencePeriod.totalDays')} className="w-8 sm:w-10 text-center border-b border-gray-300 focus:border-black focus:outline-none font-bold font-sans text-xs sm:text-sm" />
+                          <input 
+                            type="number" 
+                            min="1" 
+                            value={watchAbsenceTotalDays || 1} 
+                            onChange={(e) => setValue('absencePeriod.totalDays', Number(e.target.value), { shouldValidate: true })}
+                            className="w-8 sm:w-10 text-center border-b border-gray-300 focus:border-black focus:outline-none font-bold font-sans text-xs sm:text-sm" 
+                          />
                           <span>) 일간</span>
                         </div>
                         {absenceExcludedSummary && (
@@ -1014,7 +1116,8 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-center">결석사유</th>
                     <td className="border border-black px-3 py-2.5">
                       <textarea 
-                        {...register('absenceReason')} 
+                        value={watch('absenceReason') || ''} 
+                        onChange={(e) => setValue('absenceReason', e.target.value, { shouldValidate: true })}
                         placeholder="결석 사유를 자세히 입력해주세요." 
                         className={`w-full h-24 bg-transparent focus:outline-none resize-none placeholder:text-gray-400 leading-relaxed ${(errors as any).absenceReason ? 'border-b border-destructive' : ''}`}
                       />
@@ -1120,7 +1223,7 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-center whitespace-nowrap">성 명</th>
                     <td className="border border-black py-2.5 px-1 font-bold text-center whitespace-nowrap">
                       <input 
-                        {...register('studentName')} 
+                        value={watch('studentName') || ''} 
                         className={`w-full bg-transparent border-b border-gray-300 focus:border-black focus:outline-none font-bold text-center ${errors.studentName ? 'border-destructive' : ''}`}
                         placeholder="학생명"
                         readOnly
@@ -1129,7 +1232,7 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-center whitespace-nowrap">학 년 &nbsp; 반 &nbsp; 번</th>
                     <td className="border border-black py-2.5 px-1 text-center whitespace-nowrap">
                       <input 
-                        {...register('gradeClassNumber')} 
+                        value={watch('gradeClassNumber') || ''} 
                         className={`w-full bg-transparent border-b border-gray-300 focus:border-black focus:outline-none text-center ${errors.gradeClassNumber ? 'border-destructive' : ''}`}
                         placeholder="예: 4-4-2"
                         readOnly
@@ -1138,7 +1241,8 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-center whitespace-nowrap">휴대폰</th>
                     <td className="border border-black py-2.5 px-1 text-center whitespace-nowrap">
                       <input 
-                        {...register('phone')} 
+                        value={watch('phone') || ''} 
+                        onChange={(e) => setValue('phone', e.target.value, { shouldValidate: true })}
                         className="w-full bg-transparent border-b border-gray-300 focus:border-black focus:outline-none text-center"
                         placeholder="보호자 연락처"
                       />
@@ -1147,9 +1251,9 @@ function ApplyForm() {
                   <tr>
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold leading-tight whitespace-nowrap">교외체험학습<br/>기간</th>
                     <td colSpan={3} className="border border-black py-2.5 text-left px-3 text-xs">
-                      <input type="date" {...register('tripPeriod.startDate')} className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none mr-1 opacity-60 font-sans" readOnly /> ~ &nbsp;
-                      <input type="date" {...register('tripPeriod.endDate')} className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none mr-1 opacity-60 font-sans" readOnly /> &nbsp;
-                      총 ( <input type="number" min="1" {...register('tripPeriod.totalDays')} className="w-10 text-center border-b border-gray-300 focus:border-black focus:outline-none mr-1 opacity-60 font-bold font-sans" readOnly /> ) 일간
+                      <input type="date" value={watchFieldTripStartDate || ''} className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none mr-1 opacity-60 font-sans" readOnly /> ~ &nbsp;
+                      <input type="date" value={watchFieldTripEndDate || ''} className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none mr-1 opacity-60 font-sans" readOnly /> &nbsp;
+                      총 ( <input type="number" min="1" value={watchFieldTripTotalDays || 1} className="w-10 text-center border-b border-gray-300 focus:border-black focus:outline-none mr-1 opacity-60 font-bold font-sans" readOnly /> ) 일간
                     </td>
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold whitespace-nowrap">학습형태</th>
                     <td className="border border-black py-2.5 px-1">
@@ -1170,7 +1274,7 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold whitespace-nowrap">교외체험학습<br/>장소</th>
                     <td colSpan={5} className="border border-black py-2.5 text-left px-3">
                       <input 
-                        {...register('destination')} 
+                        value={watch('destination') || ''} 
                         className="w-full bg-transparent border-none focus:outline-none opacity-60"
                         readOnly
                       />
@@ -1180,7 +1284,8 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold whitespace-nowrap">제 목</th>
                     <td colSpan={5} className="border border-black py-2.5 text-left px-3">
                       <input 
-                        {...register('reportTitle')} 
+                        value={watch('reportTitle') || ''} 
+                        onChange={(e) => setValue('reportTitle', e.target.value, { shouldValidate: true })}
                         className={`w-full bg-transparent border-b border-gray-300 focus:border-black focus:outline-none font-bold ${(errors as any).reportTitle ? 'border-destructive' : ''}`}
                         placeholder="보고서 제목을 입력해주세요."
                       />
@@ -1191,7 +1296,8 @@ function ApplyForm() {
                     <td colSpan={5} className="border border-black py-2.5 text-left px-3 align-top">
                       <div className="text-gray-400 text-xs mb-2 select-none font-sans font-normal">* 각 일정별로 느낀 점, 배운 점 등을 글, 그림 등으로 학생이 직접 기록합니다.</div>
                       <textarea 
-                        {...register('reportContent')} 
+                        value={watch('reportContent') || ''} 
+                        onChange={(e) => setValue('reportContent', e.target.value, { shouldValidate: true })}
                         placeholder="체험학습의 결과 및 느낀 점을 자세하고 구체적으로 작성해 주세요. (가급적 학생이 작성하도록 지도 바랍니다)" 
                         className={`w-full h-[240px] bg-transparent focus:outline-none resize-none placeholder:text-gray-400 leading-relaxed ${(errors as any).reportContent ? 'border-b border-destructive' : ''}`}
                       />
@@ -1286,7 +1392,8 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-center whitespace-nowrap">성 명</th>
                     <td className="border border-black py-2.5 px-1 font-bold text-center whitespace-nowrap">
                       <input 
-                        {...register('studentName')} 
+                        value={watchStudentName || ''} 
+                        onChange={(e) => setValue('studentName', e.target.value, { shouldValidate: true })}
                         className={`w-full bg-transparent border-b border-gray-300 focus:border-black focus:outline-none font-bold text-center ${errors.studentName ? 'border-destructive' : ''}`}
                         placeholder="학생명 입력"
                         readOnly={!!profile?.studentName}
@@ -1295,7 +1402,8 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-center whitespace-nowrap">학 년 &nbsp; 반 &nbsp; 번</th>
                     <td className="border border-black py-2.5 px-1 text-center whitespace-nowrap">
                       <input 
-                        {...register('gradeClassNumber')} 
+                        value={watchGradeClassNumber || ''} 
+                        onChange={(e) => setValue('gradeClassNumber', e.target.value, { shouldValidate: true })}
                         className={`w-full bg-transparent border-b border-gray-300 focus:border-black focus:outline-none text-center ${errors.gradeClassNumber ? 'border-destructive' : ''}`}
                         placeholder="예: 4-4-2"
                         readOnly={!!(profile?.studentGrade && profile?.studentClass && profile?.studentNumber)}
@@ -1304,7 +1412,8 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-center whitespace-nowrap">휴대폰</th>
                     <td className="border border-black py-2.5 px-1 text-center whitespace-nowrap">
                       <input 
-                        {...register('phone')} 
+                        value={watch('phone') || ''} 
+                        onChange={(e) => setValue('phone', e.target.value, { shouldValidate: true })}
                         className={`w-full bg-transparent border-b border-gray-300 focus:border-black focus:outline-none text-center ${(errors as any).phone ? 'border-destructive' : ''}`}
                         placeholder="보호자 연락처"
                       />
@@ -1318,9 +1427,26 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-[9pt] break-keep whitespace-nowrap" style={{ wordBreak: 'keep-all' }}>신청 기간</th>
                     <td colSpan={4} className="border border-black py-2.5 text-left px-3 text-xs">
                       <div className="flex flex-wrap items-center gap-1">
-                        <input type="date" {...register('tripPeriod.startDate')} className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none mr-1 font-sans" /> ~ &nbsp;
-                        <input type="date" {...register('tripPeriod.endDate')} className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none mr-1 font-sans" /> &nbsp;
-                        총 ( <input type="number" min="1" {...register('tripPeriod.totalDays')} className="w-10 text-center border-b border-gray-300 focus:border-black focus:outline-none mr-1 font-bold font-sans" /> ) 일간
+                        <input 
+                          type="date" 
+                          value={watchFieldTripStartDate || ''} 
+                          onChange={(e) => setValue('tripPeriod.startDate', e.target.value, { shouldValidate: true })}
+                          className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none mr-1 font-sans" 
+                        /> ~ &nbsp;
+                        <input 
+                          type="date" 
+                          value={watchFieldTripEndDate || ''} 
+                          onChange={(e) => setValue('tripPeriod.endDate', e.target.value, { shouldValidate: true })}
+                          className="border border-gray-300 rounded px-1.5 py-0.5 focus:border-black focus:outline-none mr-1 font-sans" 
+                        /> &nbsp;
+                        총 ( 
+                        <input 
+                          type="number" 
+                          min="1" 
+                          value={watchFieldTripTotalDays || 1} 
+                          onChange={(e) => setValue('tripPeriod.totalDays', Number(e.target.value), { shouldValidate: true })}
+                          className="w-10 text-center border-b border-gray-300 focus:border-black focus:outline-none mr-1 font-bold font-sans" 
+                        /> ) 일간
                       </div>
                       {fieldTripExcludedSummary && (
                         <div className="mt-1.5 text-[8pt] text-indigo-700 font-sans bg-indigo-50/80 px-2 py-1 rounded border border-indigo-200/80 leading-relaxed font-medium">
@@ -1387,7 +1513,8 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold whitespace-nowrap">방문 장소</th>
                     <td colSpan={5} className="border border-black py-2.5 text-left px-3">
                       <input 
-                        {...register('destination')} 
+                        value={watch('destination') || ''} 
+                        onChange={(e) => setValue('destination', e.target.value, { shouldValidate: true })}
                         className={`w-full bg-transparent border-b border-gray-300 focus:border-black focus:outline-none ${(errors as any).destination ? 'border-destructive' : ''}`}
                         placeholder="방문할 국가 및 도시명을 입력해주세요."
                       />
@@ -1397,7 +1524,8 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold leading-tight whitespace-nowrap">보호자<br/>(인솔자)명</th>
                     <td className="border border-black py-2.5 px-1 font-bold text-center whitespace-nowrap">
                       <input 
-                        {...register('companionName')} 
+                        value={watch('companionName') || ''} 
+                        onChange={(e) => setValue('companionName', e.target.value, { shouldValidate: true })}
                         className={`w-full bg-transparent border-b border-gray-300 focus:border-black focus:outline-none text-center ${(errors as any).companionName ? 'border-destructive' : ''}`}
                         placeholder="동행자 성명"
                       />
@@ -1405,7 +1533,8 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold whitespace-nowrap">관계</th>
                     <td className="border border-black py-2.5 px-1 text-center whitespace-nowrap">
                       <input 
-                        {...register('companionRelation')} 
+                        value={watch('companionRelation') || ''} 
+                        onChange={(e) => setValue('companionRelation', e.target.value, { shouldValidate: true })}
                         className={`w-full bg-transparent border-b border-gray-300 focus:border-black focus:outline-none text-center ${(errors as any).companionRelation ? 'border-destructive' : ''}`}
                         placeholder="예: 부, 모, 조부"
                       />
@@ -1413,7 +1542,8 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold whitespace-nowrap">휴대폰</th>
                     <td className="border border-black py-2.5 px-1 text-center whitespace-nowrap">
                       <input 
-                        {...register('phone')} 
+                        value={watch('phone') || ''} 
+                        onChange={(e) => setValue('phone', e.target.value, { shouldValidate: true })}
                         className="w-full bg-transparent border-none text-center text-gray-500 cursor-not-allowed"
                         readOnly
                       />
@@ -1423,7 +1553,8 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 font-bold whitespace-nowrap">목 적</th>
                     <td colSpan={5} className="border border-black py-2.5 text-left px-3">
                       <input 
-                        {...register('purpose')} 
+                        value={watch('purpose') || ''} 
+                        onChange={(e) => setValue('purpose', e.target.value, { shouldValidate: true })}
                         className={`w-full bg-transparent border-b border-gray-300 focus:border-black focus:outline-none ${(errors as any).purpose ? 'border-destructive' : ''}`}
                         placeholder="체험학습을 통해 달성하고자 하는 구체적인 목적"
                       />
@@ -1433,7 +1564,8 @@ function ApplyForm() {
                     <th className="border border-black bg-slate-50/50 py-2.5 h-[120px] leading-tight text-[9.5pt] font-bold">교외체험학습<br/>계획<br/>(일정, 기대<br/>효과 등)</th>
                     <td colSpan={5} className="border border-black py-2.5 text-left px-3 align-top">
                       <textarea 
-                        {...register('detailedPlan')} 
+                        value={watch('detailedPlan') || ''} 
+                        onChange={(e) => setValue('detailedPlan', e.target.value, { shouldValidate: true })}
                         placeholder="일자별 상세 이동 경로, 방문 장소 및 예상 활동을 꼼꼼하게 입력해 주세요." 
                         className={`w-full h-28 bg-transparent focus:outline-none resize-none placeholder:text-gray-400 leading-relaxed ${(errors as any).detailedPlan ? 'border-b border-destructive' : ''}`}
                       />
@@ -1506,30 +1638,86 @@ function ApplyForm() {
       </div>
 
       <Dialog open={showPinModal} onOpenChange={setShowPinModal}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[92%] sm:max-w-md rounded-2xl p-5 sm:p-6">
           <DialogHeader>
-            <DialogTitle>전자서명 비밀번호 확인</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-base sm:text-lg font-bold">전자서명 비밀번호 확인</DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-slate-500">
               기기 등록 시 설정한 4자리 PIN 번호를 입력해 주세요.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col items-center justify-center py-4 space-y-4">
             <Input
               type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
               maxLength={4}
               value={pinInput}
               onChange={(e) => setPinInput(e.target.value.replace(/[^0-9]/g, ''))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && pinInput.length === 4 && !isSubmitting) {
+                  e.preventDefault();
+                  confirmSubmit();
+                }
+              }}
               placeholder="••••"
-              className="text-center text-3xl tracking-[1em] w-[150px] font-mono h-14"
+              className="text-center text-3xl tracking-[1em] w-[150px] font-mono h-14 border-slate-300 focus:border-indigo-500"
               autoFocus
             />
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowPinModal(false); setPinInput(''); }} disabled={isSubmitting}>
+          <DialogFooter className="flex flex-row justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => { setShowPinModal(false); setPinInput(''); }} disabled={isSubmitting} className="h-10 px-4">
               취소
             </Button>
-            <Button onClick={confirmSubmit} disabled={isSubmitting || pinInput.length !== 4}>
+            <Button size="sm" onClick={() => confirmSubmit(false)} disabled={isSubmitting || pinInput.length !== 4} className="h-10 px-4 bg-primary text-primary-foreground font-bold">
               {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : '서명 후 제출'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PIN 인증 비활성화 시 확인 대화상자 */}
+      <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
+        <DialogContent className="w-[92%] sm:max-w-md rounded-2xl p-5 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base sm:text-lg font-bold">신청서 제출 확인</DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-slate-600 pt-1">
+              신청서를 전송하시겠습니까?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200">
+            {pendingData?.type === 'absence' && (
+              <div>
+                <span className="font-bold text-slate-800">[결석계]</span> {pendingData.studentName} ({pendingData.absencePeriod?.startDate} ~ {pendingData.absencePeriod?.endDate})
+              </div>
+            )}
+            {pendingData?.type === 'field-trip' && (
+              <div>
+                <span className="font-bold text-slate-800">[교외체험학습 신청서]</span> {pendingData.studentName} ({pendingData.tripPeriod?.startDate} ~ {pendingData.tripPeriod?.endDate})
+              </div>
+            )}
+            {pendingData?.type === 'field-trip-report' && (
+              <div>
+                <span className="font-bold text-slate-800">[교외체험학습 보고서]</span> {pendingData.studentName} ({pendingData.reportTitle})
+              </div>
+            )}
+          </div>
+          <DialogFooter className="flex flex-row justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowConfirmModal(false)}
+              disabled={isSubmitting}
+              className="h-10 px-4"
+            >
+              취소
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => confirmSubmit(true)}
+              disabled={isSubmitting}
+              className="h-10 px-4 bg-primary text-primary-foreground font-bold"
+            >
+              {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : '전송'}
             </Button>
           </DialogFooter>
         </DialogContent>

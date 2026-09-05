@@ -562,27 +562,27 @@ export const StudentView: React.FC<StudentViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Realtime Countdown Banner */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
+      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-3 w-full max-w-full min-w-0 overflow-hidden flex-wrap md:flex-nowrap">
+        <div className="flex items-center gap-3 min-w-[180px] w-full md:w-auto md:flex-1">
+          <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold shrink-0">
             <Timer className="w-4 h-4" />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="text-xs text-slate-500 font-medium">{t('afterschool.status_title') || '수강신청 진행 현황'}</div>
-            <div className="text-sm font-bold text-slate-800">
+            <div className="text-sm font-bold text-slate-800 break-normal leading-snug">
               {getDetailedStatusText()}
             </div>
           </div>
         </div>
 
         {/* Digital Clock */}
-        <div className="font-mono text-xs">
+        <div className="font-mono text-xs shrink-0 w-full md:w-auto flex justify-start md:justify-end pt-1 md:pt-0">
           {isBeforeStart ? (
-            <span className="bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-lg font-bold text-sm">
+            <span className="bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-lg font-bold text-sm inline-block">
               {formatCountdown(secondsUntilStart)}
             </span>
           ) : (
-            <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-lg font-bold">
+            <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-lg font-bold inline-block">
               {timerConfig.masterStatus === 'FORCE_LOCK' ? (t('afterschool.status_locked') || '신청 잠김') : (t('afterschool.status_open') || '신청 가능')}
             </span>
           )}
@@ -591,21 +591,21 @@ export const StudentView: React.FC<StudentViewProps> = ({
 
       {/* 수강신청 결과 최종 확정 공지 배너 */}
       {(docConfig?.isAfterschoolFinalized || (teacherApplySettings as any)?.afterschoolStageStatus === 'CONFIRMED') && (
-        <div className="bg-violet-600 text-white p-4 rounded-2xl shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 animate-in fade-in duration-300">
-          <div className="flex items-center gap-3">
+        <div className="bg-violet-600 text-white p-4 rounded-2xl shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-3 animate-in fade-in duration-300 w-full max-w-full min-w-0 overflow-hidden">
+          <div className="flex items-center gap-3 min-w-0 w-full md:flex-1">
             <div className="w-9 h-9 rounded-xl bg-white/20 text-white flex items-center justify-center font-bold shrink-0 text-base">
               <CheckCircle2 className="w-5 h-5 text-white" />
             </div>
-            <div>
-              <h4 className="font-bold text-sm">2026학년도 1학기 방과후학교 수강신청 결과가 최종 확정되었습니다!</h4>
-              <p className="text-xs text-violet-100 mt-0.5">
+            <div className="min-w-0 flex-1">
+              <h4 className="font-bold text-sm break-normal">2026학년도 1학기 방과후학교 수강신청 결과가 최종 확정되었습니다!</h4>
+              <p className="text-xs text-violet-100 mt-0.5 break-normal">
                 수강 확정 및 대기자 배정이 정정 완료되었습니다. 확정 결과를 확인해보세요.
               </p>
             </div>
           </div>
           <button
             onClick={() => setShowFinalizedResultModal(true)}
-            className="bg-white text-violet-700 hover:bg-violet-50 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition shadow-2xs cursor-pointer"
+            className="bg-white text-violet-700 hover:bg-violet-50 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition shadow-2xs cursor-pointer self-start md:self-auto"
           >
             확정 결과 팝업 알림 보기
           </button>
@@ -613,10 +613,10 @@ export const StudentView: React.FC<StudentViewProps> = ({
       )}
 
       {/* Student Banner Info */}
-      <div className="bg-indigo-600 text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
+      <div className="bg-indigo-600 text-white p-4 sm:p-6 rounded-2xl shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full max-w-full min-w-0 overflow-hidden">
+        <div className="min-w-[180px] sm:min-w-[240px] flex-1">
           <div className="text-xs font-semibold text-indigo-200">{getProgramName()} {t('afterschool.portal_suffix') || '포털'}</div>
-          <h2 className="text-xl font-bold mt-1">
+          <h2 className="text-base sm:text-xl font-bold mt-1 break-normal leading-snug">
             {t('afterschool.student_info', {
               grade: profile?.studentGrade || '1',
               class: profile?.studentClass || '1',
@@ -626,7 +626,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
           </h2>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap shrink-0">
           {isApplyEnabled() && (
             <button
               onClick={() => setActiveStudentTab('apply')}

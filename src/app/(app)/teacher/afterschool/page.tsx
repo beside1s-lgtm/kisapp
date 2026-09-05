@@ -275,8 +275,8 @@ function AfterschoolConsole() {
             <div className="flex items-center gap-1.5 shrink-0 mr-1">
               <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-2xs">
                 <UserCheck className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                <span className="hidden sm:inline">관리자 대리 출석체크 모드</span>
-                <span className="sm:hidden">대리출석</span>
+                <span className="hidden sm:inline">{t('teacher_afterschool.admin_proxy_mode', '관리자 대리 출석체크 모드')}</span>
+                <span className="sm:hidden">{t('teacher_afterschool.admin_proxy_mode_short', '대리출석')}</span>
               </span>
               <button
                 type="button"
@@ -285,7 +285,7 @@ function AfterschoolConsole() {
                 title="관리자 페이지로 돌아가기"
               >
                 <ArrowLeft className="w-3 h-3 shrink-0" />
-                <span className="hidden sm:inline">관리자 홈</span>
+                <span className="hidden sm:inline">{t('teacher_afterschool.admin_home', '관리자 홈')}</span>
               </button>
             </div>
           )}
@@ -300,7 +300,7 @@ function AfterschoolConsole() {
               }}
             >
               <SelectTrigger className="h-7 text-xs bg-white border-slate-300 font-bold px-2 min-w-[120px] max-w-[180px] sm:max-w-[240px] shrink-0 rounded-lg shadow-2xs text-slate-800">
-                <SelectValue placeholder="강좌 선택" />
+                <SelectValue placeholder={t('teacher_afterschool.select_course', '강좌 선택')} />
               </SelectTrigger>
               <SelectContent className="max-h-80">
                 {myCourses.map(c => (
@@ -317,7 +317,7 @@ function AfterschoolConsole() {
                   onClick={() => setActiveSubTab('course')}
                 >
                   <BookOpen className="w-3 h-3 shrink-0 text-indigo-600" />
-                  <span>강좌 상세/수업계획 카드</span>
+                  <span>{t('teacher_afterschool.course_detail_card', '강좌 상세/수업계획 카드')}</span>
                 </div>
               </SelectContent>
             </Select>
@@ -336,16 +336,16 @@ function AfterschoolConsole() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="studentSheet" className="text-xs font-bold">
-                  출석부
+                  {t('teacher_afterschool.tab_attendance', '출석부')}
                 </SelectItem>
                 <SelectItem value="teacherAttendance" className="text-xs font-bold">
-                  강사출근부
+                  {t('teacher_afterschool.tab_teacher_work', '강사출근부')}
                 </SelectItem>
                 <SelectItem value="batchApproval" className="text-xs font-bold">
-                  증빙 문서 관리
+                  {t('teacher_afterschool.tab_docs', '증빙 문서 관리')}
                 </SelectItem>
                 <SelectItem value="course" className="text-xs font-bold text-indigo-700">
-                  강좌 관리 & 수업계획
+                  {t('teacher_afterschool.tab_courses', '강좌 관리 & 수업계획')}
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -372,7 +372,7 @@ function AfterschoolConsole() {
             stageStatus === 'OPERATING' ? "bg-emerald-500 animate-pulse" : stageStatus === 'CLOSED' ? "bg-rose-500" : "bg-amber-500"
           )} />
           <span>
-            {stageStatus === 'OPERATING' ? '운영중' : stageStatus === 'CLOSED' ? '종료' : '대기중'}
+            {stageStatus === 'OPERATING' ? t('teacher_afterschool.status_operating', '운영중') : stageStatus === 'CLOSED' ? t('teacher_afterschool.status_closed', '종료') : t('teacher_afterschool.status_waiting', '대기중')}
           </span>
         </button>
       }
@@ -383,28 +383,28 @@ function AfterschoolConsole() {
             onClick={() => setActiveSubTab('studentSheet')}
             className={cn("py-1.5 rounded-md transition text-center", activeSubTab === 'studentSheet' ? "bg-white text-indigo-600 shadow-2xs font-extrabold" : "text-slate-600 hover:text-slate-900")}
           >
-            출석
+            {t('teacher_afterschool.tab_attendance_short', '출석')}
           </button>
           <button
             type="button"
             onClick={() => setActiveSubTab('teacherAttendance')}
             className={cn("py-1.5 rounded-md transition text-center", activeSubTab === 'teacherAttendance' ? "bg-white text-indigo-600 shadow-2xs font-extrabold" : "text-slate-600 hover:text-slate-900")}
           >
-            출근
+            {t('teacher_afterschool.tab_teacher_work_short', '출근')}
           </button>
           <button
             type="button"
             onClick={() => setActiveSubTab('batchApproval')}
             className={cn("py-1.5 rounded-md transition text-center", activeSubTab === 'batchApproval' ? "bg-white text-indigo-600 shadow-2xs font-extrabold" : "text-slate-600 hover:text-slate-900")}
           >
-            증빙
+            {t('teacher_afterschool.tab_docs_short', '증빙')}
           </button>
           <button
             type="button"
             onClick={() => setActiveSubTab('course')}
             className={cn("py-1.5 rounded-md transition text-center", activeSubTab === 'course' ? "bg-white text-indigo-600 shadow-2xs font-extrabold" : "text-slate-600 hover:text-slate-900")}
           >
-            강좌
+            {t('teacher_afterschool.tab_courses_short', '강좌')}
           </button>
         </div>
       }
@@ -415,7 +415,7 @@ function AfterschoolConsole() {
           <div className="space-y-2">
             <div className="flex items-center justify-between bg-indigo-50/70 border border-indigo-200/80 px-3.5 py-2 rounded-xl text-xs text-indigo-900">
               <span className="font-bold flex items-center gap-1.5">
-                강좌 관리 & 수업계획 카드
+                {t('teacher_afterschool.tab_courses', '강좌 관리 & 수업계획')}
               </span>
               <Button
                 size="sm"
@@ -423,7 +423,7 @@ function AfterschoolConsole() {
                 onClick={() => setActiveSubTab('studentSheet')}
                 className="h-6 px-2.5 text-xs bg-white text-indigo-700 font-bold border-indigo-300 hover:bg-indigo-50 cursor-pointer shadow-2xs"
               >
-                출석부로 이동
+                {t('teacher_afterschool.btn_to_attendance', '출석부로 이동')}
               </Button>
             </div>
             <CourseManagement

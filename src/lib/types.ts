@@ -237,6 +237,7 @@ export type DocConfig = {
     afterschoolFinalizedAt?: string; // 최종 확정 일시
     fieldTripBlackoutPeriods?: FieldTripBlackoutPeriod[]; // 체험학습 불인정(신청 불가) 기간 설정
     enableCumulativeStats?: boolean; // 연간 누계 자동 계산 기능 활성화 여부 (기본값 true, false이면 학부모 대시보드 현황판 및 신청서 누계 숨김)
+    requireParentPin?: boolean; // 학부모 PIN 인증 사용 여부 (기본값 true, false이면 학부모 최초 PIN 등록 및 신청서 제출 시 PIN 입력 생략)
 };
 
 export type DepartmentTaskAssignment = {

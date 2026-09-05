@@ -85,6 +85,7 @@ const AttendMarkCell: React.FC<{
   onSelect: (val: MarkSymbol) => void;
   isActiveSession: boolean;
 }> = ({ mark, onSelect, isActiveSession }) => {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [dropUp, setDropUp] = useState(false);
   const ref = useRef<HTMLTableCellElement>(null);
@@ -126,10 +127,10 @@ const AttendMarkCell: React.FC<{
   else if (mark === 'X' || mark === '×') { display = '×'; colorClass = 'text-rose-600 font-black'; }
 
   const options: { val: MarkSymbol; label: string; color: string }[] = [
-    { val: 'O', label: '○ 출석', color: 'text-emerald-700 hover:bg-emerald-50' },
-    { val: 'V', label: '△ 지각/개별하교', color: 'text-purple-700 hover:bg-purple-50' },
-    { val: 'X', label: '× 결석', color: 'text-rose-700 hover:bg-rose-50' },
-    { val: '', label: '· 미체크', color: 'text-slate-500 hover:bg-slate-50' },
+    { val: 'O', label: `○ ${t('teacher_afterschool.mark_attend', '출석')}`, color: 'text-emerald-700 hover:bg-emerald-50' },
+    { val: 'V', label: `△ ${t('teacher_afterschool.mark_late', '지각/개별하교')}`, color: 'text-purple-700 hover:bg-purple-50' },
+    { val: 'X', label: `× ${t('teacher_afterschool.mark_absent', '결석')}`, color: 'text-rose-700 hover:bg-rose-50' },
+    { val: '', label: `· ${t('teacher_afterschool.mark_none', '미체크')}`, color: 'text-slate-500 hover:bg-slate-50' },
   ];
 
   return (
@@ -173,6 +174,7 @@ const MobileMarkButton: React.FC<{
   mark: string;
   onSelect: (val: MarkSymbol) => void;
 }> = ({ mark, onSelect }) => {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -191,16 +193,16 @@ const MobileMarkButton: React.FC<{
         className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs bg-slate-100 text-slate-400 min-w-[80px] justify-center select-none border border-slate-200"
         title="수강 요일이 아닙니다 (주 1회 수강생)"
       >
-        <span>미수강 (―)</span>
+        <span>{t('teacher_afterschool.mark_not_enrolled', '미수강 (―)')}</span>
       </div>
     );
   }
 
   const getDisplay = () => {
-    if (mark === 'O' || mark === '○') return { symbol: '○', bg: 'bg-emerald-500', text: 'text-white', label: '출석' };
-    if (mark === 'V' || mark === '△') return { symbol: '△', bg: 'bg-purple-500', text: 'text-white', label: '지각' };
-    if (mark === 'X' || mark === '×') return { symbol: '×', bg: 'bg-rose-500', text: 'text-white', label: '결석' };
-    return { symbol: '·', bg: 'bg-slate-100', text: 'text-slate-400', label: '미체크' };
+    if (mark === 'O' || mark === '○') return { symbol: '○', bg: 'bg-emerald-500', text: 'text-white', label: t('teacher_afterschool.mark_attend', '출석') };
+    if (mark === 'V' || mark === '△') return { symbol: '△', bg: 'bg-purple-500', text: 'text-white', label: t('teacher_afterschool.mark_late', '지각') };
+    if (mark === 'X' || mark === '×') return { symbol: '×', bg: 'bg-rose-500', text: 'text-white', label: t('teacher_afterschool.mark_absent', '결석') };
+    return { symbol: '·', bg: 'bg-slate-100', text: 'text-slate-400', label: t('teacher_afterschool.mark_none', '미체크') };
   };
 
   const { symbol, bg, text, label } = getDisplay();
@@ -218,10 +220,10 @@ const MobileMarkButton: React.FC<{
       {open && (
         <div className="absolute z-50 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden min-w-[140px]">
           {[
-            { val: 'O' as MarkSymbol, label: '○ 출석', cls: 'text-emerald-700 hover:bg-emerald-50' },
-            { val: 'V' as MarkSymbol, label: '△ 지각/개별하교', cls: 'text-purple-700 hover:bg-purple-50' },
-            { val: 'X' as MarkSymbol, label: '× 결석', cls: 'text-rose-700 hover:bg-rose-50' },
-            { val: '' as MarkSymbol, label: '― 미체크', cls: 'text-slate-500 hover:bg-slate-50' },
+            { val: 'O' as MarkSymbol, label: `○ ${t('teacher_afterschool.mark_attend', '출석')}`, cls: 'text-emerald-700 hover:bg-emerald-50' },
+            { val: 'V' as MarkSymbol, label: `△ ${t('teacher_afterschool.mark_late', '지각/개별하교')}`, cls: 'text-purple-700 hover:bg-purple-50' },
+            { val: 'X' as MarkSymbol, label: `× ${t('teacher_afterschool.mark_absent', '결석')}`, cls: 'text-rose-700 hover:bg-rose-50' },
+            { val: '' as MarkSymbol, label: `― ${t('teacher_afterschool.mark_none', '미체크')}`, cls: 'text-slate-500 hover:bg-slate-50' },
           ].map((opt) => (
             <button
               key={opt.val}
@@ -324,8 +326,8 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     const shareUrl = `${window.location.origin}/attendance/share/${currentCourse.id}`;
     navigator.clipboard.writeText(shareUrl).then(() => {
       toast({
-        title: '공유 링크 복사 완료',
-        description: `외부 강사용 출석부 링크가 클립보드에 복사되었습니다. 해당 링크로 접속 시 출석 체크만 가능하며, 다른 시스템 기능에는 접근할 수 없습니다.`,
+        title: t('teacher_afterschool.toast_share_copied', '공유 링크 복사 완료'),
+        description: t('teacher_afterschool.toast_share_desc', '외부 강사용 출석부 링크가 클립보드에 복사되었습니다.'),
       });
     }).catch(() => {
       // clipboard API 실패 시 fallback
@@ -337,7 +339,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
       el.select();
       document.execCommand('copy');
       document.body.removeChild(el);
-      toast({ title: '공유 링크 복사 완료', description: shareUrl });
+      toast({ title: t('teacher_afterschool.toast_share_copied', '공유 링크 복사 완료'), description: shareUrl });
     });
   };
 
@@ -861,11 +863,11 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                 <span className="font-bold text-slate-800 text-sm">
                   {activeDay?.dateStr || ''}
                   <span className="text-slate-500 font-normal text-xs ml-1.5">
-                    ({activeDay?.dayIndex || 1}회차 / {activeDay?.startSessionNo}~{activeDay?.endSessionNo}차시)
+                    ({activeDay?.dayIndex || 1}{t('teacher_afterschool.round_suffix', '회차')} / {activeDay?.startSessionNo}~{activeDay?.endSessionNo}{t('teacher_afterschool.session_suffix', '차시')})
                   </span>
                 </span>
                 <span className="bg-emerald-100 text-emerald-800 font-extrabold text-[11px] px-2 py-0.5 rounded-full ml-1">
-                  수강 확정생 {courseStudents.length}명
+                  {t('teacher_afterschool.enrolled_count', { count: courseStudents.length, defaultValue: `수강 확정생 ${courseStudents.length}명` })}
                 </span>
               </div>
               {/* Prev/Next session navigation */}
@@ -878,7 +880,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
                 <span className="text-xs text-slate-500 font-mono px-1">
-                  {activeSessionNo}/{scheduleDays.length}회차
+                  {activeSessionNo}/{scheduleDays.length}{t('teacher_afterschool.round_suffix', '회차')}
                 </span>
                 <button
                   onClick={() => handleSelectDay(Math.min(scheduleDays.length, activeSessionNo + 1))}
@@ -900,8 +902,8 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                   title="현재 선택한 날짜의 모든 수강 확정생을 출석(○) 처리합니다"
                 >
                   <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                  <span className="sm:hidden">전원O</span>
-                  <span className="hidden sm:inline">전원출석</span>
+                  <span className="sm:hidden">{t('teacher_afterschool.bulk_attend_short', '전원O')}</span>
+                  <span className="hidden sm:inline">{t('teacher_afterschool.bulk_attend', '전원출석')}</span>
                 </button>
                 <button
                   onClick={handleCopyShareLink}
@@ -909,8 +911,8 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                   title="외부 강사가 로그인 없이 접속하여 출석 체크만 할 수 있는 전용 링크를 클립보드에 복사합니다"
                 >
                   <Share2 className="w-3.5 h-3.5 shrink-0" />
-                  <span className="sm:hidden">공유</span>
-                  <span className="hidden sm:inline">출석부 공유</span>
+                  <span className="sm:hidden">{t('teacher_afterschool.share_sheet_short', '공유')}</span>
+                  <span className="hidden sm:inline">{t('teacher_afterschool.share_sheet', '출석부 공유')}</span>
                 </button>
                 <button
                   onClick={() => setIsPrintModalOpen(true)}
@@ -918,8 +920,8 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                   title="A4 세로 공식 출석부 인쇄"
                 >
                   <Printer className="w-3.5 h-3.5 shrink-0" />
-                  <span className="sm:hidden">인쇄</span>
-                  <span className="hidden sm:inline">출석부 인쇄</span>
+                  <span className="sm:hidden">{t('teacher_afterschool.print_sheet_short', '인쇄')}</span>
+                  <span className="hidden sm:inline">{t('teacher_afterschool.print_sheet', '출석부 인쇄')}</span>
                 </button>
               </div>
 
@@ -946,12 +948,12 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                     >
                       {isToday && (
                         <span className={`text-[8.5px] font-black px-1 rounded-xs mb-0.5 ${isSelected ? 'bg-amber-300 text-amber-950' : 'bg-amber-500 text-white'}`}>
-                          오늘
+                          {t('teacher_afterschool.today', '오늘')}
                         </span>
                       )}
                       <span className="text-xs leading-none font-extrabold">{day.dateStr}</span>
                       <span className="text-[9px] opacity-90 font-normal mt-0.5">
-                        {day.dayIndex}회차
+                        {day.dayIndex}{t('teacher_afterschool.round_suffix', '회차')}
                       </span>
                     </button>
                   );
@@ -963,7 +965,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
           {/* ===== MOBILE VIEW: Today-session-only list ===== */}
           <div className="block md:hidden divide-y divide-slate-100">
             {courseStudents.length === 0 ? (
-              <div className="py-12 text-center text-slate-400 text-sm">수강 등록된 학생이 없습니다.</div>
+              <div className="py-12 text-center text-slate-400 text-sm">{t('teacher_afterschool.no_students', '수강 등록된 학생이 없습니다.')}</div>
             ) : (
               courseStudents.map((enrollment) => {
                 const sInfo = getStudentInfo(enrollment.studentId, enrollment.name, enrollment.grade, enrollment.classNum);
@@ -1027,30 +1029,30 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
             {courseStudents.length > 0 && (
               <div className="px-4 py-3 bg-slate-50 flex flex-wrap items-center gap-3 sm:gap-4 text-xs font-bold border-t border-slate-200">
                 <span className="text-emerald-700">
-                  출석 {courseStudents.filter(e => {
+                  {t('teacher_afterschool.mark_attend', '출석')} {courseStudents.filter(e => {
                     const m = getDayMark(e.studentId, activeSessionNo);
                     return m === 'O' || m === '○';
-                  }).length}명
+                  }).length}
                 </span>
                 <span className="text-purple-700">
-                  지각/개별 {courseStudents.filter(e => {
+                  {t('teacher_afterschool.mark_late', '지각/개별')} {courseStudents.filter(e => {
                     const m = getDayMark(e.studentId, activeSessionNo);
                     return m === 'V' || m === '△';
-                  }).length}명
+                  }).length}
                 </span>
                 <span className="text-rose-700">
-                  결석 {courseStudents.filter(e => {
+                  {t('teacher_afterschool.mark_absent', '결석')} {courseStudents.filter(e => {
                     const m = getDayMark(e.studentId, activeSessionNo);
                     return m === 'X' || m === '×';
-                  }).length}명
+                  }).length}
                 </span>
                 {courseStudents.some(e => getDayMark(e.studentId, activeSessionNo) === '―') && (
                   <span className="text-slate-500 bg-slate-200/80 px-1.5 py-0.5 rounded text-[11px]">
-                    미수강 {courseStudents.filter(e => getDayMark(e.studentId, activeSessionNo) === '―').length}명
+                    {t('teacher_afterschool.mark_not_enrolled', '미수강')} {courseStudents.filter(e => getDayMark(e.studentId, activeSessionNo) === '―').length}
                   </span>
                 )}
                 <span className="text-slate-400 ml-auto">
-                  미체크 {courseStudents.filter(e => !getDayMark(e.studentId, activeSessionNo)).length}명
+                  {t('teacher_afterschool.mark_none', '미체크')} {courseStudents.filter(e => !getDayMark(e.studentId, activeSessionNo)).length}
                 </span>
               </div>
             )}
@@ -1061,11 +1063,11 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
             <table className="w-full text-xs text-center border-collapse">
               <thead className="bg-slate-100 text-slate-700 font-bold border-b">
                 <tr>
-                  <th className="p-2 border-r w-8">순</th>
-                  <th className="p-2 border-r w-8">학년</th>
-                  <th className="p-2 border-r w-8">반</th>
-                  <th className="p-2 border-r w-8">번</th>
-                  <th className="p-2 border-r text-center whitespace-nowrap px-3 min-w-[120px]">학생 (사진/성명)</th>
+                  <th className="p-2 border-r w-8">{t('teacher_afterschool.th_num', '순')}</th>
+                  <th className="p-2 border-r w-8">{t('teacher_afterschool.th_grade', '학년')}</th>
+                  <th className="p-2 border-r w-8">{t('teacher_afterschool.th_class', '반')}</th>
+                  <th className="p-2 border-r w-8">{t('teacher_afterschool.th_student_num', '번')}</th>
+                  <th className="p-2 border-r text-center whitespace-nowrap px-3 min-w-[120px]">{t('teacher_afterschool.th_student_info', '학생 (사진/성명)')}</th>
                   {scheduleDays.map((day) => (
                     <th
                       key={day.dayIndex}
@@ -1076,16 +1078,16 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                       onClick={() => handleSelectDay(day.dayIndex)}
                     >
                       <div className="font-extrabold text-[11px]">{day.dateStr}</div>
-                      <div className="text-[9px] text-slate-500 font-normal mt-0.5">{day.dayIndex}회차</div>
+                      <div className="text-[9px] text-slate-500 font-normal mt-0.5">{day.dayIndex}{t('teacher_afterschool.round_suffix', '회차')}</div>
                     </th>
                   ))}
-                  <th className="p-2 border-r w-16">탑승 버스</th>
-                  <th className="p-2 w-24">학부모 연락처</th>
+                  <th className="p-2 border-r w-16">{t('teacher_afterschool.th_bus', '탑승 버스')}</th>
+                  <th className="p-2 w-24">{t('teacher_afterschool.th_parent_contact', '학부모 연락처')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {courseStudents.length === 0 ? (
-                  <tr><td colSpan={scheduleDays.length + 7} className="py-8 text-center text-slate-400">수강 등록된 학생이 없습니다.</td></tr>
+                  <tr><td colSpan={scheduleDays.length + 7} className="py-8 text-center text-slate-400">{t('teacher_afterschool.no_students', '수강 등록된 학생이 없습니다.')}</td></tr>
                 ) : (
                   courseStudents.map((enrollment, enrollIdx) => {
                     const sInfo = getStudentInfo(enrollment.studentId, enrollment.name, enrollment.grade, enrollment.classNum);
@@ -1165,7 +1167,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
           <div className="bg-indigo-50 border border-indigo-200 p-3.5 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs">
             <div>
-              <span className="font-bold text-indigo-900">강사출근부 실시간 차시 연동 작동 중</span>
+              <span className="font-bold text-indigo-900">{t('teacher_afterschool.work_register_title', '방과후학교 강사 출근부')}</span>
               <p className="text-indigo-700 mt-0.5">학생 출석부 체크 시 해당 날짜 회차에 강사 서명이 자동 연동되어 기입됩니다.</p>
             </div>
             <button
@@ -1174,7 +1176,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow cursor-pointer shrink-0"
             >
               <Printer className="w-4 h-4" />
-              <span>강사출근부 인쇄</span>
+              <span>{t('teacher_afterschool.work_register_print', '강사출근부 인쇄')}</span>
             </button>
           </div>
 
@@ -1207,7 +1209,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
             <div>
               <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <Package className="w-4 h-4 text-emerald-600" />증빙 문서 관리 & 전자결재 제출함
+                <Package className="w-4 h-4 text-emerald-600" />{t('teacher_afterschool.tab_docs', '증빙 문서 관리')}
               </h3>
               <p className="text-xs text-slate-500 mt-1">
                 출석부와 강사출근부 증빙 서류를 부장에게 전송하거나 엑셀/공식 A4 서식으로 인쇄할 수 있습니다.
@@ -1222,7 +1224,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                 title="담당 부장에게 결재 서류 전송"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>증빙 서류 부장 전송</span>
+                <span>{t('teacher_afterschool.docs_submit', '증빙 서류 부장 전송')}</span>
               </button>
 
               <button
@@ -1231,7 +1233,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                 title="엑셀 다운로드"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span>엑셀 다운로드</span>
+                <span>{t('teacher_afterschool.btn_save_excel', '엑셀 다운로드')}</span>
               </button>
 
               <button
@@ -1240,7 +1242,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                 title="A4 인쇄"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>공식 출석부 인쇄</span>
+                <span>{t('teacher_afterschool.print_sheet', '공식 출석부 인쇄')}</span>
               </button>
             </div>
           </div>
@@ -1323,7 +1325,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
               {/* 버스 정보 */}
               <div className="flex items-center justify-between bg-sky-50/70 p-3 rounded-2xl border border-sky-100">
                 <span className="text-xs font-bold text-sky-900 flex items-center gap-1.5">
-                  🚌 탑승 스쿨버스
+                  {t('teacher_afterschool.student_card_bus', '스쿨버스')}
                 </span>
                 <span className="text-xs font-extrabold text-sky-800 bg-white px-2.5 py-1 rounded-xl border border-sky-200 shadow-2xs">
                   {modalStudent.busNo}
@@ -1333,7 +1335,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
               {/* 학부모 연락처 & 클릭 시 모바일 전화 연결 */}
               <div className="bg-indigo-50/70 p-3 rounded-2xl border border-indigo-100 space-y-1.5">
                 <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-indigo-600" /> 학부모 연락처
+                  <Phone className="w-3.5 h-3.5 text-indigo-600" /> {t('teacher_afterschool.student_card_parent_contact', '학부모 연락처')}
                 </span>
                 {modalStudent.contact ? (
                   <a
@@ -1341,7 +1343,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                     className="flex items-center justify-center gap-2 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm rounded-xl transition shadow-sm cursor-pointer"
                   >
                     <Phone className="w-4 h-4" />
-                    <span>{modalStudent.contact} (전화 걸기)</span>
+                    <span>{modalStudent.contact} ({t('teacher_afterschool.student_card_call', '통화하기')})</span>
                   </a>
                 ) : (
                   <p className="text-xs text-slate-400 text-center py-1 font-semibold">등록된 연락처가 없습니다.</p>
@@ -1354,7 +1356,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
               onClick={() => setModalStudent(null)}
               className="w-full py-2.5 font-bold text-xs rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer transition"
             >
-              닫기
+              {t('close', '닫기')}
             </button>
           </div>
         </div>

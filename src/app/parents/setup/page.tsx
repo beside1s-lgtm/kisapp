@@ -15,6 +15,8 @@ import { saveUserProfile } from '@/lib/services/userService';
 import { getDestinations } from '@/lib/kisbus';
 import type { Destination } from '@/lib/kisbus/types';
 import { Combobox } from '@/components/ui/combobox';
+import { onDocConfigUpdate } from '@/lib/services/settingsService';
+import type { DocConfig } from '@/lib/types';
 
 async function hashPIN(pin: string) {
   if (typeof crypto !== 'undefined' && crypto.subtle) {
@@ -55,6 +57,16 @@ export default function ParentsSetupPage() {
   const [studentNumber, setStudentNumber] = useState('');
   const [address, setAddress] = useState('');
   const [destinations, setDestinations] = useState<Destination[]>([]);
+  const [docConfig, setDocConfig] = useState<DocConfig | null>(null);
+
+  useEffect(() => {
+    const unsub = onDocConfigUpdate((cfg) => {
+      setDocConfig(cfg as DocConfig);
+    });
+    return () => unsub();
+  }, []);
+
+  const requirePin = docConfig ? docConfig.requireParentPin !== false : true;
 
   useEffect(() => {
     getDestinations().then(data => {
@@ -141,14 +153,16 @@ export default function ParentsSetupPage() {
       return;
     }
     
-    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
-      toast({ variant: 'destructive', title: '입력 오류', description: 'PIN은 숫자 4자리여야 합니다.' });
-      return;
-    }
-    
-    if (pin !== confirmPin) {
-      toast({ variant: 'destructive', title: '입력 오류', description: 'PIN 번호가 일치하지 않습니다.' });
-      return;
+    if (requirePin) {
+      if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+        toast({ variant: 'destructive', title: '입력 오류', description: 'PIN은 숫자 4자리여야 합니다.' });
+        return;
+      }
+      
+      if (pin !== confirmPin) {
+        toast({ variant: 'destructive', title: '입력 오류', description: 'PIN 번호가 일치하지 않습니다.' });
+        return;
+      }
     }
 
     if (signatureMode === 'draw' && sigCanvas.current?.isEmpty()) {
@@ -163,8 +177,8 @@ export default function ParentsSetupPage() {
 
     setIsSaving(true);
     try {
-      // 1. PIN 해싱
-      const hashedPin = await hashPIN(pin);
+      // 1. PIN 해싱 (requirePin이 false이면 null)
+      const hashedPin = requirePin ? await hashPIN(pin) : null;
       
       // 2. 서명 업로드 (Firebase Storage 대신 Base64로 직접 Firestore에 저장)
       const signatureDataUrl = signatureMode === 'draw' 
@@ -312,7 +326,7 @@ export default function ParentsSetupPage() {
                 <MapPin className="w-4 h-4 text-indigo-600" />
                 <span>등하교 목적지 (스쿨버스 정류장)</span>
               </Label>
-              <span className="text-[11px] text-indigo-700 font-medium">📍 정류장 검색 선택</span>
+              <span className="text-[11px] text-indigo-700 font-medium">정류장 검색 선택</span>
             </div>
             <Combobox 
               options={destinationOptions}
@@ -325,33 +339,35 @@ export default function ParentsSetupPage() {
             </p>
           </div>
 
-          {/* PIN */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="pin" className="text-xs sm:text-sm font-bold">서명 인증 PIN (숫자 4자리)</Label>
-              <Input 
-                id="pin" 
-                type="password" 
-                maxLength={4} 
-                placeholder="****" 
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))}
-                className="h-9 sm:h-10 text-sm"
-              />
+          {/* PIN (PIN 인증이 활성화된 경우에만 표시) */}
+          {requirePin && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="pin" className="text-xs sm:text-sm font-bold">서명 인증 PIN (숫자 4자리)</Label>
+                <Input 
+                  id="pin" 
+                  type="password" 
+                  maxLength={4} 
+                  placeholder="****" 
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="h-9 sm:h-10 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="confirmPin" className="text-xs sm:text-sm font-bold">PIN 확인</Label>
+                <Input 
+                  id="confirmPin" 
+                  type="password" 
+                  maxLength={4} 
+                  placeholder="****" 
+                  value={confirmPin}
+                  onChange={(e) => setConfirmPin(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="h-9 sm:h-10 text-sm"
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="confirmPin" className="text-xs sm:text-sm font-bold">PIN 확인</Label>
-              <Input 
-                id="confirmPin" 
-                type="password" 
-                maxLength={4} 
-                placeholder="****" 
-                value={confirmPin}
-                onChange={(e) => setConfirmPin(e.target.value.replace(/[^0-9]/g, ''))}
-                className="h-9 sm:h-10 text-sm"
-              />
-            </div>
-          </div>
+          )}
 
           <div className="space-y-2">
             <div className="flex justify-between items-end mb-2">

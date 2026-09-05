@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Loader2, LogOut, FileText, Globe } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -11,12 +11,22 @@ import { ParentSettingsDialog } from '@/components/parent-settings-dialog';
 import { LanguageSwitcher } from '@/components/layout/language-switcher';
 import { AppFooter } from '@/components/layout/app-footer';
 import { useTranslation } from '@/hooks/use-translation';
+import { onDocConfigUpdate } from '@/lib/services/settingsService';
+import type { DocConfig } from '@/lib/types';
 
 export default function ParentsLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, profile, profileLoading, logout, isParent } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const { t } = useTranslation();
+  const [docConfig, setDocConfig] = useState<DocConfig | null>(null);
+
+  useEffect(() => {
+    const unsub = onDocConfigUpdate((cfg) => {
+      setDocConfig(cfg as DocConfig);
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     if (!loading && !user && pathname !== '/parents/login') {
@@ -24,14 +34,15 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
     } else if (!loading && user && !isParent) {
       router.push('/inbox');
     } else if (!loading && user && isParent && profile) {
-      const hasSetup = !!profile.hashedPin && !!profile.parentSignature;
+      const requirePin = docConfig ? docConfig.requireParentPin !== false : true;
+      const hasSetup = (requirePin ? !!profile.hashedPin : true) && !!profile.parentSignature;
       if (!hasSetup && pathname !== '/parents/setup' && pathname !== '/parents/login') {
         router.push('/parents/setup');
       } else if (hasSetup && pathname === '/parents/setup') {
         router.push('/parents');
       }
     }
-  }, [user, loading, isParent, pathname, router, profile]);
+  }, [user, loading, isParent, pathname, router, profile, docConfig]);
   
   const isLoginPage = pathname === '/parents/login';
 
@@ -63,7 +74,7 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
             </div>
             <span className="truncate max-w-[115px] sm:max-w-none">{t('parents.title') || 'KIS 학부모서비스'}</span>
           </Link>
-          <nav className="hidden lg:flex items-center gap-2">
+          <nav className="hidden xl:flex items-center gap-2">
             <Button 
               variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
               asChild
@@ -89,7 +100,7 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
               <Link href="/parents/afterschool">{t('nav.afterschool') || '방과후학교'}</Link>
             </Button>
           </nav>
-          <nav className="hidden md:flex lg:hidden items-center gap-1">
+          <nav className="hidden lg:flex xl:hidden items-center gap-1">
             <Button 
               variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
               className="text-xs px-2"
@@ -134,7 +145,7 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
       </header>
       
       {/* Mobile nav */}
-      <div className="md:hidden grid grid-cols-4 gap-1 border-b bg-muted/30 p-1.5 print:hidden w-full min-w-0">
+      <div className="lg:hidden grid grid-cols-4 gap-1 border-b bg-muted/30 p-1.5 print:hidden w-full min-w-0">
         <Button 
           variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
           size="sm"

@@ -461,17 +461,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else {
       const dummyUser = {
         uid: 'dev_bypass_parent_uid',
-        email: 'parent_test@kshcm.net',
-        displayName: '학부모 (테스트)',
+        email: '2026hong@kshcm.net',
+        displayName: '홍길동 학부모 (테스트)',
         emailVerified: true
       } as any;
-      const existingProfile = await getUserProfileByEmail('parent_test@kshcm.net').catch(() => null);
+      const existingProfile = await getUserProfileByEmail('2026hong@kshcm.net').catch(() => null);
       const dummyProfile: UserProfile = {
-        email: 'parent_test@kshcm.net',
+        email: '2026hong@kshcm.net',
         role: '학부모',
-        name: '김부모',
-        parentName: '김부모',
-        studentName: '김학생',
+        name: '홍부모',
+        parentName: '홍부모',
+        studentName: '홍길동',
         studentGrade: '4',
         studentClass: '4',
         studentNumber: '2',

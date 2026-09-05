@@ -49,8 +49,8 @@ export function AppFooter({ className }: { className?: string }) {
         if (outcome === 'accepted') {
           (window as any).__deferredPwaPrompt = null;
           setIsStandalone(true);
-          return;
         }
+        return;
       } catch (err) {
         console.warn('PWA prompt error:', err);
       }
@@ -61,8 +61,10 @@ export function AppFooter({ className }: { className?: string }) {
       window.dispatchEvent(new CustomEvent('trigger-pwa-install'));
     }
 
-    // 3. 브라우저별 안내 모달 오픈
-    setShowGuideModal(true);
+    // 3. iOS Safari는 직접 설치 불가이므로 안내 모달 표시, 그 외는 표시 안 함
+    if (isIos) {
+      setShowGuideModal(true);
+    }
   };
 
   return (

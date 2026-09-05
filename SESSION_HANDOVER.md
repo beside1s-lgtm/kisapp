@@ -1,36 +1,50 @@
-# SESSION_HANDOVER.md
+# SESSION HANDOVER
 
-## Current Status (현재 상태)
-- **통합 학생 마스터 대시보드, 담임 교사 업무 관리소 및 스쿨버스 방과후 연동 배포 완료**:
-  1. **학부모 로그인 보안 인증(OTP) 문제 수정 및 교사 계정 예외 규칙 전면 정비 (`auth-provider.tsx`, `masterStudentService.ts`)**:
-     - '학년도+이름' 계정(`2023kangdongyun@kshcm.net` 등)은 무조건 학부모/학생으로 강제 분류하여 교직원 2단계 OTP 인증 원천 제외 처리.
-     - 기존 교사 등록 예외 계정(`2021tram`, `2021kimhoa`)을 Firestore DB에서 학부모로 전면 전환하고, 마스터 학생 명단에서도 교직원 권한 계정이나 학년/반 미배정 계정 침투를 완벽 차단.
-  2. **통합 학생 명단 및 담임 교사 업무 관리소 필터/표기 개선 (`admin/students/page.tsx`, `teacher/homeroom/page.tsx`)**:
-     - 학년 필터 외에 '반' 필터, 방과후 수강 여부 필터, 스쿨버스 탑승 여부 필터 추가.
-     - 방과후 강좌 표기: 수업명 앞 5자리만 콤팩트하게 표기 (`[월] 그림책 교..` 등).
-     - 스쿨버스 노선 표기: 요일 및 버스 번호만 간결하게 표기 (`[목,금] 19호`, `[월] 28호` 등).
-  3. **담임 교사 업무 관리소 레이아웃 확장 (`teacher/homeroom/page.tsx`)**:
-     - 기존 `max-w-4xl` 고정 제한을 제거하고 `w-full`로 확장하여 가용 화면 너비를 최대로 활용.
-     - 학급 학생 계정 명단(방과후/스쿨버스/연락처/사진 등록)을 확인할 수 있는 전용 탭(`student-info`) 지원.
-  4. **스쿨버스 선생님 페이지 방과후 명단 조회 오늘 요일 자동 선택 (`after-school-inquiry-dialog.tsx`)**:
-     - 모달 진입 시 접속일 기준 오늘 요일(예: `토요일 (오늘)`)이 자동 기본 선택되도록 구현.
-     - 다른 요일 선택 및 '오늘 요일로 선택' 바로가기 리셋 버튼 제공.
+작성 일시: 2026-09-05 (작업 마무리 및 배포 인수인계)
 
-## Modified Files (수정된 주요 파일)
-- `src/components/auth-provider.tsx`: 학부모 계정 패턴 OTP 차단 및 강제 프로필 보정.
-- `src/lib/services/masterStudentService.ts`: 방과후/버스 실시간 데이터 병합 및 교직원 계정 학생 명단 오포함 차단.
-- `src/app/(app)/admin/students/page.tsx`: 반/방과후/버스 필터, 방과후 5자 축약, 버스 요일+번호 축약.
-- `src/app/(app)/teacher/homeroom/page.tsx`: 좌우 너비 전체 확장(w-full), 학생 정보 확인 탭, 방과후/버스 축약 표기.
-- `src/components/bus/after-school-inquiry-dialog.tsx`: 오늘 요일 자동 기본 선택 및 오늘 바로가기 버튼 추가.
-- `src/app/teacher/bus/page.tsx`: 방과후/버스 연동 및 명단 모달 지원.
+---
 
-## Verification (검증 내역)
-- TypeScript 컴파일 검사 통과 (신규 수정 파일 무결성 확인).
-- Chrome DevTools 가상 브라우저 검증:
-  - `/admin/students`: 통합 학생 명단(1005명), 방과후 5자 축약 및 버스 요일/번호 축약 정상 렌더링 확인.
-  - `/teacher/homeroom`: 넓은 화면 100% 활용, 학생 정보 확인 탭 정상 전환 확인.
-  - `/teacher/bus`: 방과후 명단 모달에서 `토요일 (오늘)` 자동 선택 및 수동 변경/오늘 복귀 정상 동작 확인.
-- Firebase Firestore 규칙 및 인덱스 배포 완료: `studio-9153973571-7837c` 성공.
+## 1. Current Status (현재 상태)
+- **학부모 PIN 번호 리셋 및 전역 On/Off 제어 시스템 구축 완료**:
+  - 관리자 시스템 설정 → 사용자 → 학생 계정에서 개별 학부모 PIN 리셋(RotateCcw) 및 확인 AlertDialog 연동 완료
+  - "학부모 PIN 인증 사용" 토글 스위치 추가 및 Firestore `settings/docConfig` 실시간 연동
+  - PIN 인증 OFF 시: 학부모 최초 로그인 PIN 등록 생략(서명만 저장), 결석계/신청서 제출 시 PIN 모달 대신 "신청서를 전송하시겠습니까?" 확인 모달 연동
+- **학부모 포털 모바일 반응형 및 다국어 레이아웃 최적화 완료**:
+  - 1024px 미만 화면에서 상단 헤더 버튼 겹침 차단 및 전용 하단 4분할 그리드 탭바 안정화
+  - 수강신청 진행 현황 배너 및 학생 정보 배너에서 베트남어 텍스트 세로 깨짐(한 글자씩 분리) 해결 (`min-w-[180px]`, `break-normal`, `flex-wrap` 적용)
+  - 상단 뒤로가기/홈 버튼과 개인정보 동의서 버튼 겹침 및 줄바꿈 정리
+- **Antigravity 전역 스킬 및 QA 워크플로우 구축 완료**:
+  - `session-handover`: 세션 종료/시작 컨텍스트 복구
+  - `firebase-ops`: Firebase 배포 및 프로젝트 ID 격리 가드레일
+  - `ui-responsive-design`: 다국어 및 Flexbox 수축 방지 가이드라인 반영
+  - `autonomous-qa`: 사전 점검, Sequential Thinking, 자동 테스트
+  - `mobile-multilingual-qa`: 다국어 뷰포트 오버플로우 자동 스캔 워크플로우
+  - `parent-document-qa`: 결재란 4단 슬롯 및 A4 1페이지 출력 규격 검증
+  - `student-account-sync`: 학생 계정 엑셀 업로드 및 PIN 정합성 검증
+  - `kis-pre-deploy-checklist`: 배포 전 빌드 및 타깃 프로젝트 바인딩 검증
 
-## Next Steps (다음 작업 목표)
-- 원격 Git 리포지토리 푸시 및 배포 파이프라인 동기화 확인.
+---
+
+## 2. Modified Files (수정된 주요 파일)
+- `src/lib/types.ts`: `DocConfig.requireParentPin` 필드 추가
+- `src/lib/services/userService.ts`: `resetParentPin()` 함수 추가 및 캐시 무효화
+- `src/components/settings-modal.tsx`: 학부모 PIN 인증 Switch 토글, PIN 초기화 버튼 및 확인 다이얼로그 추가
+- `src/app/parents/layout.tsx`: PIN 토글 연동, 반응형 내비게이션 브레이크포인트 최적화 (1024px 미만 헤더 겹침 방지)
+- `src/app/parents/setup/page.tsx`: PIN 인증 비활성화 시 입력란 숨김 및 null 저장 처리
+- `src/app/parents/apply/page.tsx`: PIN 중복 상태 제거, PIN 비활성화 시 전송 확인 모달 연동
+- `src/app/parents/afterschool/page.tsx`: 상단 내비 및 개인정보 동의서 버튼 모바일 반응형 최적화
+- `src/components/afterschool/student/StudentView.tsx`: 카운트다운 및 학생 배너 `min-w-[180px]`, `break-normal` 적용
+- `.agents/skills/*` 및 `~/.gemini/config/skills/*`: 전역 및 워크스페이스 표준 스킬 8종 등록
+
+---
+
+## 3. Next Steps (다음 작업 목표)
+1. 실서버 배포 후 실제 모바일 기기(iOS/Android)에서 학부모 포털 다국어 화면 최종 확인
+2. 신학기 전입생 발생 시 `student-account-sync` 워크플로우를 통한 엑셀 일괄 등록 및 PIN 상태 동기화 진행
+
+---
+
+## 4. Important Context (핵심 컨텍스트)
+- **Firebase 프로젝트 ID**: `studio-9153973571-7837c` (반드시 `--project studio-9153973571-7837c` 명시 배포)
+- **학부모 PIN 제어 흐름**: Firestore `settings/docConfig`의 `requireParentPin`이 `false`이면 클라이언트의 모든 PIN 입력 요구가 생략되며 일반 확인 모달로 우회됨.
+- **다국어 반응형 원칙**: Flexbox 부모 안의 텍스트 요소에는 `min-w-0` 단독 사용을 지양하고 `min-w-[180px]` 최소폭과 `break-normal`을 기본 적용할 것.

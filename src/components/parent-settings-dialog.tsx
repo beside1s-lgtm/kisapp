@@ -206,7 +206,7 @@ export function ParentSettingsDialog() {
           <span className="sr-only">설정</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[680px] md:max-w-[750px] w-[95vw] max-h-[90vh] overflow-y-auto p-4 sm:p-6 rounded-2xl">
+      <DialogContent className="sm:max-w-[680px] md:max-w-[750px] w-[95vw] max-w-[95vw] max-h-[90vh] overflow-y-auto overflow-x-hidden p-3.5 sm:p-6 rounded-2xl">
         <DialogHeader className="pb-2 border-b border-slate-100">
           <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-900">
             <Users className="w-5 h-5 text-indigo-600 shrink-0" />
@@ -217,11 +217,11 @@ export function ParentSettingsDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3 sm:gap-4 py-2 sm:py-3 text-xs">
+        <div className="grid grid-cols-1 w-full max-w-full gap-3 sm:gap-4 py-2 sm:py-3 text-xs overflow-x-hidden min-w-0">
           {/* 학생 기본 인적사항 (한글 + 영문) */}
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-3 w-full max-w-full min-w-0">
             <h4 className="font-bold text-slate-800 text-xs flex items-center justify-between">
-              <span>👤 주 대표 자녀 기본 정보</span>
+              <span>주 대표 자녀 기본 정보</span>
               <span className="text-[11px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">기본 선택 자녀</span>
             </h4>
 
@@ -236,24 +236,24 @@ export function ParentSettingsDialog() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-1">
+            <div className="grid grid-cols-3 gap-2 min-w-0">
+              <div className="space-y-1 min-w-0">
                 <Label htmlFor="sGrade" className="text-[11px] font-bold text-slate-600">학년</Label>
-                <Input id="sGrade" type="number" value={studentGrade} onChange={(e) => setStudentGrade(e.target.value)} placeholder="4" className="text-xs h-9 bg-white text-center font-bold" />
+                <Input id="sGrade" inputMode="numeric" value={studentGrade} onChange={(e) => setStudentGrade(e.target.value.replace(/[^0-9]/g, ''))} placeholder="4" className="text-xs h-9 bg-white text-center font-bold px-1 w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 min-w-0">
                 <Label htmlFor="sClass" className="text-[11px] font-bold text-slate-600">반</Label>
-                <Input id="sClass" type="number" value={studentClass} onChange={(e) => setStudentClass(e.target.value)} placeholder="4" className="text-xs h-9 bg-white text-center font-bold" />
+                <Input id="sClass" inputMode="numeric" value={studentClass} onChange={(e) => setStudentClass(e.target.value.replace(/[^0-9]/g, ''))} placeholder="4" className="text-xs h-9 bg-white text-center font-bold px-1 w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 min-w-0">
                 <Label htmlFor="sNum" className="text-[11px] font-bold text-slate-600">번호</Label>
-                <Input id="sNum" type="number" value={studentNumber} onChange={(e) => setStudentNumber(e.target.value)} placeholder="2" className="text-xs h-9 bg-white text-center" />
+                <Input id="sNum" inputMode="numeric" value={studentNumber} onChange={(e) => setStudentNumber(e.target.value.replace(/[^0-9]/g, ''))} placeholder="2" className="text-xs h-9 bg-white text-center px-1 w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
               </div>
             </div>
           </div>
 
           {/* 학부모 기본 정보 (성명 + 관계 + 연락처) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 p-3 bg-slate-50/50 rounded-xl border border-slate-200">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 p-3 bg-slate-50/50 rounded-xl border border-slate-200 w-full max-w-full min-w-0">
             <div className="space-y-1">
               <Label htmlFor="pName" className="text-[11px] font-bold text-slate-600">학부모 성명 <span className="text-destructive">*</span></Label>
               <Input id="pName" value={parentName} onChange={(e) => setParentName(e.target.value)} placeholder="예: 서고운" className="text-xs h-9 bg-white" />
@@ -279,11 +279,11 @@ export function ParentSettingsDialog() {
             </div>
           </div>
 
-          {/* 📍 기본 거주지 / 스쿨버스 정류장 선택 */}
-          <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl space-y-2">
+          {/* 기본 거주지 / 스쿨버스 정류장 선택 */}
+          <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl space-y-2 w-full max-w-full min-w-0">
             <Label className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-amber-600" />
-              <span>📍 기본 거주지 / 스쿨버스 정류장</span>
+              <MapPin className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>기본 거주지 / 스쿨버스 정류장</span>
             </Label>
             <p className="text-[11px] text-amber-800">
               미리 거주지를 설정해두면 방과후학교 및 스쿨버스 신청서 작성 시 주소/목적지가 자동 선택됩니다.
@@ -302,7 +302,7 @@ export function ParentSettingsDialog() {
                 onCheckedChange={(checked) => setUseCustomResidence(checked as boolean)} 
               />
               <label htmlFor="useCustomResidence" className="text-[11px] font-semibold text-slate-700 cursor-pointer">
-                ➕ 목록에 거주 아파트가 없는 경우 직접 신규 입력
+                목록에 거주 아파트가 없는 경우 직접 신규 입력
               </label>
             </div>
             {useCustomResidence && (
@@ -315,33 +315,33 @@ export function ParentSettingsDialog() {
             )}
           </div>
 
-          {/* 👨‍👩‍👧‍👦 형제/자매 (동일 가구 자녀) 연동 관리 */}
-          <div className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="font-bold text-indigo-900 text-xs flex items-center gap-1.5">
-                <Users className="w-4 h-4 text-indigo-600" />
-                <span>👨‍👩‍👧‍👦 형제/자매 자녀 연동 관리 ({linkedStudents.length}명)</span>
+          {/* 형제/자매 (동일 가구 자녀) 연동 관리 */}
+          <div className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3 w-full max-w-full min-w-0">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <Label className="font-bold text-indigo-900 text-xs flex items-center gap-1.5 min-w-0">
+                <Users className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>형제/자매 연동 관리 ({linkedStudents.length}명)</span>
               </Label>
-              <div className="flex gap-1.5">
+              <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 w-full sm:w-auto">
                 <Button 
                   type="button" 
                   variant="outline" 
                   size="sm" 
                   onClick={handleAutoDetectSiblings}
-                  className="h-7 text-[11px] font-bold bg-white text-indigo-700 hover:bg-indigo-100 border-indigo-200 px-2 rounded-lg"
+                  className="h-7 text-[11px] font-bold bg-white text-indigo-700 hover:bg-indigo-100 border-indigo-200 px-1.5 sm:px-2.5 rounded-lg flex items-center justify-center min-w-0"
                 >
-                  <Sparkles className="w-3 h-3 mr-1 text-indigo-600" />
-                  자녀 자동 탐지
+                  <Sparkles className="w-3 h-3 mr-1 text-indigo-600 shrink-0" />
+                  <span className="truncate">자녀 자동 탐지</span>
                 </Button>
                 <Button 
                   type="button" 
                   variant="outline" 
                   size="sm" 
                   onClick={handleAddLinkedStudent}
-                  className="h-7 text-[11px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-2 rounded-lg"
+                  className="h-7 text-[11px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-1.5 sm:px-2.5 rounded-lg flex items-center justify-center min-w-0"
                 >
-                  <Plus className="w-3 h-3 mr-1" />
-                  형제 추가
+                  <Plus className="w-3 h-3 mr-1 shrink-0" />
+                  <span className="truncate">형제 추가</span>
                 </Button>
               </div>
             </div>

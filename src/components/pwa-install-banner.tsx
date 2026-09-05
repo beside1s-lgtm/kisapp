@@ -14,14 +14,11 @@ import {
     X,
     ExternalLink
 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-
 export function PwaInstallBanner({ className }: { className?: string }) {
     const [isStandalone, setIsStandalone] = useState(false);
     const [isMounted, setIsMounted] = useState(false);
     const [showGuideModal, setShowGuideModal] = useState(false);
     const [isIos, setIsIos] = useState(false);
-    const { toast } = useToast();
 
     useEffect(() => {
         setIsMounted(true);
@@ -36,10 +33,6 @@ export function PwaInstallBanner({ className }: { className?: string }) {
 
     const handleInstallClick = async () => {
         if (isStandalone) {
-            toast({
-                title: "이미 앱으로 실행 중입니다",
-                description: "현재 KIS 통합 포털 전용 앱 모드로 안전하게 사용하고 계십니다.",
-            });
             return;
         }
 
@@ -50,10 +43,6 @@ export function PwaInstallBanner({ className }: { className?: string }) {
             const { outcome } = await globalPrompt.userChoice;
             if (outcome === 'accepted') {
                 (window as any).__deferredPwaPrompt = null;
-                toast({
-                    title: "앱 설치 완료",
-                    description: "바탕화면/홈 화면에 KIS 통합 포털 앱이 추가되었습니다.",
-                });
             }
             return;
         }
@@ -61,8 +50,10 @@ export function PwaInstallBanner({ className }: { className?: string }) {
         // 이벤트 트리거 발송
         window.dispatchEvent(new CustomEvent('trigger-pwa-install'));
 
-        // 안드로이드 / PC 크롬에서 프롬프트가 없을 때 안내 모달 오픈
-        setShowGuideModal(true);
+        // iOS Safari는 직접 설치 불가이므로 안내 모달 표시, 그 외는 표시 안 함
+        if (isIos) {
+            setShowGuideModal(true);
+        }
     };
 
     if (!isMounted || isStandalone) {

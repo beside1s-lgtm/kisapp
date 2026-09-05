@@ -942,12 +942,12 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
 
                   <div className="text-[10.5px] text-slate-600 bg-slate-50 p-1.5 rounded-lg border border-slate-100 space-y-0.5 font-mono">
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500">강의시간:</span>
+                      <span className="text-slate-500">{t('teacher_course.th_time', '강의시간:')}</span>
                       <b className="text-slate-800">{course.classTime}</b>
                     </div>
                     {course.classroom && (
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-500">장소:</span>
+                        <span className="text-slate-500">{t('teacher_course.th_room', '장소:')}</span>
                         <span className="font-bold text-slate-800">{course.classroom}</span>
                       </div>
                     )}
@@ -957,11 +957,11 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                 {/* 우측 (5칸): 인원, 강사, 수강료 */}
                 <div className="sm:col-span-5 text-[10.5px] text-slate-600 bg-slate-50 p-1.5 rounded-lg border border-slate-100 space-y-1">
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-500">수강인원:</span>
+                    <span className="text-slate-500">{t('teacher_course.th_students', '수강인원:')}</span>
                     <span><b className="text-indigo-700 font-bold">{course.currentStudents}</b> / {course.maxStudents}명</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-500">배정강사:</span>
+                    <span className="text-slate-500">{t('teacher_course.th_instructor', '배정강사:')}</span>
                     <div className="flex items-center gap-1 truncate max-w-[120px]">
                       <span className="bg-indigo-100 text-indigo-800 font-bold px-1 py-0.2 rounded text-[10px]">
                         {leadInstructor}
@@ -974,7 +974,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                     </div>
                   </div>
                   <div className="flex justify-between items-center border-t pt-1 border-slate-200/60 font-sans">
-                    <span className="text-slate-500">수강료:</span>
+                    <span className="text-slate-500">{t('teacher_course.th_tuition', '수강료:')}</span>
                     <b className={course.isFree || course.tuition === 0 ? "text-emerald-600 font-bold" : "text-indigo-600 font-bold"}>
                       {course.isFree || course.tuition === 0 ? '0원 (무료)' : formatTuition(course.tuition)}
                     </b>
@@ -999,7 +999,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                   title="수업 계획 / 날짜 수정"
                 >
                   <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                  <span className="text-[11px] font-bold text-slate-800 whitespace-nowrap">수업 계획</span>
+                  <span className="text-[11px] font-bold text-slate-800 whitespace-nowrap">{t('teacher_course.btn_syllabus', '수업 계획')}</span>
                 </button>
 
                 <button
@@ -1009,7 +1009,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                   title="보조 강사 배정 및 관리"
                 >
                   <Users className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span className="text-[11px] font-bold text-emerald-900 whitespace-nowrap">보조 강사</span>
+                  <span className="text-[11px] font-bold text-emerald-900 whitespace-nowrap">{t('teacher_course.btn_assistant', '보조 강사')}</span>
                 </button>
 
                 <button
@@ -1019,7 +1019,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                   title="수강생 명단 관리"
                 >
                   <UserCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                  <span className="text-[11px] font-bold text-indigo-900 whitespace-nowrap">수강생 명단</span>
+                  <span className="text-[11px] font-bold text-indigo-900 whitespace-nowrap">{t('teacher_course.btn_students', '수강생 명단')}</span>
                 </button>
 
                 <button
@@ -1032,7 +1032,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                   title="학습 준비물 품의"
                 >
                   <Package className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                  <span className="text-[11px] font-bold text-amber-900 whitespace-nowrap">준비물</span>
+                  <span className="text-[11px] font-bold text-amber-900 whitespace-nowrap">{t('teacher_course.btn_materials', '준비물')}</span>
                 </button>
               </div>
             </div>

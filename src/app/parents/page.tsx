@@ -13,8 +13,7 @@ import { onUsersDirectoryUpdate } from '@/lib/services/userService';
 import { onBusesUpdate, onStudentsUpdate } from '@/lib/kisbus';
 import type { Bus, Student } from '@/lib/kisbus/types';
 import type { Course, Enrollment, GlobalTimerConfig } from '@/lib/afterschool/types';
-import { ApprovalDoc, DocConfig, OrgStructure, UserProfile } from '@/lib/types';
-import { PwaInstallBanner } from '@/components/pwa-install-banner';
+import type { ApprovalDoc, OrgStructure, UserProfile } from '@/lib/types';
 import { ParentBusFareModal } from '@/components/bus/parent-bus-fare-modal';
 import { ParentAfterschoolFareModal } from '@/components/afterschool/parent-afterschool-fare-modal';
 import { useTranslation } from '@/hooks/use-translation';
@@ -505,9 +504,6 @@ export default function ParentsDashboard() {
           </Button>
         </div>
       </div>
-
-      {/* 학부모 대시보드 하단 KIS 전용 앱 설치 배너 */}
-      <PwaInstallBanner className="mt-4 mb-2" />
 
       {/* 스쿨버스 분기 청구서 전달 팝업 */}
       <ParentBusFareModal />

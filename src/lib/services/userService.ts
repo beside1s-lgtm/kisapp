@@ -754,6 +754,21 @@ export async function deleteUser(email: string) {
   }
 }
 
+export async function resetParentPin(email: string) {
+  if (!email) return { success: false, error: '이메일이 제공되지 않았습니다.' };
+  try {
+    const userRef = doc(getUsersCol(), email.toLowerCase());
+    await setDoc(userRef, {
+      hashedPin: null,
+    }, { merge: true });
+    invalidateUsersCache();
+    return { success: true };
+  } catch (error: any) {
+    console.error('[UserService] resetParentPin failed:', error);
+    return { success: false, error: `PIN 번호 초기화 중 오류: ${error.message}` };
+  }
+}
+
 export async function resetParentAuth(email: string) {
   if (!email) return { success: false, error: '이메일이 제공되지 않았습니다.' };
   try {
@@ -763,6 +778,7 @@ export async function resetParentAuth(email: string) {
       parentSignature: null,
       hashedPin: null,
     }, { merge: true });
+    invalidateUsersCache();
     return { success: true };
   } catch (error: any) {
     return { success: false, error: `인증 정보 초기화 중 오류: ${error.message}` };
