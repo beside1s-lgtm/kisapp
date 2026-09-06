@@ -758,6 +758,7 @@
     "teacher_afterschool.admin_proxy_mode": "Chế độ điểm danh thay thế của Quản trị viên",
     "teacher_afterschool.admin_proxy_mode_short": "Điểm danh hộ",
     "teacher_afterschool.admin_home": "Trang quản trị",
+    "teacher_afterschool.admin_home_short": "Admin",
     "teacher_afterschool.select_course": "Chọn khóa học",
     "teacher_afterschool.course_detail_card": "Thẻ chi tiết & Kế hoạch bài giảng",
     "teacher_afterschool.tab_attendance": "Sổ điểm danh",

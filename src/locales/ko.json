@@ -781,6 +781,7 @@
     "teacher_afterschool.admin_proxy_mode": "관리자 대리 출석체크 모드",
     "teacher_afterschool.admin_proxy_mode_short": "대리출석",
     "teacher_afterschool.admin_home": "관리자 홈",
+    "teacher_afterschool.admin_home_short": "관리자",
     "teacher_afterschool.select_course": "강좌 선택",
     "teacher_afterschool.course_detail_card": "강좌 상세/수업계획 카드",
     "teacher_afterschool.tab_attendance": "출석부",

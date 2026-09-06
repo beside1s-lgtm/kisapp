@@ -266,70 +266,149 @@ function AfterschoolConsole() {
     }
   }, [myCourses, selectedCourseId, queryCourseId, courses]);
 
+  // 진행 상태 뱃지 컴포넌트 (모바일에서는 완전히 숨기고 큰 디스플레이에서만 노출)
+  const renderStageStatusBadge = (extraCls?: string) => (
+    <button
+      type="button"
+      onClick={handleToggleStageStatus}
+      className={cn(
+        "hidden sm:inline-flex px-2.5 py-1 rounded-full text-xs font-bold border items-center gap-1.5 transition-all cursor-pointer shadow-2xs shrink-0 whitespace-nowrap",
+        stageStatus === 'OPERATING'
+          ? "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
+          : stageStatus === 'CLOSED'
+          ? "bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100"
+          : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100",
+        extraCls
+      )}
+      title="클릭 시 방과후학교 진행 상태 변경"
+    >
+      <span className={cn(
+        "w-1.5 h-1.5 rounded-full shrink-0",
+        stageStatus === 'OPERATING' ? "bg-emerald-500 animate-pulse" : stageStatus === 'CLOSED' ? "bg-rose-500" : "bg-amber-500"
+      )} />
+      <span>
+        {stageStatus === 'OPERATING' ? t('teacher_afterschool.status_operating', '운영중') : stageStatus === 'CLOSED' ? t('teacher_afterschool.status_closed', '종료') : t('teacher_afterschool.status_waiting', '대기중')}
+      </span>
+    </button>
+  );
+
+  // 현재 선택된 강좌 라벨
+  const selectedCourse = myCourses.find(c => c.id === selectedCourseId);
+  const selectedCourseFullTitle = selectedCourse
+    ? (isAdmin && selectedCourse.instructorName ? `[${selectedCourse.instructorName}] ${selectedCourse.title}` : selectedCourse.title)
+    : (t('teacher_afterschool.select_course', '강좌 선택'));
+  // 모바일 표시용 고정 글자수 (최대 12자 + 말줄임)
+  const selectedCourseMobileText = selectedCourseFullTitle.length > 12
+    ? selectedCourseFullTitle.slice(0, 12) + '…'
+    : selectedCourseFullTitle;
+
+  // 데스크톱 전용 강좌 선택 셀렉트
+  const renderCourseSelect = (triggerClassName?: string) => {
+    if (myCourses.length === 0) return null;
+    return (
+      <Select
+        value={selectedCourseId}
+        onValueChange={(val) => {
+          setSelectedCourseId(val);
+          setActiveSubTab('studentSheet');
+        }}
+      >
+        <SelectTrigger className={cn("h-7.5 text-xs bg-white border-slate-300 font-bold px-2 rounded-lg shadow-2xs text-slate-800", triggerClassName)}>
+          <SelectValue placeholder={t('teacher_afterschool.select_course', '강좌 선택')} />
+        </SelectTrigger>
+        <SelectContent className="max-h-80">
+          {myCourses.map(c => (
+            <SelectItem
+              key={c.id}
+              value={c.id}
+              className="text-xs font-semibold cursor-pointer"
+            >
+              {isAdmin && c.instructorName ? `[${c.instructorName}] ` : ''}{c.title}
+            </SelectItem>
+          ))}
+          <div
+            className="px-2 py-1.5 border-t border-slate-100 text-[11px] font-extrabold text-indigo-600 hover:bg-indigo-50 cursor-pointer flex items-center gap-1 rounded-sm mt-1"
+            onClick={() => setActiveSubTab('course')}
+          >
+            <BookOpen className="w-3 h-3 shrink-0 text-indigo-600" />
+            <span>{t('teacher_afterschool.course_detail_card', '강좌 상세/수업계획 카드')}</span>
+          </div>
+        </SelectContent>
+      </Select>
+    );
+  };
+
+  // 모바일 전용 강좌 선택 셀렉트 (언어 선택 버튼 직전까지 100% 꽉 차게 확장 및 CSS 말줄임)
+  const renderCourseSelectMobile = () => {
+    if (myCourses.length === 0) return null;
+    return (
+      <Select
+        value={selectedCourseId}
+        onValueChange={(val) => {
+          setSelectedCourseId(val);
+          setActiveSubTab('studentSheet');
+        }}
+      >
+        <SelectTrigger className="h-8 text-xs bg-white border-slate-300 font-bold px-2 w-full min-w-0 max-w-full rounded-lg shadow-2xs text-slate-800 flex items-center justify-between gap-1 overflow-hidden [&>svg]:shrink-0">
+          <span className="truncate text-left min-w-0 flex-1">
+            {selectedCourseFullTitle}
+          </span>
+        </SelectTrigger>
+        <SelectContent className="max-h-80">
+          {myCourses.map(c => (
+            <SelectItem
+              key={c.id}
+              value={c.id}
+              className="text-xs font-semibold cursor-pointer"
+            >
+              {isAdmin && c.instructorName ? `[${c.instructorName}] ` : ''}{c.title}
+            </SelectItem>
+          ))}
+          <div
+            className="px-2 py-1.5 border-t border-slate-100 text-[11px] font-extrabold text-indigo-600 hover:bg-indigo-50 cursor-pointer flex items-center gap-1 rounded-sm mt-1"
+            onClick={() => setActiveSubTab('course')}
+          >
+            <BookOpen className="w-3 h-3 shrink-0 text-indigo-600" />
+            <span>{t('teacher_afterschool.course_detail_card', '강좌 상세/수업계획 카드')}</span>
+          </div>
+        </SelectContent>
+      </Select>
+    );
+  };
+
   return (
     <MainLayout
       title={
-        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-nowrap">
+        <div className="hidden sm:flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-nowrap">
           {/* 관리자 대리 출석 모드 표시 및 관리자 홈 버튼 */}
           {isAdmin && (
             <div className="flex items-center gap-1.5 shrink-0 mr-1">
-              <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-2xs">
+              <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-2xs whitespace-nowrap">
                 <UserCheck className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                <span className="hidden sm:inline">{t('teacher_afterschool.admin_proxy_mode', '관리자 대리 출석체크 모드')}</span>
-                <span className="sm:hidden">{t('teacher_afterschool.admin_proxy_mode_short', '대리출석')}</span>
+                <span>{t('teacher_afterschool.admin_proxy_mode', '관리자 대리 출석체크 모드')}</span>
               </span>
               <button
                 type="button"
                 onClick={() => router.push('/admin/afterschool')}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-2 py-1 rounded-lg border border-slate-300 flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-2 py-1 rounded-lg border border-slate-300 flex items-center gap-1 transition cursor-pointer shadow-2xs whitespace-nowrap"
                 title="관리자 페이지로 돌아가기"
               >
                 <ArrowLeft className="w-3 h-3 shrink-0" />
-                <span className="hidden sm:inline">{t('teacher_afterschool.admin_home', '관리자 홈')}</span>
+                <span>{t('teacher_afterschool.admin_home', '관리자 홈')}</span>
               </button>
             </div>
           )}
 
-          {/* 1. 강의 선택 드롭다운 버튼 */}
-          {myCourses.length > 0 && (
-            <Select
-              value={selectedCourseId}
-              onValueChange={(val) => {
-                setSelectedCourseId(val);
-                setActiveSubTab('studentSheet');
-              }}
-            >
-              <SelectTrigger className="h-7 text-xs bg-white border-slate-300 font-bold px-2 min-w-[120px] max-w-[180px] sm:max-w-[240px] shrink-0 rounded-lg shadow-2xs text-slate-800">
-                <SelectValue placeholder={t('teacher_afterschool.select_course', '강좌 선택')} />
-              </SelectTrigger>
-              <SelectContent className="max-h-80">
-                {myCourses.map(c => (
-                  <SelectItem
-                    key={c.id}
-                    value={c.id}
-                    className="text-xs font-semibold cursor-pointer"
-                  >
-                    {isAdmin && c.instructorName ? `[${c.instructorName}] ` : ''}{c.title}
-                  </SelectItem>
-                ))}
-                <div
-                  className="px-2 py-1.5 border-t border-slate-100 text-[11px] font-extrabold text-indigo-600 hover:bg-indigo-50 cursor-pointer flex items-center gap-1 rounded-sm mt-1"
-                  onClick={() => setActiveSubTab('course')}
-                >
-                  <BookOpen className="w-3 h-3 shrink-0 text-indigo-600" />
-                  <span>{t('teacher_afterschool.course_detail_card', '강좌 상세/수업계획 카드')}</span>
-                </div>
-              </SelectContent>
-            </Select>
-          )}
+          {/* 데스크톱 1. 강의 선택 드롭다운 버튼 */}
+          {renderCourseSelect("min-w-[120px] max-w-[240px] shrink-0")}
 
-          {/* 2. 선생님 페이지 타이틀 (모바일에서는 숨겨 가로 공간 확보) */}
-          <span className="text-sm sm:text-base font-bold font-headline text-slate-800 shrink-0 hidden sm:inline">
+          {/* 데스크톱 2. 선생님 페이지 타이틀 */}
+          <span className="text-sm sm:text-base font-bold font-headline text-slate-800 shrink-0 whitespace-nowrap">
             {t('page.title.teacher') || '선생님 페이지'}
           </span>
 
-          {/* 3. 데스크톱 전용 기능 선택 드롭다운 (모바일에서는 아래 4분할 균등 버튼이 담당하므로 숨김) */}
-          <div className="hidden sm:flex shrink-0">
+          {/* 데스크톱 3. 기능 선택 드롭다운 */}
+          <div className="flex shrink-0">
             <Select value={activeSubTab} onValueChange={(val: any) => setActiveSubTab(val)}>
               <SelectTrigger className="h-7 text-xs bg-indigo-50 text-indigo-900 border-indigo-300 font-extrabold px-2.5 min-w-[100px] max-w-[140px] shrink-0 rounded-lg shadow-2xs">
                 <SelectValue />
@@ -352,29 +431,35 @@ function AfterschoolConsole() {
           </div>
         </div>
       }
+      mobileHeaderRow1={
+        /* 모바일 1행: [<-] [Home] [[김경훈] 3D 크리에이터 되기 ▾] | [🇰🇷 ▾] [로그아웃] (언어선택기 옆까지 100% 꽉 참) */
+        <div className="w-full min-w-0 flex-1 flex items-center overflow-hidden">
+          {renderCourseSelectMobile()}
+        </div>
+      }
+      mobileSubHeader={
+        /* 모바일 2행: [대리출석] [<- 관리자] (방과후 관리자에게만 노출, 일반 교사는 노출 안 됨) */
+        isAdmin ? (
+          <div className="flex items-center gap-1.5 w-full min-w-0">
+            <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-2xs whitespace-nowrap shrink-0">
+              <UserCheck className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+              <span>{t('teacher_afterschool.admin_proxy_mode_short', '대리출석')}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => router.push('/admin/afterschool')}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-2 py-1 rounded-lg border border-slate-300 flex items-center gap-1 transition cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+              title="관리자 페이지로 돌아가기"
+            >
+              <ArrowLeft className="w-3 h-3 shrink-0" />
+              <span>{t('teacher_afterschool.admin_home_short', '관리자')}</span>
+            </button>
+          </div>
+        ) : null
+      }
       rightActions={
-        /* 진행 상태 뱃지 */
-        <button
-          type="button"
-          onClick={handleToggleStageStatus}
-          className={cn(
-            "px-2 py-0.5 rounded-full text-[11px] font-bold border flex items-center gap-1 transition-all cursor-pointer shadow-2xs shrink-0",
-            stageStatus === 'OPERATING'
-              ? "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
-              : stageStatus === 'CLOSED'
-              ? "bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100"
-              : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
-          )}
-          title="클릭 시 방과후학교 진행 상태 변경"
-        >
-          <span className={cn(
-            "w-1.5 h-1.5 rounded-full shrink-0",
-            stageStatus === 'OPERATING' ? "bg-emerald-500 animate-pulse" : stageStatus === 'CLOSED' ? "bg-rose-500" : "bg-amber-500"
-          )} />
-          <span>
-            {stageStatus === 'OPERATING' ? t('teacher_afterschool.status_operating', '운영중') : stageStatus === 'CLOSED' ? t('teacher_afterschool.status_closed', '종료') : t('teacher_afterschool.status_waiting', '대기중')}
-          </span>
-        </button>
+        /* 큰 디스플레이(데스크톱)에서만 노출되는 진행 상태 뱃지 */
+        renderStageStatusBadge()
       }
       titleActions={
         <div className="grid sm:hidden grid-cols-4 w-full bg-slate-100/90 p-0.5 rounded-lg border border-slate-200 gap-1 text-[11px] font-bold text-center">

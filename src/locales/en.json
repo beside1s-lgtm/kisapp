@@ -759,6 +759,7 @@
     "teacher_afterschool.admin_proxy_mode": "Admin Proxy Attendance Mode",
     "teacher_afterschool.admin_proxy_mode_short": "Proxy Mode",
     "teacher_afterschool.admin_home": "Admin Home",
+    "teacher_afterschool.admin_home_short": "Admin",
     "teacher_afterschool.select_course": "Select Course",
     "teacher_afterschool.course_detail_card": "Course Details & Syllabus Card",
     "teacher_afterschool.tab_attendance": "Attendance Sheet",

@@ -20,6 +20,7 @@ interface MainLayoutProps {
   rightActions?: ReactNode;
   hideTitle?: boolean;
   mobileHeaderRow1?: ReactNode;
+  mobileSubHeader?: ReactNode;
   title?: ReactNode;
   contentClassName?: string;
   hideMobileBottomNav?: boolean;
@@ -32,6 +33,7 @@ export const MainLayout: FC<MainLayoutProps> = ({
   rightActions,
   hideTitle = false, 
   mobileHeaderRow1,
+  mobileSubHeader,
   title,
   contentClassName,
   hideMobileBottomNav = false,
@@ -163,17 +165,21 @@ export const MainLayout: FC<MainLayoutProps> = ({
                       )}
 
                       {!hideTitle && (
-                        <div className="min-w-0 flex-1 flex items-center">
+                        <div className="min-w-0 flex-1 flex items-center overflow-hidden">
+                          {mobileHeaderRow1 ? (
+                            mobileHeaderRow1
+                          ) : (
                             <div className="text-sm font-bold font-headline text-slate-800 dark:text-slate-100 truncate">
                               {title || getPageTitle()}
                             </div>
+                          )}
                         </div>
                       )}
                   </div>
 
-                  {/* Row 1 우측: rightActions + LanguageSwitcher + 로그아웃 */}
+                  {/* Row 1 우측: rightActions(mobileSubHeader 없을 때만) + LanguageSwitcher + 로그아웃 */}
                   <div className="flex items-center gap-1 shrink-0">
-                      {rightActions}
+                      {!mobileSubHeader && rightActions}
                       <LanguageSwitcher />
                       {user && (
                           <Button variant="outline" size="sm" onClick={handleLogout} className="h-8 px-2 text-xs text-rose-600 border-rose-200 hover:bg-rose-50" title={t('logout.button')}>
@@ -183,7 +189,14 @@ export const MainLayout: FC<MainLayoutProps> = ({
                   </div>
               </div>
 
-              {/* Row 2: titleActions 전체 폭 균등/나란히 배치 */}
+              {/* Row 2 (신설): mobileSubHeader (모바일 전용 추가 행: 강좌선택 + 선생님 페이지 + 운영상태 등) */}
+              {mobileSubHeader && (
+                  <div className="flex items-center justify-between gap-1.5 w-full min-w-0 pt-1 border-t border-slate-100/80 dark:border-slate-800/80">
+                      {mobileSubHeader}
+                  </div>
+              )}
+
+              {/* Row 3: titleActions 전체 폭 균등/나란히 배치 */}
               {titleActions && (
                   <div className="flex items-center justify-between gap-1 w-full min-w-0 pt-1 border-t border-slate-100/80 dark:border-slate-800/80">
                       {titleActions}

@@ -923,27 +923,27 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
               <div className="flex items-center gap-1 shrink-0">
                 <button
                   onClick={() => handleBulkAttendDay(activeSessionNo)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2 py-1 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
-                  title="현재 선택한 날짜의 모든 수강 확정생을 출석(○) 처리합니다"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white p-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center justify-center cursor-pointer active:scale-95"
+                  title={t('teacher_afterschool.bulk_attend', '전원출석')}
+                  aria-label={t('teacher_afterschool.bulk_attend', '전원출석')}
                 >
-                  <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                  <span>{t('teacher_afterschool.bulk_attend_short', '전원O')}</span>
+                  <UserCheck className="w-4 h-4 shrink-0" />
                 </button>
                 <button
                   onClick={handleCopyShareLink}
-                  className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs px-2 py-1 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
-                  title="외부 강사가 로그인 없이 접속하여 출석 체크만 할 수 있는 전용 링크를 클립보드에 복사합니다"
+                  className="bg-sky-600 hover:bg-sky-700 text-white p-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center justify-center cursor-pointer active:scale-95"
+                  title={t('teacher_afterschool.share_sheet', '출석부 공유')}
+                  aria-label={t('teacher_afterschool.share_sheet', '출석부 공유')}
                 >
-                  <Share2 className="w-3.5 h-3.5 shrink-0" />
-                  <span>{t('teacher_afterschool.share_sheet_short', '공유')}</span>
+                  <Share2 className="w-4 h-4 shrink-0" />
                 </button>
                 <button
                   onClick={() => setIsPrintModalOpen(true)}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-2 py-1 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
-                  title="A4 세로 공식 출석부 인쇄"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white p-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center justify-center cursor-pointer active:scale-95"
+                  title={t('teacher_afterschool.print_sheet', '출석부 인쇄')}
+                  aria-label={t('teacher_afterschool.print_sheet', '출석부 인쇄')}
                 >
-                  <Printer className="w-3.5 h-3.5 shrink-0" />
-                  <span>{t('teacher_afterschool.print_sheet_short', '인쇄')}</span>
+                  <Printer className="w-4 h-4 shrink-0" />
                 </button>
               </div>
             </div>
