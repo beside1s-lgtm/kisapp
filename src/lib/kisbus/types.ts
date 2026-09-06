@@ -37,6 +37,7 @@ export type Student = {
   afterSchoolCourseTitle?: string | null;
   afterSchoolCourseTitles?: string[];
   enrolledCourseTitles?: string[];
+  afterSchoolCoursesByDay?: Partial<Record<DayOfWeek, { title: string; instructorName?: string; teachersText?: string }>>;
 };
 export type NewStudent = Omit<Student, 'id'>;
 

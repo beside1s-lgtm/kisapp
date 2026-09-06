@@ -52,7 +52,27 @@ export const StudentCard: React.FC<StudentCardProps> = ({
     const grade = student.grade.toUpperCase();
     const studentClass = student.class;
     return `${grade}${studentClass} ${getStudentName(student, i18n.language)}`;
-  }
+  };
+
+  // 해당 요일에 방과후 수업 또는 방과후 목적지가 등록되어 있는지 엄격 판별
+  const dayCourseInfo = student.afterSchoolCoursesByDay?.[dayOfWeek];
+  const hasValidDest = (dest: string | null | undefined) => !!dest && dest !== '-' && dest !== '미신청';
+  
+  const hasAfterSchoolOnDay = Boolean(
+    dayCourseInfo ||
+    student.afterSchoolClassIds?.[dayOfWeek] ||
+    student.vacationAfterSchoolClassIds?.[dayOfWeek] ||
+    hasValidDest(student.afterSchoolDestinations?.[dayOfWeek]) ||
+    hasValidDest(student.vacationAfterSchoolDestinations?.[dayOfWeek])
+  );
+
+  // 규칙 11 준수: 해당 요일에 실제로 방과후 수업/목적지가 있는 경우에만 강좌 배지 표시
+  const displayCourseTitle = dayCourseInfo?.title || (
+    hasAfterSchoolOnDay ? (student.afterSchoolCourseTitle || student.enrolledCourseTitles?.[0]) : null
+  );
+
+  // 하교 미배정 명단에서 방과후로 빠진 학생에게 '종료후복귀' 배지 표시
+  const showReturnAfterSchoolBadge = routeType === 'Afternoon' && hasAfterSchoolOnDay;
 
   return (
     <div
@@ -76,9 +96,14 @@ export const StudentCard: React.FC<StudentCardProps> = ({
                     <Users className="w-2.5 h-2.5" /> O
                 </span>
             )}
-            {(student as any).afterSchoolCourseTitle && (
-                <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 px-1.5 py-0 rounded border border-purple-200 truncate max-w-[130px]" title={(student as any).afterSchoolCourseTitle}>
-                    {(student as any).afterSchoolCourseTitle}
+            {displayCourseTitle && (
+                <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 px-1.5 py-0 rounded border border-purple-200 truncate max-w-[130px]" title={displayCourseTitle}>
+                    {displayCourseTitle}
+                </span>
+            )}
+            {showReturnAfterSchoolBadge && (
+                <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0 rounded border border-amber-300 whitespace-nowrap" title="방과후 종료 후 하교 버스로 원상 복귀 예정">
+                    종료후복귀
                 </span>
             )}
         </div>

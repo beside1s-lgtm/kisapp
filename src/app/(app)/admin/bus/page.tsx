@@ -1192,6 +1192,7 @@ export default function AdminPage() {
                     afterSchoolCourseTitle: '',
                     afterSchoolCourseTitles: [],
                     enrolledCourseTitles: [],
+                    afterSchoolCoursesByDay: {},
                     afterSchoolClassIds: student.afterSchoolClassIds || {},
                     afterSchoolDestinations: student.afterSchoolDestinations || {},
                     vacationAfterSchoolClassIds: student.vacationAfterSchoolClassIds || {},
@@ -1203,6 +1204,7 @@ export default function AdminPage() {
             const afterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = { ...(student.afterSchoolDestinations || {}) };
             const vacationAfterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = { ...(student.vacationAfterSchoolClassIds || {}) };
             const vacationAfterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = { ...(student.vacationAfterSchoolDestinations || {}) };
+            const afterSchoolCoursesByDay: Partial<Record<DayOfWeek, { title: string; instructorName?: string; teachersText?: string }>> = { ...(student.afterSchoolCoursesByDay || {}) };
             const enrolledCourseTitles: string[] = [];
 
             studentEnrollments.forEach(enrollment => {
@@ -1210,9 +1212,10 @@ export default function AdminPage() {
                 if (!course) return;
 
                 const isVac = isVacationCourse(course);
+                const cTitle = course?.title || enrollment.courseTitle || '';
+
                 // 현재 화면의 semesterMode와 일치하는 학기의 강좌만 수강 목록에 포함
                 if (isCurrentVacation === isVac) {
-                    const cTitle = course?.title || enrollment.courseTitle || '';
                     if (cTitle && !enrolledCourseTitles.includes(cTitle)) {
                         enrolledCourseTitles.push(cTitle);
                     }
@@ -1227,6 +1230,27 @@ export default function AdminPage() {
                     course.title?.includes('토요일')
                 );
 
+                const targetDays = classDays.map((d: string) => dayMap[d]).filter(Boolean) as DayOfWeek[];
+
+                if (isCurrentVacation === isVac) {
+                    const teachers: string[] = [];
+                    if (course.instructorName) teachers.push(course.instructorName.slice(0, 3));
+                    if (course.assistantTeachers && course.assistantTeachers.length > 0) {
+                        course.assistantTeachers.forEach((t: string) => teachers.push(t.slice(0, 3)));
+                    }
+                    const teachersText = teachers.length > 0 ? `(${teachers.join(',')})` : '';
+
+                    targetDays.forEach(day => {
+                        if (!afterSchoolCoursesByDay[day] && cTitle) {
+                            afterSchoolCoursesByDay[day] = {
+                                title: cTitle,
+                                instructorName: course.instructorName,
+                                teachersText
+                            };
+                        }
+                    });
+                }
+
                 // 신청 여부 판별: 명시적 미신청('-' 또는 '미신청' 또는 needsBus === false)이면 제외
                 if (enrollment.kisbusNo === '-' || enrollment.kisbusNo === '미신청' || enrollment.needsBus === false) {
                     return;
@@ -1234,8 +1258,6 @@ export default function AdminPage() {
                 if (isSat && (!enrollment.kisbusNo || enrollment.kisbusNo === '-' || enrollment.kisbusNo === '미신청')) {
                     return;
                 }
-
-                const targetDays = classDays.map((d: string) => dayMap[d]).filter(Boolean) as DayOfWeek[];
 
                 // 학생의 실제 정규 목적지 ID
                 let realDestId = (
@@ -1266,6 +1288,7 @@ export default function AdminPage() {
                 afterSchoolCourseTitle: enrolledCourseTitles.join(', '),
                 afterSchoolCourseTitles: enrolledCourseTitles,
                 enrolledCourseTitles,
+                afterSchoolCoursesByDay,
                 afterSchoolClassIds,
                 afterSchoolDestinations,
                 vacationAfterSchoolClassIds,
