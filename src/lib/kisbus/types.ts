@@ -64,6 +64,11 @@ export type Bus = {
   departureTime?: string | null;
   isActive?: boolean;
   excludeFromAssignment?: boolean;
+  excludeFromAssignmentByType?: {
+    commute?: boolean;
+    afterSchool?: boolean;
+    saturday?: boolean;
+  };
   zaloLink?: string;
   semesterMode?: 'regular' | 'vacation';
 };

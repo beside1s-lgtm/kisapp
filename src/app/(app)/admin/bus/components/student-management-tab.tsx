@@ -10,7 +10,7 @@ import type { Bus, Student, Route, Destination, DayOfWeek, RouteType, SeatingAss
 import { BusSeatMap, getLayoutInfo } from '@/components/bus/bus-seat-map';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
-import { Shuffle, RotateCcw, Copy, AlertCircle, UserPlus, PlusCircle, Download, Upload, Search, Trash2, Clock, Sparkles, Trash } from 'lucide-react';
+import { Shuffle, RotateCcw, Copy, AlertCircle, UserPlus, PlusCircle, Download, Upload, Search, Trash2, Clock, Sparkles, Trash, ChevronDown, ChevronUp } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
@@ -136,6 +136,7 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
     const [selectedSeat, setSelectedSeat] = useState<{ seatNumber: number; studentId: string | null } | null>(null);
     const [swapSourceSeat, setSwapSourceSeat] = useState<number | null>(null);
     const [unassignableStudents, setUnassignableStudents] = useState<(Student & { errorReason: string })[]>([]);
+    const [isUnassignableFolded, setIsUnassignableFolded] = useState<boolean>(false);
     const [globalSearchQuery, setGlobalSearchQuery] = useState('');
     const dayOrder: DayOfWeek[] = useMemo(() => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], []);
     
@@ -176,17 +177,16 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
             ? (s.vacationAfterSchoolClassIds || {})
             : (s.afterSchoolClassIds || {});
 
-        // [요청 2] 해당 day에 수업(classId)이나 목적지(dest)가 실제로 등록되어 있지 않다면 null 반환!
-        const hasClassOnDay = Boolean(classMap[day]);
-        const hasDestOnDay = Boolean(destMap[day]);
-        if (!hasClassOnDay && !hasDestOnDay) {
+        // 해당 day에 방과후 목적지(dest)가 명시적으로 등록되어 있지 않다면 방과후 버스 탑승 대상자가 아님!
+        const rawDest = destMap[day];
+        if (!rawDest || rawDest === '-' || rawDest === '미신청') {
             return null;
         }
 
-        let dest = destMap[day] || null;
+        let dest: string | null = rawDest;
 
-        // 호차 번호('1호차' 등)나 임시 텍스트가 들어있거나 없을 때만 학생의 실제 하교 목적지로 매칭
-        if (!dest || dest.includes('호차') || dest === '미배정' || dest === '방과후 미배정' || dest === 'UNSPECIFIED') {
+        // 호차 번호('1호차' 등)나 임시 텍스트가 들어있을 때만 학생의 실제 하교 목적지로 매칭
+        if (dest.includes('호차') || dest === '미배정' || dest === '방과후 미배정' || dest === 'UNSPECIFIED') {
             dest = day === 'Saturday'
                 ? (s.satAfternoonDestinationId || s.satMorningDestinationId || s.afternoonDestinationId || s.morningDestinationId || null)
                 : (s.afternoonDestinationId || s.morningDestinationId || null);
@@ -1287,9 +1287,45 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
                     {unassignableStudents.length > 0 && (
-                        <Alert variant="destructive">
-                            <AlertCircle className="h-4 w-4"/><AlertTitle>{t('admin.student_management.unassignable.title')}</AlertTitle>
-                            <AlertDescription><div className="mt-2 space-y-1 max-h-[300px] overflow-y-auto pr-2">{unassignableStudents.map(s => <div key={s.id} className="text-xs flex justify-between items-center border-b border-destructive/20 py-1.5 cursor-pointer hover:bg-destructive/10" onClick={() => setSelectedGlobalStudent(s)}><span className="font-medium">{s.name} ({s.grade} {s.class})</span><span className="text-[10px]">{s.errorReason}</span></div>)}</div></AlertDescription>
+                        <Alert variant="destructive" className="transition-all duration-200">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <AlertCircle className="h-4 w-4 shrink-0" />
+                                    <AlertTitle className="mb-0 text-sm font-bold">
+                                        {t('admin.student_management.unassignable.title')} ({unassignableStudents.length}명)
+                                    </AlertTitle>
+                                </div>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setIsUnassignableFolded(prev => !prev)}
+                                    className="h-7 px-2 text-xs font-semibold text-destructive hover:bg-destructive/15 transition flex items-center gap-1 cursor-pointer"
+                                >
+                                    <span>{isUnassignableFolded ? '목록 펼치기' : '접기'}</span>
+                                    {isUnassignableFolded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                                </Button>
+                            </div>
+                            {!isUnassignableFolded && (
+                                <AlertDescription>
+                                    <p className="text-[11px] text-destructive/80 mt-1 mb-2">
+                                        {t('admin.student_management.unassignable.description', '설정한 목적지가 현재 어떤 버스 노선에도 포함되어 있지 않아 배정할 수 없습니다.')}
+                                    </p>
+                                    <div className="space-y-1 max-h-[220px] overflow-y-auto pr-2">
+                                        {unassignableStudents.map(s => (
+                                            <div 
+                                                key={s.id} 
+                                                className="text-xs flex justify-between items-center border-b border-destructive/20 py-1.5 px-2 rounded cursor-pointer hover:bg-destructive/15 transition" 
+                                                onClick={() => setSelectedGlobalStudent(s)}
+                                                title="클릭하여 학생 정보 수정"
+                                            >
+                                                <span className="font-medium">{s.name} ({s.grade} {s.class})</span>
+                                                <span className="text-[10px] bg-destructive/10 px-1.5 py-0.5 rounded font-mono">{s.errorReason}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </AlertDescription>
+                            )}
                         </Alert>
                     )}
                     <Card>

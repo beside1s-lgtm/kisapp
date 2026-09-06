@@ -42,23 +42,45 @@ export const StudentUnassignedPanel = ({
 
     const siblingCount = filteredUnassignedStudents.filter(s => !!s.siblingGroupId).length;
 
-    // 검색어 입력 또는 엔터 시 첫 번째 카드로 스크롤
+    // 검색어 입력 또는 엔터 시 해당 학생 카드로 컨테이너 내부 정밀 스크롤 및 하이라이트
     const scrollToFirstMatch = useCallback(() => {
         if (!listRef.current || filteredUnassignedStudents.length === 0) return;
         const firstCard = listRef.current.querySelector('[data-student-card]') as HTMLElement | null;
-        if (firstCard) {
-            firstCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            // 시각적 하이라이트 효과
+        if (firstCard && listRef.current) {
+            const container = listRef.current;
+            const containerRect = container.getBoundingClientRect();
+            const cardRect = firstCard.getBoundingClientRect();
+            const targetScrollTop = container.scrollTop + (cardRect.top - containerRect.top) - (container.clientHeight / 2) + (cardRect.height / 2);
+
+            container.scrollTo({
+                top: Math.max(0, targetScrollTop),
+                behavior: 'smooth'
+            });
+
+            // 시각적 하이라이트 효과 (강조 링 및 배경 펄스)
             firstCard.style.outline = '2px solid #6366f1';
             firstCard.style.borderRadius = '8px';
+            firstCard.style.backgroundColor = '#eef2ff';
+            firstCard.style.transition = 'all 0.3s ease';
             setTimeout(() => {
                 if (firstCard) {
                     firstCard.style.outline = '';
                     firstCard.style.borderRadius = '';
+                    firstCard.style.backgroundColor = '';
                 }
-            }, 1500);
+            }, 1800);
         }
     }, [filteredUnassignedStudents]);
+
+    // 검색어 입력 시 첫 번째 일치 카드로 자동 부드러운 스크롤 이동
+    React.useEffect(() => {
+        if (unassignedSearchQuery && unassignedSearchQuery.trim().length > 0) {
+            const timer = setTimeout(() => {
+                scrollToFirstMatch();
+            }, 80);
+            return () => clearTimeout(timer);
+        }
+    }, [unassignedSearchQuery, scrollToFirstMatch]);
 
     const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {

@@ -3,8 +3,9 @@ import { useRouter } from 'next/navigation';
 import type { Course, Classroom, SubmittedApprovalDoc, SessionPeriod, Enrollment, Student, MaterialRequest, ExpenseProof, SubmissionReminder, AttendanceRecord, SubstituteRecord } from '@/lib/afterschool/types';
 import {
   X, Plus, Trash2, CheckCircle2, XCircle, Building2,
-  ClipboardList, BookOpen, Send, Shield, FileText, Download, Upload, Clock, Edit3, Calendar, Settings, Save, Lock, Unlock, Pause, UserPlus, UserCheck, Filter, Activity, Play, ChevronUp, ChevronDown, DollarSign, Bell, Square, AlertCircle, Loader2, Printer, Eye, ExternalLink, Image as ImageIcon
+  ClipboardList, BookOpen, Send, Shield, FileText, Download, Upload, Clock, Edit3, Calendar, Settings, Save, Lock, Unlock, Pause, UserPlus, UserCheck, Filter, Activity, Play, ChevronUp, ChevronDown, DollarSign, Bell, Square, AlertCircle, Loader2, Printer, Eye, ExternalLink, Image as ImageIcon, Search
 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { downloadClassroomTemplateExcel, parseClassroomExcel, downloadCourseTemplateExcel, parseCourseExcel } from '@/lib/afterschool/excel';
 import { defaultTeacherApplySettings, getTeacherApplySettings, onTeacherApplySettingsUpdate, saveTeacherApplySettings, updateAfterschoolCourse, deleteAfterschoolCourse, saveAfterschoolCoursesBatch, addAfterschoolClassroom, deleteAfterschoolClassroom, saveAfterschoolClassroomsBatch, onMaterialRequestsUpdate, onExpenseProofsUpdate, sendSubmissionReminder, purgeAfterschoolOperationalData, onAttendanceRecordsUpdate, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord, onDocConfigUpdate, deleteAfterschoolApprovalDoc } from '@/lib/services/settingsService';
@@ -66,7 +67,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const { profile, user } = useAuth();
   const { t, i18n } = useTranslation();
   const [tab, setTab] = useState<AdminTab>('courses');
-  const [selectedCourseId, setSelectedCourseId] = useState<string>(courses[0]?.id || '');
+  const [selectedCourseId, setSelectedCourseId] = useState<string>('');
 
   const [teacherApplySettings, setTeacherApplySettings] = useState<typeof defaultTeacherApplySettings>(defaultTeacherApplySettings);
   const [docConfig, setDocConfig] = useState<Partial<DocConfig>>({});
@@ -653,6 +654,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // 강좌 일괄 선택 및 필터 상태
   const [selectedCourseIds, setSelectedCourseIds] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'OPEN' | 'CANCELLED'>('ALL');
+  const [dayFilter, setDayFilter] = useState<string>('ALL');
+  const [searchInput, setSearchInput] = useState<string>('');
+  const [appliedSearch, setAppliedSearch] = useState<string>('');
 
   // 일괄 독촉 메세지 전송 상태
   const [isBatchReminderOpen, setIsBatchReminderOpen] = useState<boolean>(false);
@@ -664,8 +668,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const uniqueCourses = Array.from(new Map(courses.map(c => [c.id, c])).values());
 
   const filteredCourses = uniqueCourses.filter((c) => {
-    if (statusFilter === 'ALL') return true;
-    return c.status === statusFilter;
+    // 1. 상태 필터 (전체 / 대기 / 승인운영 / 폐강)
+    if (statusFilter !== 'ALL' && c.status !== statusFilter) return false;
+
+    // 2. 요일 필터 (월, 화, 수, 목, 금, 토)
+    if (dayFilter !== 'ALL') {
+      const inDaysArray = (Array.isArray(c.classDays) && c.classDays.includes(dayFilter)) || (Array.isArray(c.days) && c.days.includes(dayFilter));
+      const inTitle = typeof c.title === 'string' && (c.title.includes(`(${dayFilter})`) || c.title.includes(dayFilter));
+      const inSchedule = typeof c.schedule === 'string' && c.schedule.includes(dayFilter);
+      if (!inDaysArray && !inTitle && !inSchedule) return false;
+    }
+
+    // 3. 강좌 검색 필터 (엔터 입력 후 적용된 검색어)
+    if (appliedSearch) {
+      const q = appliedSearch.toLowerCase();
+      const titleMatch = c.title?.toLowerCase().includes(q);
+      const instructors = [c.instructorName, c.instructor2, c.instructor3, c.instructor4]
+        .filter(Boolean)
+        .map(n => String(n).toLowerCase());
+      const teacherMatch = instructors.some(name => name.includes(q));
+      const roomMatch = c.classroom?.toLowerCase().includes(q);
+      if (!titleMatch && !teacherMatch && !roomMatch) return false;
+    }
+
+    return true;
   });
 
   const handleToggleSelectAllCourses = () => {
@@ -1155,49 +1181,102 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               {/* 필터 및 일괄 선택 툴바 */}
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-slate-100/90 p-2 sm:p-3 rounded-xl border border-slate-200/80 min-w-0">
-                {/* 상태 필터 버튼 그룹 */}
-                <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 sm:gap-1.5 w-full sm:w-auto text-xs font-semibold">
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter('ALL')}
-                    className={`px-2 py-1 rounded-lg text-xs transition-colors truncate text-center ${
-                      statusFilter === 'ALL' ? 'bg-slate-800 text-white font-bold shadow-xs' : 'bg-white text-slate-600 border hover:bg-slate-50'
-                    }`}
-                  >
-                    {t('afterschool.admin.filter_all') || '전체'} ({courses.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter('PENDING')}
-                    className={`px-2 py-1 rounded-lg text-xs transition-colors truncate text-center ${
-                      statusFilter === 'PENDING' ? 'bg-amber-600 text-white font-bold shadow-xs' : 'bg-white text-amber-800 border border-amber-200 hover:bg-amber-50'
-                    }`}
-                  >
-                    {t('afterschool.admin.filter_pending') || '대기'} ({courses.filter(c => c.status === 'PENDING').length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter('OPEN')}
-                    className={`px-2 py-1 rounded-lg text-xs transition-colors truncate text-center ${
-                      statusFilter === 'OPEN' ? 'bg-emerald-600 text-white font-bold shadow-xs' : 'bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-50'
-                    }`}
-                  >
-                    {t('afterschool.admin.filter_open') || '승인/운영'} ({courses.filter(c => c.status === 'OPEN').length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter('CANCELLED')}
-                    className={`px-2 py-1 rounded-lg text-xs transition-colors truncate text-center ${
-                      statusFilter === 'CANCELLED' ? 'bg-slate-600 text-white font-bold shadow-xs' : 'bg-white text-slate-600 border hover:bg-slate-50'
-                    }`}
-                  >
-                    {t('afterschool.admin.filter_cancelled') || '폐강'} ({courses.filter(c => c.status === 'CANCELLED').length})
-                  </button>
+              <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-2 bg-slate-100/90 p-2 sm:p-3 rounded-xl border border-slate-200/80 min-w-0">
+                {/* 좌측: 상태 필터 버튼 그룹 + 요일 필터 드롭다운 + 검색창 */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
+                  {/* 상태 필터 버튼 그룹 */}
+                  <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 sm:gap-1.5 text-xs font-semibold shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter('ALL')}
+                      className={`px-2 py-1 rounded-lg text-xs transition-colors truncate text-center ${
+                        statusFilter === 'ALL' ? 'bg-slate-800 text-white font-bold shadow-xs' : 'bg-white text-slate-600 border hover:bg-slate-50'
+                      }`}
+                    >
+                      {t('afterschool.admin.filter_all') || '전체'} ({courses.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter('PENDING')}
+                      className={`px-2 py-1 rounded-lg text-xs transition-colors truncate text-center ${
+                        statusFilter === 'PENDING' ? 'bg-amber-600 text-white font-bold shadow-xs' : 'bg-white text-amber-800 border border-amber-200 hover:bg-amber-50'
+                      }`}
+                    >
+                      {t('afterschool.admin.filter_pending') || '대기'} ({courses.filter(c => c.status === 'PENDING').length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter('OPEN')}
+                      className={`px-2 py-1 rounded-lg text-xs transition-colors truncate text-center ${
+                        statusFilter === 'OPEN' ? 'bg-emerald-600 text-white font-bold shadow-xs' : 'bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-50'
+                      }`}
+                    >
+                      {t('afterschool.admin.filter_open') || '승인/운영'} ({courses.filter(c => c.status === 'OPEN').length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter('CANCELLED')}
+                      className={`px-2 py-1 rounded-lg text-xs transition-colors truncate text-center ${
+                        statusFilter === 'CANCELLED' ? 'bg-slate-600 text-white font-bold shadow-xs' : 'bg-white text-slate-600 border hover:bg-slate-50'
+                      }`}
+                    >
+                      {t('afterschool.admin.filter_cancelled') || '폐강'} ({courses.filter(c => c.status === 'CANCELLED').length})
+                    </button>
+                  </div>
+
+                  {/* 요일 필터 드롭다운 + 검색창 */}
+                  <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                    {/* 요일 필터 드롭다운 */}
+                    <Select value={dayFilter} onValueChange={setDayFilter}>
+                      <SelectTrigger className="h-8 text-xs bg-white border-slate-200 font-bold px-2 rounded-lg shadow-2xs text-slate-700 min-w-[88px] max-w-[110px] shrink-0">
+                        <SelectValue placeholder="요일 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL" className="text-xs font-bold">전체 요일</SelectItem>
+                        <SelectItem value="월" className="text-xs font-semibold">월요일</SelectItem>
+                        <SelectItem value="화" className="text-xs font-semibold">화요일</SelectItem>
+                        <SelectItem value="수" className="text-xs font-semibold">수요일</SelectItem>
+                        <SelectItem value="목" className="text-xs font-semibold">목요일</SelectItem>
+                        <SelectItem value="금" className="text-xs font-semibold">금요일</SelectItem>
+                        <SelectItem value="토" className="text-xs font-semibold">토요일</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    {/* 강좌 검색창 (Enter를 누른 후 검색 시작) */}
+                    <div className="relative flex items-center flex-1 min-w-[140px] max-w-[260px]">
+                      <Search className="w-3.5 h-3.5 absolute left-2.5 text-slate-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            setAppliedSearch(searchInput.trim());
+                          }
+                        }}
+                        placeholder="강좌명/강사명 (Enter)"
+                        className="h-8 pl-8 pr-7 text-xs bg-white border border-slate-200 rounded-lg shadow-2xs focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full text-slate-800 placeholder:text-slate-400 font-medium"
+                      />
+                      {searchInput && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearchInput('');
+                            setAppliedSearch('');
+                          }}
+                          className="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                          title="검색어 지우기"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* 전체 선택 체크박스 + 강좌 목록 다운로드 */}
-                <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end shrink-0">
+                <div className="flex items-center gap-2 w-full lg:w-auto justify-between lg:justify-end shrink-0 pt-1 lg:pt-0 border-t lg:border-t-0 border-slate-200/60">
                   <label htmlFor="select-all-courses-cb" className="flex items-center gap-1.5 sm:gap-2 text-xs font-bold text-slate-700 cursor-pointer bg-white px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition shadow-2xs select-none w-full sm:w-auto justify-center sm:justify-start">
                     <Checkbox
                       id="select-all-courses-cb"
@@ -1251,6 +1330,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* 필터 활성화 안내 배지 */}
+              {(dayFilter !== 'ALL' || appliedSearch) && (
+                <div className="flex items-center gap-2 text-xs bg-indigo-50/90 border border-indigo-200/80 text-indigo-900 px-3 py-1.5 rounded-xl shadow-2xs">
+                  <Filter className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                  <div className="flex items-center gap-1.5 flex-wrap min-w-0 flex-1">
+                    <span className="font-semibold text-indigo-700">적용된 필터:</span>
+                    {dayFilter !== 'ALL' && (
+                      <span className="bg-white px-2 py-0.5 rounded-md border border-indigo-200 text-indigo-800 font-bold shadow-2xs">
+                        {dayFilter}요일
+                      </span>
+                    )}
+                    {appliedSearch && (
+                      <span className="bg-white px-2 py-0.5 rounded-md border border-indigo-200 text-indigo-800 font-bold shadow-2xs">
+                        검색: "{appliedSearch}"
+                      </span>
+                    )}
+                    <span className="text-slate-500 font-normal">
+                      (검색 결과: <b className="text-indigo-700 font-extrabold">{filteredCourses.length}</b>개 강좌)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDayFilter('ALL');
+                      setSearchInput('');
+                      setAppliedSearch('');
+                    }}
+                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline shrink-0 cursor-pointer"
+                  >
+                    필터 해제
+                  </button>
+                </div>
+              )}
 
               {/* ─── 미제출 서류 일괄 독촉 배너 + 패널 ─── */}
               {(() => {

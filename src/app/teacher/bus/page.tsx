@@ -1390,6 +1390,7 @@ export default function TeacherPage() {
       const studentClass = Number(student.class || student.classNum);
 
       const studentEnrollments = afterschoolEnrollments.filter(e => {
+        if (e.studentId && e.studentId === student.id) return true;
         const eName = clean(e.name || e.studentName);
         const matchName = eName === studentName;
         const matchGrade = !e.grade || Number(e.grade) === studentGrade;

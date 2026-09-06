@@ -460,7 +460,7 @@ const TeacherAssignmentDialog = ({ targetBus, allRoutes, teachers, assignmentTyp
             </DialogHeader>
 
             {assignmentType === 'afterSchool' && semesterMode !== 'vacation' ? (
-                <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto font-sans pr-1">
+                <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto overscroll-contain font-sans pr-1">
                     <Label className="text-sm font-bold text-slate-700">요일별 방과후 교사 배정</Label>
                     {afterSchoolDays.map(day => (
                         <div key={day} className="space-y-3 pt-3 border-t first:border-t-0">
@@ -518,7 +518,7 @@ const TeacherAssignmentDialog = ({ targetBus, allRoutes, teachers, assignmentTyp
                     ))}
                 </div>
             ) : (
-                <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+                <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto overscroll-contain">
                     {sortedTeachers.map(teacher => (
                         <div key={teacher.id} className="flex items-center space-x-2">
                             <Checkbox
@@ -1187,7 +1187,15 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
         setPreviousRouteAssignments(backup);
 
         if (teacherAssignmentType === 'commute' || teacherAssignmentType === 'saturday' || isVac) {
-            const targetBuses = sortBuses(buses.filter(bus => !bus.excludeFromAssignment && (bus.isActive ?? true) && isBusOperational(bus.id)));
+            const targetBuses = sortBuses(buses.filter(bus => {
+                const byType = bus.excludeFromAssignmentByType;
+                const isExcluded = teacherAssignmentType === 'commute'
+                    ? (byType?.commute ?? bus.excludeFromAssignment ?? false)
+                    : teacherAssignmentType === 'saturday'
+                    ? (byType?.saturday ?? false)
+                    : false;
+                return !isExcluded && (bus.isActive ?? true) && isBusOperational(bus.id);
+            }));
             if (targetBuses.length === 0) {
                 toast({ title: t('notice'), description: t('admin.teacher_assignment.assign.no_operational_buses') });
                 return;
@@ -1258,7 +1266,7 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
         } else {
             for (const day of daysToAssign) {
                 const dayRoutes = routes.filter(r => r.dayOfWeek === day && r.type === afterSchoolRouteType && (r.stops?.length ?? 0) > 0);
-                const dayBuses = sortBuses(buses.filter(b => !b.excludeFromAssignment && (b.isActive ?? true) && dayRoutes.some(r => r.busId === b.id)));
+                const dayBuses = sortBuses(buses.filter(b => !(b.excludeFromAssignmentByType?.afterSchool ?? false) && (b.isActive ?? true) && dayRoutes.some(r => r.busId === b.id)));
                 
                 const dayPool = filteredAfterSchoolTeachers.filter(t => !excludedFromAssignmentIds.has(t.id) && (!t.afterSchoolDays || t.afterSchoolDays.includes(day)));
                 const shuffledTeachers = [...dayPool].sort(() => Math.random() - 0.5);
@@ -1354,11 +1362,26 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
         setIsTeacherDialogOpen(true);
     };
 
+    const getBusExcludeForCurrentType = (bus: Bus): boolean => {
+        const byType = bus.excludeFromAssignmentByType;
+        if (teacherAssignmentType === 'commute') return byType?.commute ?? bus.excludeFromAssignment ?? false;
+        if (teacherAssignmentType === 'afterSchool') return byType?.afterSchool ?? false;
+        if (teacherAssignmentType === 'saturday') return byType?.saturday ?? false;
+        return false;
+    };
+
     const handleToggleBusExcludeAssignment = async (bus: Bus) => {
         try {
-            const newExclude = !(bus.excludeFromAssignment ?? false);
-            await updateBus(bus.id, { excludeFromAssignment: newExclude });
-            toast({ title: t('success'), description: `"${bus.name}" 버스 배정 제외 상태가 ${newExclude ? '설정' : '해제'}되었습니다.` });
+            const currentVal = getBusExcludeForCurrentType(bus);
+            const newExclude = !currentVal;
+            const typeKey = teacherAssignmentType === 'commute' ? 'commute'
+                : teacherAssignmentType === 'afterSchool' ? 'afterSchool'
+                : 'saturday';
+            const existingByType = bus.excludeFromAssignmentByType || {};
+            await updateBus(bus.id, {
+                excludeFromAssignmentByType: { ...existingByType, [typeKey]: newExclude }
+            });
+            toast({ title: t('success'), description: `"${bus.name}" 버스의 ${teacherAssignmentType === 'commute' ? '등하교' : teacherAssignmentType === 'afterSchool' ? '방과후' : '토요일'} 배정 제외 상태가 ${newExclude ? '설정' : '해제'}되었습니다.` });
         } catch (error) {
             toast({ title: t('error'), description: "상태 변경 중 오류가 발생했습니다.", variant: 'destructive' });
         }
@@ -1380,7 +1403,7 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
                     .filter(Boolean)
                     .join(' -> ');
 
-                const statusStr = !(bus.isActive ?? true) ? "비활성" : (bus.excludeFromAssignment ? "배정제외" : (isOperational ? "운행중" : "운행없음"));
+                const statusStr = !(bus.isActive ?? true) ? "비활성" : (getBusExcludeForCurrentType(bus) ? "배정제외" : (isOperational ? "운행중" : "운행없음"));
                 
                 return [
                     bus.name,
@@ -1684,7 +1707,7 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {sortBuses(buses, isBusOperational).map(bus => {
+                                {sortBuses(buses.filter(bus => (bus.isActive ?? true) && isBusOperational(bus.id)), isBusOperational).map(bus => {
                                     const isOperational = isBusOperational(bus.id);
                                     const isUnassigned = isBusUnassigned(bus.id, isOperational);
                                     const isActive = bus.isActive ?? true;
@@ -1697,7 +1720,7 @@ export const TeacherManagementTab = ({ teachers, afterSchoolTeachers, saturdayTe
                                         )}>
                                             <TableCell>
                                                 <Switch
-                                                    checked={bus.excludeFromAssignment ?? false}
+                                                    checked={getBusExcludeForCurrentType(bus)}
                                                     onCheckedChange={() => handleToggleBusExcludeAssignment(bus)}
                                                     aria-label="Toggle bus assignment exclude state"
                                                 />

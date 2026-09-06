@@ -112,9 +112,13 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     return [...(courses || [])].sort((a, b) => (a.title || '').localeCompare(b.title || '', 'ko'));
   }, [courses]);
 
+  const isCourseSelected = Boolean(selectedCourseId && selectedCourseId !== 'none');
+
   const currentCourse = selectedCourseId === 'all'
     ? { id: 'all', title: '전체 강좌 수강생', tuition: 0, textbookFee: 0, materialFee: 0, period: '전체 학기' } as any
-    : (sortedCourses.find((c) => c.id === selectedCourseId) || sortedCourses[0]);
+    : isCourseSelected
+    ? (sortedCourses.find((c) => c.id === selectedCourseId) || null)
+    : null;
 
   // 수강생 데이터와 강좌 목록을 유연하게 매칭하는 헬퍼 함수
   const getMatchedCourse = (courseIdOrEnrollment: string | Enrollment | undefined): Course | undefined => {
@@ -156,7 +160,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       course.title?.includes('basketball')
     ));
 
-    const busInfo = resolveStudentBusInfo(enrollment.name, enrollment.grade, enrollment.classNum, enrollment.studentNum);
+    const busInfo = resolveStudentBusInfo(enrollment);
 
     // 1. 명시적으로 미신청('-' 또는 '미신청' 또는 needsBus === false)된 경우
     const isExplicitlyNoBus = enrollment.kisbusNo === '-' || enrollment.kisbusNo === '미신청' || enrollment.needsBus === false;
@@ -449,13 +453,19 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   const [studentViewTab, setStudentViewTab] = useState<'enrolled' | 'waiting'>('enrolled');
   const [registerStatusTarget, setRegisterStatusTarget] = useState<'ENROLLED' | 'WAITING'>('ENROLLED');
 
-  const courseEnrollments = selectedCourseId === 'all'
-    ? enrollments.filter((e) => e.status === 'ENROLLED')
+  const isAllCourseSearching = selectedCourseId === 'all' && Boolean(activeSearchKeyword.trim());
+
+  const courseEnrollments = !isCourseSelected
+    ? []
+    : selectedCourseId === 'all'
+    ? (activeSearchKeyword.trim() ? enrollments.filter((e) => e.status === 'ENROLLED') : [])
     : enrollments.filter((e) => e.courseId === currentCourse?.id && e.status === 'ENROLLED');
 
   // 대기자 목록 (신청 접수 일시 순서대로 선착순 정렬)
-  const courseWaitingList = selectedCourseId === 'all'
-    ? enrollments.filter((e) => e.status === 'WAITING')
+  const courseWaitingList = !isCourseSelected
+    ? []
+    : selectedCourseId === 'all'
+    ? (activeSearchKeyword.trim() ? enrollments.filter((e) => e.status === 'WAITING') : [])
     : enrollments.filter((e) => e.courseId === currentCourse?.id && e.status === 'WAITING');
 
   const sortedWaitingList = [...courseWaitingList].sort((a, b) => {
@@ -738,40 +748,89 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   };
 
   // 기존 스쿨버스 명단과 대조하여 스쿨버스 번호 및 연락처를 자동 참조하는 헬퍼 함수
-  const resolveStudentBusInfo = (name: string, grade: number, classNum: number, studentNum?: number) => {
-    if (!name || !studentsList || studentsList.length === 0) return null;
+  const resolveStudentBusInfo = (nameOrEnroll: string | any, grade?: number, classNum?: number, studentNum?: number) => {
+    if (!studentsList || studentsList.length === 0) return null;
+    let targetName = '';
+    let tGrade = 0;
+    let tClass = 0;
+    let tNum: number | undefined = undefined;
+    let tStudentId: string | undefined = undefined;
+
+    if (typeof nameOrEnroll === 'object' && nameOrEnroll !== null) {
+      targetName = String(nameOrEnroll.name || nameOrEnroll.studentName || '').trim();
+      tGrade = Number(nameOrEnroll.grade);
+      tClass = Number(nameOrEnroll.classNum);
+      tNum = nameOrEnroll.studentNum ? Number(nameOrEnroll.studentNum) : undefined;
+      tStudentId = nameOrEnroll.studentId;
+    } else {
+      targetName = String(nameOrEnroll || '').trim();
+      tGrade = Number(grade);
+      tClass = Number(classNum);
+      tNum = studentNum ? Number(studentNum) : undefined;
+    }
+
+    if (tStudentId) {
+      const byId = studentsList.find(s => s.id === tStudentId);
+      if (byId) {
+        let regularBusNo = (byId as any).kisbusNo || (byId as any).morningBusNo || (byId as any).afternoonBusNo || (byId as any).busNo || '';
+        if (!regularBusNo && routes && routes.length > 0) {
+          const assignedRoute = routes.find((r) => 
+            (r.type === 'Morning' || r.type === 'Afternoon') &&
+            (r.seating || []).some((seat: any) => seat.studentId === byId.id)
+          );
+          if (assignedRoute) {
+            const foundBus = (buses || []).find((b: any) => b.id === assignedRoute.busId);
+            regularBusNo = foundBus?.name || formatBusNo(assignedRoute.busId);
+          }
+        }
+        if (regularBusNo && regularBusNo !== '-' && regularBusNo !== '미신청') {
+          regularBusNo = formatBusNo(regularBusNo);
+        } else {
+          regularBusNo = '';
+        }
+        let afterSchoolAssignedBusNo = (byId as any).afterSchoolBusNo || '';
+        if (!afterSchoolAssignedBusNo && routes && routes.length > 0) {
+          const assignedAfterSchoolRoute = routes.find((r) => 
+            r.type === 'AfterSchool' &&
+            (r.seating || []).some((seat: any) => seat.studentId === byId.id)
+          );
+          if (assignedAfterSchoolRoute) {
+            const foundBus = (buses || []).find((b: any) => b.id === assignedAfterSchoolRoute.busId);
+            afterSchoolAssignedBusNo = foundBus?.name || formatBusNo(assignedAfterSchoolRoute.busId);
+          }
+        }
+        return {
+          student: byId,
+          busNo: regularBusNo,
+          afterSchoolBusNo: afterSchoolAssignedBusNo,
+          phone: (byId as any).phone || (byId as any).contact || '',
+          parentPhone: (byId as any).parentPhone || (byId as any).contact || (byId as any).emergencyContact || (byId as any).phone || '',
+        };
+      }
+    }
+
+    if (!targetName) return null;
     const clean = (str: any) => String(str || '').replace(/\s+/g, '').toLowerCase();
-    const targetName = clean(name);
+    const cleanTarget = clean(targetName);
 
     // 1단계: 이름 + 학년 + 반 + 번호 정확 매칭
     let matched = studentsList.find((s) => {
-      const matchName = clean(s.name) === targetName || clean(s.nameKo) === targetName || clean(s.nameEn) === targetName;
-      const matchGrade = Number(s.grade) === Number(grade);
-      const matchClass = Number(s.class) === Number(classNum);
+      const matchName = clean(s.name) === cleanTarget || clean(s.nameKo) === cleanTarget || clean(s.nameEn) === cleanTarget;
+      const matchGrade = Number(s.grade) === tGrade;
+      const matchClass = Number(s.class) === tClass;
       const sNum = Number((s as any).studentNum || s.number || 0);
-      const matchNum = studentNum ? sNum === Number(studentNum) : true;
+      const matchNum = tNum ? sNum === tNum : true;
       return matchName && matchGrade && matchClass && matchNum;
     });
 
-    // 2단계: 이름 + 학년 + 반 매칭 (번호 불일치 허용)
-    if (!matched) {
+    // 2단계: 이름 + 학년 + 반 매칭 (번호 불일치 허용, 동일 학년/반 엄격 유지)
+    if (!matched && tGrade && tClass) {
       matched = studentsList.find((s) => {
-        const matchName = clean(s.name) === targetName || clean(s.nameKo) === targetName || clean(s.nameEn) === targetName;
-        const matchGrade = Number(s.grade) === Number(grade);
-        const matchClass = Number(s.class) === Number(classNum);
+        const matchName = clean(s.name) === cleanTarget || clean(s.nameKo) === cleanTarget || clean(s.nameEn) === cleanTarget;
+        const matchGrade = Number(s.grade) === tGrade;
+        const matchClass = Number(s.class) === tClass;
         return matchName && matchGrade && matchClass;
       });
-    }
-
-    // 3단계: 이름만으로 fallback 매칭 (동명이인이 1명뿐인 경우에만 허용)
-    if (!matched) {
-      const sameNameStudents = studentsList.filter((s) => {
-        return clean(s.name) === targetName || clean(s.nameKo) === targetName || clean(s.nameEn) === targetName;
-      });
-      if (sameNameStudents.length === 1) {
-        matched = sameNameStudents[0];
-      }
-      // 동명이인 2명 이상이면 매칭하지 않음 (null 반환하여 오배정 방지)
     }
 
     if (!matched) return null;
@@ -837,7 +896,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     try {
       let updatedCount = 0;
       const updatedEnrollments = enrollments.map((item) => {
-        const busInfo = resolveStudentBusInfo(item.name, item.grade, item.classNum, item.studentNum);
+        const busInfo = resolveStudentBusInfo(item);
         if (!busInfo) return item;
 
         let hasChange = false;
@@ -1113,6 +1172,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
               onChange={(e) => setSelectedCourseId(e.target.value)}
               className="flex-1 min-w-0 text-xs sm:text-sm font-bold text-slate-800 border-2 border-blue-500 rounded-lg sm:rounded-xl px-2 py-1.5 sm:px-2.5 sm:py-1.5 bg-blue-50/50 focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer transition truncate"
             >
+              <option value="">{t('afterschool.teacher.select_course_placeholder') || '-- 강좌를 선택하세요 --'}</option>
               <option value="all">{t('afterschool.teacher.all_courses_select')}</option>
               {sortedCourses.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -1374,7 +1434,19 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                 {filteredEnrollments.length === 0 ? (
                   <tr>
                     <td colSpan={selectedCourseId === 'all' ? 17 : 16} className="py-12 text-center text-slate-400">
-                      수강 확정된 학생이 없습니다.
+                      {!isCourseSelected ? (
+                        <div className="flex flex-col items-center justify-center gap-1.5 text-slate-500">
+                          <p className="font-semibold text-sm">상단에서 강좌를 선택하거나 [전체 강좌 수강생 통합 조회]를 선택해 주세요.</p>
+                          <p className="text-xs text-slate-400">강좌를 선택하면 해당 강좌의 수강 확정생 명단이 조회됩니다.</p>
+                        </div>
+                      ) : selectedCourseId === 'all' && !activeSearchKeyword ? (
+                        <div className="flex flex-col items-center justify-center gap-1.5 text-slate-500">
+                          <p className="font-semibold text-sm text-indigo-700">학생 이름을 입력하고 엔터(Enter)를 누르면 수강생 목록이 검색됩니다.</p>
+                          <p className="text-xs text-slate-400">전체 강좌 수강생 일괄 조회의 과도한 로딩을 방지하기 위해 검색어를 통해 즉시 조회됩니다.</p>
+                        </div>
+                      ) : (
+                        '수강 확정된 학생이 없습니다.'
+                      )}
                     </td>
                   </tr>
                 ) : (
@@ -1414,7 +1486,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                             ? ((matchedCourse.title || (matchedCourse as any).name || '').split(' (')[0])
                             : '강좌 미확인';
 
-                          const busInfo = resolveStudentBusInfo(item.name, item.grade, item.classNum, item.studentNum);
+                          const busInfo = resolveStudentBusInfo(item);
                           const displayParentPhone = item.parentPhone || busInfo?.parentPhone || '-';
 
                           return (
@@ -1837,7 +1909,19 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                 {filteredWaitingEnrollments.length === 0 ? (
                   <tr>
                     <td colSpan={selectedCourseId === 'all' ? 9 : 8} className="py-12 text-center text-slate-400">
-                      현재 대기 중인 신청자가 없습니다.
+                      {!isCourseSelected ? (
+                        <div className="flex flex-col items-center justify-center gap-1.5 text-slate-500">
+                          <p className="font-semibold text-sm">상단에서 강좌를 선택하거나 [전체 강좌 수강생 통합 조회]를 선택해 주세요.</p>
+                          <p className="text-xs text-slate-400">강좌를 선택하면 해당 강좌의 신청 대기자 명단이 조회됩니다.</p>
+                        </div>
+                      ) : selectedCourseId === 'all' && !activeSearchKeyword ? (
+                        <div className="flex flex-col items-center justify-center gap-1.5 text-slate-500">
+                          <p className="font-semibold text-sm text-amber-800">학생 이름을 입력하고 엔터(Enter)를 누르면 대기자 목록이 검색됩니다.</p>
+                          <p className="text-xs text-slate-400">전체 강좌 대기자 일괄 조회의 과도한 로딩을 방지하기 위해 검색어를 통해 즉시 조회됩니다.</p>
+                        </div>
+                      ) : (
+                        '현재 대기 중인 신청자가 없습니다.'
+                      )}
                     </td>
                   </tr>
                 ) : (
