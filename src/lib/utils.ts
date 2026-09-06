@@ -334,3 +334,31 @@ export function generateAcademicIcsFile(
   lines.push('END:VCALENDAR');
   return lines.join('\r\n');
 }
+
+/**
+ * 스쿨버스 호차 텍스트 정규화 유틸리티
+ * '02호차', '9호', '14호', '02', '9' 등 다양한 형태의 입력을 '2호차', '9호차', '14호차' 등 표준 포맷으로 일원화합니다.
+ */
+export function formatStandardBusNo(raw?: any): string {
+  if (raw === null || raw === undefined) return '미지정';
+  const str = String(raw).trim();
+  if (!str || str === '-' || str === '미지정' || str === '미신청' || str === 'Unassigned' || str === 'None' || str === 'X' || str === 'x' || str === 'false') {
+    return '미지정';
+  }
+
+  // 자율/도보/자가 등 특수 이동 방식은 그대로 유지
+  if (str.includes('자율') || str.includes('도보') || str.includes('자가')) {
+    return str;
+  }
+
+  // 숫자 추출 (예: '02호차' -> 2, '9호' -> 9, '14호' -> 14, '02' -> 2)
+  const match = str.match(/\d+/);
+  if (match) {
+    const num = parseInt(match[0], 10);
+    if (!isNaN(num)) {
+      return `${num}호차`;
+    }
+  }
+
+  return str.endsWith('호차') ? str : (str.endsWith('호') ? `${str}차` : `${str}호차`);
+}

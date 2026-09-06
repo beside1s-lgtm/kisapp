@@ -677,18 +677,18 @@ export default function InboxPage() {
 
                     {/* 1-2. 하단: 주요 학교 일정 (위로 끌어올려 충분한 세로 공간 확보) */}
                     <Card className="rounded-2xl border bg-card shadow-xs flex flex-col flex-1 min-h-0 overflow-hidden">
-                        <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-2 shrink-0 bg-blue-50/50 rounded-t-2xl">
-                            <div className="flex items-center gap-2 min-w-0">
+                        <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-1.5 sm:gap-2 shrink-0 bg-blue-50/50 rounded-t-2xl min-w-0">
+                            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
                                 <div className="p-1.5 bg-blue-600/10 rounded-xl text-blue-600 shrink-0">
                                     <CalendarDays className="h-4 w-4" />
                                 </div>
-                                <div className="min-w-0">
+                                <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-1.5 whitespace-nowrap">
-                                        <h2 className="text-sm sm:text-base font-bold text-slate-900 font-headline whitespace-nowrap">
+                                        <h2 className="text-sm sm:text-base font-bold text-slate-900 font-headline whitespace-nowrap shrink-0">
                                             <span className="sm:hidden">일정</span>
                                             <span className="hidden sm:inline">주요 학교 일정</span>
                                         </h2>
-                                        <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px] font-bold px-1.5 py-0 whitespace-nowrap shrink-0">
+                                        <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[9px] sm:text-[10px] font-bold px-1.5 py-0 whitespace-nowrap shrink-0">
                                             D-day ~ D+7
                                         </Badge>
                                     </div>
@@ -701,7 +701,7 @@ export default function InboxPage() {
                                     size="sm" 
                                     variant="outline"
                                     onClick={() => setIsScheduleSyncModalOpen(true)}
-                                    className="h-7 px-2 sm:px-2.5 border-blue-200 text-blue-700 hover:bg-blue-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                    className="h-7 px-1.5 sm:px-2.5 border-blue-200 text-blue-700 hover:bg-blue-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
                                     title="주간 및 월간 교육 일정을 내 캘린더에 동기화"
                                 >
                                     <CalendarCheck className="w-3 h-3 text-blue-600 shrink-0" />
@@ -712,7 +712,7 @@ export default function InboxPage() {
                                     size="sm" 
                                     variant="outline"
                                     onClick={() => setIsWeeklyPlanModalOpen(true)}
-                                    className="h-7 px-2 sm:px-2.5 border-blue-200 text-blue-700 hover:bg-blue-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                    className="h-7 px-1.5 sm:px-2.5 border-blue-200 text-blue-700 hover:bg-blue-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
                                     title="유초등 주간교육계획 조회 및 관리"
                                 >
                                     <CalendarDays className="w-3 h-3 text-blue-600 shrink-0" />
@@ -723,7 +723,7 @@ export default function InboxPage() {
                                     size="sm" 
                                     variant="outline"
                                     onClick={() => setIsMonthlyPlanModalOpen(true)}
-                                    className="h-7 px-2 sm:px-2.5 border-blue-200 text-blue-700 hover:bg-blue-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                    className="h-7 px-1.5 sm:px-2.5 border-blue-200 text-blue-700 hover:bg-blue-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
                                     title="유초등 월간 교육활동 계획 조회 및 관리"
                                 >
                                     <Calendar className="w-3 h-3 text-blue-600 shrink-0" />
@@ -831,13 +831,13 @@ export default function InboxPage() {
 
                 {/* 2. 우측 (50%): 나의 업무 (부서/학급 현행 업무 + 워크플로우 + Todo) 카드 */}
                 <Card className="rounded-2xl border bg-card shadow-xs flex flex-col flex-1 min-h-0 h-full overflow-hidden">
-                    <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-2 shrink-0 bg-indigo-50/50 rounded-t-2xl min-w-0 min-h-[53px]">
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-1.5 sm:gap-2 shrink-0 bg-indigo-50/50 rounded-t-2xl min-w-0 min-h-[53px]">
+                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
                             <div className="p-1.5 bg-indigo-500/10 rounded-xl text-indigo-600 shrink-0">
                                 <ClipboardList className="h-4 w-4" />
                             </div>
-                            <div className="min-w-0 flex-1">
-                                <h2 className="text-sm sm:text-base font-bold text-slate-900 font-headline">
+                            <div className="min-w-0">
+                                <h2 className="text-sm sm:text-base font-bold text-slate-900 font-headline whitespace-nowrap">
                                     나의 업무
                                 </h2>
                             </div>
@@ -849,7 +849,7 @@ export default function InboxPage() {
                                 size="sm" 
                                 variant="outline"
                                 onClick={() => setIsMajorTasksModalOpen(true)}
-                                className="h-7 px-2 sm:px-2.5 border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                className="h-7 px-1.5 sm:px-2.5 border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
                                 title="대시보드 주요 업무 바로가기 설정"
                             >
                                 <SlidersHorizontal className="w-3 h-3 text-indigo-600 shrink-0" />
@@ -868,11 +868,12 @@ export default function InboxPage() {
                                             setIsCreateWeeklyScheduleOpen(true);
                                         }
                                     }}
-                                    className="relative h-7 px-2 sm:px-2.5 border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                    className="relative h-7 px-1.5 sm:px-2.5 border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
                                     title={pendingProposalsForHead.length > 0 ? `부서원 건의 ${pendingProposalsForHead.length}건 검토 대기 중` : "부서 주간 일정 등록"}
                                 >
                                     <CalendarDays className="w-3 h-3 text-indigo-600 shrink-0" />
-                                    <span>일정 등록</span>
+                                    <span className="hidden sm:inline">일정 등록</span>
+                                    <span className="sm:hidden">등록</span>
                                     {pendingProposalsForHead.length > 0 && (
                                         <span className="min-w-4 h-4 px-1 rounded-full bg-red-500 text-white font-black text-[9px] flex items-center justify-center shadow-xs animate-pulse ml-0.5">
                                             {pendingProposalsForHead.length}
@@ -884,22 +885,24 @@ export default function InboxPage() {
                                     size="sm" 
                                     variant="outline"
                                     onClick={() => setIsCreateProposalOpen(true)}
-                                    className="h-7 px-2 sm:px-2.5 border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                    className="h-7 px-1.5 sm:px-2.5 border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap"
                                     title="부장에게 주간 일정 건의"
                                 >
                                     <CalendarPlus className="w-3 h-3 text-blue-600 shrink-0" />
-                                    <span>일정 건의</span>
+                                    <span className="hidden sm:inline">일정 건의</span>
+                                    <span className="sm:hidden">건의</span>
                                 </Button>
                             )}
 
                             <Button 
                                 size="sm" 
                                 onClick={() => setIsCreateTaskOpen(true)}
-                                className="h-7 px-2 sm:px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-lg shadow-xs flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                className="h-7 px-1.5 sm:px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-lg shadow-xs flex items-center gap-1 shrink-0 whitespace-nowrap"
                                 title="새 업무 요청"
                             >
                                 <Plus className="w-3 h-3 text-amber-300 shrink-0" />
-                                <span>새 업무 요청</span>
+                                <span className="hidden sm:inline">새 업무 요청</span>
+                                <span className="sm:hidden">요청</span>
                             </Button>
                         </div>
                     </div>
@@ -1128,20 +1131,21 @@ export default function InboxPage() {
                                     const createdCount = deptTasks.filter(t => t.creatorEmail?.toLowerCase() === myEmail || myBelongingInfo.isHead || profile?.isAdmin).length;
 
                                     return (
-                                        <div className="flex items-center gap-1.5">
+                                        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                                             <button
                                                 type="button"
                                                 onClick={() => setActiveTaskSubTab('assigned')}
                                                 className={cn(
-                                                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                                                    "px-2 sm:px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 whitespace-nowrap shrink-0",
                                                     activeTaskSubTab === 'assigned'
                                                         ? "bg-indigo-600 text-white shadow-xs"
                                                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                                                 )}
                                             >
-                                                <Inbox className="w-3 h-3" />
-                                                <span>나에게 할당된 업무</span>
-                                                <Badge className={cn("px-1 py-0 text-[9px] h-3.5 leading-none font-bold", activeTaskSubTab === 'assigned' ? "bg-white text-indigo-700" : "bg-slate-300 text-slate-800")}>
+                                                <Inbox className="w-3 h-3 shrink-0" />
+                                                <span className="hidden sm:inline">나에게 할당된 업무</span>
+                                                <span className="sm:hidden">할당 업무</span>
+                                                <Badge className={cn("px-1 py-0 text-[9px] h-3.5 leading-none font-bold shrink-0", activeTaskSubTab === 'assigned' ? "bg-white text-indigo-700" : "bg-slate-300 text-slate-800")}>
                                                     {assignedCount}
                                                 </Badge>
                                             </button>
@@ -1150,15 +1154,15 @@ export default function InboxPage() {
                                                 type="button"
                                                 onClick={() => setActiveTaskSubTab('created')}
                                                 className={cn(
-                                                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                                                    "px-2 sm:px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 whitespace-nowrap shrink-0",
                                                     activeTaskSubTab === 'created'
                                                         ? "bg-indigo-600 text-white shadow-xs"
                                                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                                                 )}
                                             >
-                                                <Send className="w-3 h-3" />
+                                                <Send className="w-3 h-3 shrink-0" />
                                                 <span>요청 업무</span>
-                                                <Badge className={cn("px-1 py-0 text-[9px] h-3.5 leading-none font-bold", activeTaskSubTab === 'created' ? "bg-white text-indigo-700" : "bg-slate-300 text-slate-800")}>
+                                                <Badge className={cn("px-1 py-0 text-[9px] h-3.5 leading-none font-bold shrink-0", activeTaskSubTab === 'created' ? "bg-white text-indigo-700" : "bg-slate-300 text-slate-800")}>
                                                     {createdCount}
                                                 </Badge>
                                             </button>

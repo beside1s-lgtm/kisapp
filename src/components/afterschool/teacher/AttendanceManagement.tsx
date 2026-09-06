@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { formatStandardBusNo } from '@/lib/utils';
 
 interface AttendanceManagementProps {
   courses: Course[];
@@ -793,15 +794,13 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
     const s = (studentsList || []).find(st => st.id === studentId || (st.name === studentName && String(st.grade) === String(grade) && String(st.class) === String(classNum)));
 
     const photoUrl = m?.photoUrl || (s as any)?.photoUrl || (s as any)?.photo || '';
-    let rawBus = (m?.busSummary as any)?.assignedBusName || (m?.busSummary as any)?.busName || m?.kisbusNo || (s as any)?.kisbusNo || (s as any)?.busNo || '';
-    if (rawBus && !rawBus.includes('호') && !rawBus.includes('버스') && !rawBus.includes('자율')) {
-      rawBus = `${rawBus}호차`;
-    }
+    const rawBus = (m?.busSummary as any)?.assignedBusName || (m?.busSummary as any)?.busName || m?.kisbusNo || (s as any)?.kisbusNo || (s as any)?.busNo || '';
+    const busNo = formatStandardBusNo(rawBus);
     const contact = m?.contact || (s as any)?.parentPhone || (s as any)?.phone || (s as any)?.contact || '';
 
     return {
       photoUrl,
-      busNo: rawBus || '미지정',
+      busNo,
       contact: contact ? contact.trim() : '',
       grade: String(m?.grade || grade || '1'),
       classNum: String(m?.classNum || classNum || '1'),
@@ -856,22 +855,46 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           {/* Session header / controls */}
           <div className="p-3 bg-slate-50 border-b border-slate-200 space-y-2">
-            {/* Active session / Day display */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-indigo-600 shrink-0" />
-                <span className="font-bold text-slate-800 text-sm">
-                  {activeDay?.dateStr || ''}
-                  <span className="text-slate-500 font-normal text-xs ml-1.5">
-                    ({activeDay?.dayIndex || 1}{t('teacher_afterschool.round_suffix', '회차')} / {activeDay?.startSessionNo}~{activeDay?.endSessionNo}{t('teacher_afterschool.session_suffix', '차시')})
+            {/* Active session / Day display (반응형: 모바일은 2줄로 분리하여 줄바꿈 찌그러짐 원천 방지) */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Calendar className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="font-bold text-slate-800 text-sm whitespace-nowrap">
+                    {activeDay?.dateStr || ''}
+                    <span className="text-slate-500 font-normal text-xs ml-1.5 whitespace-nowrap">
+                      ({activeDay?.dayIndex || 1}{t('teacher_afterschool.round_suffix', '회차')} / {activeDay?.startSessionNo}~{activeDay?.endSessionNo}{t('teacher_afterschool.session_suffix', '차시')})
+                    </span>
                   </span>
-                </span>
-                <span className="bg-emerald-100 text-emerald-800 font-extrabold text-[11px] px-2 py-0.5 rounded-full ml-1">
+                </div>
+                {/* 모바일 화면에서 우측에 회차 네비게이션 배치 */}
+                <div className="flex items-center gap-1 shrink-0 sm:hidden">
+                  <button
+                    onClick={() => handleSelectDay(Math.max(1, activeSessionNo - 1))}
+                    disabled={activeSessionNo <= 1}
+                    className="p-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 transition cursor-pointer"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-xs text-slate-500 font-mono px-1 whitespace-nowrap">
+                    {activeSessionNo}/{scheduleDays.length}
+                    <span className="text-[10px] ml-0.5">{t('teacher_afterschool.round_suffix', '회차')}</span>
+                  </span>
+                  <button
+                    onClick={() => handleSelectDay(Math.min(scheduleDays.length, activeSessionNo + 1))}
+                    disabled={activeSessionNo >= scheduleDays.length}
+                    className="p-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 transition cursor-pointer"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* 데스크톱용 회차 네비게이션 및 수강 확정생 배지 */}
+              <div className="hidden sm:flex items-center gap-1">
+                <span className="bg-emerald-100 text-emerald-800 font-extrabold text-[11px] px-2 py-0.5 rounded-full mr-1 whitespace-nowrap">
                   {t('teacher_afterschool.enrolled_count', { count: courseStudents.length, defaultValue: `수강 확정생 ${courseStudents.length}명` })}
                 </span>
-              </div>
-              {/* Prev/Next session navigation */}
-              <div className="flex items-center gap-1">
                 <button
                   onClick={() => handleSelectDay(Math.max(1, activeSessionNo - 1))}
                   disabled={activeSessionNo <= 1}
@@ -879,7 +902,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-xs text-slate-500 font-mono px-1">
+                <span className="text-xs text-slate-500 font-mono px-1 whitespace-nowrap">
                   {activeSessionNo}/{scheduleDays.length}{t('teacher_afterschool.round_suffix', '회차')}
                 </span>
                 <button
@@ -892,36 +915,66 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
               </div>
             </div>
 
-            {/* 고정 액션 버튼(전원 출석, 출석부 공유) 및 날짜(회차) 스크롤 영역 */}
-            <div className="flex items-center gap-1.5 sm:gap-2 w-full min-w-0">
-              {/* 날짜를 스크롤해도 항상 왼쪽에 고정되는 액션 버튼 그룹 */}
-              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 z-10 bg-white pr-1 sm:pr-1.5 border-r border-slate-200">
+            {/* 모바일 전용: 확정생 배지와 액션 버튼들을 한 줄로 시원하게 배치 */}
+            <div className="flex sm:hidden items-center justify-between gap-1.5 w-full pt-0.5">
+              <span className="bg-emerald-100 text-emerald-800 font-extrabold text-[11px] px-2 py-1 rounded-full whitespace-nowrap shrink-0">
+                {t('teacher_afterschool.enrolled_count', { count: courseStudents.length, defaultValue: `수강 확정생 ${courseStudents.length}명` })}
+              </span>
+              <div className="flex items-center gap-1 shrink-0">
                 <button
                   onClick={() => handleBulkAttendDay(activeSessionNo)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2 sm:px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2 py-1 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
                   title="현재 선택한 날짜의 모든 수강 확정생을 출석(○) 처리합니다"
                 >
                   <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                  <span className="sm:hidden">{t('teacher_afterschool.bulk_attend_short', '전원O')}</span>
-                  <span className="hidden sm:inline">{t('teacher_afterschool.bulk_attend', '전원출석')}</span>
+                  <span>{t('teacher_afterschool.bulk_attend_short', '전원O')}</span>
                 </button>
                 <button
                   onClick={handleCopyShareLink}
-                  className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs px-2 sm:px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95"
+                  className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs px-2 py-1 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
                   title="외부 강사가 로그인 없이 접속하여 출석 체크만 할 수 있는 전용 링크를 클립보드에 복사합니다"
                 >
                   <Share2 className="w-3.5 h-3.5 shrink-0" />
-                  <span className="sm:hidden">{t('teacher_afterschool.share_sheet_short', '공유')}</span>
-                  <span className="hidden sm:inline">{t('teacher_afterschool.share_sheet', '출석부 공유')}</span>
+                  <span>{t('teacher_afterschool.share_sheet_short', '공유')}</span>
                 </button>
                 <button
                   onClick={() => setIsPrintModalOpen(true)}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-2 sm:px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-2 py-1 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
                   title="A4 세로 공식 출석부 인쇄"
                 >
                   <Printer className="w-3.5 h-3.5 shrink-0" />
-                  <span className="sm:hidden">{t('teacher_afterschool.print_sheet_short', '인쇄')}</span>
-                  <span className="hidden sm:inline">{t('teacher_afterschool.print_sheet', '출석부 인쇄')}</span>
+                  <span>{t('teacher_afterschool.print_sheet_short', '인쇄')}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 날짜(회차) 스크롤 영역 (모바일은 가로 100% 온전히 스크롤에 활용) */}
+            <div className="flex items-center gap-1.5 sm:gap-2 w-full min-w-0">
+              {/* 데스크톱 전용 좌측 고정 액션 버튼 그룹 */}
+              <div className="hidden sm:flex items-center gap-1.5 shrink-0 z-10 bg-white pr-1.5 border-r border-slate-200">
+                <button
+                  onClick={() => handleBulkAttendDay(activeSessionNo)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
+                  title="현재 선택한 날짜의 모든 수강 확정생을 출석(○) 처리합니다"
+                >
+                  <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span>{t('teacher_afterschool.bulk_attend', '전원출석')}</span>
+                </button>
+                <button
+                  onClick={handleCopyShareLink}
+                  className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
+                  title="외부 강사가 로그인 없이 접속하여 출석 체크만 할 수 있는 전용 링크를 클립보드에 복사합니다"
+                >
+                  <Share2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>{t('teacher_afterschool.share_sheet', '출석부 공유')}</span>
+                </button>
+                <button
+                  onClick={() => setIsPrintModalOpen(true)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
+                  title="A4 세로 공식 출석부 인쇄"
+                >
+                  <Printer className="w-3.5 h-3.5 shrink-0" />
+                  <span>{t('teacher_afterschool.print_sheet', '출석부 인쇄')}</span>
                 </button>
               </div>
 
@@ -1010,7 +1063,9 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                             {sInfo.contact}
                           </span>
                         ) : (
-                          <span className="text-[10px] text-slate-400 block mt-0.5">연락처 없음 (클릭 시 상세보기)</span>
+                          <span className="text-[10px] text-slate-400 block mt-0.5 whitespace-nowrap truncate">
+                            {t('teacher_afterschool.no_contact', '연락처 없음 (클릭 시 상세보기)')}
+                          </span>
                         )}
                       </div>
                     </button>

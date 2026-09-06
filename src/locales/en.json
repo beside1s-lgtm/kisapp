@@ -783,6 +783,7 @@
     "teacher_afterschool.round_suffix": "Round",
     "teacher_afterschool.session_suffix": "Session",
     "teacher_afterschool.enrolled_count": "{{count}} Enrolled Students",
+    "teacher_afterschool.no_contact": "No contact info (tap for details)",
     "teacher_afterschool.no_students": "No students enrolled.",
     "teacher_afterschool.mark_attend": "Present",
     "teacher_afterschool.mark_late": "Late / Dismissed",

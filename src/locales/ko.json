@@ -805,6 +805,7 @@
     "teacher_afterschool.round_suffix": "회차",
     "teacher_afterschool.session_suffix": "차시",
     "teacher_afterschool.enrolled_count": "수강 확정생 {{count}}명",
+    "teacher_afterschool.no_contact": "연락처 없음 (클릭 시 상세보기)",
     "teacher_afterschool.no_students": "수강 등록된 학생이 없습니다.",
     "teacher_afterschool.mark_attend": "출석",
     "teacher_afterschool.mark_late": "지각/개별하교",

@@ -782,6 +782,7 @@
     "teacher_afterschool.round_suffix": "Buổi",
     "teacher_afterschool.session_suffix": "Tiết",
     "teacher_afterschool.enrolled_count": "{{count}} học sinh chính thức",
+    "teacher_afterschool.no_contact": "Không có SĐT (nhấn để xem)",
     "teacher_afterschool.no_students": "Chưa có học sinh đăng ký.",
     "teacher_afterschool.mark_attend": "Có mặt",
     "teacher_afterschool.mark_late": "Muộn / Tự về",

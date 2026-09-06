@@ -53,6 +53,7 @@ import { useAuth } from '@/hooks/use-auth';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
 import { cn, normalizeString, getStudentName } from '@/lib/kisbus/utils';
+import { formatStandardBusNo } from '@/lib/utils';
 
 const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -561,17 +562,17 @@ const AllGroupLeadersStatus = ({ relevantRoutes, students, buses, formatStudentN
                         {selectedBusIds.size > 0 && (
                             <Button variant="destructive" size="sm" onClick={handleBulkDemote} className="h-8 px-2 animate-in fade-in slide-in-from-right-2">
                                 <UserMinus className="sm:mr-2 h-4 w-4" />
-                                <span className="hidden sm:inline">선택 해제 ({selectedBusIds.size})</span>
+                                <span className="hidden sm:inline">{t('deselect') || '선택 해제'} ({selectedBusIds.size})</span>
                             </Button>
                         )}
                         <Button variant="outline" size="sm" onClick={handleDownloadTemplate} className="h-8 px-2">
                             <FileDown className="sm:mr-2 h-4 w-4" />
-                            <span className="hidden sm:inline">템플릿</span>
+                            <span className="hidden sm:inline">{t('admin.bus_registration.template') || '템플릿'}</span>
                         </Button>
                         <Label htmlFor="batch-leader-upload" className="cursor-pointer">
                             <div className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-2">
                                 <Upload className="sm:mr-2 h-4 w-4" />
-                                <span className="hidden sm:inline">일괄입력</span>
+                                <span className="hidden sm:inline">{t('batch_upload') || '일괄입력'}</span>
                             </div>
                             <Input id="batch-leader-upload" type="file" className="hidden" accept=".xlsx, .xls" onChange={handleBatchUpload} />
                         </Label>
@@ -595,7 +596,7 @@ const AllGroupLeadersStatus = ({ relevantRoutes, students, buses, formatStudentN
                             <TableHead className="whitespace-nowrap w-px">{t('bus')}</TableHead>
                             <TableHead className="whitespace-nowrap">{t('teacher_page.group_leader_management.name')}</TableHead>
                             <TableHead className="whitespace-nowrap w-px">{t('teacher_page.group_leader_management.days')}</TableHead>
-                            <TableHead className="whitespace-nowrap w-px text-right">관리</TableHead>
+                            <TableHead className="whitespace-nowrap w-px text-right">{t('actions') || '관리'}</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -2111,8 +2112,8 @@ updates.disembarked = arrayUnion(student.id);
             </Select>
         </div>
 
-        {/* 3. 학생 이름 검색 */}
-        <div className="w-full sm:flex-1 min-w-0 relative">
+        {/* 3. 학생 이름 검색 (모바일에서 전체 폭 활용) */}
+        <div className="col-span-2 sm:col-span-1 sm:flex-1 min-w-0 relative">
             <Label htmlFor="student-search" className="text-[10px] sm:text-xs font-semibold text-slate-600 mb-0.5 block">{t('student.name')}</Label>
             <div className="relative">
                 <Search className="absolute left-2.5 top-2 sm:top-2.5 h-3.5 w-3.5 text-muted-foreground" />
@@ -2121,7 +2122,8 @@ updates.disembarked = arrayUnion(student.id);
             {searchResults.length > 0 && (
                 <div className="absolute z-50 left-0 right-0 top-full mt-1.5 max-h-72 overflow-y-auto shadow-2xl bg-white border border-slate-300 rounded-xl p-1 divide-y divide-slate-100 font-sans">
                     {searchResults.map(student => {
-                        const studentBusName = student.afterSchoolBusNo || (selectedRouteType === 'Morning' ? student.morningBusNo : student.afternoonBusNo) || student.morningBusNo || student.afternoonBusNo || (student as any).kisbusNo || (student as any).busNo;
+                        const rawBusName = student.afterSchoolBusNo || (selectedRouteType === 'Morning' ? student.morningBusNo : student.afternoonBusNo) || student.morningBusNo || student.afternoonBusNo || (student as any).kisbusNo || (student as any).busNo;
+                        const studentBusName = formatStandardBusNo(rawBusName);
                         return (
                             <div 
                                 key={student.id} 
@@ -2142,7 +2144,7 @@ updates.disembarked = arrayUnion(student.id);
                                     )}
                                 </div>
                                 <div className="shrink-0 flex items-center gap-1">
-                                    {studentBusName && studentBusName !== '-' && studentBusName !== '미신청' ? (
+                                    {studentBusName && studentBusName !== '-' && studentBusName !== '미신청' && studentBusName !== '미지정' ? (
                                         <Badge variant="secondary" className="bg-indigo-100 text-indigo-800 border-indigo-200 text-[10px] font-bold px-1.5 py-0.5">
                                             🚌 {studentBusName}
                                         </Badge>
@@ -2157,23 +2159,35 @@ updates.disembarked = arrayUnion(student.id);
             )}
         </div>
 
-        {/* 4. 경로 (등교/하교/방과후) */}
-        <div className="w-full sm:w-[220px] shrink-0 min-w-0">
-            <Label className="text-[10px] sm:text-xs font-semibold text-slate-600 mb-0.5 block">{t('route')}</Label>
-            <Tabs value={selectedRouteType} onValueChange={(v: any) => { setSelectedRouteType(v); setIsManualMode(true); }} className="w-full">
-                <TabsList className={cn("grid w-full h-9 sm:h-10 p-0.5", (selectedDay === 'Saturday' || semesterMode === 'vacation') ? "grid-cols-2" : "grid-cols-3", isManualMode && "bg-blue-50")}>
-                    <TabsTrigger value="Morning" className="text-xs px-1">{t('route_type.morning')}</TabsTrigger>
-                    <TabsTrigger value="Afternoon" className="text-xs px-1">{t('route_type.afternoon')}</TabsTrigger>
-                    {(selectedDay !== 'Saturday' && semesterMode !== 'vacation') && <TabsTrigger value="AfterSchool" className="text-xs px-1">{t('route_type.AfterSchool')}</TabsTrigger>}
-                </TabsList>
-            </Tabs>
+        {/* 4. 경로 (등교/하교/방과후 - 모바일에서 전체 폭 활용하여 다국어 겹침 원천 차단) */}
+        <div className="col-span-2 sm:col-span-1 sm:w-auto sm:min-w-[220px] shrink-0 min-w-0">
+            <div className="flex items-center justify-between mb-0.5">
+                <Label className="text-[10px] sm:text-xs font-semibold text-slate-600 block">{t('route')}</Label>
+                {isManualMode && (
+                    <Button variant="outline" size="sm" className="h-6 px-2 border-blue-500 text-blue-600 gap-1 text-[11px] shrink-0 sm:hidden" onClick={() => { setIsManualMode(false); calculateDate(); }}>
+                        <Clock className="w-3 h-3" />
+                        <span>{t('teacher_page.back_to_auto') || '자동'}</span>
+                    </Button>
+                )}
+            </div>
+            <div className="flex items-center gap-1.5 w-full">
+                <Tabs value={selectedRouteType} onValueChange={(v: any) => { setSelectedRouteType(v); setIsManualMode(true); }} className="w-full flex-1 min-w-0">
+                    <TabsList className={cn("grid w-full h-8 sm:h-9 p-0.5", (selectedDay === 'Saturday' || semesterMode === 'vacation') ? "grid-cols-2" : "grid-cols-3", isManualMode && "bg-blue-50")}>
+                        <TabsTrigger value="Morning" className="text-[11px] sm:text-xs px-1 whitespace-nowrap truncate">{t('route_type.morning')}</TabsTrigger>
+                        <TabsTrigger value="Afternoon" className="text-[11px] sm:text-xs px-1 whitespace-nowrap truncate">{t('route_type.afternoon')}</TabsTrigger>
+                        {(selectedDay !== 'Saturday' && semesterMode !== 'vacation') && (
+                            <TabsTrigger value="AfterSchool" className="text-[11px] sm:text-xs px-1 whitespace-nowrap truncate">{t('route_type.AfterSchool')}</TabsTrigger>
+                        )}
+                    </TabsList>
+                </Tabs>
+                {isManualMode && (
+                    <Button variant="outline" size="sm" className="hidden sm:flex h-9 px-2.5 border-blue-500 text-blue-600 gap-1 text-xs shrink-0" onClick={() => { setIsManualMode(false); calculateDate(); }}>
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>{t('teacher_page.back_to_auto') || '자동'}</span>
+                    </Button>
+                )}
+            </div>
         </div>
-        {isManualMode && (
-          <Button variant="outline" size="sm" className="h-9 sm:h-10 px-2.5 border-blue-500 text-blue-600 gap-1 text-xs shrink-0" onClick={() => { setIsManualMode(false); calculateDate(); }}>
-            <Clock className="w-3.5 h-3.5" />
-            <span>{t('teacher_page.back_to_auto') || '자동'}</span>
-          </Button>
-        )}
     </div>
   );
 

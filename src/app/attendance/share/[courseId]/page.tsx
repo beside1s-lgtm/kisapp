@@ -33,6 +33,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { formatStandardBusNo } from '@/lib/utils';
 
 // =====================================================================
 // 출석 마크 심볼
@@ -198,14 +199,8 @@ export default function SharedAttendancePage() {
       (ms.name === studentName && String(ms.grade) === String(grade) && String(ms.classNum) === String(classNum)) ||
       ms.name === studentName
     );
-    let rawBus = (m?.busSummary as any)?.assignedBusName || (m?.busSummary as any)?.busName || m?.kisbusNo || '';
-    if (!rawBus) {
-      return '미배정';
-    }
-    if (!rawBus.includes('호') && !rawBus.includes('버스') && !rawBus.includes('자율')) {
-      rawBus = `${rawBus}호차`;
-    }
-    return rawBus;
+    const rawBus = (m?.busSummary as any)?.assignedBusName || (m?.busSummary as any)?.busName || m?.kisbusNo || '';
+    return formatStandardBusNo(rawBus);
   }, [masterStudents]);
 
   const getDayMark = useCallback(
@@ -461,21 +456,45 @@ export default function SharedAttendancePage() {
 
           {/* 세션 헤더 */}
           <div className="p-3 bg-slate-50 border-b border-slate-200 space-y-2">
-            {/* 날짜/회차 표시 + 이전/다음 버튼 */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-indigo-600 shrink-0" />
-                <span className="font-bold text-slate-800 text-sm">
-                  {activeDay?.dateStr || ''}
-                  <span className="text-slate-500 font-normal text-xs ml-1.5">
-                    ({activeDay?.dayIndex || 1}회차 / {activeDay?.startSessionNo}~{activeDay?.endSessionNo}차시)
+            {/* 날짜/회차 표시 (반응형: 모바일은 분리하여 줄바꿈 찌그러짐 원천 방지) */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Calendar className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="font-bold text-slate-800 text-sm whitespace-nowrap">
+                    {activeDay?.dateStr || ''}
+                    <span className="text-slate-500 font-normal text-xs ml-1.5 whitespace-nowrap">
+                      ({activeDay?.dayIndex || 1}회차 / {activeDay?.startSessionNo}~{activeDay?.endSessionNo}차시)
+                    </span>
                   </span>
-                </span>
-                <span className="bg-emerald-100 text-emerald-800 font-extrabold text-[11px] px-2 py-0.5 rounded-full ml-1">
-                  {courseStudents.length}명
-                </span>
+                </div>
+                {/* 모바일 화면에서 우측에 회차 네비게이션 배치 */}
+                <div className="flex items-center gap-1 shrink-0 sm:hidden">
+                  <button
+                    onClick={() => setActiveSessionNo((prev) => Math.max(1, prev - 1))}
+                    disabled={activeSessionNo <= 1}
+                    className="p-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 transition cursor-pointer"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-xs text-slate-500 font-mono px-1 whitespace-nowrap">
+                    {activeSessionNo}/{scheduleDays.length}회차
+                  </span>
+                  <button
+                    onClick={() => setActiveSessionNo((prev) => Math.min(scheduleDays.length, prev + 1))}
+                    disabled={activeSessionNo >= scheduleDays.length}
+                    className="p-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 transition cursor-pointer"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-1">
+
+              {/* 데스크톱용 회차 네비게이션 및 수강생 배지 */}
+              <div className="hidden sm:flex items-center gap-1">
+                <span className="bg-emerald-100 text-emerald-800 font-extrabold text-[11px] px-2 py-0.5 rounded-full mr-1 whitespace-nowrap">
+                  수강생 {courseStudents.length}명
+                </span>
                 <button
                   onClick={() => setActiveSessionNo((prev) => Math.max(1, prev - 1))}
                   disabled={activeSessionNo <= 1}
@@ -483,7 +502,7 @@ export default function SharedAttendancePage() {
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-xs text-slate-500 font-mono px-1">
+                <span className="text-xs text-slate-500 font-mono px-1 whitespace-nowrap">
                   {activeSessionNo}/{scheduleDays.length}회차
                 </span>
                 <button
@@ -496,18 +515,32 @@ export default function SharedAttendancePage() {
               </div>
             </div>
 
-            {/* 고정 전원 출석 버튼 및 날짜(회차) 스크롤 영역 */}
+            {/* 모바일 전용: 수강생 배지와 전원 출석 버튼 한 줄 배치 */}
+            <div className="flex sm:hidden items-center justify-between gap-1.5 w-full pt-0.5">
+              <span className="bg-emerald-100 text-emerald-800 font-extrabold text-[11px] px-2 py-1 rounded-full whitespace-nowrap shrink-0">
+                수강생 {courseStudents.length}명
+              </span>
+              <button
+                onClick={() => handleBulkAttendDay(activeSessionNo)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2.5 py-1 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
+                title="현재 선택한 날짜의 모든 수강생을 출석(○) 처리합니다"
+              >
+                <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                <span>전원 출석(○)</span>
+              </button>
+            </div>
+
+            {/* 날짜(회차) 스크롤 영역 (모바일은 가로 100% 온전히 스크롤에 활용) */}
             <div className="flex items-center gap-1.5 sm:gap-2 w-full min-w-0">
-              {/* 날짜를 스크롤해도 항상 왼쪽에 고정되는 액션 버튼 그룹 */}
-              <div className="flex items-center shrink-0 z-10 bg-white pr-1.5 border-r border-slate-200">
+              {/* 데스크톱 전용 좌측 고정 액션 버튼 그룹 */}
+              <div className="hidden sm:flex items-center shrink-0 z-10 bg-white pr-1.5 border-r border-slate-200">
                 <button
                   onClick={() => handleBulkAttendDay(activeSessionNo)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2 sm:px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
                   title="현재 선택한 날짜의 모든 수강생을 출석(○) 처리합니다"
                 >
                   <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                  <span className="sm:hidden">전원O</span>
-                  <span className="hidden sm:inline">전원 출석</span>
+                  <span>전원 출석</span>
                 </button>
               </div>
 
