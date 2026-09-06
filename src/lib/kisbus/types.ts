@@ -34,6 +34,9 @@ export type Student = {
   morningBusNo?: string | null;
   afternoonBusNo?: string | null;
   afterSchoolBusNo?: string | null;
+  afterSchoolCourseTitle?: string | null;
+  afterSchoolCourseTitles?: string[];
+  enrolledCourseTitles?: string[];
 };
 export type NewStudent = Omit<Student, 'id'>;
 

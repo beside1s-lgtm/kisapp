@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { AfterSchoolClass, Student, Bus, Route, Teacher, DayOfWeek, Destination } from '@/lib/kisbus/types';
+import type { Course } from '@/lib/afterschool/types';
+import { onAfterschoolCoursesUpdate } from '@/lib/services/settingsService';
 import { DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -11,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Download, Search, GraduationCap, Bus as BusIcon } from 'lucide-react';
 import { useTranslation } from '@/hooks/use-translation';
-import { getStudentName, normalizeString } from '@/lib/kisbus/utils';
+import { getStudentName, normalizeString, getComplementaryInstructors, type CourseInstructorsSummary } from '@/lib/kisbus/utils';
 
 interface AfterSchoolInquiryDialogProps {
     afterSchoolClasses: AfterSchoolClass[];
@@ -62,6 +64,41 @@ export const AfterSchoolInquiryDialog = ({
     const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
     const [showBusRidersOnly, setShowBusRidersOnly] = useState(false);
 
+    // 메인 방과후 DB 강좌(Course) 실시간 구독하여 상호 보완
+    const [courses, setCourses] = useState<Course[]>([]);
+    useEffect(() => {
+        const unsub = onAfterschoolCoursesUpdate(setCourses);
+        return () => unsub();
+    }, []);
+
+    const courseMap = useMemo(() => {
+        const map = new Map<string, Course>();
+        courses.forEach(c => {
+            if (c.id) map.set(c.id, c);
+            if (c.title) {
+                map.set(normalizeString(c.title), c);
+                map.set(normalizeString(c.title.replace(/\s*\([^)]*\)/g, '')), c);
+            }
+        });
+        return map;
+    }, [courses]);
+
+    const getAllTeachersSummary = (c?: AfterSchoolClass | null): CourseInstructorsSummary => {
+        if (!c) {
+            return {
+                mainInstructor: '교사 미정',
+                assistantInstructors: [],
+                allInstructors: ['교사 미정'],
+                displayString: '교사 미정',
+                fullListString: '교사 미정'
+            };
+        }
+        const matchedCourse = courseMap.get(c.id) || 
+                              courseMap.get(normalizeString(c.name)) || 
+                              courseMap.get(normalizeString((c.name || '').replace(/\s*\([^)]*\)/g, '')));
+        return getComplementaryInstructors(c, matchedCourse);
+    };
+
     const filteredClasses = useMemo(() => {
         return afterSchoolClasses.filter(c => {
             if ((c.semesterMode || 'regular') !== semesterMode) return false;
@@ -70,7 +107,8 @@ export const AfterSchoolInquiryDialog = ({
             if (classSearchQuery.trim()) {
                 const q = normalizeString(classSearchQuery.trim());
                 const nameMatch = normalizeString(c.name).includes(q);
-                const teacherMatch = c.teacherName && normalizeString(c.teacherName).includes(q);
+                const teacherSummary = getAllTeachersSummary(c);
+                const teacherMatch = teacherSummary.allInstructors.some(inst => normalizeString(inst).includes(q));
                 if (!nameMatch && !teacherMatch) return false;
             }
             return true;
@@ -79,7 +117,7 @@ export const AfterSchoolInquiryDialog = ({
             if (a.dayOfWeek !== b.dayOfWeek) return days.indexOf(a.dayOfWeek) - days.indexOf(b.dayOfWeek);
             return a.name.localeCompare(b.name, 'ko');
         });
-    }, [afterSchoolClasses, selectedDay, selectedTeacherId, classSearchQuery, semesterMode]);
+    }, [afterSchoolClasses, selectedDay, selectedTeacherId, classSearchQuery, semesterMode, courseMap]);
 
     const displayClasses = useMemo(() => {
         const seenIds = new Set<string>();
@@ -271,12 +309,11 @@ export const AfterSchoolInquiryDialog = ({
                                 <SelectContent>
                                     <SelectItem value="none" className="text-xs font-semibold text-slate-400">수업 선택 안 함</SelectItem>
                                     {displayClasses.map(c => {
-                                        const teachersList = [c.teacherName, c.teacherName2].filter(Boolean);
-                                        const teachersLabel = teachersList.length > 0 ? teachersList.join(', ') : '교사 미정';
+                                        const summary = getAllTeachersSummary(c);
                                         return (
                                             <SelectItem key={c.id} value={c.id} className="text-xs">
                                                 {isVacationMode ? '' : `[${t(`day_short.${c.dayOfWeek.toLowerCase()}`)}] `}
-                                                {c.name} ({teachersLabel})
+                                                {c.name} ({summary.displayString})
                                             </SelectItem>
                                         );
                                     })}
@@ -287,43 +324,63 @@ export const AfterSchoolInquiryDialog = ({
                         {/* 학생 목록 */}
                         {selectedClassId && (
                             <div className="flex flex-col gap-2 flex-1 min-h-0">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <div className="text-xs font-medium text-slate-600">
-                                        총 <strong className="text-slate-900 font-bold">{classStudents.length}</strong>명
-                                        {classStudents.length > 0 && (
-                                            <> (버스 탑승: <strong className="text-indigo-600 font-bold">{classStudents.filter(s => s.busName && s.busName !== t('unassigned') && s.busName !== '-').length}</strong>명)</>
-                                        )}
-                                        {showBusRidersOnly && (
-                                            <span className="ml-1 text-indigo-600 font-semibold">
-                                                [필터: {displayedClassStudents.length}명]
-                                            </span>
-                                        )}
-                                        {selectedClass && (
-                                            <span className="ml-1 text-slate-500">
-                                                — {t(`day.${selectedClass.dayOfWeek.toLowerCase()}`)} {selectedClass.name}
-                                            </span>
-                                        )}
+                                <div className="flex flex-col gap-1.5 pb-1 border-b">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div className="text-xs font-medium text-slate-600">
+                                            총 <strong className="text-slate-900 font-bold">{classStudents.length}</strong>명
+                                            {classStudents.length > 0 && (
+                                                <> (버스 탑승: <strong className="text-indigo-600 font-bold">{classStudents.filter(s => s.busName && s.busName !== t('unassigned') && s.busName !== '-').length}</strong>명)</>
+                                            )}
+                                            {showBusRidersOnly && (
+                                                <span className="ml-1 text-indigo-600 font-semibold">
+                                                    [필터: {displayedClassStudents.length}명]
+                                                </span>
+                                            )}
+                                            {selectedClass && (
+                                                <span className="ml-1 font-bold text-slate-800">
+                                                    — {t(`day.${selectedClass.dayOfWeek.toLowerCase()}`)} {selectedClass.name}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <Button
+                                                variant={showBusRidersOnly ? "default" : "outline"}
+                                                size="sm"
+                                                className="h-7 text-xs font-semibold gap-1 px-2"
+                                                onClick={() => setShowBusRidersOnly(prev => !prev)}
+                                            >
+                                                <BusIcon className="h-3 w-3" />
+                                                {showBusRidersOnly ? '전체 보기' : '버스 탑승자만'}
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-7 text-xs font-semibold gap-1 px-2"
+                                                onClick={handleDownload}
+                                                disabled={displayedClassStudents.length === 0}
+                                            >
+                                                <Download className="h-3 w-3" /> 명단 다운로드
+                                            </Button>
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <Button
-                                            variant={showBusRidersOnly ? "default" : "outline"}
-                                            size="sm"
-                                            className="h-7 text-xs font-semibold gap-1 px-2"
-                                            onClick={() => setShowBusRidersOnly(prev => !prev)}
-                                        >
-                                            <BusIcon className="h-3 w-3" />
-                                            {showBusRidersOnly ? '전체 보기' : '버스 탑승자만'}
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-7 text-xs font-semibold gap-1 px-2"
-                                            onClick={handleDownload}
-                                            disabled={displayedClassStudents.length === 0}
-                                        >
-                                            <Download className="h-3 w-3" /> 명단 다운로드
-                                        </Button>
-                                    </div>
+                                    {selectedClass && (() => {
+                                        const summary = getAllTeachersSummary(selectedClass);
+                                        return (
+                                            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                                <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
+                                                    주강사: {summary.mainInstructor}
+                                                </span>
+                                                {summary.assistantInstructors.length > 0 && (
+                                                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-bold border border-purple-200">
+                                                        보조/추가강사: {summary.assistantInstructors.join(', ')}
+                                                    </span>
+                                                )}
+                                                <span className="text-[10.5px] text-slate-500 font-medium">
+                                                    (전체 강사진: {summary.fullListString})
+                                                </span>
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                                 <div className="rounded-xl border overflow-y-auto flex-1 min-h-[160px]">
                                     <Table>

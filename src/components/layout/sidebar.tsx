@@ -497,7 +497,7 @@ export default function AppSidebar() {
                 {/* 방과후학교 강사를 하고 있는 선생님에게만 노출: '(나의 강좌명) 수업 관리' */}
                 {afterschoolShortcutLabel && (
                   <Link
-                    href="/teacher/afterschool"
+                    href={myAfterschoolCourses[0]?.id ? `/teacher/afterschool?courseId=${myAfterschoolCourses[0].id}` : '/teacher/afterschool'}
                     className={cn(
                       "flex items-center justify-between p-2 rounded-xl text-xs font-bold transition-all group",
                       pathname?.startsWith('/teacher/afterschool')

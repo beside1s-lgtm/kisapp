@@ -389,6 +389,7 @@ const AdminPageContent: React.FC<{
                             routes={filteredRoutes} 
                             destinations={destinations}
                             selectedBusId={selectedBusId}
+                            onSelectBusId={setSelectedBusId}
                             selectedDay={selectedDay}
                             selectedRouteType={selectedRouteType}
                             days={DAYS}
@@ -1138,8 +1139,16 @@ export default function AdminPage() {
             return days;
         };
 
+        const isVacationCourse = (course: any) => {
+            if (course.semesterMode === 'vacation') return true;
+            if (course.semesterMode === 'regular') return false;
+            const text = `${course.period || ''} ${course.title || ''} ${course.semester || ''}`.toLowerCase();
+            return text.includes('방학');
+        };
+
         const convertedClasses: AfterSchoolClass[] = [];
         afterschoolCourses.forEach(course => {
+            const isVac = isVacationCourse(course);
             const days = extractCourseDays(course);
             const targetDays = days.length > 0 ? (days.map(d => dayMap[d]).filter(Boolean) as DayOfWeek[]) : ['Monday' as DayOfWeek];
             targetDays.forEach(dayOfWeek => {
@@ -1149,15 +1158,7 @@ export default function AdminPage() {
                     dayOfWeek,
                     teacherId: null,
                     teacherName: course.instructorName || '',
-                    semesterMode: 'regular'
-                });
-                convertedClasses.push({
-                    id: `${course.id}_vacation`,
-                    name: course.title,
-                    dayOfWeek,
-                    teacherId: null,
-                    teacherName: course.instructorName || '',
-                    semesterMode: 'vacation'
+                    semesterMode: isVac ? 'vacation' : 'regular'
                 });
             });
         });
@@ -1165,13 +1166,18 @@ export default function AdminPage() {
 
         // 2. 학생 및 수강신청/버스 신청 정보 연동
         const clean = (str: any) => String(str || '').replace(/\s+/g, '').toLowerCase();
+        const isCurrentVacation = adminViewMode === 'vacation';
 
         const merged = rawStudents.map(student => {
             const studentName = clean(student.nameKo || student.name || student.nameEn);
             const studentGrade = Number(student.grade);
             const studentClass = Number(student.class || student.classNum);
 
+            // 유효한 수강신청만 필터링: CANCELLED 및 미확정(ENROLLED 외) 제외
             const studentEnrollments = afterschoolEnrollments.filter(e => {
+                if (e.status === 'CANCELLED') return false;
+                if (e.status && e.status !== 'ENROLLED' && e.status !== 'enrolled') return false;
+
                 if (e.studentId && e.studentId === student.id) return true;
                 const eName = clean(e.name || e.studentName);
                 const matchName = eName === studentName;
@@ -1201,11 +1207,16 @@ export default function AdminPage() {
 
             studentEnrollments.forEach(enrollment => {
                 const course = afterschoolCourses.find(c => c.id === enrollment.courseId);
-                const cTitle = course?.title || enrollment.courseTitle || '';
-                if (cTitle && !enrolledCourseTitles.includes(cTitle)) {
-                    enrolledCourseTitles.push(cTitle);
-                }
                 if (!course) return;
+
+                const isVac = isVacationCourse(course);
+                // 현재 화면의 semesterMode와 일치하는 학기의 강좌만 수강 목록에 포함
+                if (isCurrentVacation === isVac) {
+                    const cTitle = course?.title || enrollment.courseTitle || '';
+                    if (cTitle && !enrolledCourseTitles.includes(cTitle)) {
+                        enrolledCourseTitles.push(cTitle);
+                    }
+                }
 
                 const classDays = extractCourseDays(course);
                 if (classDays.length === 0) return;
@@ -1240,11 +1251,13 @@ export default function AdminPage() {
                 }
 
                 targetDays.forEach(day => {
-                    if (!afterSchoolClassIds[day]) afterSchoolClassIds[day] = course.id;
-                    if (!vacationAfterSchoolClassIds[day]) vacationAfterSchoolClassIds[day] = course.id;
-                    // 이미 수동/개별 지정된 목적지가 있다면 덮어쓰지 않고 보존
-                    if (!afterSchoolDestinations[day]) afterSchoolDestinations[day] = realDestId;
-                    if (!vacationAfterSchoolDestinations[day]) vacationAfterSchoolDestinations[day] = realDestId;
+                    if (isVac) {
+                        if (!vacationAfterSchoolClassIds[day]) vacationAfterSchoolClassIds[day] = course.id;
+                        if (!vacationAfterSchoolDestinations[day]) vacationAfterSchoolDestinations[day] = realDestId;
+                    } else {
+                        if (!afterSchoolClassIds[day]) afterSchoolClassIds[day] = course.id;
+                        if (!afterSchoolDestinations[day]) afterSchoolDestinations[day] = realDestId;
+                    }
                 });
             });
 
@@ -1262,7 +1275,7 @@ export default function AdminPage() {
 
         setStudents(merged);
         setPendingStudents(merged.filter(s => s.applicationStatus === 'pending'));
-    }, [rawStudents, afterschoolCourses, afterschoolEnrollments]);
+    }, [rawStudents, afterschoolCourses, afterschoolEnrollments, adminViewMode]);
 
     const getOperatingPeriodString = (yearStr: string, semStr: string, calConfig?: AcademicCalendarConfig) => {
         const yearNum = parseInt(yearStr, 10) || 2026;

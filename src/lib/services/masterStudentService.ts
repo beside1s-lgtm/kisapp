@@ -96,8 +96,16 @@ export const getAllMasterStudents = async (): Promise<MasterStudent[]> => {
   }
 };
 
-// 1. 실시간 전체 통합 학생 마스터 구독 (입학년도 규칙을 만족하는 실제 등록 학생만 수신)
-export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => void) => {
+export interface MasterStudentFilterOptions {
+  grade?: string;
+  classNum?: string;
+}
+
+// 1. 실시간 통합 학생 마스터 구독 (그룹/학년 필터 옵션 지원 - 온디맨드 로딩으로 속도 극대화)
+export const onMasterStudentsUpdate = (
+  callback: (students: MasterStudent[]) => void,
+  filterOptions?: MasterStudentFilterOptions
+) => {
   let masterList: MasterStudent[] = [];
   let userList: MasterStudent[] = [];
   let busStudentList: any[] = [];
@@ -107,6 +115,19 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
   let afterschoolCourseList: any[] = [];
   let afterschoolEnrollmentList: any[] = [];
   let afterschoolClassroomList: any[] = [];
+
+  const targetGrade = filterOptions?.grade;
+  const isFilteringByGrade = targetGrade && targetGrade !== 'all' && targetGrade !== 'none' && targetGrade !== '';
+  
+  let gradeValues: any[] = [];
+  if (isFilteringByGrade) {
+    const num = parseInt(targetGrade, 10);
+    if (!isNaN(num)) {
+      gradeValues = [targetGrade, num];
+    } else {
+      gradeValues = [targetGrade];
+    }
+  }
 
   const mergeAndEmit = () => {
     const map = new Map<string, MasterStudent>();
@@ -313,8 +334,11 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
     callback(Array.from(map.values()));
   };
 
-  // 1. master_students 실시간 리스너
-  const unsubMaster = onSnapshot(collection(getDb(), COLLECTION_NAME), (snapshot) => {
+  // 1. master_students 실시간 리스너 (선택 학년 온디맨드 쿼리)
+  const masterQuery = isFilteringByGrade
+    ? query(collection(getDb(), COLLECTION_NAME), where('grade', 'in', gradeValues))
+    : collection(getDb(), COLLECTION_NAME);
+  const unsubMaster = onSnapshot(masterQuery, (snapshot) => {
     masterList = snapshot.docs.map(doc => ({
       studentId: doc.id,
       ...doc.data()
@@ -322,8 +346,11 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
     mergeAndEmit();
   }, (err) => console.error('master_students snapshot error:', err));
 
-  // 2. users 실시간 리스너
-  const unsubUsers = onSnapshot(collection(getDb(), 'users'), (snapshot) => {
+  // 2. users 실시간 리스너 (선택 학년 온디맨드 쿼리)
+  const usersQuery = isFilteringByGrade
+    ? query(collection(getDb(), 'users'), where('grade', 'in', gradeValues))
+    : collection(getDb(), 'users');
+  const unsubUsers = onSnapshot(usersQuery, (snapshot) => {
     const rawUsers = snapshot.docs.map(doc => {
       const data = doc.data();
       const userEmail = (data.email || doc.id || '').trim();
@@ -341,6 +368,7 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
       // 학년 정보가 없는 계정은 1학년 1반 기본값으로 생성하지 않고 제외
       const grade = u.grade || u.studentGrade;
       if (!grade) return false;
+      if (isFilteringByGrade && String(grade) !== String(targetGrade)) return false;
       const studentName = u.studentName || u.nameKo || u.name || '';
       if (!studentName || studentName === '사용자' || studentName === '학생') return false;
       return true;
@@ -372,8 +400,11 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
     mergeAndEmit();
   }, (err) => console.error('users snapshot error:', err));
 
-  // 3. 스쿨버스 students 실시간 리스너
-  const unsubBusStudents = onSnapshot(collection(getKisbusDb(), 'students'), (snapshot) => {
+  // 3. 스쿨버스 students 실시간 리스너 (선택 학년 온디맨드 쿼리)
+  const busStudentsQuery = isFilteringByGrade
+    ? query(collection(getKisbusDb(), 'students'), where('grade', 'in', gradeValues))
+    : collection(getKisbusDb(), 'students');
+  const unsubBusStudents = onSnapshot(busStudentsQuery, (snapshot) => {
     busStudentList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     mergeAndEmit();
   }, (err) => console.error('kisbus students snapshot error:', err));
@@ -402,8 +433,11 @@ export const onMasterStudentsUpdate = (callback: (students: MasterStudent[]) => 
     mergeAndEmit();
   }, (err) => console.error('afterschool_courses snapshot error:', err));
 
-  // 8. 방과후 enrollments 실시간 리스너
-  const unsubEnrollments = onSnapshot(collection(getDb(), 'afterschool_enrollments'), (snapshot) => {
+  // 8. 방과후 enrollments 실시간 리스너 (선택 학년 온디맨드 쿼리)
+  const enrollmentsQuery = isFilteringByGrade
+    ? query(collection(getDb(), 'afterschool_enrollments'), where('grade', 'in', gradeValues))
+    : collection(getDb(), 'afterschool_enrollments');
+  const unsubEnrollments = onSnapshot(enrollmentsQuery, (snapshot) => {
     afterschoolEnrollmentList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     mergeAndEmit();
   }, (err) => console.error('afterschool_enrollments snapshot error:', err));

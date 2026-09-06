@@ -785,16 +785,37 @@ const TeacherAssignmentViewDialog = ({
         return map;
     }, [teachers, afterSchoolTeachers, saturdayTeachers, semesterMode]);
 
-    // Filter to active, operational buses strictly belonging to the CURRENT semesterMode
+    // Filter to active, operational buses strictly belonging to the CURRENT semesterMode and viewCategory
     const operationalBuses = useMemo(() => {
         return sortBuses(
-            (buses || []).filter(b => 
-                (b.semesterMode || 'regular') === semesterMode &&
-                (b.isActive ?? true) && 
-                !b.excludeFromAssignment
-            )
+            (buses || []).filter(b => {
+                if ((b.semesterMode || 'regular') !== semesterMode) return false;
+                if (b.isActive === false) return false;
+
+                // 노선 구분별 배정 제외 플래그 (GEMINI.md 스쿨버스 도메인 규칙 3)
+                const isExcluded = viewCategory === 'commute'
+                    ? (b.excludeFromAssignmentByType?.commute ?? b.excludeFromAssignment ?? false)
+                    : viewCategory === 'afterSchool'
+                        ? (b.excludeFromAssignmentByType?.afterSchool ?? b.excludeFromAssignment ?? false)
+                        : (b.excludeFromAssignmentByType?.saturday ?? b.excludeFromAssignment ?? false);
+                if (isExcluded) return false;
+
+                // 실운행 검증: 해당 구분의 routesList에 해당 버스 노선이 존재하고 정류장/탑승 학생이 있는지 확인 (GEMINI.md 스쿨버스 도메인 규칙 5)
+                const matchingRoutes = routesList.filter(r => r.busId === b.id);
+                if (matchingRoutes.length === 0) return false;
+
+                const hasStops = matchingRoutes.some(r => Array.isArray(r.stops) && r.stops.length > 0);
+                if (semesterMode === 'vacation') {
+                    if (!hasStops) return false;
+                } else {
+                    const hasStudents = matchingRoutes.some(r => Array.isArray(r.seating) && r.seating.some(s => s && s.studentId !== null));
+                    if (!hasStops || !hasStudents) return false;
+                }
+
+                return true;
+            })
         );
-    }, [buses, semesterMode]);
+    }, [buses, semesterMode, viewCategory, routesList]);
 
     const getAssignedNames = (busId: string): string[] => {
         const r = routesList.find(x => x.busId === busId);
@@ -1354,9 +1375,17 @@ export default function TeacherPage() {
       return days;
     };
 
+    const isVacationCourse = (course: any) => {
+      if (course.semesterMode === 'vacation') return true;
+      if (course.semesterMode === 'regular') return false;
+      const text = `${course.period || ''} ${course.title || ''} ${course.semester || ''}`.toLowerCase();
+      return text.includes('방학');
+    };
+
     if (afterschoolCourses.length > 0) {
       const convertedClasses: AfterSchoolClass[] = [];
       afterschoolCourses.forEach(course => {
+        const isVac = isVacationCourse(course);
         const days = extractCourseDays(course);
         const targetDays = days.length > 0 ? (days.map(d => dayMap[d]).filter(Boolean) as DayOfWeek[]) : ['Monday' as DayOfWeek];
         targetDays.forEach(dayOfWeek => {
@@ -1366,15 +1395,7 @@ export default function TeacherPage() {
             dayOfWeek,
             teacherId: null,
             teacherName: course.instructorName || '',
-            semesterMode: 'regular'
-          });
-          convertedClasses.push({
-            id: `${course.id}_vacation`,
-            name: course.title,
-            dayOfWeek,
-            teacherId: null,
-            teacherName: course.instructorName || '',
-            semesterMode: 'vacation'
+            semesterMode: isVac ? 'vacation' : 'regular'
           });
         });
       });
@@ -1389,7 +1410,11 @@ export default function TeacherPage() {
       const studentGrade = Number(student.grade);
       const studentClass = Number(student.class || student.classNum);
 
+      // 유효한 수강신청만 필터링: CANCELLED 및 미확정(ENROLLED 외) 제외
       const studentEnrollments = afterschoolEnrollments.filter(e => {
+        if (e.status === 'CANCELLED') return false;
+        if (e.status && e.status !== 'ENROLLED' && e.status !== 'enrolled') return false;
+
         if (e.studentId && e.studentId === student.id) return true;
         const eName = clean(e.name || e.studentName);
         const matchName = eName === studentName;
@@ -1416,17 +1441,46 @@ export default function TeacherPage() {
       const vacationAfterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = { ...(student.vacationAfterSchoolClassIds || {}) };
       const vacationAfterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = { ...(student.vacationAfterSchoolDestinations || {}) };
       const enrolledCourseTitles: string[] = [];
+      const afterSchoolCoursesByDay: Partial<Record<DayOfWeek, { title: string; instructorName?: string; teachersText?: string }>> = {};
 
       studentEnrollments.forEach(enrollment => {
         const course = afterschoolCourses.find(c => c.id === enrollment.courseId);
-        const cTitle = course?.title || enrollment.courseTitle || '';
-        if (cTitle && !enrolledCourseTitles.includes(cTitle)) {
-          enrolledCourseTitles.push(cTitle);
-        }
         if (!course) return;
+
+        const isVac = isVacationCourse(course);
+        // 정규 학기 강좌만 수강 타이틀 목록에 포함 (방학 강좌 격리)
+        if (!isVac) {
+          const cTitle = course?.title || enrollment.courseTitle || '';
+          if (cTitle && !enrolledCourseTitles.includes(cTitle)) {
+            enrolledCourseTitles.push(cTitle);
+          }
+        }
 
         const classDays = extractCourseDays(course);
         if (classDays.length === 0) return;
+
+        const targetDays = classDays.map((d: string) => dayMap[d]).filter(Boolean) as DayOfWeek[];
+
+        // 요일별 정규 강좌 매핑 (해당 요일에 실제 수강하는 강좌만 기록)
+        if (!isVac) {
+          const cTitle = course?.title || enrollment.courseTitle || '';
+          const teachers: string[] = [];
+          if (course.instructorName) teachers.push(course.instructorName.slice(0, 3));
+          if (course.assistantTeachers && course.assistantTeachers.length > 0) {
+            course.assistantTeachers.forEach((t: string) => teachers.push(t.slice(0, 3)));
+          }
+          const teachersText = teachers.length > 0 ? `(${teachers.join(',')})` : '';
+
+          targetDays.forEach(day => {
+            if (!afterSchoolCoursesByDay[day] && cTitle) {
+              afterSchoolCoursesByDay[day] = {
+                title: cTitle,
+                instructorName: course.instructorName,
+                teachersText
+              };
+            }
+          });
+        }
 
         const isSat = classDays.includes('토') || Boolean(
           course.period?.includes('토') ||
@@ -1441,8 +1495,6 @@ export default function TeacherPage() {
           return;
         }
 
-        const targetDays = classDays.map((d: string) => dayMap[d]).filter(Boolean) as DayOfWeek[];
-
         let realDestId = (
           (isSat ? (student.satAfternoonDestinationId || student.satMorningDestinationId) : null) ||
           student.afternoonDestinationId ||
@@ -1456,10 +1508,13 @@ export default function TeacherPage() {
         }
 
         targetDays.forEach(day => {
-          if (!afterSchoolClassIds[day]) afterSchoolClassIds[day] = course.id;
-          if (!vacationAfterSchoolClassIds[day]) vacationAfterSchoolClassIds[day] = course.id;
-          if (!afterSchoolDestinations[day]) afterSchoolDestinations[day] = realDestId;
-          if (!vacationAfterSchoolDestinations[day]) vacationAfterSchoolDestinations[day] = realDestId;
+          if (isVac) {
+            if (!vacationAfterSchoolClassIds[day]) vacationAfterSchoolClassIds[day] = course.id;
+            if (!vacationAfterSchoolDestinations[day]) vacationAfterSchoolDestinations[day] = realDestId;
+          } else {
+            if (!afterSchoolClassIds[day]) afterSchoolClassIds[day] = course.id;
+            if (!afterSchoolDestinations[day]) afterSchoolDestinations[day] = realDestId;
+          }
         });
       });
 
@@ -1468,6 +1523,7 @@ export default function TeacherPage() {
         afterSchoolCourseTitle: enrolledCourseTitles.join(', '),
         afterSchoolCourseTitles: enrolledCourseTitles,
         enrolledCourseTitles,
+        afterSchoolCoursesByDay,
         afterSchoolClassIds,
         afterSchoolDestinations,
         vacationAfterSchoolClassIds,
@@ -1534,30 +1590,53 @@ export default function TeacherPage() {
     }
   }, [selectedDate, isManualMode, semesterMode, isAfterSchoolActive]);
 
-  const lastRouteTypeRef = useRef<RouteType | null>(null);
+  const hasAutoSelectedRef = useRef(false);
+  const userInteractedBusRef = useRef(false);
+  const lastRouteKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    
-    const loggedInTeacher = currentTeacherId ? teachers.find(t => t.id === currentTeacherId) : null;
-    const defaultBusId = selectedRouteType === 'AfterSchool'
-      ? (teacherAssignedBuses.afterSchoolBusId || loggedInTeacher?.assignedAfterSchoolBusId)
-      : (teacherAssignedBuses.commuteBusId || loggedInTeacher?.assignedBusId);
 
-    const isTypeChanged = lastRouteTypeRef.current !== null && 
-      ((lastRouteTypeRef.current === 'AfterSchool' && selectedRouteType !== 'AfterSchool') ||
-       (lastRouteTypeRef.current !== 'AfterSchool' && selectedRouteType === 'AfterSchool'));
+    const isSat = selectedDay === 'Saturday' || selectedRouteType === 'Saturday';
+    const rawDefaultBusId = isSat
+      ? (teacherAssignedBuses.saturdayBusId || '')
+      : (selectedRouteType === 'AfterSchool'
+          ? (teacherAssignedBuses.afterSchoolBusId || loggedInTeacherDoc?.assignedAfterSchoolBusId || '')
+          : (teacherAssignedBuses.commuteBusId || loggedInTeacherDoc?.assignedBusId || ''));
 
-    if (selectedBusId === '' || isTypeChanged) {
-      if (defaultBusId) {
-        setSelectedBusId(defaultBusId);
-      } else if (selectedBusId === '') {
+    const resolvedDefaultBusId = (() => {
+      if (!rawDefaultBusId) return '';
+      const match = buses.find(b => b.id === rawDefaultBusId || b.name === rawDefaultBusId || b.name.replace('차', '') === rawDefaultBusId.replace('차', ''));
+      return match ? match.id : rawDefaultBusId;
+    })();
+
+    const currentRouteKey = `${selectedDay}_${selectedRouteType}`;
+    const isRouteChanged = lastRouteKeyRef.current !== null && lastRouteKeyRef.current !== currentRouteKey;
+
+    const isDataLoaded = buses.length > 0;
+
+    if (!hasAutoSelectedRef.current) {
+      if (resolvedDefaultBusId) {
+        setSelectedBusId(resolvedDefaultBusId);
+        hasAutoSelectedRef.current = true;
+      } else if (isDataLoaded && (teachers.length > 0 || loggedInTeacherDoc !== null)) {
+        setSelectedBusId('all');
+        hasAutoSelectedRef.current = true;
+      }
+    } else if (isRouteChanged) {
+      userInteractedBusRef.current = false;
+      if (resolvedDefaultBusId) {
+        setSelectedBusId(resolvedDefaultBusId);
+      } else {
         setSelectedBusId('all');
       }
+    } else if (!userInteractedBusRef.current && selectedBusId === 'all' && resolvedDefaultBusId) {
+      // 비동기 교사/노선 데이터가 뒤늦게 도착하여 담당 버스가 식별된 경우 자동 전환
+      setSelectedBusId(resolvedDefaultBusId);
     }
 
-    lastRouteTypeRef.current = selectedRouteType;
-  }, [isAuthenticated, currentTeacherId, teachers, teacherAssignedBuses, selectedRouteType, selectedBusId]);
+    lastRouteKeyRef.current = currentRouteKey;
+  }, [isAuthenticated, buses, teachers.length, loggedInTeacherDoc, teacherAssignedBuses, selectedRouteType, selectedDay, selectedBusId]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -2089,7 +2168,7 @@ updates.disembarked = arrayUnion(student.id);
         {/* 1. 버스 선택 */}
         <div className="w-full sm:w-[150px] shrink-0 min-w-0">
             <Label className="text-[10px] sm:text-xs font-semibold text-slate-600 mb-0.5 block">{t('bus')}</Label>
-            <Select value={selectedBusId} onValueChange={setSelectedBusId} disabled={loading}>
+            <Select value={selectedBusId} onValueChange={(val) => { userInteractedBusRef.current = true; setSelectedBusId(val); }} disabled={loading}>
                 <SelectTrigger className="h-8 sm:h-9 text-xs sm:text-sm bg-white/90"><SelectValue placeholder={t('teacher_page.select_bus')} /></SelectTrigger>
                 <SelectContent position="popper" side="bottom" sideOffset={4} className="max-h-[40vh] overflow-y-auto">
                     <SelectItem value="all">{t('teacher_page.all_buses')}</SelectItem>
@@ -2473,14 +2552,16 @@ updates.disembarked = arrayUnion(student.id);
                                     </p>
                                 );
                             }
-                            const fallbackTitle = (selectedStudent as any).afterSchoolCourseTitle || 
-                                ((selectedStudent as any).enrolledCourseTitles && (selectedStudent as any).enrolledCourseTitles.join(', '));
-                            if (fallbackTitle) {
+                            const dayCourseInfo = (selectedStudent as any).afterSchoolCoursesByDay?.[selectedDay];
+                            if (dayCourseInfo?.title) {
                                 return (
                                     <p className="text-sm text-muted-foreground flex items-center gap-1.5">
                                         <GraduationCap className="w-3.5 h-3.5 text-primary shrink-0" />
                                         <span>방과후 ({t(`day_short.${selectedDay.toLowerCase()}`)}):</span>
-                                        <span className="font-medium text-foreground">{fallbackTitle}</span>
+                                        <span className="font-medium text-foreground">{dayCourseInfo.title}</span>
+                                        {dayCourseInfo.teachersText && (
+                                            <span className="text-xs text-muted-foreground/70">{dayCourseInfo.teachersText}</span>
+                                        )}
                                     </p>
                                 );
                             }
@@ -2568,11 +2649,10 @@ updates.disembarked = arrayUnion(student.id);
                                             if (afterSchoolClass.teacherName2) teachers.push(afterSchoolClass.teacherName2.slice(0, 3));
                                         }
                                         const teachersText = teachers.length > 0 ? `(${teachers.join(',')})` : '';
-                                        const fallbackCourseName = (s as any).afterSchoolCourseTitle || 
-                                            ((s as any).enrolledCourseTitles && (s as any).enrolledCourseTitles[0]);
+                                        const dayCourseInfo = (s as any).afterSchoolCoursesByDay?.[selectedDay];
                                         const asBadgeText = afterSchoolClass 
                                             ? `[${classNameShort}]${teachersText}` 
-                                            : (fallbackCourseName ? `[${fallbackCourseName.slice(0, 4)}]` : '');
+                                            : (dayCourseInfo?.title ? `[${dayCourseInfo.title.slice(0, 3)}]${dayCourseInfo.teachersText || ''}` : '');
 
                                         return (
                                             <TableRow key={s.id} onClick={() => handleStudentRowClick(s.id)} className={cn("cursor-pointer hover:bg-accent/50 transition-colors", lastClickedStudentId === s.id && "bg-accent/70")}>
@@ -2740,14 +2820,16 @@ updates.disembarked = arrayUnion(student.id);
                                             </p>
                                         );
                                     }
-                                    const fallbackTitle = (selectedStudent as any).afterSchoolCourseTitle || 
-                                        ((selectedStudent as any).enrolledCourseTitles && (selectedStudent as any).enrolledCourseTitles.join(', '));
-                                    if (fallbackTitle) {
+                                    const dayCourseInfo = (selectedStudent as any).afterSchoolCoursesByDay?.[selectedDay];
+                                    if (dayCourseInfo?.title) {
                                         return (
                                             <p className="text-sm text-muted-foreground flex items-center gap-1.5">
                                                 <GraduationCap className="w-3.5 h-3.5 text-primary shrink-0" />
                                                 <span>방과후 ({t(`day_short.${selectedDay.toLowerCase()}`)}):</span>
-                                                <span className="font-medium text-foreground">{fallbackTitle}</span>
+                                                <span className="font-medium text-foreground">{dayCourseInfo.title}</span>
+                                                {dayCourseInfo.teachersText && (
+                                                    <span className="text-xs text-muted-foreground/70">{dayCourseInfo.teachersText}</span>
+                                                )}
                                             </p>
                                         );
                                     }

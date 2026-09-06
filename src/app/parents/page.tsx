@@ -184,7 +184,9 @@ export default function ParentsDashboard() {
       const isSameClass = (!sGrade || eGrade === sGrade) && (!sClass || eClass === sClass);
       const isSameEmail = e.studentEmail && user?.email && e.studentEmail.toLowerCase() === user.email.toLowerCase();
 
-      const isEnrolled = e.status === 'enrolled' || e.status === 'confirmed' || e.status === 'approved' || !e.status;
+      if (e.status === 'CANCELLED') return false;
+      const st = String(e.status || '').toUpperCase();
+      const isEnrolled = st === 'ENROLLED' || st === 'CONFIRMED' || st === 'APPROVED' || !e.status;
       return (isSameName || isSameEmail) && isEnrolled;
     });
 

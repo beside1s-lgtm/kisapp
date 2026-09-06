@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn, normalizeString, getStudentName } from '@/lib/kisbus/utils';
 import { updateStudent, addDestination, deleteStudentsInBatch } from '@/lib/kisbus';
 import { useToast } from '@/hooks/use-toast';
+import { BusSeatMap } from '@/components/bus/bus-seat-map';
 
 interface StudentGlobalSearchPanelProps {
     students: Student[];
@@ -47,6 +48,10 @@ interface StudentGlobalSearchPanelProps {
     onAddStudentToClass?: (studentId: string, classId: string) => Promise<void>;
     onRemoveStudentFromClass?: (studentId: string, className: string) => Promise<void>;
     onRevertToAfternoonRoute?: (studentId: string, day?: DayOfWeek) => Promise<void>;
+    selectedBusId?: string | null;
+    onSelectBusId?: (busId: string | null) => void;
+    selectedDay?: DayOfWeek;
+    onSeatClick?: (seatNumber: number, studentId: string | null) => void;
 }
 
 export const StudentGlobalSearchPanel = ({
@@ -60,7 +65,11 @@ export const StudentGlobalSearchPanel = ({
     semesterMode = 'regular',
     onAddStudentToClass,
     onRemoveStudentFromClass,
-    onRevertToAfternoonRoute
+    onRevertToAfternoonRoute,
+    selectedBusId,
+    onSelectBusId,
+    selectedDay = 'Monday',
+    onSeatClick
 }: StudentGlobalSearchPanelProps) => {
     const { t, i18n } = useTranslation();
     const { toast } = useToast();
@@ -110,6 +119,34 @@ export const StudentGlobalSearchPanel = ({
             return getStudentName(a, i18n.language).localeCompare(getStudentName(b, i18n.language), 'ko');
         });
     }, [students, batchGrade, batchClass, i18n.language]);
+
+    // 현재 요일/경로에서 학생이 배정된 노선 및 좌석 찾기
+    const currentAssignedRoute = useMemo(() => {
+        if (!selectedGlobalStudent) return null;
+        return routes.find(r => 
+            r.dayOfWeek === selectedDay && 
+            r.type === selectedRouteType && 
+            r.seating.some(s => s.studentId === selectedGlobalStudent.id)
+        ) || null;
+    }, [selectedGlobalStudent, routes, selectedDay, selectedRouteType]);
+
+    const currentAssignedBus = useMemo(() => {
+        if (!currentAssignedRoute) return null;
+        return buses.find(b => b.id === currentAssignedRoute.busId) || null;
+    }, [currentAssignedRoute, buses]);
+
+    const studentSeatNumber = useMemo(() => {
+        if (!currentAssignedRoute || !selectedGlobalStudent) return null;
+        const seat = currentAssignedRoute.seating.find(s => s.studentId === selectedGlobalStudent.id);
+        return seat?.seatNumber ?? null;
+    }, [currentAssignedRoute, selectedGlobalStudent]);
+
+    // 학생 선택 시, 해당 학생이 배정된 버스가 있고 메인 화면의 선택 버스와 다르면 자동으로 해당 버스로 전환
+    useEffect(() => {
+        if (currentAssignedBus && onSelectBusId && selectedBusId !== currentAssignedBus.id) {
+            onSelectBusId(currentAssignedBus.id);
+        }
+    }, [currentAssignedBus, onSelectBusId, selectedBusId]);
 
     const handleBatchPrintQr = () => {
         if (filteredBatchStudents.length === 0) {
@@ -684,6 +721,47 @@ export const StudentGlobalSearchPanel = ({
                             <Button variant="ghost" size="icon" onClick={() => setSelectedGlobalStudent(null)}><X className="w-4 h-4"/></Button>
                         </div>
                         
+                        {/* 탑승 버스 및 좌석표 정보 (배정된 경우에만 노출) */}
+                        {currentAssignedBus && currentAssignedRoute && (
+                            <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        <Badge className="bg-indigo-600 text-white font-bold text-[11px] px-2 py-0.5">
+                                            {currentAssignedBus.name}
+                                        </Badge>
+                                        <span className="text-xs font-semibold text-slate-700">
+                                            {studentSeatNumber !== null ? `${studentSeatNumber}번 좌석 탑승` : '좌석 배정됨'}
+                                        </span>
+                                    </div>
+                                    {onSelectBusId && selectedBusId !== currentAssignedBus.id && (
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 text-[10px] px-2 border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+                                            onClick={() => onSelectBusId(currentAssignedBus.id)}
+                                        >
+                                            좌측에 버스 열기
+                                        </Button>
+                                    )}
+                                </div>
+                                <div className="bg-white rounded-lg p-2 border border-indigo-100 shadow-xs max-h-[340px] overflow-y-auto overscroll-contain">
+                                    <BusSeatMap
+                                        bus={currentAssignedBus}
+                                        seating={currentAssignedRoute.seating}
+                                        students={students}
+                                        destinations={destinations}
+                                        onSeatClick={onSeatClick}
+                                        highlightedSeatNumber={studentSeatNumber}
+                                        highlightedStudentId={selectedGlobalStudent.id}
+                                        routeType={selectedRouteType}
+                                        dayOfWeek={selectedDay}
+                                        boardedStudentIds={[]}
+                                        notBoardingStudentIds={[]}
+                                    />
+                                </div>
+                            </div>
+                        )}
+
                         <Button size="sm" className="w-full" onClick={handleAssignStudentFromSearch}>이 버스에 배정</Button>
                         
                         <div className="flex justify-between items-center">
@@ -978,23 +1056,24 @@ export const StudentGlobalSearchPanel = ({
 
                         {/* 방과후 정보 섹션 */}
                         {(() => {
-                            const enrolledClasses = afterSchoolClasses.filter(c => {
-                                const isTargetSemester = (c.semesterMode || 'regular') === semesterMode;
-                                if (!isTargetSemester) return false;
-                                
-                                // 방학 모드일 때는 양쪽 필드 모두 검색하여 매핑되어 있는지 확인 (호환성)
+                            const currentModeClasses = afterSchoolClasses.filter(c => (c.semesterMode || 'regular') === semesterMode);
+                            const currentModeClassNames = new Set(currentModeClasses.map(c => c.name));
+
+                            const enrolledClasses = currentModeClasses.filter(c => {
                                 if (semesterMode === 'vacation') {
                                     const vacIds = Object.values(selectedGlobalStudent.vacationAfterSchoolClassIds || {});
-                                    const regIds = Object.values(selectedGlobalStudent.afterSchoolClassIds || {});
-                                    return vacIds.includes(c.id) || regIds.includes(c.id);
+                                    return vacIds.includes(c.id);
                                 }
                                 
                                 const regIds = Object.values(selectedGlobalStudent.afterSchoolClassIds || {});
                                 return regIds.includes(c.id);
                             });
-                            // Deduplicate by name for vacation mode, plus fallback from student profile
-                            const directTitles = (selectedGlobalStudent as any).enrolledCourseTitles || (selectedGlobalStudent as any).afterSchoolCourseTitles || [];
-                            const singleTitle = (selectedGlobalStudent as any).afterSchoolCourseTitle ? [(selectedGlobalStudent as any).afterSchoolCourseTitle] : [];
+
+                            // 현재 학기 모드에 해당하는 유효 강좌명만 허용하여 타 학기 강좌 간섭 원천 차단
+                            const rawDirectTitles = (selectedGlobalStudent as any).enrolledCourseTitles || (selectedGlobalStudent as any).afterSchoolCourseTitles || [];
+                            const directTitles = rawDirectTitles.filter((t: string) => currentModeClassNames.has(t));
+                            const rawSingleTitle = (selectedGlobalStudent as any).afterSchoolCourseTitle ? [(selectedGlobalStudent as any).afterSchoolCourseTitle] : [];
+                            const singleTitle = rawSingleTitle.filter((t: string) => currentModeClassNames.has(t));
                             const uniqueClassNames = Array.from(new Set([...enrolledClasses.map(c => c.name), ...directTitles, ...singleTitle].filter(Boolean)));
 
                             return (

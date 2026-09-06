@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useMemo } from 'react';
+import { Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -215,18 +215,14 @@ function AfterschoolConsole() {
   };
 
   const myName = (profile?.name || user?.displayName || '').trim();
-  const teacherCourses = useMemo(() => {
-    // 관리자는 강사 로그인 불가 시 대리 출석체크를 위해 전체 강좌를 열람 및 관리 가능
-    if (isAdmin) {
-      return [...courses].sort((a, b) => {
-        const instA = a.instructorName || '';
-        const instB = b.instructorName || '';
-        if (instA !== instB) return instA.localeCompare(instB);
-        return a.title.localeCompare(b.title);
-      });
-    }
-    if (!myName) return courses;
-    const filtered = courses.filter(c => {
+  const myUid = user?.uid || '';
+
+  // 로그인한 교사의 본인 담당 강좌 (주강사, 보조강사, 추가강사 1~4)
+  const myOwnCourses = useMemo(() => {
+    if (!myName && !myUid) return [];
+    return courses.filter(c => {
+      if (c.teacherId && c.teacherId === myUid) return true;
+      if (c.teacherName && c.teacherName.trim() === myName) return true;
       const instructors = [
         c.instructorName,
         c.instructor2,
@@ -236,8 +232,23 @@ function AfterschoolConsole() {
       ].filter(Boolean).map(s => String(s).trim());
       return instructors.includes(myName);
     });
-    return filtered.length > 0 ? filtered : courses;
-  }, [courses, myName, isAdmin]);
+  }, [courses, myName, myUid]);
+
+  const teacherCourses = useMemo(() => {
+    // 관리자는 전체 강좌를 열람할 수 있으나, 본인 담당 강좌가 있다면 최상단에 먼저 배치
+    if (isAdmin) {
+      const otherCourses = courses.filter(c => !myOwnCourses.some(mc => mc.id === c.id));
+      const sortedOthers = [...otherCourses].sort((a, b) => {
+        const instA = a.instructorName || '';
+        const instB = b.instructorName || '';
+        if (instA !== instB) return instA.localeCompare(instB);
+        return a.title.localeCompare(b.title);
+      });
+      return [...myOwnCourses, ...sortedOthers];
+    }
+    if (myOwnCourses.length > 0) return myOwnCourses;
+    return courses;
+  }, [courses, myOwnCourses, isAdmin]);
 
   const myCourses = teacherCourses;
 
@@ -254,17 +265,37 @@ function AfterschoolConsole() {
     return attendanceRecords.filter(a => myCourseIds.includes(a.courseId));
   }, [attendanceRecords, myCourseIds]);
 
+  const hasAutoSelectedCourseRef = useRef(false);
+
   useEffect(() => {
-    // URL 파라미터로 지정된 강좌가 있으면 최우선 선택
+    // 1순위: URL 파라미터로 지정된 강좌가 있으면 최우선 선택
     if (queryCourseId && courses.some(c => c.id === queryCourseId)) {
       setSelectedCourseId(queryCourseId);
       setActiveSubTab('studentSheet');
+      hasAutoSelectedCourseRef.current = true;
       return;
     }
-    if (myCourses.length > 0 && (!selectedCourseId || !myCourses.some(c => c.id === selectedCourseId))) {
-      setSelectedCourseId(myCourses[0].id);
+
+    // 이미 유효한 강좌를 보고 있다면 유지
+    if (hasAutoSelectedCourseRef.current && selectedCourseId && myCourses.some(c => c.id === selectedCourseId)) {
+      return;
     }
-  }, [myCourses, selectedCourseId, queryCourseId, courses]);
+
+    // 2순위: 로그인한 교사의 본인 담당 강좌가 있다면 그 강좌를 기본으로 선택!
+    if (myOwnCourses.length > 0) {
+      setSelectedCourseId(myOwnCourses[0].id);
+      setActiveSubTab('studentSheet');
+      hasAutoSelectedCourseRef.current = true;
+      return;
+    }
+
+    // 3순위: 본인 담당 강좌가 없는 경우 전체 강좌 중 첫 번째 선택
+    if (myCourses.length > 0) {
+      setSelectedCourseId(myCourses[0].id);
+      setActiveSubTab('studentSheet');
+      hasAutoSelectedCourseRef.current = true;
+    }
+  }, [myCourses, myOwnCourses, selectedCourseId, queryCourseId, courses]);
 
   // 진행 상태 뱃지 컴포넌트 (모바일에서는 완전히 숨기고 큰 디스플레이에서만 노출)
   const renderStageStatusBadge = (extraCls?: string) => (
@@ -294,8 +325,11 @@ function AfterschoolConsole() {
 
   // 현재 선택된 강좌 라벨
   const selectedCourse = myCourses.find(c => c.id === selectedCourseId);
+  const isSelectedMine = myOwnCourses.some(mc => mc.id === selectedCourseId);
   const selectedCourseFullTitle = selectedCourse
-    ? (isAdmin && selectedCourse.instructorName ? `[${selectedCourse.instructorName}] ${selectedCourse.title}` : selectedCourse.title)
+    ? (isAdmin 
+        ? (isSelectedMine ? `[내 수업] ${selectedCourse.title}` : (selectedCourse.instructorName ? `[${selectedCourse.instructorName}] ${selectedCourse.title}` : selectedCourse.title))
+        : selectedCourse.title)
     : (t('teacher_afterschool.select_course', '강좌 선택'));
   // 모바일 표시용 고정 글자수 (최대 12자 + 말줄임)
   const selectedCourseMobileText = selectedCourseFullTitle.length > 12
@@ -317,15 +351,18 @@ function AfterschoolConsole() {
           <SelectValue placeholder={t('teacher_afterschool.select_course', '강좌 선택')} />
         </SelectTrigger>
         <SelectContent className="max-h-80">
-          {myCourses.map(c => (
-            <SelectItem
-              key={c.id}
-              value={c.id}
-              className="text-xs font-semibold cursor-pointer"
-            >
-              {isAdmin && c.instructorName ? `[${c.instructorName}] ` : ''}{c.title}
-            </SelectItem>
-          ))}
+          {myCourses.map(c => {
+            const isMine = myOwnCourses.some(mc => mc.id === c.id);
+            return (
+              <SelectItem
+                key={c.id}
+                value={c.id}
+                className={cn("text-xs font-semibold cursor-pointer", isMine && "font-bold text-teal-800 bg-teal-50/50")}
+              >
+                {isAdmin && (isMine ? `[내 수업] ` : (c.instructorName ? `[${c.instructorName}] ` : ''))}{c.title}
+              </SelectItem>
+            );
+          })}
           <div
             className="px-2 py-1.5 border-t border-slate-100 text-[11px] font-extrabold text-indigo-600 hover:bg-indigo-50 cursor-pointer flex items-center gap-1 rounded-sm mt-1"
             onClick={() => setActiveSubTab('course')}
@@ -355,15 +392,18 @@ function AfterschoolConsole() {
           </span>
         </SelectTrigger>
         <SelectContent className="max-h-80">
-          {myCourses.map(c => (
-            <SelectItem
-              key={c.id}
-              value={c.id}
-              className="text-xs font-semibold cursor-pointer"
-            >
-              {isAdmin && c.instructorName ? `[${c.instructorName}] ` : ''}{c.title}
-            </SelectItem>
-          ))}
+          {myCourses.map(c => {
+            const isMine = myOwnCourses.some(mc => mc.id === c.id);
+            return (
+              <SelectItem
+                key={c.id}
+                value={c.id}
+                className={cn("text-xs font-semibold cursor-pointer", isMine && "font-bold text-teal-800 bg-teal-50/50")}
+              >
+                {isAdmin && (isMine ? `[내 수업] ` : (c.instructorName ? `[${c.instructorName}] ` : ''))}{c.title}
+              </SelectItem>
+            );
+          })}
           <div
             className="px-2 py-1.5 border-t border-slate-100 text-[11px] font-extrabold text-indigo-600 hover:bg-indigo-50 cursor-pointer flex items-center gap-1 rounded-sm mt-1"
             onClick={() => setActiveSubTab('course')}

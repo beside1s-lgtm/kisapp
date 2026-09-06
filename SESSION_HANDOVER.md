@@ -1,50 +1,38 @@
 # SESSION HANDOVER
 
-작성 일시: 2026-09-05 (작업 마무리 및 배포 인수인계)
+작성 일시: 2026-09-06 (스쿨버스 학생 카드 내 취소 수강생 배제, 수업 제외 X 연동 및 학기/방학 격리 완료)
 
 ---
 
 ## 1. Current Status (현재 상태)
-- **학부모 PIN 번호 리셋 및 전역 On/Off 제어 시스템 구축 완료**:
-  - 관리자 시스템 설정 → 사용자 → 학생 계정에서 개별 학부모 PIN 리셋(RotateCcw) 및 확인 AlertDialog 연동 완료
-  - "학부모 PIN 인증 사용" 토글 스위치 추가 및 Firestore `settings/docConfig` 실시간 연동
-  - PIN 인증 OFF 시: 학부모 최초 로그인 PIN 등록 생략(서명만 저장), 결석계/신청서 제출 시 PIN 모달 대신 "신청서를 전송하시겠습니까?" 확인 모달 연동
-- **학부모 포털 모바일 반응형 및 다국어 레이아웃 최적화 완료**:
-  - 1024px 미만 화면에서 상단 헤더 버튼 겹침 차단 및 전용 하단 4분할 그리드 탭바 안정화
-  - 수강신청 진행 현황 배너 및 학생 정보 배너에서 베트남어 텍스트 세로 깨짐(한 글자씩 분리) 해결 (`min-w-[180px]`, `break-normal`, `flex-wrap` 적용)
-  - 상단 뒤로가기/홈 버튼과 개인정보 동의서 버튼 겹침 및 줄바꿈 정리
-- **Antigravity 전역 스킬 및 QA 워크플로우 구축 완료**:
-  - `session-handover`: 세션 종료/시작 컨텍스트 복구
-  - `firebase-ops`: Firebase 배포 및 프로젝트 ID 격리 가드레일
-  - `ui-responsive-design`: 다국어 및 Flexbox 수축 방지 가이드라인 반영
-  - `autonomous-qa`: 사전 점검, Sequential Thinking, 자동 테스트
-  - `mobile-multilingual-qa`: 다국어 뷰포트 오버플로우 자동 스캔 워크플로우
-  - `parent-document-qa`: 결재란 4단 슬롯 및 A4 1페이지 출력 규격 검증
-  - `student-account-sync`: 학생 계정 엑셀 업로드 및 PIN 정합성 검증
-  - `kis-pre-deploy-checklist`: 배포 전 빌드 및 타깃 프로젝트 바인딩 검증
+- **스쿨버스 학생 카드 내 취소된 방과후 수강생(CANCELLED) 노출 문제 해결**:
+  - `admin/bus/page.tsx` 및 `teacher/bus/page.tsx`에서 `afterschoolEnrollments` 머지 시 `status: 'CANCELLED'` 및 미확정(`ENROLLED` 외) 상태를 완벽 배제하여 5학년 6반 정준영 학생 카드에서 KIS 배구부 수업이 정상 제외됨.
+- **방과후 강좌의 학기중(`regular`) / 방학(`vacation`) 모드 철저 격리**:
+  - 강좌의 실제 학기 속성(`semesterMode`, `semester`, `period`, `title`)을 기준으로 정규 학기와 방학 강좌를 분리 생성하고, 현재 화면 모드에 부합하는 강좌의 enrollment만 수강 타이틀 및 버스 매핑에 포함하도록 격리.
+  - `student-global-search-panel.tsx`에서도 현재 `semesterMode`에 일치하는 강좌만 뱃지에 노출되도록 필터링 강화.
+- **스쿨버스 관리자 강좌 제외(X 버튼) 양방향 완결 연동**:
+  - `onRemoveStudentFromClass` 핸들러에서 `afterSchoolClassIds` 요일 삭제뿐만 아니라 학생의 `enrolledCourseTitles`, `afterSchoolCourseTitles`, `afterSchoolCourseTitle` 및 UI 로컬 state를 즉시 갱신.
+  - 메인 Firestore의 `afterschool_enrollments` 컬렉션의 해당 신청 문서도 `status: 'CANCELLED'`로 자동 동기화하여 실시간 리스너에 의한 부활 및 페이지 간 불일치 원천 차단.
+- **규칙 보강 (/learn)**:
+  - `GEMINI.md`에 규칙 7번(수강 취소 및 비확정 신청 배제와 학기/방학 모드 격리) 및 8번(수업 제외 X 양방향 완결 동기화) 반영 완료.
+- **로컬 개발 서버**: 포트 9002 상시 가동 유지 중 (컴파일 및 응답 200 OK 확인 완료).
 
 ---
 
 ## 2. Modified Files (수정된 주요 파일)
-- `src/lib/types.ts`: `DocConfig.requireParentPin` 필드 추가
-- `src/lib/services/userService.ts`: `resetParentPin()` 함수 추가 및 캐시 무효화
-- `src/components/settings-modal.tsx`: 학부모 PIN 인증 Switch 토글, PIN 초기화 버튼 및 확인 다이얼로그 추가
-- `src/app/parents/layout.tsx`: PIN 토글 연동, 반응형 내비게이션 브레이크포인트 최적화 (1024px 미만 헤더 겹침 방지)
-- `src/app/parents/setup/page.tsx`: PIN 인증 비활성화 시 입력란 숨김 및 null 저장 처리
-- `src/app/parents/apply/page.tsx`: PIN 중복 상태 제거, PIN 비활성화 시 전송 확인 모달 연동
-- `src/app/parents/afterschool/page.tsx`: 상단 내비 및 개인정보 동의서 버튼 모바일 반응형 최적화
-- `src/components/afterschool/student/StudentView.tsx`: 카운트다운 및 학생 배너 `min-w-[180px]`, `break-normal` 적용
-- `.agents/skills/*` 및 `~/.gemini/config/skills/*`: 전역 및 워크스페이스 표준 스킬 8종 등록
+- `src/app/(app)/admin/bus/page.tsx`: 수강 취소 배제, `isVacationCourse` 판별, `adminViewMode` 기반 강좌/학생 매핑 및 의존성 배열 추가
+- `src/app/teacher/bus/page.tsx`: 수강 취소 배제 및 학기중 정규 강좌만 매핑하도록 분리
+- `src/app/(app)/admin/bus/components/student-management-tab.tsx`: 수업 제외(X) 시 타이틀 배열 제거, 로컬 state 갱신, Firestore `afterschool_enrollments`의 `CANCELLED` 동기화 로직 추가
+- `src/app/(app)/admin/bus/components/student-global-search-panel.tsx`: 현재 `semesterMode`에 해당하는 강좌명만 뱃지 표시되도록 검증 강화
+- `src/app/parents/page.tsx`: 대소문자 `ENROLLED` 및 `CANCELLED` 배제 로직 보강
+- `src/lib/kisbus/types.ts`: `Student` 타입에 `enrolledCourseTitles`, `afterSchoolCourseTitles`, `afterSchoolCourseTitle` 선언
+- `GEMINI.md`: 스쿨버스 방과후 수강 취소 필터링 및 X 삭제 연동 규칙 2종 추가
 
 ---
 
-## 3. Next Steps (다음 작업 목표)
-1. 실서버 배포 후 실제 모바일 기기(iOS/Android)에서 학부모 포털 다국어 화면 최종 확인
-2. 신학기 전입생 발생 시 `student-account-sync` 워크플로우를 통한 엑셀 일괄 등록 및 PIN 상태 동기화 진행
-
----
-
-## 4. Important Context (핵심 컨텍스트)
-- **Firebase 프로젝트 ID**: `studio-9153973571-7837c` (반드시 `--project studio-9153973571-7837c` 명시 배포)
-- **학부모 PIN 제어 흐름**: Firestore `settings/docConfig`의 `requireParentPin`이 `false`이면 클라이언트의 모든 PIN 입력 요구가 생략되며 일반 확인 모달로 우회됨.
-- **다국어 반응형 원칙**: Flexbox 부모 안의 텍스트 요소에는 `min-w-0` 단독 사용을 지양하고 `min-w-[180px]` 최소폭과 `break-normal`을 기본 적용할 것.
+## 3. Important Context (핵심 컨텍스트)
+- **정준영 학생 케이스**:
+  - 5학년 6반 정준영 학생은 2학기 KIS 배구부 신청 내역(`e_bulk_1787644951190_530_2lty`)이 `CANCELLED` 상태였으나, 스쿨버스 페이지에서 `CANCELLED` 필터링이 누락되어 학생 카드에 노출되었음.
+  - X를 눌러도 `afterSchoolClassIds`는 이미 빈 객체였고, enrollment 상태는 그대로여서 화면 갱신이 되지 않았음.
+  - 본 수정을 통해 필터링, 학기 격리, X 삭제 시 enrollment 동기화 및 로컬 state 갱신이 모두 완벽히 연동됨.
+- **로컬 서버**: 포트 9002 상시 구동 유지 중.

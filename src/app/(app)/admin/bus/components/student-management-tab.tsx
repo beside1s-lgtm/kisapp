@@ -92,6 +92,7 @@ interface StudentManagementTabProps {
     routes: Route[];
     destinations: Destination[];
     selectedBusId: string | null;
+    onSelectBusId?: (busId: string | null) => void;
     selectedDay: DayOfWeek;
     selectedRouteType: RouteType;
     days: DayOfWeek[];
@@ -111,6 +112,7 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
     routes,
     destinations,
     selectedBusId,
+    onSelectBusId,
     selectedDay,
     selectedRouteType,
     days,
@@ -136,7 +138,7 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
     const [selectedSeat, setSelectedSeat] = useState<{ seatNumber: number; studentId: string | null } | null>(null);
     const [swapSourceSeat, setSwapSourceSeat] = useState<number | null>(null);
     const [unassignableStudents, setUnassignableStudents] = useState<(Student & { errorReason: string })[]>([]);
-    const [isUnassignableFolded, setIsUnassignableFolded] = useState<boolean>(false);
+    const [isUnassignableFolded, setIsUnassignableFolded] = useState<boolean>(true);
     const [globalSearchQuery, setGlobalSearchQuery] = useState('');
     const dayOrder: DayOfWeek[] = useMemo(() => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], []);
     
@@ -1657,6 +1659,10 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                             if (!targetStudent) return;
 
                             try {
+                                const updatedEnrolledTitles = ((targetStudent as any).enrolledCourseTitles || []).filter((t: string) => t !== className);
+                                const updatedAfterSchoolTitles = ((targetStudent as any).afterSchoolCourseTitles || []).filter((t: string) => t !== className);
+                                const updatedAfterSchoolTitle = updatedEnrolledTitles.join(', ');
+
                                 if (semesterMode === 'vacation') {
                                     const allVacClassesSameName = afterSchoolClasses.filter(
                                         c => c.semesterMode === 'vacation' && c.name === className
@@ -1680,7 +1686,10 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                                         vacationAfterSchoolClassIds: updatedVacClassIds,
                                         vacationAfterSchoolDestinations: updatedVacDestinations,
                                         afterSchoolClassIds: updatedRegClassIds,
-                                        afterSchoolDestinations: updatedRegDestinations
+                                        afterSchoolDestinations: updatedRegDestinations,
+                                        enrolledCourseTitles: updatedEnrolledTitles,
+                                        afterSchoolCourseTitles: updatedAfterSchoolTitles,
+                                        afterSchoolCourseTitle: updatedAfterSchoolTitle
                                     });
 
                                     // 모든 요일의 Morning 및 Afternoon 버스 좌석에서 일괄 제거
@@ -1705,7 +1714,10 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                                             vacationAfterSchoolClassIds: updatedVacClassIds,
                                             vacationAfterSchoolDestinations: updatedVacDestinations,
                                             afterSchoolClassIds: updatedRegClassIds,
-                                            afterSchoolDestinations: updatedRegDestinations
+                                            afterSchoolDestinations: updatedRegDestinations,
+                                            enrolledCourseTitles: updatedEnrolledTitles,
+                                            afterSchoolCourseTitles: updatedAfterSchoolTitles,
+                                            afterSchoolCourseTitle: updatedAfterSchoolTitle
                                         };
                                     });
                                 } else {
@@ -1723,7 +1735,10 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
 
                                     await updateStudent(studentId, {
                                         afterSchoolClassIds: updatedClassIds,
-                                        afterSchoolDestinations: updatedDestinations
+                                        afterSchoolDestinations: updatedDestinations,
+                                        enrolledCourseTitles: updatedEnrolledTitles,
+                                        afterSchoolCourseTitles: updatedAfterSchoolTitles,
+                                        afterSchoolCourseTitle: updatedAfterSchoolTitle
                                     });
 
                                     for (const cls of targetClasses) {
@@ -1745,9 +1760,53 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                                         return {
                                             ...prev,
                                             afterSchoolClassIds: updatedClassIds,
-                                            afterSchoolDestinations: updatedDestinations
+                                            afterSchoolDestinations: updatedDestinations,
+                                            enrolledCourseTitles: updatedEnrolledTitles,
+                                            afterSchoolCourseTitles: updatedAfterSchoolTitles,
+                                            afterSchoolCourseTitle: updatedAfterSchoolTitle
                                         };
                                     });
+                                }
+
+                                // 방과후 수강신청(afterschool_enrollments) 동기화: CANCELLED 상태로 전환
+                                try {
+                                    const { getDb } = await import('@/lib/firebase');
+                                    const { collection, query, where, getDocs, updateDoc, doc } = await import('firebase/firestore');
+                                    const mainDb = getDb();
+                                    const enrCol = collection(mainDb, 'afterschool_enrollments');
+
+                                    const normTargetTitle = className.replace(/[\s()]/g, '').toLowerCase();
+
+                                    const cancelMatchingEnrollments = async (docList: any[]) => {
+                                        for (const d of docList) {
+                                            const data = d.data();
+                                            const cTitleNorm = (data.courseTitle || '').replace(/[\s()]/g, '').toLowerCase();
+                                            if ((cTitleNorm === normTargetTitle || cTitleNorm.includes(normTargetTitle) || normTargetTitle.includes(cTitleNorm)) && data.status !== 'CANCELLED') {
+                                                await updateDoc(doc(mainDb, 'afterschool_enrollments', d.id), { status: 'CANCELLED' });
+                                            }
+                                        }
+                                    };
+
+                                    const enrSnap = await getDocs(query(enrCol, where('studentId', '==', studentId)));
+                                    if (!enrSnap.empty) {
+                                        await cancelMatchingEnrollments(enrSnap.docs);
+                                    } else {
+                                        const sName = (targetStudent.nameKo || targetStudent.name || targetStudent.nameEn || '').trim().toLowerCase();
+                                        const sGrade = Number(targetStudent.grade);
+                                        const sClass = Number(targetStudent.class || targetStudent.classNum);
+                                        const allSnap = await getDocs(enrCol);
+                                        const matchedDocs = allSnap.docs.filter(d => {
+                                            const data = d.data();
+                                            const dName = (data.name || data.studentName || '').trim().toLowerCase();
+                                            const matchN = dName === sName;
+                                            const matchG = !data.grade || Number(data.grade) === sGrade;
+                                            const matchC = !data.classNum || Number(data.classNum) === sClass;
+                                            return matchN && matchG && matchC;
+                                        });
+                                        await cancelMatchingEnrollments(matchedDocs);
+                                    }
+                                } catch (syncErr) {
+                                    console.warn('방과후 수강신청 취소 동기화 실패 (버스 DB는 업데이트됨):', syncErr);
                                 }
 
                                 toast({ title: t('success'), description: `'${className}' 수업 및 관련 버스 배정이 해제되었습니다.` });
@@ -1814,6 +1873,10 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                                 toast({ title: t('error'), description: "하교 노선 복귀 처리 중 오류가 발생했습니다.", variant: 'destructive' });
                             }
                         }}
+                        selectedBusId={selectedBusId}
+                        onSelectBusId={onSelectBusId}
+                        selectedDay={selectedDay}
+                        onSeatClick={handleSeatClick}
                     />
                 </div>
             </div>

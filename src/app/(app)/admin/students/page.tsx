@@ -45,7 +45,7 @@ export default function AdminMasterStudentsPage() {
   // 필터 및 검색 (엔터 키 입력 시에만 실행되도록 분리)
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedGrade, setSelectedGrade] = useState<string>('all');
+  const [selectedGrade, setSelectedGrade] = useState<string>('none');
   const [selectedClass, setSelectedClass] = useState<string>('all');
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<'all' | 'afterschool' | 'bus'>('all');
 
@@ -94,21 +94,32 @@ export default function AdminMasterStudentsPage() {
     kisbusNo: ''
   });
 
-  // Firestore 실시간 구독
+  // Firestore 실시간 구독 (선택된 그룹/학년에 맞춰 온디맨드로 구독하여 로딩 속도 극대화)
   useEffect(() => {
-    const unsubMaster = onMasterStudentsUpdate((data) => {
-      setStudents(data);
-      setLoading(false);
-    });
     const unsubDest = onDestinationsUpdate((dList) => {
       const sorted = [...(dList || [])].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
       setDestinations(sorted);
     });
+
+    if (selectedGrade === 'none' || !selectedGrade) {
+      setStudents([]);
+      setLoading(false);
+      return () => {
+        unsubDest();
+      };
+    }
+
+    setLoading(true);
+    const unsubMaster = onMasterStudentsUpdate((data) => {
+      setStudents(data);
+      setLoading(false);
+    }, { grade: selectedGrade });
+
     return () => {
       unsubMaster();
       unsubDest();
     };
-  }, []);
+  }, [selectedGrade]);
 
   const destinationOptions = useMemo(() => {
     return destinations.map(d => ({
@@ -680,16 +691,18 @@ export default function AdminMasterStudentsPage() {
 
           <div className="flex items-center gap-3 shrink-0">
             <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/10 text-center min-w-[90px]">
-              <p className="text-[10px] text-indigo-200 font-bold whitespace-nowrap">전교생 등록 계정</p>
-              <p className="text-xl font-black text-white">{stats.total}명</p>
+              <p className="text-[10px] text-indigo-200 font-bold whitespace-nowrap">
+                {selectedGrade === 'none' ? '조회 학생수' : selectedGrade === 'all' ? '전교생 등록 계정' : `${selectedGrade}학년 등록 계정`}
+              </p>
+              <p className="text-xl font-black text-white">{selectedGrade === 'none' ? '-' : `${stats.total}명`}</p>
             </div>
             <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/10 text-center min-w-[90px]">
               <p className="text-[10px] text-indigo-200 font-bold whitespace-nowrap">방과후 수강중</p>
-              <p className="text-xl font-black text-emerald-300">{stats.afterschoolCount}명</p>
+              <p className="text-xl font-black text-emerald-300">{selectedGrade === 'none' ? '-' : `${stats.afterschoolCount}명`}</p>
             </div>
             <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/10 text-center min-w-[90px]">
               <p className="text-[10px] text-indigo-200 font-bold whitespace-nowrap">스쿨버스 이용중</p>
-              <p className="text-xl font-black text-sky-300">{stats.busCount}명</p>
+              <p className="text-xl font-black text-sky-300">{selectedGrade === 'none' ? '-' : `${stats.busCount}명`}</p>
             </div>
           </div>
         </div>
@@ -700,7 +713,10 @@ export default function AdminMasterStudentsPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <CardTitle className="text-lg font-bold text-slate-800 whitespace-nowrap flex items-center gap-2">
-                  <Users className="h-5 w-5 text-indigo-600" /> 통합 학생 계정 명단 ({filteredStudents.length}명)
+                  <Users className="h-5 w-5 text-indigo-600" />
+                  {selectedGrade === 'none' 
+                    ? '통합 학생 계정 명단 (조회할 학년을 선택하세요)' 
+                    : `통합 학생 계정 명단 (${selectedGrade === 'all' ? '전교생' : `${selectedGrade}학년`} ${filteredStudents.length}명)`}
                 </CardTitle>
                 <CardDescription className="text-xs text-slate-500 mt-0.5">
                   학생 정보 수정, 계정 추가/삭제, 진급 처리(학년/반 변경)를 직접 관리합니다.
@@ -1015,11 +1031,11 @@ export default function AdminMasterStudentsPage() {
                     setSelectedGrade(val);
                     setSelectedClass('all');
                   }}>
-                    <SelectTrigger className="h-9 w-[105px] text-xs">
-                      <SelectValue />
+                    <SelectTrigger className="h-9 w-[120px] text-xs font-semibold">
+                      <SelectValue placeholder="학년 선택" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">전체 학년</SelectItem>
+                      <SelectItem value="none" className="text-slate-400 font-medium">학년 선택 안 함</SelectItem>
                       <SelectItem value="1">1학년</SelectItem>
                       <SelectItem value="2">2학년</SelectItem>
                       <SelectItem value="3">3학년</SelectItem>
@@ -1027,6 +1043,7 @@ export default function AdminMasterStudentsPage() {
                       <SelectItem value="5">5학년</SelectItem>
                       <SelectItem value="6">6학년</SelectItem>
                       <SelectItem value="졸업">졸업생</SelectItem>
+                      <SelectItem value="all">전체 학년 (전교생)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1048,14 +1065,14 @@ export default function AdminMasterStudentsPage() {
 
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-bold text-slate-600 whitespace-nowrap">유형:</span>
-                  <Select value={selectedTypeFilter} onValueChange={(val: any) => setSelectedTypeFilter(val)}>
-                    <SelectTrigger className="h-9 w-[150px] text-xs font-medium">
+                  <Select value={selectedTypeFilter} onValueChange={(v: any) => setSelectedTypeFilter(v)}>
+                    <SelectTrigger className="h-9 w-[110px] text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">전체 학생</SelectItem>
-                      <SelectItem value="afterschool">방과후 수강생만</SelectItem>
-                      <SelectItem value="bus">스쿨버스 탑승생만</SelectItem>
+                      <SelectItem value="afterschool">방과후 수강생</SelectItem>
+                      <SelectItem value="bus">스쿨버스 이용</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1079,7 +1096,50 @@ export default function AdminMasterStudentsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredStudents.length > 0 ? (
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="h-44 text-center text-slate-500">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-indigo-600"></div>
+                          <p className="text-xs font-semibold text-slate-600">
+                            {selectedGrade === 'all' ? '전체 학생 명단을 불러오는 중입니다...' : `${selectedGrade}학년 학생 명단을 불러오는 중입니다...`}
+                          </p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : selectedGrade === 'none' ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="h-56 text-center text-slate-500">
+                        <div className="max-w-md mx-auto py-6 space-y-3">
+                          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 mb-1">
+                            <Users className="w-6 h-6" />
+                          </div>
+                          <div className="space-y-1">
+                            <h3 className="text-sm font-bold text-slate-800">조회할 학년을 상단에서 선택해 주세요</h3>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              데이터 로딩 시간 단축을 위해 선택한 학년의 학생 명단만 실시간으로 불러옵니다. 아래 버튼을 눌러 바로 조회할 수도 있습니다.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                            {['1', '2', '3', '4', '5', '6', '졸업', 'all'].map(g => (
+                              <Button
+                                key={g}
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 cursor-pointer"
+                                onClick={() => {
+                                  setSelectedGrade(g);
+                                  setSelectedClass('all');
+                                }}
+                              >
+                                {g === 'all' ? '전체 학년' : g === '졸업' ? '졸업생' : `${g}학년`}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : filteredStudents.length > 0 ? (
                     filteredStudents.map(student => (
                       <TableRow key={student.studentId} className="hover:bg-slate-50/80 transition-colors">
                         <TableCell className="whitespace-nowrap font-medium text-slate-700">
