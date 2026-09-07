@@ -870,18 +870,29 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
 
     // 3. routes에 없는 경우 enrollment 객체 또는 students/masterStudents fallback
     if (!afterSchoolBus) {
-      afterSchoolBus = (enrollment as any)?.afterSchoolBusNo || (s as any)?.afterSchoolBusNo || '';
+      const rawEnroll = (enrollment as any)?.afterSchoolBusNo || (s as any)?.afterSchoolBusNo || '';
+      afterSchoolBus = typeof rawEnroll === 'string' ? rawEnroll : '';
     }
     if (!afterSchoolBus && m?.busSummary) {
-      afterSchoolBus = (m.busSummary as any).afterSchoolBusNo || (m.busSummary as any).afterSchoolBuses || '';
+      const rawSummary = (m.busSummary as any).afterSchoolBusNo || (m.busSummary as any).afterSchoolBuses || '';
+      afterSchoolBus = typeof rawSummary === 'string' ? rawSummary : '';
     }
 
     let busNo = '';
-    if (afterSchoolBus && afterSchoolBus !== '-' && afterSchoolBus !== '미신청' && afterSchoolBus !== '미배정') {
-      busNo = formatStandardBusNo(afterSchoolBus);
+    // afterSchoolBus가 문자열인지 반드시 재검증 (배열/객체 오입력 방지)
+    const safeBus = typeof afterSchoolBus === 'string' ? afterSchoolBus.trim() : '';
+    if (safeBus && safeBus !== '-' && safeBus !== '미신청' && safeBus !== '미배정') {
+      busNo = formatStandardBusNo(safeBus);
     } else {
-      const isBusApplied = Boolean(enrollment?.kisbusNo && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청');
-      busNo = isBusApplied ? '미배정' : '미신청';
+      // routes에도 없고 fallback도 없으면 → 미탑승
+      const hasAnyRoute = Object.keys(busesByDay).length > 0;
+      if (hasAnyRoute) {
+        // routes에 배정이 있지만 오늘 요일 버스가 없는 경우 (타 요일 배정)
+        busNo = '미탑승';
+      } else {
+        const isBusApplied = Boolean(enrollment?.kisbusNo && typeof enrollment.kisbusNo === 'string' && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청');
+        busNo = isBusApplied ? '미배정' : '미탑승';
+      }
     }
 
     const contact = m?.contact || (s as any)?.parentPhone || (s as any)?.phone || (s as any)?.contact || enrollment?.parentPhone || '';

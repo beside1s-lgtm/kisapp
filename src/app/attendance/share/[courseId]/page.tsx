@@ -258,7 +258,8 @@ export default function SharedAttendancePage() {
 
     // 2순위: enrollment 객체에 저장된 방과후 버스 번호
     if (!rawBus) {
-      rawBus = (enrollment as any)?.afterSchoolBusNo || '';
+      const raw = (enrollment as any)?.afterSchoolBusNo || '';
+      rawBus = typeof raw === 'string' ? raw : '';
     }
 
     // 3순위: masterStudents의 방과후 버스 요약 정보
@@ -268,14 +269,15 @@ export default function SharedAttendancePage() {
         ms.studentEmail?.toLowerCase() === studentId?.toLowerCase() ||
         (ms.name === studentName && String(ms.grade) === String(grade) && String(ms.classNum) === String(classNum))
       );
-      rawBus = (m?.busSummary as any)?.afterSchoolBusNo || (m?.busSummary as any)?.afterSchoolBuses || '';
+      const raw = (m?.busSummary as any)?.afterSchoolBusNo || (m?.busSummary as any)?.afterSchoolBuses || '';
+      rawBus = typeof raw === 'string' ? raw : '';
     }
 
-    if (rawBus && rawBus !== '-' && rawBus !== '미신청' && rawBus !== '미배정') {
-      return formatStandardBusNo(rawBus);
+    const safeBus = typeof rawBus === 'string' ? rawBus.trim() : '';
+    if (safeBus && safeBus !== '-' && safeBus !== '미신청' && safeBus !== '미배정') {
+      return formatStandardBusNo(safeBus);
     }
-    const isBusApplied = Boolean(enrollment?.kisbusNo && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청');
-    return isBusApplied ? '미배정' : '미신청';
+    return '미탑승';
   }, [routes, buses, masterStudents]);
 
   const getDayMark = useCallback(
