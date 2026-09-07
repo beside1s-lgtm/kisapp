@@ -130,3 +130,25 @@
    - 학교 체육(`/teacher/pe`), 보건실, 방과후, 스쿨버스 등 교원 페이지는 반드시 공통 레이아웃인 `MainLayout`으로 감싸 렌더링한다.
    - 모바일 뷰에서 상단 헤더의 뒤로가기(`ArrowLeft`), 결재 홈(`Home`) 바로가기 및 최하단 5대 고정 네비게이션 바(`MobileBottomNav`: 방과후, 스쿨버스, 새문서, 학교체육, 학생계정)가 유실 없이 일관되게 제공되도록 보장한다.
 
+## 방과후 버스 번호 요일별 독립 조회 규칙
+
+1. **방과후 출석부/수강생 명단 버스 번호 요일별 실시간 매핑**:
+   - 방과후 출석부(`AttendanceManagement.tsx`), 외부 강사 공유 출석부(`attendance/share/[courseId]/page.tsx`), 수강생 명단(`StudentManagement.tsx`) 등 방과후 버스 번호를 표출하는 모든 곳에서 학생 문서 단일 필드(`afterSchoolBusNo`)에 의존하지 않는다.
+   - 반드시 `kisbus` DB의 `routes` 컬렉션을 실시간 구독(`onRoutesUpdate`)하고, `type === 'AfterSchool'` 노선에서 해당 학생(`studentId`)이 배정된 좌석(`seating`)을 찾아 `dayOfWeek`와 `busId`를 조합하여 `busesByDay: Record<string, string>` 요일별 버스 맵을 구성한다.
+   - 출석부에서 특정 회차(날짜)를 선택했을 때 `activeDay.dateStr`에서 한글 요일(`(월)`, `(수)` 등)을 파싱하거나 `fullDate`에서 JS Date 요일 인덱스를 추출하여 영문 요일(`Monday`, `Wednesday`)로 변환한 뒤 `busesByDay[targetDayEn]`을 1순위로 조회한다.
+   - 주 2회 이상 서로 다른 버스를 타는 학생(예: 월요일 39A호, 수요일 37호)은 수강생 명단에서 요일별 뱃지(`월: 39A호차`, `수: 37호차`)로 각각 표출하고, 출석부에서는 현재 선택된 회차 요일 버스만 단독 표출하여 혼선을 원천 차단한다.
+
+2. **외부 강사 공유 출석부의 kisbus routes/buses 실시간 구독 필수**:
+   - `attendance/share/[courseId]/page.tsx`는 외부 강사가 접근하는 공유 페이지이지만, 방과후 버스 번호 정확성을 위해 `onRoutesUpdate` 및 `onBusesUpdate` 구독을 포함해야 한다.
+   - `getStudentBusNo` 호출 시 현재 선택된 `activeDay`를 6번째 인자(`targetDay`)로 전달하여 요일별 버스를 정확히 조회한다.
+
+## 빌드 전략 및 TypeScript 오류 관리
+
+1. **App Hosting 환경에서의 배포 전략**:
+   - `firebase.json`에 `alwaysDeployFromSource: true`가 설정된 App Hosting 프로젝트에서는 `npm run build` 대신 `npm run typecheck`(tsc --noEmit)로 타입 오류만 전수 검사한 뒤 `git push`로 배포를 트리거한다.
+   - Windows 환경에서 dev 서버가 실행 중일 때 `npm run build`를 실행하면 `.next\trace` 파일 락(EPERM) 또는 응답 없음이 발생할 수 있으므로, App Hosting 환경에서는 로컬 빌드 시도를 생략하고 typecheck → git push 배포 파이프라인을 표준으로 사용한다.
+
+2. **TypeScript 기존 오류 우선 수정 원칙**:
+   - 새 기능 추가 시 기존 파일에 이미 존재하는 TS 오류(타입 불일치, 미사용 프로퍼티 등)를 발견하면 함께 수정한다.
+   - 특히 `modalStudent` 등 상태 타입이 컴포넌트 내부에서 확장되는 경우, 타입 선언에 선택적 필드(`busesByDay?: Record<string, string>`)를 추가하여 타입 안전성을 보장한다.
+
