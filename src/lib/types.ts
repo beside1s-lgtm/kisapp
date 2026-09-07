@@ -283,8 +283,13 @@ export type CustomDutyRole = {
 
 export type OrgStructure = {
   principal: string; // email
+  principalName?: string; // 학교장(교장) 성명 (계정이 없거나 수기 결재용 직접 입력)
   vicePrincipal: string; // email
+  vicePrincipalName?: string; // 교감 성명
+  administrativeHead?: string; // 행정실장 email
+  administrativeHeadName?: string; // 행정실장 성명 (계정이 없거나 수기 결재용 직접 입력)
   academicHead?: string; // 교무부장 email
+  academicHeadName?: string; // 교무부장 성명
   gradeHeads: { [grade: string]: string }; // "1" -> email
   homerooms: { [gradeClass: string]: string }; // "1-1" -> email
   gradeSubjects?: { [grade: string]: string[] }; // "1" -> [email1, email2] (학년별 교과 담당 교사)
@@ -442,7 +447,7 @@ export type ApprovalDoc = ApprovalDocPayload & {
 };
 
 // ─── 부서 및 학년 그룹 업무 할당 및 제출 관리 타입 ───────────────────────────
-export type TargetGroupType = 'dept' | 'grade' | 'all' | 'custom';
+export type TargetGroupType = 'dept' | 'grade' | 'head' | 'all' | 'custom';
 export interface TaskScenarioItem {
   id: string;
   time: string;
@@ -497,6 +502,15 @@ export interface TaskSubmission {
   attachments?: TaskAttachment[];
 }
 
+export interface RoutineScheduleConfig {
+  cycle: 'weekly' | 'monthly'; // 주간(매주) 또는 월간(매월)
+  dayOfWeek?: number; // 주간일 경우: 1(월) ~ 5(금)
+  dayOfMonth?: number; // 월간일 경우: 1 ~ 31
+  time?: string; // 발송/알림 기준 시각 (예: "09:00")
+  durationDays?: number; // 제출 마감 기간 (기본: 주간은 5일, 월간은 7일 등)
+  alarmText?: string; // 예: "주간 루틴 알림: 감염병 현황 입력 주간입니다."
+}
+
 export interface DepartmentTask {
   id: string;
   title: string;
@@ -506,7 +520,9 @@ export interface DepartmentTask {
   creatorName: string;
   creatorDept: string;
   targetType: TargetGroupType;
+  targetDept?: string;
   targetDeptId?: string;
+  targetGrade?: string;
   targetGradeId?: string;
   targetEmails?: string[];
   targetNames?: Record<string, string>;
@@ -514,7 +530,8 @@ export interface DepartmentTask {
   deadline: string;
   status: 'active' | 'closed';
   submissions?: Record<string, TaskSubmission>;
-  category?: 'general' | 'event';
+  category?: 'general' | 'event' | 'routine';
+  routineConfig?: RoutineScheduleConfig;
   eventDetails?: {
     eventType?: string;
     startDate?: string;
@@ -532,6 +549,7 @@ export interface DepartmentTask {
     templateId?: string;
     templateName?: string;
     columns?: string[];
+    columnDefs?: Array<{ id: string; name: string; guide?: string }>;
     autoDraftTable?: boolean;
   };
   eventSchedules?: any[]; // 체육행사 요일별/시간대별 일정표 연동

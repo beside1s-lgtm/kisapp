@@ -747,8 +747,16 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     alert(`[${newEnrollment.name}] 학생이 '${targetCourse.title}' 강좌에 ${registerStatusTarget === 'ENROLLED' ? '수강 확정생' : '신청 대기자'}로 성공적으로 등록되었습니다.`);
   };
 
+  const DAY_KO_TO_EN_MAP: Record<string, string> = {
+    '월': 'Monday', '화': 'Tuesday', '수': 'Wednesday',
+    '목': 'Thursday', '금': 'Friday', '토': 'Saturday',
+    '일': 'Sunday',
+    'Monday': 'Monday', 'Tuesday': 'Tuesday', 'Wednesday': 'Wednesday',
+    'Thursday': 'Thursday', 'Friday': 'Friday', 'Saturday': 'Saturday'
+  };
+
   // 기존 스쿨버스 명단과 대조하여 스쿨버스 번호 및 연락처를 자동 참조하는 헬퍼 함수
-  const resolveStudentBusInfo = (nameOrEnroll: string | any, grade?: number, classNum?: number, studentNum?: number) => {
+  const resolveStudentBusInfo = (nameOrEnroll: string | any, grade?: number, classNum?: number, studentNum?: number, dayOfWeek?: string) => {
     if (!studentsList || studentsList.length === 0) return null;
     let targetName = '';
     let tGrade = 0;
@@ -762,6 +770,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       tClass = Number(nameOrEnroll.classNum);
       tNum = nameOrEnroll.studentNum ? Number(nameOrEnroll.studentNum) : undefined;
       tStudentId = nameOrEnroll.studentId;
+      if (!dayOfWeek && nameOrEnroll.dayOfWeek) dayOfWeek = nameOrEnroll.dayOfWeek;
     } else {
       targetName = String(nameOrEnroll || '').trim();
       tGrade = Number(grade);
@@ -789,20 +798,36 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
           regularBusNo = '';
         }
         let afterSchoolAssignedBusNo = (byId as any).afterSchoolBusNo || '';
-        if (!afterSchoolAssignedBusNo && routes && routes.length > 0) {
-          const assignedAfterSchoolRoute = routes.find((r) => 
+        const afterSchoolBusesByDay: Record<string, string> = {};
+
+        if (routes && routes.length > 0) {
+          const assignedAfterSchoolRoutes = routes.filter((r) => 
             r.type === 'AfterSchool' &&
             (r.seating || []).some((seat: any) => seat.studentId === byId.id)
           );
-          if (assignedAfterSchoolRoute) {
-            const foundBus = (buses || []).find((b: any) => b.id === assignedAfterSchoolRoute.busId);
-            afterSchoolAssignedBusNo = foundBus?.name || formatBusNo(assignedAfterSchoolRoute.busId);
+
+          assignedAfterSchoolRoutes.forEach((r) => {
+            const foundBus = (buses || []).find((b: any) => b.id === r.busId);
+            const bNo = foundBus?.name || formatBusNo(r.busId);
+            if (bNo && r.dayOfWeek) {
+              afterSchoolBusesByDay[r.dayOfWeek] = formatBusNo(bNo);
+            }
+          });
+
+          if (dayOfWeek) {
+            const dayEn = (DAY_KO_TO_EN_MAP as any)[dayOfWeek] || dayOfWeek;
+            if (afterSchoolBusesByDay[dayEn]) {
+              afterSchoolAssignedBusNo = afterSchoolBusesByDay[dayEn];
+            }
+          } else if (Object.keys(afterSchoolBusesByDay).length > 0) {
+            afterSchoolAssignedBusNo = Object.values(afterSchoolBusesByDay)[0];
           }
         }
         return {
           student: byId,
           busNo: regularBusNo,
           afterSchoolBusNo: afterSchoolAssignedBusNo,
+          afterSchoolBusesByDay,
           phone: (byId as any).phone || (byId as any).contact || '',
           parentPhone: (byId as any).parentPhone || (byId as any).contact || (byId as any).emergencyContact || (byId as any).phone || '',
         };
@@ -854,16 +879,33 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       regularBusNo = '';
     }
 
-    // 2. routes에서 실제 방과후 버스(AfterSchool) 배정 호차 조회
+    // 2. routes에서 실제 방과후 버스(AfterSchool) 배정 호차 조회 (요일별 각각 매칭)
     let afterSchoolAssignedBusNo = (matched as any).afterSchoolBusNo || '';
-    if (!afterSchoolAssignedBusNo && routes && routes.length > 0) {
-      const assignedAfterSchoolRoute = routes.find((r) => 
+    const afterSchoolBusesByDay: Record<string, string> = {};
+
+    if (routes && routes.length > 0) {
+      const assignedAfterSchoolRoutes = routes.filter((r) => 
         r.type === 'AfterSchool' &&
         (r.seating || []).some((seat: any) => seat.studentId === matched.id)
       );
-      if (assignedAfterSchoolRoute) {
-        const foundBus = (buses || []).find((b: any) => b.id === assignedAfterSchoolRoute.busId);
-        afterSchoolAssignedBusNo = foundBus?.name || formatBusNo(assignedAfterSchoolRoute.busId);
+
+      assignedAfterSchoolRoutes.forEach((r) => {
+        const foundBus = (buses || []).find((b: any) => b.id === r.busId);
+        const bNo = foundBus?.name || formatBusNo(r.busId);
+        if (bNo && r.dayOfWeek) {
+          afterSchoolBusesByDay[r.dayOfWeek] = formatBusNo(bNo);
+        }
+      });
+
+      // 특정 요일 요청 시 해당 요일 우선
+      if (dayOfWeek) {
+        const dayEn = (DAY_KO_TO_EN_MAP as any)[dayOfWeek] || dayOfWeek;
+        if (afterSchoolBusesByDay[dayEn]) {
+          afterSchoolAssignedBusNo = afterSchoolBusesByDay[dayEn];
+        }
+      } else if (Object.keys(afterSchoolBusesByDay).length > 0) {
+        // 특정 요일 미지정 시, 등록된 첫 번째 또는 통합
+        afterSchoolAssignedBusNo = Object.values(afterSchoolBusesByDay)[0];
       }
     }
 
@@ -874,6 +916,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       student: matched,
       busNo: regularBusNo,
       afterSchoolBusNo: afterSchoolAssignedBusNo,
+      afterSchoolBusesByDay,
       phone,
       parentPhone,
     };
@@ -1598,7 +1641,26 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                               return <span className="text-slate-400 text-[11px] font-medium">미신청</span>;
                             }
 
-                            const busInfo = resolveStudentBusInfo(item.name, item.grade, item.classNum, item.studentNum);
+                            const busInfo = resolveStudentBusInfo(item, item.grade, item.classNum, item.studentNum);
+                            const dayBuses = busInfo?.afterSchoolBusesByDay || {};
+                            const dayKeys = Object.keys(dayBuses);
+
+                            if (dayKeys.length >= 2) {
+                              return (
+                                <div className="flex flex-col items-center gap-0.5">
+                                  {dayKeys.map(dEn => {
+                                    const dKo = { 'Monday': '월', 'Tuesday': '화', 'Wednesday': '수', 'Thursday': '목', 'Friday': '금', 'Saturday': '토' }[dEn] || dEn;
+                                    const bNo = dayBuses[dEn];
+                                    return (
+                                      <span key={dEn} className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap inline-flex items-center gap-1 border border-emerald-300 shadow-2xs">
+                                        <span className="font-black text-emerald-950">{dKo}:</span> {bNo}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            }
+
                             const afterSchoolBus = item.afterSchoolBusNo || busInfo?.afterSchoolBusNo;
 
                             if (afterSchoolBus && afterSchoolBus !== '-' && afterSchoolBus !== '미신청' && afterSchoolBus !== '미배정') {

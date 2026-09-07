@@ -44,8 +44,11 @@ import {
   Paperclip,
   HardDrive,
   Folder,
-  Presentation
+  Presentation,
+  Repeat,
+  FileSpreadsheet
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { v4 as uuidv4 } from 'uuid';
 import { getDriveTypeInfo } from '@/lib/services/googleDriveService';
@@ -755,6 +758,12 @@ ${matchedEvent?.totalBudget ? `<p style="line-height: 1.8; margin-bottom: 8px; m
         <DialogHeader className="border-b pb-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
+              {task.category === 'routine' && (
+                <Badge className="bg-purple-600 text-white text-[10px] px-1.5 py-0 h-4 leading-none font-bold flex items-center gap-1">
+                  <Repeat className="w-2.5 h-2.5" />
+                  <span>{task.routineConfig?.cycle === 'weekly' ? '루틴 (주간)' : '루틴 (월간)'}</span>
+                </Badge>
+              )}
               <Badge className="bg-indigo-600 text-white text-[10px] px-1.5 py-0 h-4 leading-none font-bold">
                 {task.creatorDept || '부서 업무'}
               </Badge>

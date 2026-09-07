@@ -2,7 +2,7 @@
 
 import { generateContentAction } from '@/app/ai-actions';
 import { useAuth } from '@/hooks/use-auth';
-import { ApprovalDoc, ApprovalDocPayload, Approver, DocConfig, UserProfile, DelegationRule } from '@/lib/types';
+import { ApprovalDoc, ApprovalDocPayload, Approver, DocConfig, UserProfile, DelegationRule, OrgStructure } from '@/lib/types';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -88,6 +88,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
 
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [orgStructure, setOrgStructure] = useState<Partial<OrgStructure> | null>(null);
   const [docConfig, setDocConfig] = useState<DocConfig>({});
   
   const [circularQuery, setCircularQuery] = useState('');
@@ -379,7 +380,43 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
         try {
             const usersSnap = await getDocs(collection(getDb(), 'users'));
             const userList = usersSnap.docs.map(d => ({ email: d.id, ...d.data() } as UserProfile));
-            setUsers(userList);
+
+            // 조직도 설정에서 학교장/행정실장 임의 입력 성명 조회 및 가상 프로필 연동
+            try {
+                const org = await getOrgStructure();
+                setOrgStructure(org);
+                const virtualUsers: UserProfile[] = [];
+                if (org?.principalName?.trim()) {
+                    const existingP = userList.find(u => u.email && org.principal && u.email.toLowerCase() === org.principal.toLowerCase());
+                    if (!existingP) {
+                        virtualUsers.push({
+                            uid: 'leadership_principal',
+                            name: org.principalName.trim(),
+                            email: org.principal || '',
+                            role: '교장' as any,
+                        });
+                    } else if (org.principalName.trim()) {
+                        existingP.name = org.principalName.trim();
+                    }
+                }
+                if (org?.administrativeHeadName?.trim()) {
+                    const existingA = userList.find(u => u.email && org.administrativeHead && u.email.toLowerCase() === org.administrativeHead.toLowerCase());
+                    if (!existingA) {
+                        virtualUsers.push({
+                            uid: 'leadership_admin_head',
+                            name: org.administrativeHeadName.trim(),
+                            email: org.administrativeHead || '',
+                            role: '행정실장' as any,
+                        });
+                    } else if (org.administrativeHeadName.trim()) {
+                        existingA.name = org.administrativeHeadName.trim();
+                    }
+                }
+                setUsers([...userList, ...virtualUsers]);
+            } catch (orgErr) {
+                console.warn("Org structure fetch skipped in fetchBasics:", orgErr);
+                setUsers(userList);
+            }
 
             const configSnap = await getDoc(doc(getDb(), 'settings', 'docConfig'));
             if (configSnap.exists()) {
@@ -462,9 +499,15 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                 ? userList.find(u => u.email?.trim().toLowerCase() === org.principal?.trim().toLowerCase() || u.name?.trim() === org.principal?.trim()) 
                 : userList.find(u => u.role === 'principal' || u.role === '교장');
 
+            const principalName = org?.principalName?.trim() || principalUser?.name || (org?.principal && !org.principal.includes('@') ? org.principal : '') || '교장';
+            const principalEmail = principalUser?.email || (org?.principal?.includes('@') ? org.principal : '');
+
             const vicePrincipalUser = org?.vicePrincipal 
                 ? userList.find(u => u.email?.trim().toLowerCase() === org.vicePrincipal?.trim().toLowerCase() || u.name?.trim() === org.vicePrincipal?.trim()) 
                 : userList.find(u => u.role === 'vicePrincipal' || u.role === '교감');
+
+            const vicePrincipalName = org?.vicePrincipalName?.trim() || vicePrincipalUser?.name || (org?.vicePrincipal && !org.vicePrincipal.includes('@') ? org.vicePrincipal : '') || '교감';
+            const vicePrincipalEmail = vicePrincipalUser?.email || (org?.vicePrincipal?.includes('@') ? org.vicePrincipal : '');
             
             // 작성자 소속 부서 부장 찾기
             const myDept = org?.departments?.find(d => 
@@ -485,8 +528,8 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                     active: true,
                 },
                 {
-                    name: vicePrincipalUser?.name || org?.vicePrincipal || '교감',
-                    email: vicePrincipalUser?.email || (org?.vicePrincipal?.includes('@') ? org.vicePrincipal : ''),
+                    name: vicePrincipalName,
+                    email: vicePrincipalEmail,
                     role: '교감',
                     type: 'normal' as const,
                     status: 'pending' as const,
@@ -501,8 +544,8 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                     active: false,
                 },
                 {
-                    name: principalUser?.name || org?.principal || '교장',
-                    email: principalUser?.email || (org?.principal?.includes('@') ? org.principal : ''),
+                    name: principalName,
+                    email: principalEmail,
                     role: '교장',
                     type: 'final' as const,
                     status: 'pending' as const,
@@ -1464,7 +1507,34 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
               return (
                 <Card key={field.id} className={cn(!form.watch(`approvers.${index}.active`) && 'bg-muted/50')}>
                   <CardHeader className="p-4 flex-row items-center justify-between">
-                    <CardTitle className="text-base">{field.role}</CardTitle>
+                    {index === 2 ? (
+                      <div className="flex items-center gap-1">
+                        <Select
+                          value={field.role === '행정실장' ? '행정실장' : '협조'}
+                          onValueChange={(val) => {
+                            form.setValue(`approvers.${index}.role`, val, { shouldDirty: true });
+                            const cur = form.getValues(`approvers.${index}`);
+                            if (val === '행정실장' && orgStructure?.administrativeHeadName) {
+                              form.setValue(`approvers.${index}.name`, orgStructure.administrativeHeadName, { shouldDirty: true, shouldValidate: true });
+                              form.setValue(`approvers.${index}.email`, orgStructure.administrativeHead || '', { shouldDirty: true });
+                              updateApprover(index, { ...cur, role: val, name: orgStructure.administrativeHeadName, email: orgStructure.administrativeHead || '' });
+                            } else {
+                              updateApprover(index, { ...cur, role: val });
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="h-7 text-base font-semibold border-none p-0 focus:ring-0 w-auto gap-1 bg-transparent hover:text-primary">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="협조">협조</SelectItem>
+                            <SelectItem value="행정실장">행정실장</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : (
+                      <CardTitle className="text-base">{field.role}</CardTitle>
+                    )}
                     <FormField control={form.control} name={`approvers.${index}.active`} render={({field: f}) => (
                       <FormItem className="flex gap-2 items-center space-y-0">
                         <FormControl>
@@ -1496,7 +1566,11 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                                         form.setValue(`approvers.${index}.email`, u.email, { shouldValidate: true, shouldDirty: true });
                                         form.clearErrors(`approvers.${index}.name`);
                                         const cur = form.getValues(`approvers.${index}`);
-                                        updateApprover(index, { ...cur, name: u.name, email: u.email });
+                                        const updatedRole = (u.role === '행정실장' && index === 2) ? '행정실장' : cur.role;
+                                        if (updatedRole !== cur.role) {
+                                            form.setValue(`approvers.${index}.role`, updatedRole, { shouldDirty: true });
+                                        }
+                                        updateApprover(index, { ...cur, role: updatedRole, name: u.name, email: u.email });
                                     }}
                                     placeholder={`${targetRole} 검색...`}
                                   />

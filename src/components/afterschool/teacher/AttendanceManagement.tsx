@@ -22,6 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { formatStandardBusNo } from '@/lib/utils';
+import { formatBusNo } from '@/lib/afterschool/excel';
 
 interface AttendanceManagementProps {
   courses: Course[];
@@ -34,6 +35,8 @@ interface AttendanceManagementProps {
   setAttendanceRecords: React.Dispatch<React.SetStateAction<AttendanceRecord[]>>;
   studentsList?: Student[];
   masterStudents?: MasterStudent[];
+  routes?: any[];
+  buses?: any[];
   approvalDocs: SubmittedApprovalDoc[];
   setApprovalDocs: React.Dispatch<React.SetStateAction<SubmittedApprovalDoc[]>>;
 }
@@ -174,10 +177,22 @@ const MobileMarkButton: React.FC<{
   sessionNo: number;
   mark: string;
   onSelect: (val: MarkSymbol) => void;
-}> = ({ mark, onSelect }) => {
+  dropUp?: boolean;
+}> = ({ mark, onSelect, dropUp = false }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const [shouldDropUp, setShouldDropUp] = useState(dropUp);
   const ref = useRef<HTMLDivElement>(null);
+
+  const handleToggle = () => {
+    if (!open && ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      // 드롭다운 높이가 약 180px이고 하단 네비바(약 60px) 고려 시 아래 공간이 220px 미만이면 위로 띄움
+      setShouldDropUp(dropUp || spaceBelow < 220);
+    }
+    setOpen((v) => !v);
+  };
 
   useEffect(() => {
     const handleOut = (e: MouseEvent) => {
@@ -211,7 +226,7 @@ const MobileMarkButton: React.FC<{
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen(v => !v)}
+        onClick={handleToggle}
         className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-sm transition ${bg} ${text} shadow-sm min-w-[80px] justify-center`}
       >
         <span className="text-base leading-none">{symbol}</span>
@@ -219,7 +234,9 @@ const MobileMarkButton: React.FC<{
       </button>
 
       {open && (
-        <div className="absolute z-50 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden min-w-[140px]">
+        <div className={`absolute z-50 right-0 ${
+          shouldDropUp ? 'bottom-full mb-1' : 'top-full mt-1'
+        } bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden min-w-[140px]`}>
           {[
             { val: 'O' as MarkSymbol, label: `○ ${t('teacher_afterschool.mark_attend', '출석')}`, cls: 'text-emerald-700 hover:bg-emerald-50' },
             { val: 'V' as MarkSymbol, label: `△ ${t('teacher_afterschool.mark_late', '지각/개별하교')}`, cls: 'text-purple-700 hover:bg-purple-50' },
@@ -258,6 +275,8 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   setAttendanceRecords,
   studentsList = [],
   masterStudents = [],
+  routes = [],
+  buses = [],
   approvalDocs,
   setApprovalDocs,
 }) => {
@@ -282,6 +301,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     studentNum: string;
     busNo: string;
     contact: string;
+    busesByDay?: Record<string, string>;
   } | null>(null);
 
   const [stageStatus, setStageStatus] = useState<string>('RECRUITING');
@@ -783,28 +803,97 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
     return { hasChecked, dateStr: hasChecked ? `2026/${dateStr}` : '', signed: hasChecked };
   };
 
+  // 요일 한글 <-> 영문 매핑
+  const DAY_KO_TO_EN: Record<string, string> = {
+    '월': 'Monday', '화': 'Tuesday', '수': 'Wednesday',
+    '목': 'Thursday', '금': 'Friday', '토': 'Saturday',
+    '일': 'Sunday'
+  };
+
   // 학생 프로필 사진 & 스쿨버스 번호 & 학부모 연락처 통합 연동 헬퍼
-  const getStudentInfo = (studentId: string, studentName: string, grade?: any, classNum?: any) => {
-    // 동명이인 오매칭 방지: 이름+학년+반이 모두 일치할 때만 매칭 (이름만 fallback 제거)
+  const getStudentInfo = (studentId: string, studentName: string, grade?: any, classNum?: any, enrollment?: Enrollment, targetDay?: any) => {
+    // 동명이인 오매칭 방지: 고유 ID 매칭 우선, 없을 경우 이름+학년+반 엄격 일치 (이름만 fallback 절대 금지)
     const m = (masterStudents || []).find(ms =>
       ms.studentId === studentId ||
       ms.studentEmail?.toLowerCase() === studentId?.toLowerCase() ||
       (ms.name === studentName && String(ms.grade) === String(grade) && String(ms.classNum) === String(classNum))
     );
-    const s = (studentsList || []).find(st => st.id === studentId || (st.name === studentName && String(st.grade) === String(grade) && String(st.class) === String(classNum)));
+    const s = (studentsList || []).find(st =>
+      st.id === studentId ||
+      (st.name === studentName && String(st.grade) === String(grade) && String(st.class) === String(classNum))
+    );
 
     const photoUrl = m?.photoUrl || (s as any)?.photoUrl || (s as any)?.photo || '';
-    const rawBus = (m?.busSummary as any)?.assignedBusName || (m?.busSummary as any)?.busName || m?.kisbusNo || (s as any)?.kisbusNo || (s as any)?.busNo || '';
-    const busNo = formatStandardBusNo(rawBus);
-    const contact = m?.contact || (s as any)?.parentPhone || (s as any)?.phone || (s as any)?.contact || '';
+
+    // [방과후 버스 번호 요일별 매핑 로직]
+    // 1. routes에서 해당 학생의 요일별 AfterSchool 버스 노선 조회
+    const targetId = s?.id || studentId;
+    const busesByDay: Record<string, string> = {}; // { 'Monday': '39A호차', 'Wednesday': '37호차' }
+
+    if (routes && routes.length > 0) {
+      const assignedRoutes = routes.filter((r) =>
+        r.type === 'AfterSchool' &&
+        (r.seating || []).some((seat: any) => seat.studentId === targetId)
+      );
+      assignedRoutes.forEach((r) => {
+        const foundBus = (buses || []).find((b: any) => b.id === r.busId);
+        const bName = foundBus?.name || formatBusNo(r.busId);
+        if (bName && r.dayOfWeek) {
+          busesByDay[r.dayOfWeek] = formatStandardBusNo(bName);
+        }
+      });
+    }
+
+    // targetDay를 영문 요일명으로 정규화
+    let targetDayEn = '';
+    if (targetDay) {
+      if (typeof targetDay === 'object' && targetDay.dateStr) {
+        const match = targetDay.dateStr.match(/\(([월화수목금토일])\)/);
+        if (match && DAY_KO_TO_EN[match[1]]) targetDayEn = DAY_KO_TO_EN[match[1]];
+        else if (targetDay.fullDate) {
+          const dayIdx = new Date(targetDay.fullDate + 'T12:00:00').getDay();
+          targetDayEn = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayIdx];
+        }
+      } else if (typeof targetDay === 'string') {
+        targetDayEn = DAY_KO_TO_EN[targetDay] || targetDay;
+      }
+    }
+
+    // 2. 현재 요청된 요일의 버스 번호 결정
+    let afterSchoolBus = '';
+    if (targetDayEn && busesByDay[targetDayEn]) {
+      afterSchoolBus = busesByDay[targetDayEn];
+    } else if (Object.keys(busesByDay).length > 0) {
+      // 요일 미지정 시 첫 번째 배정 버스
+      afterSchoolBus = Object.values(busesByDay)[0];
+    }
+
+    // 3. routes에 없는 경우 enrollment 객체 또는 students/masterStudents fallback
+    if (!afterSchoolBus) {
+      afterSchoolBus = (enrollment as any)?.afterSchoolBusNo || (s as any)?.afterSchoolBusNo || '';
+    }
+    if (!afterSchoolBus && m?.busSummary) {
+      afterSchoolBus = (m.busSummary as any).afterSchoolBusNo || (m.busSummary as any).afterSchoolBuses || '';
+    }
+
+    let busNo = '';
+    if (afterSchoolBus && afterSchoolBus !== '-' && afterSchoolBus !== '미신청' && afterSchoolBus !== '미배정') {
+      busNo = formatStandardBusNo(afterSchoolBus);
+    } else {
+      const isBusApplied = Boolean(enrollment?.kisbusNo && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청');
+      busNo = isBusApplied ? '미배정' : '미신청';
+    }
+
+    const contact = m?.contact || (s as any)?.parentPhone || (s as any)?.phone || (s as any)?.contact || enrollment?.parentPhone || '';
 
     return {
       photoUrl,
       busNo,
+      busesByDay, // 요일별 배정 정보 맵 제공
       contact: contact ? contact.trim() : '',
       grade: String(m?.grade || grade || '1'),
       classNum: String(m?.classNum || classNum || '1'),
-      studentNum: String(m?.studentNum || (s as any)?.number || ''),
+      studentNum: String(m?.studentNum || (s as any)?.number || enrollment?.studentNum || ''),
       name: studentName
     };
   };
@@ -1020,9 +1109,10 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
             {courseStudents.length === 0 ? (
               <div className="py-12 text-center text-slate-400 text-sm">{t('teacher_afterschool.no_students', '수강 등록된 학생이 없습니다.')}</div>
             ) : (
-              courseStudents.map((enrollment) => {
-                const sInfo = getStudentInfo(enrollment.studentId, enrollment.name, enrollment.grade, enrollment.classNum);
+              courseStudents.map((enrollment, index) => {
+                const sInfo = getStudentInfo(enrollment.studentId, enrollment.name, enrollment.grade, enrollment.classNum, enrollment, activeDay);
                 const mark = getDayMark(enrollment.studentId, activeSessionNo);
+                const isLastTwo = index >= courseStudents.length - 2;
 
                 return (
                   <div key={enrollment.id} className="px-3.5 py-3 flex items-center justify-between gap-3 bg-white hover:bg-slate-50 transition">
@@ -1074,6 +1164,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                       sessionNo={activeSessionNo}
                       mark={mark}
                       onSelect={(val) => handleSetDayMark(enrollment.studentId, activeSessionNo, val)}
+                      dropUp={isLastTwo}
                     />
                   </div>
                 );
@@ -1145,7 +1236,10 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                   <tr><td colSpan={scheduleDays.length + 7} className="py-8 text-center text-slate-400">{t('teacher_afterschool.no_students', '수강 등록된 학생이 없습니다.')}</td></tr>
                 ) : (
                   courseStudents.map((enrollment, enrollIdx) => {
-                    const sInfo = getStudentInfo(enrollment.studentId, enrollment.name, enrollment.grade, enrollment.classNum);
+                    const sInfo = getStudentInfo(enrollment.studentId, enrollment.name, enrollment.grade, enrollment.classNum, enrollment, activeDay);
+                    const dayKeys = Object.keys(sInfo.busesByDay || {});
+                    const hasDifferentBuses = dayKeys.length >= 2;
+
                     return (
                       <tr key={enrollment.id} className="hover:bg-slate-50/80">
                         <td className="p-2 border-r font-mono text-slate-400">{enrollIdx + 1}</td>
@@ -1179,9 +1273,23 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[10px] bg-sky-100 text-sky-800 font-extrabold px-1.5 py-0.2 rounded-md mt-0.5 border border-sky-200">
-                                {sInfo.busNo}
-                              </span>
+                              {hasDifferentBuses ? (
+                                <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                  {dayKeys.map(dEn => {
+                                    const dKo = { 'Monday': '월', 'Tuesday': '화', 'Wednesday': '수', 'Thursday': '목', 'Friday': '금', 'Saturday': '토' }[dEn] || dEn;
+                                    const bNo = sInfo.busesByDay[dEn];
+                                    return (
+                                      <span key={dEn} className="text-[9px] bg-sky-100 text-sky-800 font-bold px-1 py-0.2 rounded border border-sky-200">
+                                        {dKo}:{bNo}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <span className="text-[10px] bg-sky-100 text-sky-800 font-extrabold px-1.5 py-0.2 rounded-md mt-0.5 border border-sky-200">
+                                  {sInfo.busNo}
+                                </span>
+                              )}
                             </div>
                           </button>
                         </td>
@@ -1194,9 +1302,28 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                           />
                         ))}
                         <td className="p-2 border-r font-bold text-[11px] text-sky-800">
-                          <span className="bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200 inline-block">
-                            {sInfo.busNo}
-                          </span>
+                          {hasDifferentBuses ? (
+                            <div className="flex flex-col gap-0.5 items-center">
+                              <span className="bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200 inline-block font-extrabold text-sky-900">
+                                {sInfo.busNo}
+                              </span>
+                              <div className="flex items-center gap-0.5">
+                                {dayKeys.map(dEn => {
+                                  const dKo = { 'Monday': '월', 'Tuesday': '화', 'Wednesday': '수', 'Thursday': '목', 'Friday': '금', 'Saturday': '토' }[dEn] || dEn;
+                                  const bNo = sInfo.busesByDay[dEn];
+                                  return (
+                                    <span key={dEn} className="text-[9px] bg-slate-100 text-slate-600 px-1 rounded">
+                                      {dKo}:{bNo}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200 inline-block">
+                              {sInfo.busNo}
+                            </span>
+                          )}
                         </td>
                         <td className="p-2 text-[11px]">
                           {sInfo.contact ? (
@@ -1378,13 +1505,28 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
 
             <div className="space-y-2.5 pt-2 border-t border-slate-100">
               {/* 버스 정보 */}
-              <div className="flex items-center justify-between bg-sky-50/70 p-3 rounded-2xl border border-sky-100">
-                <span className="text-xs font-bold text-sky-900 flex items-center gap-1.5">
-                  {t('teacher_afterschool.student_card_bus', '스쿨버스')}
-                </span>
-                <span className="text-xs font-extrabold text-sky-800 bg-white px-2.5 py-1 rounded-xl border border-sky-200 shadow-2xs">
-                  {modalStudent.busNo}
-                </span>
+              <div className="bg-sky-50/70 p-3 rounded-2xl border border-sky-100 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-sky-900 flex items-center gap-1.5">
+                    {t('teacher_afterschool.student_card_bus', '스쿨버스')}
+                  </span>
+                  <span className="text-xs font-extrabold text-sky-800 bg-white px-2.5 py-1 rounded-xl border border-sky-200 shadow-2xs">
+                    {modalStudent.busNo}
+                  </span>
+                </div>
+                {modalStudent.busesByDay && Object.keys(modalStudent.busesByDay).length >= 2 && (
+                  <div className="pt-1.5 border-t border-sky-200/60 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] text-sky-700 font-bold">요일별 버스:</span>
+                    {Object.entries(modalStudent.busesByDay).map(([dEn, bNo]) => {
+                      const dKo = { 'Monday': '월', 'Tuesday': '화', 'Wednesday': '수', 'Thursday': '목', 'Friday': '금', 'Saturday': '토' }[dEn] || dEn;
+                      return (
+                        <span key={dEn} className="text-[11px] bg-white text-sky-900 font-extrabold px-2 py-0.5 rounded-lg border border-sky-300 shadow-2xs">
+                          {dKo}요일: {String(bNo)}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* 학부모 연락처 & 클릭 시 모바일 전화 연결 */}
@@ -1423,6 +1565,19 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
           course={currentCourse}
           students={courseStudents.map((enrollment) => {
             const matched = studentsList.find((s) => s.id === enrollment.studentId);
+            const rawAfterSchoolBus = (enrollment as any)?.afterSchoolBusNo || (matched as any)?.afterSchoolBusNo || '';
+            let resolvedBus = rawAfterSchoolBus;
+            if (!resolvedBus && routes && routes.length > 0) {
+              const targetId = matched?.id || enrollment.studentId;
+              const assignedRoute = routes.find((r) =>
+                r.type === 'AfterSchool' &&
+                (r.seating || []).some((seat: any) => seat.studentId === targetId)
+              );
+              if (assignedRoute) {
+                const foundBus = (buses || []).find((b: any) => b.id === assignedRoute.busId);
+                resolvedBus = foundBus?.name || formatBusNo(assignedRoute.busId);
+              }
+            }
             return {
               id: enrollment.id,
               studentId: enrollment.studentId,
@@ -1430,7 +1585,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
               grade: enrollment.grade,
               classNum: enrollment.classNum,
               studentNum: enrollment.studentNum,
-              kisbusNo: matched?.kisbusNo || enrollment.kisbusNo,
+              kisbusNo: resolvedBus ? formatStandardBusNo(resolvedBus) : (enrollment.kisbusNo || matched?.kisbusNo),
               parentPhone: enrollment.parentPhone || matched?.parentPhone,
             };
           })}

@@ -52,7 +52,8 @@ import {
   ExternalLink,
   HardDrive,
   Folder,
-  MessageSquare
+  MessageSquare,
+  FileSpreadsheet
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { v4 as uuidv4 } from 'uuid';
@@ -85,10 +86,10 @@ export function SubmitDepartmentTaskDialog({
   const [delegateToEmail, setDelegateToEmail] = useState('');
   const [delegateReason, setDelegateReason] = useState('');
   const [isDelegating, setIsDelegating] = useState(false);
-  const [orgStructure, setOrgStructure] = useState<OrgStructure>({});
+  const [orgStructure, setOrgStructure] = useState<Partial<OrgStructure>>({});
 
   const myEmail = profile?.email?.toLowerCase() || '';
-  const myAssignedGrade = profile?.assignedGrade ? String(profile.assignedGrade) : (profile?.grade ? String(profile.grade) : '');
+  const myAssignedGrade = (profile as any)?.assignedGrade ? String((profile as any).assignedGrade) : (profile?.grade ? String(profile.grade) : '');
 
   // 1. 해당 업무에서 나에게 할당된 정확한 학년 감지 (예: "5학년 (강지욱)" -> "5")
   const assignedGradeForMe = useMemo(() => {
@@ -127,18 +128,23 @@ export function SubmitDepartmentTaskDialog({
     const list: { email: string; name: string; roleInfo?: string }[] = [];
     const seen = new Set<string>();
 
-    (orgStructure.gradeGroups || []).forEach(g => {
-      if (g.headEmail && !seen.has(g.headEmail.toLowerCase())) {
-        seen.add(g.headEmail.toLowerCase());
-        list.push({ email: g.headEmail, name: `${g.gradeName || g.grade}학년부장`, roleInfo: `${g.grade}학년` });
-      }
-      (g.memberEmails || []).forEach(m => {
-        if (!seen.has(m.toLowerCase())) {
-          seen.add(m.toLowerCase());
-          list.push({ email: m, name: m.split('@')[0], roleInfo: `${g.grade}학년` });
+    if (orgStructure.gradeHeads) {
+      Object.entries(orgStructure.gradeHeads).forEach(([grade, email]) => {
+        if (email && !seen.has(email.toLowerCase())) {
+          seen.add(email.toLowerCase());
+          list.push({ email, name: `${grade}학년부장`, roleInfo: `${grade}학년` });
         }
       });
-    });
+    }
+
+    if (orgStructure.homerooms) {
+      Object.entries(orgStructure.homerooms).forEach(([gradeClass, email]) => {
+        if (email && !seen.has(email.toLowerCase())) {
+          seen.add(email.toLowerCase());
+          list.push({ email, name: `${gradeClass} 담임`, roleInfo: `${gradeClass}` });
+        }
+      });
+    }
 
     (orgStructure.departments || []).forEach(d => {
       if (d.headEmail && !seen.has(d.headEmail.toLowerCase())) {

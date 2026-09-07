@@ -24,6 +24,9 @@ import {
   type ScheduleDay,
 } from '@/lib/afterschool/schedule';
 import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
+import { onRoutesUpdate } from '@/lib/kisbus/routes';
+import { onBusesUpdate } from '@/lib/kisbus/buses';
+import { formatBusNo } from '@/lib/afterschool/excel';
 import {
   ChevronLeft,
   ChevronRight,
@@ -91,6 +94,8 @@ export default function SharedAttendancePage() {
   const courseId = typeof params.courseId === 'string' ? params.courseId : '';
   const { toast } = useToast();
 
+  const [routes, setRoutes] = useState<any[]>([]);
+  const [buses, setBuses] = useState<any[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
@@ -128,6 +133,12 @@ export default function SharedAttendancePage() {
     const unsubMasterStudents = onMasterStudentsUpdate((data) => {
       setMasterStudents(data || []);
     });
+    const unsubRoutes = onRoutesUpdate((data) => {
+      setRoutes(data || []);
+    });
+    const unsubBuses = onBusesUpdate((data) => {
+      setBuses(data || []);
+    });
     const unsubSettings = onTeacherApplySettingsUpdate((settings) => {
       setMasterSettings(settings);
       setIsLoading(false);
@@ -146,6 +157,8 @@ export default function SharedAttendancePage() {
       unsubEnrollments();
       unsubAttendance();
       unsubMasterStudents();
+      unsubRoutes();
+      unsubBuses();
       unsubSettings();
       unsubDocConfig();
     };
@@ -191,17 +204,79 @@ export default function SharedAttendancePage() {
     }
   }, [scheduleDays.length]);
 
-  // 학생별 스쿨버스 배정 정보 조회 헬퍼 (원래 출석부와 동일)
-  const getStudentBusNo = useCallback((studentId: string, studentName: string, grade?: string, classNum?: string) => {
-    const m = masterStudents.find(ms =>
-      ms.studentId === studentId ||
-      ms.studentEmail?.toLowerCase() === studentId?.toLowerCase() ||
-      (ms.name === studentName && String(ms.grade) === String(grade) && String(ms.classNum) === String(classNum)) ||
-      ms.name === studentName
-    );
-    const rawBus = (m?.busSummary as any)?.assignedBusName || (m?.busSummary as any)?.busName || m?.kisbusNo || '';
-    return formatStandardBusNo(rawBus);
-  }, [masterStudents]);
+  const activeDay = useMemo(() => {
+    return scheduleDays.find((d) => d.dayIndex === activeSessionNo) || scheduleDays[0];
+  }, [scheduleDays, activeSessionNo]);
+
+  // 요일 한글 <-> 영문 매핑
+  const DAY_KO_TO_EN: Record<string, string> = {
+    '월': 'Monday', '화': 'Tuesday', '수': 'Wednesday',
+    '목': 'Thursday', '금': 'Friday', '토': 'Saturday',
+    '일': 'Sunday'
+  };
+
+  // 학생별 스쿨버스 배정 정보 조회 헬퍼 (방과후 버스 번호 및 요일별 노선 우선 매핑)
+  const getStudentBusNo = useCallback((studentId: string, studentName: string, grade?: string, classNum?: string, enrollment?: Enrollment, targetDay?: any) => {
+    const busesByDay: Record<string, string> = {};
+
+    // 1순위: routes에서 해당 학생의 요일별 AfterSchool 노선 좌석 배정 조회
+    if (routes && routes.length > 0) {
+      const assignedRoutes = routes.filter((r: any) =>
+        r.type === 'AfterSchool' &&
+        (r.seating || []).some((seat: any) => seat.studentId === studentId)
+      );
+      assignedRoutes.forEach((r: any) => {
+        const foundBus = (buses || []).find((b: any) => b.id === r.busId);
+        const bName = foundBus?.name || formatBusNo(r.busId);
+        if (bName && r.dayOfWeek) {
+          busesByDay[r.dayOfWeek] = formatStandardBusNo(bName);
+        }
+      });
+    }
+
+    // targetDay를 영문 요일명으로 정규화
+    let targetDayEn = '';
+    if (targetDay) {
+      if (typeof targetDay === 'object' && targetDay.dateStr) {
+        const match = targetDay.dateStr.match(/\(([월화수목금토일])\)/);
+        if (match && DAY_KO_TO_EN[match[1]]) targetDayEn = DAY_KO_TO_EN[match[1]];
+        else if (targetDay.fullDate) {
+          const dayIdx = new Date(targetDay.fullDate + 'T12:00:00').getDay();
+          targetDayEn = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayIdx];
+        }
+      } else if (typeof targetDay === 'string') {
+        targetDayEn = DAY_KO_TO_EN[targetDay] || targetDay;
+      }
+    }
+
+    let rawBus = '';
+    if (targetDayEn && busesByDay[targetDayEn]) {
+      rawBus = busesByDay[targetDayEn];
+    } else if (Object.keys(busesByDay).length > 0) {
+      rawBus = Object.values(busesByDay)[0];
+    }
+
+    // 2순위: enrollment 객체에 저장된 방과후 버스 번호
+    if (!rawBus) {
+      rawBus = (enrollment as any)?.afterSchoolBusNo || '';
+    }
+
+    // 3순위: masterStudents의 방과후 버스 요약 정보
+    if (!rawBus) {
+      const m = masterStudents.find(ms =>
+        ms.studentId === studentId ||
+        ms.studentEmail?.toLowerCase() === studentId?.toLowerCase() ||
+        (ms.name === studentName && String(ms.grade) === String(grade) && String(ms.classNum) === String(classNum))
+      );
+      rawBus = (m?.busSummary as any)?.afterSchoolBusNo || (m?.busSummary as any)?.afterSchoolBuses || '';
+    }
+
+    if (rawBus && rawBus !== '-' && rawBus !== '미신청' && rawBus !== '미배정') {
+      return formatStandardBusNo(rawBus);
+    }
+    const isBusApplied = Boolean(enrollment?.kisbusNo && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청');
+    return isBusApplied ? '미배정' : '미신청';
+  }, [routes, buses, masterStudents]);
 
   const getDayMark = useCallback(
     (studentId: string, dayIndex: number): string => {
@@ -317,8 +392,6 @@ export default function SharedAttendancePage() {
     },
     [scheduleDays, courseId, syncBusAbsenceForDay, toast]
   );
-
-  const activeDay = scheduleDays.find((d) => d.dayIndex === activeSessionNo) || scheduleDays[0];
 
   // 전원 출석 처리 핸들러 (사용자 요청)
   const handleBulkAttendDay = useCallback(async (dayIndex: number) => {
@@ -587,7 +660,7 @@ export default function SharedAttendancePage() {
               courseStudents.map((enrollment) => {
                 const mark = getDayMark(enrollment.studentId, activeSessionNo);
                 const { symbol, colorClass } = getMarkDisplay(mark);
-                const busNo = getStudentBusNo(enrollment.studentId, enrollment.name, String(enrollment.grade ?? ''), String(enrollment.classNum ?? ''));
+                const busNo = getStudentBusNo(enrollment.studentId, enrollment.name, String(enrollment.grade ?? ''), String(enrollment.classNum ?? ''), enrollment, activeDay);
                 const isAssigned = busNo && busNo !== '미배정' && busNo !== '미지정';
 
                 return (

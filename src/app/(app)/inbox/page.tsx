@@ -38,8 +38,9 @@ import {
   ShieldAlert, Navigation, Calendar, CalendarDays, CalendarPlus, CalendarCheck, ClipboardList, CheckCircle2, 
   Plus, Trash2, CheckSquare, Sparkles, Building2, School, FileUp, 
   FileText, FolderOpen, ArrowRight, ArrowLeft, AlertCircle, CheckCircle, UserCheck, Lock, Eye, MessageSquare,
-  SlidersHorizontal
+  SlidersHorizontal, Repeat, BellRing
 } from "lucide-react";
+import { calculateCurrentRoutineCycle, formatDateToYYYYMMDD } from "@/lib/routineTaskUtils";
 import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -546,6 +547,34 @@ export default function InboxPage() {
         return weeklyProposals.filter(p => p.submitterEmail?.toLowerCase() === emailLower);
     }, [weeklyProposals, profile]);
 
+    // 이번 주/이번 달 주기에 해당하는 '나의 루틴 업무' (알림 대상)
+    const activeRoutineTasks = useMemo(() => {
+        if (!profile?.email) return [];
+        const myEmail = profile.email.toLowerCase();
+        const now = new Date();
+
+        return deptTasks.filter(t => {
+            if (t.category !== 'routine' || !t.routineConfig || t.status === 'closed') return false;
+            // 나에게 할당된 업무인지 확인
+            const isAssignedToMe = t.targetEmails?.some(e => e.toLowerCase() === myEmail);
+            if (!isAssignedToMe) return false;
+
+            // 이미 제출 완료되었는지 확인
+            const sub = t.submissions?.[myEmail];
+            if (sub) return false;
+
+            // 현재 주기가 활성화 상태인지 확인
+            const cycleInfo = calculateCurrentRoutineCycle(t.routineConfig, now);
+            return cycleInfo.isCurrentCycleActive;
+        }).map(t => {
+            const cycleInfo = calculateCurrentRoutineCycle(t.routineConfig, new Date());
+            return {
+                task: t,
+                cycleInfo
+            };
+        });
+    }, [deptTasks, profile]);
+
     const handleDeleteProposal = async (proposalId: string, title: string) => {
         if (!window.confirm(`제안하신 [${title}] 일정을 삭제하시겠습니까?`)) {
             return;
@@ -625,14 +654,14 @@ export default function InboxPage() {
     }
 
     return (
-        <MainLayout title="전자결재 대시보드" contentClassName="p-2 sm:p-4 h-full max-h-full flex flex-col gap-3 font-body overflow-hidden">
+        <MainLayout title="전자결재 대시보드" contentClassName="p-2 sm:p-3 lg:p-3.5 h-full max-h-full flex flex-col gap-2.5 lg:gap-3 font-body overflow-hidden">
             {/* ── 2열 50:50 나란한 배치: [결재 대기 문서 + 주요 학교 일정] (좌) & [나의 업무] (우) ── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0 items-stretch overflow-y-auto lg:overflow-hidden">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-3.5 flex-1 min-h-0 items-stretch overflow-y-auto lg:overflow-hidden">
                 {/* 1. 좌측 (50%): [결재 대기 문서 목록] (상단) + [주요 학교 일정] (하단) */}
-                <div className="flex flex-col gap-3 flex-1 min-h-0 h-full">
+                <div className="flex flex-col gap-2.5 lg:gap-3 flex-1 min-h-0 h-full">
                     {/* 1-1. 상단: 결재 대기 문서 목록 카드 (높이를 절반으로 줄여 콤팩트화) */}
                     <Card className="rounded-2xl border bg-card shadow-xs flex flex-col shrink-0 overflow-hidden">
-                        <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-2 shrink-0 bg-slate-50/70 rounded-t-2xl min-h-[53px]">
+                        <div className="p-2.5 sm:p-3 border-b flex items-center justify-between gap-2 shrink-0 bg-slate-50/70 rounded-t-2xl min-h-[46px]">
                             <div className="flex items-center gap-2 min-w-0">
                                 <div className="p-1.5 bg-blue-500/10 rounded-xl text-blue-600 shrink-0">
                                     <Inbox className="h-4 w-4" />
@@ -663,7 +692,7 @@ export default function InboxPage() {
                             </div>
                         </div>
 
-                        <div className={cn("p-2 sm:p-3", inboxDocs.length > 0 ? "max-h-[160px] overflow-y-auto scrollbar-thin" : "flex flex-col")}>
+                        <div className={cn("p-2 sm:p-2.5", inboxDocs.length > 0 ? "max-h-[140px] xl:max-h-[170px] overflow-y-auto scrollbar-thin" : "flex flex-col")}>
                             {inboxDocs.length === 0 ? (
                                 <div className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-slate-50/60 rounded-xl border border-dashed text-slate-400">
                                     <Inbox className="w-4 h-4 text-slate-400 shrink-0 stroke-[1.5]" />
@@ -677,7 +706,7 @@ export default function InboxPage() {
 
                     {/* 1-2. 하단: 주요 학교 일정 (위로 끌어올려 충분한 세로 공간 확보) */}
                     <Card className="rounded-2xl border bg-card shadow-xs flex flex-col flex-1 min-h-0 overflow-hidden">
-                        <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-1.5 sm:gap-2 shrink-0 bg-blue-50/50 rounded-t-2xl min-w-0">
+                        <div className="p-2.5 sm:p-3 border-b flex items-center justify-between gap-1.5 sm:gap-2 shrink-0 bg-blue-50/50 rounded-t-2xl min-w-0 min-h-[46px]">
                             <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
                                 <div className="p-1.5 bg-blue-600/10 rounded-xl text-blue-600 shrink-0">
                                     <CalendarDays className="h-4 w-4" />
@@ -688,9 +717,6 @@ export default function InboxPage() {
                                             <span className="sm:hidden">일정</span>
                                             <span className="hidden sm:inline">주요 학교 일정</span>
                                         </h2>
-                                        <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[9px] sm:text-[10px] font-bold px-1.5 py-0 whitespace-nowrap shrink-0">
-                                            D-day ~ D+7
-                                        </Badge>
                                     </div>
                                     <p className="text-[11px] text-muted-foreground hidden sm:block truncate">오늘 기준 향후 1주일간의 주요 학교 일정입니다.</p>
                                 </div>
@@ -733,9 +759,9 @@ export default function InboxPage() {
                             </div>
                         </div>
 
-                        <div className={cn("p-2.5 sm:p-3 space-y-1.5", mainSchoolSchedules.length > 0 ? "overflow-visible lg:overflow-y-auto scrollbar-thin lg:flex-1 lg:min-h-0" : "flex flex-col")}>
+                        <div className="p-2 sm:p-2.5 space-y-1.5 flex-1 min-h-0 flex flex-col overflow-y-auto scrollbar-thin">
                             {mainSchoolSchedules.length === 0 ? (
-                                <div className="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-slate-50/60 rounded-xl border border-dashed text-slate-400">
+                                <div className="w-full flex items-center justify-center gap-2 py-3 px-3 bg-slate-50/60 rounded-xl border border-dashed text-slate-400 my-auto">
                                     <Calendar className="w-4 h-4 text-slate-400 shrink-0 stroke-[1.5]" />
                                     <p className="text-xs font-semibold text-slate-600">해당 기간(오늘 ~ D+7)에 예정된 학교 일정이 없습니다.</p>
                                 </div>
@@ -831,7 +857,7 @@ export default function InboxPage() {
 
                 {/* 2. 우측 (50%): 나의 업무 (부서/학급 현행 업무 + 워크플로우 + Todo) 카드 */}
                 <Card className="rounded-2xl border bg-card shadow-xs flex flex-col flex-1 min-h-0 h-full overflow-hidden">
-                    <div className="p-3 sm:p-3.5 border-b flex items-center justify-between gap-1.5 sm:gap-2 shrink-0 bg-indigo-50/50 rounded-t-2xl min-w-0 min-h-[53px]">
+                    <div className="p-2.5 sm:p-3 border-b flex items-center justify-between gap-1.5 sm:gap-2 shrink-0 bg-indigo-50/50 rounded-t-2xl min-w-0 min-h-[46px]">
                         <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
                             <div className="p-1.5 bg-indigo-500/10 rounded-xl text-indigo-600 shrink-0">
                                 <ClipboardList className="h-4 w-4" />
@@ -907,7 +933,53 @@ export default function InboxPage() {
                         </div>
                     </div>
 
-                    <div className="p-3 sm:p-3.5 flex-1 flex flex-col justify-start overflow-y-auto scrollbar-thin gap-3">
+                    <div className="p-2.5 sm:p-3 flex-1 min-h-0 flex flex-col justify-start overflow-hidden gap-2.5">
+                        {/* 2-0-0. 정기 루틴 업무 알림 배너 (주초/월초 활성 주기 리마인드) */}
+                        {activeRoutineTasks.length > 0 && (
+                            <div className="p-2.5 sm:p-3 rounded-xl bg-purple-50/90 border border-purple-200 shadow-2xs space-y-2 shrink-0">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5">
+                                        <div className="p-1 bg-purple-500/10 rounded-lg text-purple-700">
+                                            <BellRing className="w-3.5 h-3.5" />
+                                        </div>
+                                        <span className="font-bold text-xs text-purple-950">
+                                            정기 루틴 업무 알림 ({activeRoutineTasks.length}건)
+                                        </span>
+                                        <Badge className="bg-purple-600 text-white text-[9px] px-1.5 py-0 font-bold animate-pulse">
+                                            제출 주간
+                                        </Badge>
+                                    </div>
+                                    <span className="text-[10px] text-purple-700 font-medium">정기 작성/점검 주기</span>
+                                </div>
+                                <div className="grid grid-cols-1 gap-1.5 max-h-28 overflow-y-auto scrollbar-thin">
+                                    {activeRoutineTasks.map(({ task, cycleInfo }) => (
+                                        <div 
+                                            key={task.id}
+                                            onClick={() => setSubmittingTask(task)}
+                                            className="p-2 bg-white rounded-lg border border-purple-200 hover:border-purple-400 hover:shadow-2xs cursor-pointer flex items-center justify-between gap-2 transition-all"
+                                        >
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-1.5">
+                                                    <Badge className="text-[9px] px-1 py-0 bg-purple-100 text-purple-800 font-bold border-0">
+                                                        {task.routineConfig?.cycle === 'weekly' ? '주간 루틴' : '월간 루틴'}
+                                                    </Badge>
+                                                    <span className="text-xs font-bold text-slate-900 truncate">
+                                                        {task.title}
+                                                    </span>
+                                                </div>
+                                                <p className="text-[10.5px] text-purple-700 truncate mt-0.5">
+                                                    {cycleInfo.reminderText} · 마감: <strong>{formatDateToYYYYMMDD(cycleInfo.cycleDeadline)}</strong>
+                                                </p>
+                                            </div>
+                                            <Button size="sm" className="h-6 text-[10px] px-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold shrink-0 shadow-2xs">
+                                                작성 →
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {/* 2-0. 부장 전용: 부서원 주간 일정 제안 검토 대기 알림 배너 */}
                         {pendingProposalsForHead.length > 0 && (
                             <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200 shadow-2xs space-y-2 shrink-0">
@@ -1122,7 +1194,7 @@ export default function InboxPage() {
                         </div>
 
                         {/* 2-2. 부서·학년 업무 할당/제출 워크플로우 탭 */}
-                        <div className="space-y-2 pt-1 border-t border-slate-100 flex-1 flex flex-col min-h-0">
+                        <div className="space-y-1.5 pt-1 border-t border-slate-100 flex-1 flex flex-col min-h-0 overflow-hidden">
                             <div className="flex items-center justify-between gap-1.5 shrink-0">
                                 {(() => {
                                     const myEmail = profile?.email?.toLowerCase() || '';
@@ -1199,7 +1271,7 @@ export default function InboxPage() {
                                 }
 
                                 return (
-                                    <div className="space-y-1.5 flex-1 min-h-[220px] max-h-[520px] overflow-y-auto pr-1 scrollbar-thin">
+                                    <div className="space-y-1.5 flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin">
                                         {myAssignedList.map((task) => {
                                             const sub = task.submissions?.[myEmail];
                                             const isSubmitted = !!sub;
@@ -1210,7 +1282,13 @@ export default function InboxPage() {
                                                     className="p-2 rounded-xl border border-slate-200 bg-white shadow-xs hover:border-indigo-300 transition-all flex items-center justify-between gap-2"
                                                 >
                                                     <div className="space-y-0.5 min-w-0 flex-1">
-                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                         <div className="flex items-center gap-1.5 flex-wrap">
+                                                            {task.category === 'routine' && (
+                                                                <Badge className="bg-purple-600 text-white text-[9px] px-1 py-0 font-bold flex items-center gap-0.5">
+                                                                    <Repeat className="w-2.5 h-2.5" />
+                                                                    <span>{task.routineConfig?.cycle === 'weekly' ? '루틴 (주간)' : '루틴 (월간)'}</span>
+                                                                </Badge>
+                                                            )}
                                                             <Badge className="bg-indigo-600 text-white text-[9px] px-1 py-0 font-bold">
                                                                 {task.creatorDept || '부서'}
                                                             </Badge>
@@ -1271,7 +1349,7 @@ export default function InboxPage() {
                                 }
 
                                 return (
-                                    <div className="space-y-1.5 flex-1 min-h-[220px] max-h-[520px] overflow-y-auto pr-1 scrollbar-thin">
+                                    <div className="space-y-1.5 flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin">
                                         {myCreatedList.map((task) => {
                                             const emails = task.targetEmails || [];
                                             const targetNames = task.targetNames || {};
@@ -1313,6 +1391,12 @@ export default function InboxPage() {
                                                 >
                                                     <div className="space-y-0.5 min-w-0 flex-1">
                                                         <div className="flex items-center gap-1.5">
+                                                            {task.category === 'routine' && (
+                                                                <Badge className="bg-purple-600 text-white text-[9px] px-1 py-0 font-bold flex items-center gap-0.5">
+                                                                    <Repeat className="w-2.5 h-2.5" />
+                                                                    <span>{task.routineConfig?.cycle === 'weekly' ? '루틴 (주간)' : '루틴 (월간)'}</span>
+                                                                </Badge>
+                                                            )}
                                                             <span className="text-[10px] text-slate-500 font-semibold">
                                                                 제출: {submittedCount}/{total}명 ({pct}%)
                                                             </span>

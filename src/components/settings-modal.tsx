@@ -65,7 +65,8 @@ import {
   Clock,
   HardDrive,
   Folder,
-  ExternalLink
+  ExternalLink,
+  Info
 } from 'lucide-react';
 import NextImage from 'next/image';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -864,7 +865,7 @@ export function SettingsModal() {
   const [selectedHomeroomFile, setSelectedHomeroomFile] = useState<File | null>(null);
   const [selectedDeptFile, setSelectedDeptFile] = useState<File | null>(null);
   const [activeMainTab, setActiveMainTab] = useState<string>('general');
-  const [org, setOrg] = useState<OrgStructure>({ principal: '', vicePrincipal: '', academicHead: '', gradeHeads: {}, homerooms: {}, gradeSubjects: {}, departments: [], afterschoolManager: '', busManager: '', afterschoolManagers: [], busManagers: [], systemManagers: [], peTeachers: [], healthTeachers: [], specialTeachers: [], librarianTeachers: [], subjectTeacherGroups: [], customDutyRoles: [], dutyRoleDepts: {} });
+  const [org, setOrg] = useState<OrgStructure>({ principal: '', principalName: '', vicePrincipal: '', vicePrincipalName: '', administrativeHead: '', administrativeHeadName: '', academicHead: '', academicHeadName: '', gradeHeads: {}, homerooms: {}, gradeSubjects: {}, departments: [], afterschoolManager: '', busManager: '', afterschoolManagers: [], busManagers: [], systemManagers: [], peTeachers: [], healthTeachers: [], specialTeachers: [], librarianTeachers: [], subjectTeacherGroups: [], customDutyRoles: [], dutyRoleDepts: {} });
   const [orgSubTab, setOrgSubTab] = useState<'leadership' | 'duties' | 'grades' | 'departments'>('leadership');
   const [isDutyRolesOpen, setIsDutyRolesOpen] = useState(true);
   const [isSubjectGroupOpen, setIsSubjectGroupOpen] = useState(false);
@@ -3054,55 +3055,200 @@ export function SettingsModal() {
               {/* ========================================================================= */}
               {orgSubTab === 'leadership' && (
                 <div className="space-y-4">
-                  {/* 학교 리더십 (교장, 교감, 교무부장) */}
+                  {/* 학교 리더십 (교장, 교감, 행정실장, 교무부장) */}
                   <div className="space-y-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
                     <div className="flex items-center justify-between border-b pb-2">
                       <div className="flex items-center gap-2">
                         <Building2 className="w-4 h-4 text-indigo-600" />
-                        <h4 className="font-bold text-base text-slate-900">학교 리더십 (학교장 / 교감 / 교무부장)</h4>
+                        <h4 className="font-bold text-base text-slate-900">학교 리더십 (학교장 / 교감 / 행정실장 / 교무부장)</h4>
                       </div>
                       <span className="text-xs text-slate-400">최종 결재선 및 학교 총괄 관리자</span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs font-bold text-slate-700">학교장 (교장)</Label>
-                        <SearchableUserSelect
-                          users={facultyUsers}
-                          value={org.principal}
-                          onSelect={(val) => updateAndSaveOrg(p => ({ ...p, principal: val }), '학교장(교장) 설정이 저장되었습니다.')}
-                          placeholder="선택 안됨"
-                          allowUnassign={true}
-                          unassignLabel="선택 안됨 (해제)"
-                          triggerClassName="h-9 text-xs"
-                          panelWidthClass="w-64"
-                        />
+                    <div className="bg-amber-50/80 border border-amber-200/80 rounded-xl p-2.5 text-xs text-amber-900 flex items-start gap-2 shadow-2xs">
+                      <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>수기 결재 및 공문서 결재선 안내:</strong> 학교장(교장), 행정실장 등 전산 시스템 계정이 없는 직책은 아래 <strong>문서 표출 성명</strong>을 직접 입력해 두시면, 공문서 기안 및 인쇄 시 결재란에 해당 성명이 정상적으로 자동 표출됩니다.
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs font-bold text-slate-700">교감</Label>
-                        <SearchableUserSelect
-                          users={facultyUsers}
-                          value={org.vicePrincipal}
-                          onSelect={(val) => updateAndSaveOrg(p => ({ ...p, vicePrincipal: val }), '교감 설정이 저장되었습니다.')}
-                          placeholder="선택 안됨"
-                          allowUnassign={true}
-                          unassignLabel="선택 안됨 (해제)"
-                          triggerClassName="h-9 text-xs"
-                          panelWidthClass="w-64"
-                        />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
+                      {/* 1. 학교장 (교장) */}
+                      <div className="space-y-2 p-3 rounded-xl bg-slate-50/80 border border-slate-200">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                            <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                            학교장 (교장)
+                          </Label>
+                          <span className="text-[10px] text-slate-400 font-medium">최종 결재</span>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[11px] text-slate-500 font-medium">교직원 계정 선택</span>
+                          <SearchableUserSelect
+                            users={facultyUsers}
+                            value={org.principal}
+                            onSelect={(val) => {
+                              const selected = facultyUsers.find(u => u.email.toLowerCase() === val.toLowerCase());
+                              updateAndSaveOrg(p => ({ 
+                                ...p, 
+                                principal: val, 
+                                principalName: selected?.name || p.principalName || '' 
+                              }), '학교장(교장) 설정이 저장되었습니다.');
+                            }}
+                            placeholder="선택 안됨"
+                            allowUnassign={true}
+                            unassignLabel="선택 안됨 (해제)"
+                            triggerClassName="h-8 text-xs bg-white"
+                            panelWidthClass="w-64"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[11px] text-slate-600 font-semibold">문서 표출 성명 (직접 입력)</span>
+                          <Input
+                            placeholder="학교장 성명 입력 (예: 홍길동)"
+                            value={org.principalName || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setOrg(p => ({ ...p, principalName: val }));
+                            }}
+                            onBlur={(e) => {
+                              updateAndSaveOrg(p => ({ ...p, principalName: e.target.value.trim() }), '학교장 성명이 저장되었습니다.');
+                            }}
+                            className="h-8 text-xs bg-white border-slate-300 focus-visible:border-indigo-400"
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs font-bold text-indigo-700">교무부장</Label>
-                        <SearchableUserSelect
-                          users={facultyUsers}
-                          value={org.academicHead}
-                          onSelect={(val) => updateAndSaveOrg(p => ({ ...p, academicHead: val }), '교무부장 설정이 저장되었습니다.')}
-                          placeholder="선택 안됨"
-                          allowUnassign={true}
-                          unassignLabel="선택 안됨 (해제)"
-                          triggerClassName="h-9 text-xs border-indigo-200 bg-indigo-50/40"
-                          panelWidthClass="w-64"
-                        />
+
+                      {/* 2. 교감 */}
+                      <div className="space-y-2 p-3 rounded-xl bg-slate-50/80 border border-slate-200">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-bold text-slate-800">교감</Label>
+                          <span className="text-[10px] text-slate-400 font-medium">전결 / 중간</span>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[11px] text-slate-500 font-medium">교직원 계정 선택</span>
+                          <SearchableUserSelect
+                            users={facultyUsers}
+                            value={org.vicePrincipal}
+                            onSelect={(val) => {
+                              const selected = facultyUsers.find(u => u.email.toLowerCase() === val.toLowerCase());
+                              updateAndSaveOrg(p => ({ 
+                                ...p, 
+                                vicePrincipal: val,
+                                vicePrincipalName: selected?.name || p.vicePrincipalName || ''
+                              }), '교감 설정이 저장되었습니다.');
+                            }}
+                            placeholder="선택 안됨"
+                            allowUnassign={true}
+                            unassignLabel="선택 안됨 (해제)"
+                            triggerClassName="h-8 text-xs bg-white"
+                            panelWidthClass="w-64"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[11px] text-slate-600 font-semibold">문서 표출 성명 (선택)</span>
+                          <Input
+                            placeholder="교감 성명 직접 입력"
+                            value={org.vicePrincipalName || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setOrg(p => ({ ...p, vicePrincipalName: val }));
+                            }}
+                            onBlur={(e) => {
+                              updateAndSaveOrg(p => ({ ...p, vicePrincipalName: e.target.value.trim() }), '교감 성명이 저장되었습니다.');
+                            }}
+                            className="h-8 text-xs bg-white border-slate-300 focus-visible:border-indigo-400"
+                          />
+                        </div>
+                      </div>
+
+                      {/* 3. 행정실장 */}
+                      <div className="space-y-2 p-3 rounded-xl bg-amber-50/50 border border-amber-200/80">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-bold text-amber-950 flex items-center gap-1">
+                            <Building2 className="w-3.5 h-3.5 text-amber-600" />
+                            행정실장
+                          </Label>
+                          <span className="text-[10px] text-amber-700 font-semibold">수기 결재 / 협조</span>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[11px] text-slate-500 font-medium">교직원 계정 선택</span>
+                          <SearchableUserSelect
+                            users={facultyUsers}
+                            value={org.administrativeHead}
+                            onSelect={(val) => {
+                              const selected = facultyUsers.find(u => u.email.toLowerCase() === val.toLowerCase());
+                              updateAndSaveOrg(p => ({ 
+                                ...p, 
+                                administrativeHead: val,
+                                administrativeHeadName: selected?.name || p.administrativeHeadName || ''
+                              }), '행정실장 설정이 저장되었습니다.');
+                            }}
+                            placeholder="선택 안됨"
+                            allowUnassign={true}
+                            unassignLabel="선택 안됨 (해제)"
+                            triggerClassName="h-8 text-xs bg-white"
+                            panelWidthClass="w-64"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[11px] text-amber-950 font-semibold">문서 표출 성명 (직접 입력)</span>
+                          <Input
+                            placeholder="행정실장 성명 입력 (예: 김행정)"
+                            value={org.administrativeHeadName || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setOrg(p => ({ ...p, administrativeHeadName: val }));
+                            }}
+                            onBlur={(e) => {
+                              updateAndSaveOrg(p => ({ ...p, administrativeHeadName: e.target.value.trim() }), '행정실장 성명이 저장되었습니다.');
+                            }}
+                            className="h-8 text-xs bg-white border-amber-300 focus-visible:border-amber-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* 4. 교무부장 */}
+                      <div className="space-y-2 p-3 rounded-xl bg-indigo-50/40 border border-indigo-200/80">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-bold text-indigo-950">교무부장</Label>
+                          <span className="text-[10px] text-indigo-700 font-semibold">중간 결재</span>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[11px] text-slate-500 font-medium">교직원 계정 선택</span>
+                          <SearchableUserSelect
+                            users={facultyUsers}
+                            value={org.academicHead}
+                            onSelect={(val) => {
+                              const selected = facultyUsers.find(u => u.email.toLowerCase() === val.toLowerCase());
+                              updateAndSaveOrg(p => ({ 
+                                ...p, 
+                                academicHead: val,
+                                academicHeadName: selected?.name || p.academicHeadName || ''
+                              }), '교무부장 설정이 저장되었습니다.');
+                            }}
+                            placeholder="선택 안됨"
+                            allowUnassign={true}
+                            unassignLabel="선택 안됨 (해제)"
+                            triggerClassName="h-8 text-xs bg-white border-indigo-200"
+                            panelWidthClass="w-64"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[11px] text-indigo-950 font-semibold">문서 표출 성명 (선택)</span>
+                          <Input
+                            placeholder="교무부장 성명 직접 입력"
+                            value={org.academicHeadName || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setOrg(p => ({ ...p, academicHeadName: val }));
+                            }}
+                            onBlur={(e) => {
+                              updateAndSaveOrg(p => ({ ...p, academicHeadName: e.target.value.trim() }), '교무부장 성명이 저장되었습니다.');
+                            }}
+                            className="h-8 text-xs bg-white border-indigo-300 focus-visible:border-indigo-500"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>

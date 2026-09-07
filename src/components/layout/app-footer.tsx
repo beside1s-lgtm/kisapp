@@ -71,31 +71,31 @@ export function AppFooter({ className }: { className?: string }) {
     <>
       <footer
         className={cn(
-          'border-t py-3 text-center text-xs text-muted-foreground bg-card/30 backdrop-blur-sm no-print print:hidden w-full overflow-x-hidden shrink-0 mt-2',
+          'border-t border-slate-200/80 py-2 sm:py-2.5 text-center text-xs text-muted-foreground bg-card/60 backdrop-blur-xs no-print print:hidden w-full overflow-x-hidden shrink-0',
           className
         )}
       >
-        <div className="flex flex-col items-center justify-center gap-2 px-3 max-w-xl mx-auto">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-6 px-3 max-w-4xl mx-auto">
           {/* 전용 앱으로 접속하지 않은 경우 개인정보처리방침 바로 위에 전용 앱 설치 버튼 노출 */}
           {isMounted && !isStandalone && (
-            <div className="w-full flex justify-center pb-1">
+            <div className="flex items-center justify-center">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={handleInstallClick}
-                className="h-8 px-3.5 rounded-full border-indigo-200 hover:border-indigo-400 bg-indigo-50/70 hover:bg-indigo-100/80 text-indigo-900 font-bold text-xs shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                className="h-7 px-3 rounded-full border-indigo-200 hover:border-indigo-400 bg-indigo-50/70 hover:bg-indigo-100/80 text-indigo-900 font-bold text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
               >
-                <Download className="w-3.5 h-3.5 text-indigo-600 stroke-[2.2]" />
+                <Download className="w-3 h-3 text-indigo-600 stroke-[2.2]" />
                 <span>전용 앱 설치하기</span>
-                <span className="text-[10px] bg-indigo-600 text-white font-extrabold px-1.5 py-0.2 rounded-full ml-0.5">
+                <span className="text-[9px] bg-indigo-600 text-white font-extrabold px-1.5 py-0.2 rounded-full ml-0.5">
                   설치
                 </span>
               </Button>
             </div>
           )}
 
-          <div className="flex flex-col sm:flex-row justify-center items-center gap-1.5 sm:gap-6">
+          <div className="flex flex-col sm:flex-row justify-center items-center gap-1 sm:gap-4">
             <span>© {new Date().getFullYear()} KIS 통합 포털. All rights reserved.</span>
             <Link
               href="/privacy"

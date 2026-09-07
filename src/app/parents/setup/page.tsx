@@ -177,8 +177,8 @@ export default function ParentsSetupPage() {
 
     setIsSaving(true);
     try {
-      // 1. PIN 해싱 (requirePin이 false이면 null)
-      const hashedPin = requirePin ? await hashPIN(pin) : null;
+      // 1. PIN 해싱 (requirePin이 false이면 undefined)
+      const hashedPin = requirePin ? await hashPIN(pin) : undefined;
       
       // 2. 서명 업로드 (Firebase Storage 대신 Base64로 직접 Firestore에 저장)
       const signatureDataUrl = signatureMode === 'draw' 

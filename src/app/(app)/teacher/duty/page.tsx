@@ -459,11 +459,11 @@ export default function TeacherDutyPage() {
       }
 
       // 2. 교감 (무조건 포함하되, VP 전결이면 final)
-      if (org.vicePrincipal) {
-        const vp = await getUserProfileByEmail(org.vicePrincipal);
-        if (vp) approvers.push({ 
-          name: vp.name, 
-          email: vp.email, 
+      if (org.vicePrincipal || org.vicePrincipalName) {
+        const vp = org.vicePrincipal ? await getUserProfileByEmail(org.vicePrincipal) : null;
+        approvers.push({ 
+          name: org.vicePrincipalName?.trim() || vp?.name || '교감', 
+          email: vp?.email || '', 
           role: '교감', 
           type: finalApprover === 'VP' ? 'final' as const : 'normal' as const, 
           status: 'pending' as const 
@@ -471,11 +471,11 @@ export default function TeacherDutyPage() {
       }
       
       // 3. 교장 (finalApprover === 'PRINCIPAL' 일 때만)
-      if (finalApprover === 'PRINCIPAL' && org.principal) {
-        const principal = await getUserProfileByEmail(org.principal);
-        if (principal) approvers.push({ 
-          name: principal.name, 
-          email: principal.email, 
+      if (finalApprover === 'PRINCIPAL' && (org.principal || org.principalName)) {
+        const principal = org.principal ? await getUserProfileByEmail(org.principal) : null;
+        approvers.push({ 
+          name: org.principalName?.trim() || principal?.name || '교장', 
+          email: principal?.email || '', 
           role: '교장', 
           type: 'final' as const, 
           status: 'pending' as const 
@@ -1201,8 +1201,8 @@ export default function TeacherDutyPage() {
                       <SelectValue placeholder="최종 결재자 선택" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="VP">교감 전결 ({org?.vicePrincipal ? getUserByEmail(org.vicePrincipal)?.name || '미지정' : '미지정'})</SelectItem>
-                      <SelectItem value="PRINCIPAL">교장 결재 ({org?.principal ? getUserByEmail(org.principal)?.name || '미지정' : '미지정'})</SelectItem>
+                      <SelectItem value="VP">교감 전결 ({org?.vicePrincipalName || (org?.vicePrincipal ? getUserByEmail(org.vicePrincipal)?.name : '') || '미지정'})</SelectItem>
+                      <SelectItem value="PRINCIPAL">교장 결재 ({org?.principalName || (org?.principal ? getUserByEmail(org.principal)?.name : '') || '미지정'})</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

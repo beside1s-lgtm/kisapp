@@ -34,6 +34,7 @@ import MeasurementManagement from '@/components/pe/MeasurementManagement';
 import { getOrgStructure } from '@/lib/services/settingsService';
 import { checkPeAccessPermission } from '@/lib/services/permissionService';
 import type { OrgStructure } from '@/lib/types';
+import { MainLayout } from '@/components/layout/main-layout';
 import {
   LineChart,
   BookOpen,
@@ -390,8 +391,12 @@ export default function TeacherPePage() {
   }
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 py-1 space-y-2 pb-1">
-      {/* 1. 컴팩트 헤더: 제목 + 단계별 드롭다운 메뉴 + 설정/AI 액션 버튼 (직선 접기 지원) */}
+    <MainLayout
+      title="학교 체육 성장 기록"
+      contentClassName="p-2 sm:p-4"
+    >
+      <div className="w-full max-w-7xl mx-auto space-y-2 pb-1">
+        {/* 1. 컴팩트 헤더: 제목 + 단계별 드롭다운 메뉴 + 설정/AI 액션 버튼 (직선 접기 지원) */}
       {isHeaderCollapsed ? (
         /* 접힘 상태: 얇은 직선 구분선 + 우측 아래 살짝 돌출된 수직 4mm 역세모(▼) 탭 */
         <div className="relative w-full pt-1 pb-2 group">
@@ -414,7 +419,7 @@ export default function TeacherPePage() {
                 <Activity className="w-4 h-4" />
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                <h1 className="text-sm sm:text-base font-black text-slate-900 whitespace-nowrap">학교 체육 성장 기록</h1>
+                <h1 className="hidden sm:inline-block text-sm sm:text-base font-black text-slate-900 whitespace-nowrap">학교 체육 성장 기록</h1>
                 <Badge
                   variant="outline"
                   onClick={() => setIsSettingsOpen(true)}
@@ -616,6 +621,7 @@ export default function TeacherPePage() {
         statistics={data.statistics}
         sportsClubs={data.clubs}
       />
-    </div>
+      </div>
+    </MainLayout>
   );
 }

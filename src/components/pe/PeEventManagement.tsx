@@ -279,7 +279,7 @@ export function PeEventManagement({ allStudents = [] }: PeEventManagementProps) 
 
     const teacherMap = new Map<string, TeacherOption>();
 
-    const getOrCreateTeacher = (email: string, fallbackName?: string): TeacherOption => {
+    const getOrCreateTeacher = (email: string, fallbackName?: string | null): TeacherOption => {
       const lower = email.toLowerCase().trim();
       if (teacherMap.has(lower)) {
         return teacherMap.get(lower)!;
@@ -726,6 +726,7 @@ export function PeEventManagement({ allStudents = [] }: PeEventManagementProps) 
             grade,
             teacherEmail: assigned.email,
             teacherName: assigned.name,
+            status: 'PENDING',
             submitted: false,
           });
         }

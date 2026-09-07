@@ -146,7 +146,7 @@ export function AiIntelligenceCenterDialog({
           gradeDistribution: papsDistPct,
         },
         topItems: schoolStats.customChartData,
-        weakItems: schoolStats.traits.map(t => ({ name: t })),
+        weakItems: ((schoolStats as any).traits || []).map((t: any) => ({ name: t })),
       });
       setSchoolBriefing(res);
     } catch (e) {

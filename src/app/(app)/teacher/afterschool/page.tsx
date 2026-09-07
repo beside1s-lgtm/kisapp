@@ -32,6 +32,9 @@ import { onMasterStudentsUpdate } from '@/lib/services/masterStudentService';
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import { getUsersDirectory } from '@/lib/services/userService';
 import type { UserProfile } from '@/lib/types';
+import { onStudentsUpdate } from '@/lib/kisbus/students';
+import { onRoutesUpdate } from '@/lib/kisbus/routes';
+import { onBusesUpdate } from '@/lib/kisbus/buses';
 
 // 기본 교실 목록
 const initialClassrooms: Classroom[] = [
@@ -92,7 +95,9 @@ function AfterschoolConsole() {
 
   // Shared States
   const [courses, setCourses] = useState<import('@/lib/afterschool/types').Course[]>(initialCourses);
-  const [studentsList] = useState(initialStudents);
+  const [studentsList, setStudentsList] = useState<any[]>(initialStudents);
+  const [routes, setRoutes] = useState<any[]>([]);
+  const [buses, setBuses] = useState<any[]>([]);
   const [enrollments, setEnrollments] = useState<import('@/lib/afterschool/types').Enrollment[]>(initialEnrollments);
   const [attendanceRecords, setAttendanceRecords] = useState<import('@/lib/afterschool/types').AttendanceRecord[]>(initialAttendance);
   const [classrooms, setClassrooms] = useState<Classroom[]>(initialClassrooms);
@@ -124,7 +129,7 @@ function AfterschoolConsole() {
     loadTeachers();
   }, [user?.email]);
 
-  // Firestore DB 실시간 연동 (강좌, 수강신청, 출석)
+  // Firestore DB 실시간 연동 (강좌, 수강신청, 출석, 스쿨버스 노선/학생/버스)
   useEffect(() => {
     const unsubCourses = onAfterschoolCoursesUpdate((data) => {
       if (data && data.length > 0) setCourses(data);
@@ -141,12 +146,24 @@ function AfterschoolConsole() {
     const unsubApprovalDocs = onAfterschoolApprovalDocsUpdate((data) => {
       setApprovalDocs(data);
     });
+    const unsubStudents = onStudentsUpdate((list) => {
+      if (list && list.length > 0) setStudentsList(list);
+    });
+    const unsubRoutes = onRoutesUpdate((list) => {
+      if (list) setRoutes(list);
+    });
+    const unsubBuses = onBusesUpdate((list) => {
+      if (list) setBuses(list);
+    });
     return () => {
       unsubCourses();
       unsubEnrollments();
       unsubAttendance();
       unsubClassrooms();
       unsubApprovalDocs();
+      unsubStudents();
+      unsubRoutes();
+      unsubBuses();
     };
   }, []);
 
@@ -581,6 +598,8 @@ function AfterschoolConsole() {
             }}
             studentsList={studentsList}
             masterStudents={masterStudents}
+            routes={routes}
+            buses={buses}
             approvalDocs={approvalDocs}
             setApprovalDocs={setApprovalDocs}
           />

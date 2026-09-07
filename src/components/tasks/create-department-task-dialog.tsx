@@ -51,11 +51,16 @@ import {
   X,
   Image as ImageIcon,
   HardDrive,
-  Presentation
+  Presentation,
+  Repeat,
+  BellRing,
+  Briefcase,
+  Folder
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import type { TaskAttachment } from '@/lib/types';
+import type { TaskAttachment, RoutineScheduleConfig } from '@/lib/types';
+import { calculateCurrentRoutineCycle, formatDateToYYYYMMDD } from '@/lib/routineTaskUtils';
 import { GoogleDrivePickerModal } from './google-drive-picker-modal';
 import { getDriveTypeInfo } from '@/lib/services/googleDriveService';
 import { getGoogleDriveConfig } from '@/lib/services/settingsService';
@@ -210,8 +215,15 @@ export function CreateDepartmentTaskDialog({
   const { profile } = useAuth();
   const { toast } = useToast();
 
-  // 업무 대분류: 일반 업무 vs 행사/프로젝트 계획
-  const [taskCategory, setTaskCategory] = useState<'general' | 'event'>('general');
+  // 업무 대분류: 일반 업무 vs 행사/프로젝트 계획 vs 루틴 업무 요청
+  const [taskCategory, setTaskCategory] = useState<'general' | 'event' | 'routine'>('general');
+
+  // 루틴(반복) 업무 설정 상태
+  const [routineCycle, setRoutineCycle] = useState<'weekly' | 'monthly'>('weekly');
+  const [routineDayOfWeek, setRoutineDayOfWeek] = useState<number>(1); // 1: 월요일
+  const [routineDayOfMonth, setRoutineDayOfMonth] = useState<number>(1); // 매월 1일
+  const [routineAlarmTime, setRoutineAlarmTime] = useState<string>('08:30');
+  const [routineDurationDays, setRoutineDurationDays] = useState<number>(5);
 
   // 공통 기본 정보
   const [title, setTitle] = useState('');
@@ -252,7 +264,7 @@ export function CreateDepartmentTaskDialog({
     const tpl = systemTemplates.find(t => t.id === selectedTemplateId);
     if (tpl) {
       if (tpl.columnDefs && tpl.columnDefs.length > 0) {
-        setTemplateColumns(tpl.columnDefs.map((c, i) => ({ ...c, id: `${Date.now()}_${i}` })));
+        setTemplateColumns(tpl.columnDefs.map((c, i) => ({ id: `${Date.now()}_${i}`, name: c.name, guide: c.guide || '' })));
       } else {
         setTemplateColumns(tpl.columns.map((colName, i) => ({
           id: `${Date.now()}_${i}`,
@@ -533,20 +545,24 @@ export function CreateDepartmentTaskDialog({
     }
   }, [open]);
 
-  // 행사 템플릿 전환 시 기본값 설정
+  // 행사 및 루틴 템플릿 전환 시 기본값 설정
   useEffect(() => {
     if (taskCategory === 'event') {
-      if (!title || title.includes('방과후 지도계획서')) {
+      if (!title || title.includes('방과후 지도계획서') || title.includes('점검표') || title.includes('현황')) {
         const year = new Date().getFullYear();
         setTitle(`${year}학년도 초등 스포츠 데이(체육대회) 한마당 운영 계획`);
       }
-      if (targetType === 'dept') {
+      if (targetType === 'dept' || targetType === 'head') {
         setTargetType('grade');
         setSelectedGrades(['1학년', '2학년', '3학년', '4학년', '5학년', '6학년']);
       }
       // 행사 계획일 때는 기본적으로 [기안문 직행 HTML 표] 또는 [시트 템플릿] 권장
       if (taskType === 'file_submission') {
         setTaskType('html_draft');
+      }
+    } else if (taskCategory === 'routine') {
+      if (!title || title.includes('스포츠 데이')) {
+        setTitle('교실 안전 및 소방시설 정기점검표 작성');
       }
     }
   }, [taskCategory]);
@@ -652,6 +668,27 @@ export function CreateDepartmentTaskDialog({
           emails.add(orgData.gradeHeads[gradeName].toLowerCase());
         }
       });
+      return { emails: Array.from(emails), names: emailToNameMap };
+    }
+
+    if (targetType === 'head') {
+      const emails = new Set<string>();
+      // 1. 행정 부서 부장
+      (orgData?.departments || []).forEach((d: any) => {
+        if (d.headEmail) emails.add(d.headEmail.toLowerCase());
+      });
+      // 2. 학년 부장
+      if (orgData?.gradeHeads) {
+        Object.values(orgData.gradeHeads).forEach(headEmail => {
+          if (headEmail && headEmail !== 'unassigned') {
+            emails.add((headEmail as string).toLowerCase());
+          }
+        });
+      }
+      // 3. 교무부장
+      if (orgData?.academicHead) {
+        emails.add(orgData.academicHead.toLowerCase());
+      }
       return { emails: Array.from(emails), names: emailToNameMap };
     }
 
@@ -763,6 +800,24 @@ export function CreateDepartmentTaskDialog({
         autoDraftTable: taskType === 'html_draft'
       } : undefined;
 
+      const routinePayload: RoutineScheduleConfig | undefined = taskCategory === 'routine' ? {
+        cycle: routineCycle,
+        dayOfWeek: routineCycle === 'weekly' ? routineDayOfWeek : undefined,
+        dayOfMonth: routineCycle === 'monthly' ? routineDayOfMonth : undefined,
+        time: routineAlarmTime,
+        durationDays: routineDurationDays,
+        alarmText: routineCycle === 'weekly' 
+          ? `매주 ${['일', '월', '화', '수', '목', '금', '토'][routineDayOfWeek]}요일 정기 제출` 
+          : `매월 ${routineDayOfMonth}일 정기 점검/제출`
+      } : undefined;
+
+      // 루틴 업무의 경우 이번 주/이번 달 마감일을 자동 산출
+      let finalDeadline = deadline;
+      if (taskCategory === 'routine' && routinePayload) {
+        const cycleInfo = calculateCurrentRoutineCycle(routinePayload, new Date());
+        finalDeadline = formatDateToYYYYMMDD(cycleInfo.cycleDeadline);
+      }
+
       const res = await createDepartmentTask({
         title: title.trim(),
         description: description.trim() || (taskCategory === 'event' ? purpose : ''),
@@ -777,16 +832,21 @@ export function CreateDepartmentTaskDialog({
         targetNames: targetRecipients.names,
         taskType: taskType as any,
         sheetsConfig,
-        deadline,
+        deadline: finalDeadline,
         status: 'active',
         category: taskCategory,
+        routineConfig: routinePayload,
         eventDetails: eventPayload,
         eventSchedules: taskCategory === 'event' ? schedules : undefined
       });
 
       if (res.success) {
         toast({ 
-          title: taskCategory === 'event' ? '행사 계획 생성 및 업무 할당 완료' : '업무 생성 완료', 
+          title: taskCategory === 'routine' 
+            ? '루틴(반복) 업무 등록 완료' 
+            : taskCategory === 'event' 
+              ? '행사 계획 생성 및 업무 할당 완료' 
+              : '업무 생성 완료', 
           description: autoGeneratedSheetUrl 
             ? `Google Drive에 업무 시트가 자동 생성되었으며, 총 ${targetRecipients.emails.length}명에게 할당되었습니다.`
             : `총 ${targetRecipients.emails.length}명에게 업무가 성공적으로 할당되었습니다.` 
@@ -844,32 +904,45 @@ export function CreateDepartmentTaskDialog({
             일반 업무 배포, Google Sheets 동시 협업, 또는 기안문 직행 HTML 표 취합 업무를 생성합니다.
           </DialogDescription>
 
-          {/* 최상단: 업무 양식 유형 탭 */}
-          <div className="grid grid-cols-2 gap-2 pt-3">
+          {/* 최상단: 업무 양식 유형 탭 (3단 탭) */}
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2 pt-3">
             <button
               type="button"
               onClick={() => setTaskCategory('general')}
-              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer select-none ${
+              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl border text-xs font-bold transition-all cursor-pointer select-none ${
                 taskCategory === 'general'
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm ring-2 ring-indigo-200'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
               }`}
             >
-              <FileText className="w-4 h-4" />
-              <span>일반 업무 요청</span>
+              <FileText className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">일반 업무 요청</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTaskCategory('routine')}
+              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl border text-xs font-bold transition-all cursor-pointer select-none ${
+                taskCategory === 'routine'
+                  ? 'bg-purple-600 text-white border-purple-600 shadow-sm ring-2 ring-purple-200'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              <Repeat className="w-3.5 h-3.5 shrink-0 text-purple-300" />
+              <span className="truncate">루틴 업무 요청 (주간/월간)</span>
             </button>
 
             <button
               type="button"
               onClick={() => setTaskCategory('event')}
-              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer select-none ${
+              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl border text-xs font-bold transition-all cursor-pointer select-none ${
                 taskCategory === 'event'
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm ring-2 ring-indigo-200'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
               }`}
             >
-              <Trophy className="w-4 h-4 text-amber-300" />
-              <span>행사 / 프로젝트 계획 (체육/축제/체험 등)</span>
+              <Trophy className="w-3.5 h-3.5 shrink-0 text-amber-300" />
+              <span className="truncate">행사 / 프로젝트 계획</span>
             </button>
           </div>
         </DialogHeader>
@@ -883,13 +956,186 @@ export function CreateDepartmentTaskDialog({
                 {taskCategory === 'event' ? '행사 / 프로젝트 명 *' : '업무 제목 *'}
               </Label>
               <Input 
-                placeholder={taskCategory === 'event' ? "예: 2026학년도 초등 스포츠 데이(체육대회) 한마당 운영 계획" : "예: 2026학년도 1학기 방과후 지도계획서 제출, 3월 환경구성 점검 등"}
+                placeholder={
+                  taskCategory === 'event' 
+                    ? "예: 2026학년도 초등 스포츠 데이(체육대회) 한마당 운영 계획" 
+                    : taskCategory === 'routine'
+                      ? "예: 교실 안전 및 소방시설 정기점검표 작성, 주간 감염병 현황 입력, 부장회의록 제출"
+                      : "예: 2026학년도 1학기 방과후 지도계획서 제출, 3월 환경구성 점검 등"
+                }
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="h-10 text-sm rounded-xl font-medium"
                 required
               />
             </div>
+
+            {/* ── 루틴(반복) 업무 주기 설정 섹션 ── */}
+            {taskCategory === 'routine' && (
+              <div className="p-3.5 sm:p-4 rounded-xl bg-purple-50/70 border border-purple-200/90 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Repeat className="w-4 h-4 text-purple-600" />
+                    <Label className="text-xs font-bold text-purple-950">
+                      루틴(반복) 업무 주기 및 자동 알림 설정
+                    </Label>
+                  </div>
+                  <Badge className="bg-purple-600 text-white text-[10px] px-2 py-0.5 font-bold">
+                    {routineCycle === 'weekly' ? '주간 정기 반복' : '월간 정기 반복'}
+                  </Badge>
+                </div>
+
+                {/* 추천 프리셋 빠른 적용 버튼 */}
+                <div className="space-y-1">
+                  <span className="text-[11px] font-semibold text-purple-800">추천 업무 템플릿 프리셋:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setTitle('교실 안전 및 소방시설 정기점검표 작성');
+                        setDescription('매월 1일 각 학급 및 특별실 안전/소방 점검표를 작성하여 제출 바랍니다.');
+                        setRoutineCycle('monthly');
+                        setRoutineDayOfMonth(1);
+                        setRoutineDurationDays(5);
+                        setTargetType('grade');
+                        setSelectedGrades(['1학년', '2학년', '3학년', '4학년', '5학년', '6학년']);
+                      }}
+                      className="h-6 px-2 text-[10px] font-bold bg-white text-purple-700 border-purple-200 hover:bg-purple-100"
+                    >
+                      안전 점검표 (월간 1일 · 전학년)
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setTitle('주간 감염병 발생 현황 및 보건 일지 입력');
+                        setDescription('매주 월요일 주간 감염병(수족구, 독감 등) 유증상자 현황을 입력해주세요.');
+                        setRoutineCycle('weekly');
+                        setRoutineDayOfWeek(1);
+                        setRoutineDurationDays(4);
+                        setTargetType('grade');
+                        setSelectedGrades(['1학년', '2학년', '3학년', '4학년', '5학년', '6학년']);
+                      }}
+                      className="h-6 px-2 text-[10px] font-bold bg-white text-purple-700 border-purple-200 hover:bg-purple-100"
+                    >
+                      감염병 현황 (주간 월요일 · 전학년)
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setTitle('주간 부장 회의록 작성 및 안건 제출');
+                        setDescription('각 부서 및 학년별 주간 회의 결과를 작성하여 제출 바랍니다.');
+                        setRoutineCycle('weekly');
+                        setRoutineDayOfWeek(2);
+                        setRoutineDurationDays(3);
+                        setTargetType('head');
+                      }}
+                      className="h-6 px-2 text-[10px] font-bold bg-white text-purple-700 border-purple-200 hover:bg-purple-100"
+                    >
+                      부장 회의록 (주간 화요일 · 부장 그룹)
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                  {/* 반복 주기 선택 */}
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold text-slate-700">반복 주기 *</Label>
+                    <div className="grid grid-cols-2 gap-1 bg-white p-1 rounded-lg border border-purple-200">
+                      <button
+                        type="button"
+                        onClick={() => setRoutineCycle('weekly')}
+                        className={cn(
+                          "py-1 text-xs font-bold rounded-md transition-all",
+                          routineCycle === 'weekly' ? "bg-purple-600 text-white shadow-2xs" : "text-slate-600 hover:bg-slate-100"
+                        )}
+                      >
+                        주간 (매주)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRoutineCycle('monthly')}
+                        className={cn(
+                          "py-1 text-xs font-bold rounded-md transition-all",
+                          routineCycle === 'monthly' ? "bg-purple-600 text-white shadow-2xs" : "text-slate-600 hover:bg-slate-100"
+                        )}
+                      >
+                        월간 (매월)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 반복 기준 요일/일자 */}
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold text-slate-700">
+                      {routineCycle === 'weekly' ? '시작/알림 요일 *' : '시작/알림 일자 *'}
+                    </Label>
+                    {routineCycle === 'weekly' ? (
+                      <Select 
+                        value={String(routineDayOfWeek)} 
+                        onValueChange={(v) => setRoutineDayOfWeek(Number(v))}
+                      >
+                        <SelectTrigger className="h-8 text-xs rounded-lg bg-white border-purple-200 font-semibold">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">매주 월요일 (주초)</SelectItem>
+                          <SelectItem value="2">매주 화요일</SelectItem>
+                          <SelectItem value="3">매주 수요일</SelectItem>
+                          <SelectItem value="4">매주 목요일</SelectItem>
+                          <SelectItem value="5">매주 금요일 (주말 전)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Select 
+                        value={String(routineDayOfMonth)} 
+                        onValueChange={(v) => setRoutineDayOfMonth(Number(v))}
+                      >
+                        <SelectTrigger className="h-8 text-xs rounded-lg bg-white border-purple-200 font-semibold">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[1, 5, 10, 15, 20, 25, 28].map(day => (
+                            <SelectItem key={day} value={String(day)}>
+                              매월 {day}일 {day === 1 ? '(월초)' : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+
+                  {/* 제출 소요 기간(일) */}
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold text-slate-700">제출 기한 (소요 일수) *</Label>
+                    <Select 
+                      value={String(routineDurationDays)} 
+                      onValueChange={(v) => setRoutineDurationDays(Number(v))}
+                    >
+                      <SelectTrigger className="h-8 text-xs rounded-lg bg-white border-purple-200 font-semibold">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="2">시작 후 2일 이내</SelectItem>
+                        <SelectItem value="3">시작 후 3일 이내</SelectItem>
+                        <SelectItem value="5">시작 후 5일 이내 (권장)</SelectItem>
+                        <SelectItem value="7">시작 후 7일 이내 (1주일)</SelectItem>
+                        <SelectItem value="10">시작 후 10일 이내</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <p className="text-[10.5px] text-purple-700 bg-purple-100/60 p-2 rounded-lg leading-relaxed">
+                  💡 <strong>루틴 자동화 안내</strong>: 연초에 1번 등록해 두면, 주초/월초마다 해당 교직원의 전자결재 대시보드(수신함) '나의 업무' 상단에 알림 배너가 자동으로 표출되고 제출 마감일이 주기별로 자동 갱신됩니다.
+                </p>
+              </div>
+            )}
 
             {/* ── 행사 전용 추가 양식 섹션 (시작/종료일, 장소, 유형, 방침, 일정표, 예산) ── */}
             {taskCategory === 'event' && (
@@ -1089,7 +1335,7 @@ export function CreateDepartmentTaskDialog({
               <Label className="text-xs font-bold text-slate-700">
                 {taskCategory === 'event' ? '세부 계획/시나리오 작성 요청 대상 *' : '업무 할당 대상 그룹 *'}
               </Label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 sm:gap-2">
                 <button 
                   type="button"
                   onClick={() => setTargetType('dept')}
@@ -1114,6 +1360,20 @@ export function CreateDepartmentTaskDialog({
                 >
                   <GraduationCap className="w-3.5 h-3.5 shrink-0" />
                   <span>학년 교사</span>
+                </button>
+
+                <button 
+                  type="button"
+                  onClick={() => setTargetType('head')}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl border text-xs font-bold transition-all cursor-pointer select-none ${
+                    targetType === 'head' 
+                      ? 'bg-purple-600 text-white border-purple-600 shadow-sm ring-2 ring-purple-200' 
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                  }`}
+                  title="행정 부서 부장, 학년 부장, 교무부장 일괄 지정"
+                >
+                  <Briefcase className="w-3.5 h-3.5 shrink-0" />
+                  <span>부장 그룹</span>
                 </button>
 
                 <button 
@@ -1338,6 +1598,9 @@ export function CreateDepartmentTaskDialog({
                 <Users className="w-4 h-4 text-indigo-600 shrink-0" />
                 <span>
                   할당 대상: <strong>총 {targetRecipients.emails.length}명</strong>의 교직원이 업무를 부여받습니다.
+                  {targetType === 'head' && (
+                    <span className="ml-1.5 text-purple-700 font-semibold">(부장 그룹: 행정부서 부장, 학년부장, 교무부장 일괄 포함)</span>
+                  )}
                   {targetType === 'grade' && selectedGrades.length > 0 && (
                     <span className="ml-1.5 text-indigo-600 font-semibold">({selectedGrades.join(', ')})</span>
                   )}

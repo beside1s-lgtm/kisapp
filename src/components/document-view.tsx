@@ -63,9 +63,13 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const [approvalDateOverride, setApprovalDateOverride] = useState<string>(defaultApplyDateStr);
   const [showTeacherApproveModal, setShowTeacherApproveModal] = useState(false);
 
-  const [teacherConfirmData, setTeacherConfirmData] = useState({
-    absenceType: initialDoc.parentFormData?.absenceType || '병결',
-    confirmMethod: initialDoc.parentFormData?.teacherConfirmMethod || '전화/문자',
+  const [teacherConfirmData, setTeacherConfirmData] = useState<{
+    absenceType?: '병결' | '미인정' | '기타' | '출석인정';
+    confirmMethod?: '전화/문자' | '학부모 내교' | '가정방문' | '기타';
+    confirmDate?: string;
+  }>({
+    absenceType: (initialDoc.parentFormData?.absenceType as any) || '병결',
+    confirmMethod: (initialDoc.parentFormData?.teacherConfirmMethod as any) || '전화/문자',
     confirmDate: initialDoc.parentFormData?.teacherConfirmDate || defaultApplyDateStr
   });
 

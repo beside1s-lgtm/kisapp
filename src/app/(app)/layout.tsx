@@ -50,11 +50,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="print:hidden shrink-0 h-full">
             <AppSidebar />
           </div>
-          <main className="flex-1 min-w-0 w-full max-w-full h-full pb-20 lg:pb-0 overflow-y-auto print:p-0 print:m-0 print:block flex flex-col justify-between">
-            <div className="flex-1 min-w-0">
+          <main className="flex-1 min-w-0 w-full max-w-full h-full pb-20 lg:pb-0 overflow-y-auto lg:overflow-hidden print:p-0 print:m-0 print:block flex flex-col justify-between">
+            <div className="flex-1 min-w-0 w-full lg:min-h-0 lg:flex lg:flex-col lg:overflow-y-auto">
               {children}
             </div>
-            <AppFooter />
+            {/* 개인정보처리방침 푸터는 넓은 화면(데스크톱)에서만 바닥에 고정 노출되고, 모바일에서는 하단 네비게이션이 대신하므로 숨김 */}
+            <AppFooter className="shrink-0 hidden lg:block" />
           </main>
         </div>
       </div>

@@ -1212,7 +1212,7 @@ export async function deleteDocument(docId: string, userIdOrEmail: string, isAdm
     const status = (docData.status || '').toLowerCase();
     const isAllowedStatus = status === 'recalled' || status === 'rejected' || status === 'draft' || (isParentDoc && status === 'pending');
 
-    if (!isAllowedStatus || status === 'approved') {
+    if (!isAllowedStatus) {
       return { success: false, error: "회수 또는 반려된 문서만 삭제할 수 있습니다 (승인 완료된 문서는 삭제 불가)." };
     }
 
