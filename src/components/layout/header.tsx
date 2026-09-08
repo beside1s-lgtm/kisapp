@@ -108,7 +108,10 @@ export function AppHeader() {
     <>
       <header className="fixed top-0 left-0 right-0 z-50 flex h-14 sm:h-16 items-center justify-between border-b bg-card px-2.5 sm:px-4 lg:px-8 max-w-full overflow-x-hidden min-w-0">
         <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-          <Link href="/inbox" className="hidden sm:flex items-center gap-2 sm:gap-4 cursor-pointer hover:opacity-80 transition-opacity shrink-0">
+          <Link 
+            href={profile?.role === '강사' ? "/teacher/afterschool" : "/inbox"} 
+            className="hidden sm:flex items-center gap-2 sm:gap-4 cursor-pointer hover:opacity-80 transition-opacity shrink-0"
+          >
             <div className="bg-primary p-1.5 sm:p-2 rounded-lg text-primary-foreground">
               <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
@@ -116,15 +119,17 @@ export function AppHeader() {
               KSHCM ADMIN
             </h1>
           </Link>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleSidebar}
-            title={isSidebarOpen ? "사이드바 숨기기" : "사이드바 열기"}
-            className="hidden lg:flex h-9 w-9 text-slate-600 hover:bg-muted shrink-0"
-          >
-            {isSidebarOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
-          </Button>
+          {profile?.role !== '담당' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleSidebar}
+              title={isSidebarOpen ? "사이드바 숨기기" : "사이드바 열기"}
+              className="hidden lg:flex h-9 w-9 text-slate-600 hover:bg-muted shrink-0"
+            >
+              {isSidebarOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
+            </Button>
+          )}
         </div>
 
         <div className="flex items-center gap-2 sm:gap-6 shrink-0">

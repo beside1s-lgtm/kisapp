@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
 import { UserProfile } from '@/lib/types';
@@ -118,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
   const { toast } = useToast();
+  const router = useRouter();
 
   const [pendingMfaUser, setPendingMfaUser] = useState<FirebaseUser | null>(null);
   const [pendingMfaProfile, setPendingMfaProfile] = useState<UserProfile | null>(null);
@@ -183,7 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       let userProfile = await getUserProfileByEmail(firebaseUser.email);
       const emailLower = firebaseUser.email.toLowerCase().trim();
-      const isHardcodedAdmin = emailLower === ADMIN_EMAIL || emailLower === 'bus@kshcm.net';
+      const isHardcodedAdmin = emailLower === ADMIN_EMAIL;
       
       let needsSave = false;
       const profileUpdates: Partial<UserProfile> = {};
@@ -232,6 +234,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           needsSave = true;
           profileUpdates.isAdmin = true;
           userProfile.isAdmin = true; // 즉시 반영
+      }
+
+      // 3-0. 스쿨버스 전담 계정(bus@kshcm.net) 로그인 시 이동 경로 기본 보정 (/admin/bus)
+      if (emailLower === 'bus@kshcm.net' && !userProfile.loginRedirectUrl) {
+          needsSave = true;
+          profileUpdates.loginRedirectUrl = '/admin/bus';
+          userProfile.loginRedirectUrl = '/admin/bus';
       }
 
       // 3-1. 학년도+이름 등 학생/학부모 패턴 계정은 예외 없이 학부모/학생으로 취급 (교직원/관리자 권한 원천 차단)
@@ -358,6 +367,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setProfile(fetchedProfile);
                 setPendingMfaUser(null);
                 setPendingMfaProfile(null);
+                // 담당 및 강사 계정: 로그인 후 지정 페이지로 자동 이동
+                if (fetchedProfile.loginRedirectUrl) {
+                  router.replace(fetchedProfile.loginRedirectUrl);
+                } else if (fetchedProfile.role === '강사') {
+                  router.replace('/teacher/afterschool');
+                }
               }
             } else {
               toast({ variant: 'destructive', title: '로그인 실패', description: '등록되지 않은 계정이거나 올바른 학교 계정(@kshcm.net)이 아닙니다.' });
@@ -538,6 +553,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       title: "2단계 보안 인증 성공",
       description: "교직원 보안 인증에 통과했습니다."
     });
+    // 담당 및 강사 계정: MFA 완료 후 지정 페이지로 자동 이동
+    if (pendingMfaProfile?.loginRedirectUrl) {
+      router.replace(pendingMfaProfile.loginRedirectUrl);
+    } else if (pendingMfaProfile?.role === '강사') {
+      router.replace('/teacher/afterschool');
+    }
   };
 
   const handleCancelMfa = async () => {

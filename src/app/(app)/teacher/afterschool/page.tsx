@@ -252,6 +252,12 @@ function AfterschoolConsole() {
   }, [courses, myName, myUid]);
 
   const teacherCourses = useMemo(() => {
+    // 강사 직책인 경우: 오직 본인의 담당 강좌만 노출 (타 강좌 및 관리자/전체 fallback 완전 차단)
+    const isInstructor = profile?.role === '강사';
+    if (isInstructor) {
+      return myOwnCourses;
+    }
+
     // 관리자는 전체 강좌를 열람할 수 있으나, 본인 담당 강좌가 있다면 최상단에 먼저 배치
     if (isAdmin) {
       const otherCourses = courses.filter(c => !myOwnCourses.some(mc => mc.id === c.id));
@@ -265,7 +271,7 @@ function AfterschoolConsole() {
     }
     if (myOwnCourses.length > 0) return myOwnCourses;
     return courses;
-  }, [courses, myOwnCourses, isAdmin]);
+  }, [courses, myOwnCourses, isAdmin, profile?.role]);
 
   const myCourses = teacherCourses;
 

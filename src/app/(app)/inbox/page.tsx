@@ -64,8 +64,11 @@ import {
   MajorTasksModal, 
   ALL_MAJOR_TASKS, 
   getSavedMajorTaskIds, 
-  MajorTaskDefinition 
+  saveMajorTaskIds,
+  MajorTaskDefinition,
+  TaskAssignmentContext
 } from "@/components/dashboard/major-tasks-modal";
+import { checkPeAccessPermission, checkHealthAccessPermission } from "@/lib/services/permissionService";
 import { MainLayout } from "@/components/layout/main-layout";
 import { WeeklyEducationPlanModal } from "@/components/tasks/weekly-education-plan-modal";
 import { MonthlyEducationPlanModal } from "@/components/tasks/monthly-education-plan-modal";
@@ -213,13 +216,9 @@ export default function InboxPage() {
     const [afterschoolEnrollments, setAfterschoolEnrollments] = useState<any[]>([]);
     const [afterschoolTimer, setAfterschoolTimer] = useState<any>(null);
 
-    // 대시보드 주요 업무 바로가기 개인화 설정 상태
+    // 대시보드 주요 업무 바로가기 개인화 설정 상태 (로그인한 사용자의 실제 담당 업무 기반으로 동적 설정)
     const [isMajorTasksModalOpen, setIsMajorTasksModalOpen] = useState(false);
-    const [selectedMajorTaskIds, setSelectedMajorTaskIds] = useState<string[]>(['afterschool', 'bus']);
-
-    useEffect(() => {
-        setSelectedMajorTaskIds(getSavedMajorTaskIds());
-    }, []);
+    const [selectedMajorTaskIds, setSelectedMajorTaskIds] = useState<string[]>([]);
 
     // 1. 실시간 부서 업무 구독
     useEffect(() => {
@@ -415,6 +414,87 @@ export default function InboxPage() {
             managerList
         };
     }, [profile, orgData]);
+
+    // ── 로그인 교사의 실제 담당 업무(주요 업무 바로가기) 판별 ──
+    const myAfterschoolCourses = useMemo(() => {
+        const currentTeacherName = (profile?.name || user?.displayName || '').trim();
+        const currentTeacherId = user?.uid || '';
+        if (!currentTeacherName && !currentTeacherId) return [];
+
+        return (afterschoolCourses || []).filter((course) => {
+            if (!course) return false;
+            if (course.teacherId && course.teacherId === currentTeacherId) return true;
+            if (currentTeacherName) {
+                if (course.instructorName === currentTeacherName) return true;
+                if (course.teacherName === currentTeacherName) return true;
+                if (course.instructor2 === currentTeacherName || course.instructor3 === currentTeacherName || course.instructor4 === currentTeacherName) return true;
+                if (Array.isArray(course.assistantTeachers) && course.assistantTeachers.includes(currentTeacherName)) return true;
+            }
+            return false;
+        });
+    }, [afterschoolCourses, profile, user]);
+
+    const canAccessPe = useMemo(() => {
+        return checkPeAccessPermission(profile?.email, profile, orgData);
+    }, [profile, orgData]);
+
+    const canAccessHealth = useMemo(() => {
+        return checkHealthAccessPermission(profile?.email, profile, orgData);
+    }, [profile, orgData]);
+
+    const isHomeroomTeacher = useMemo(() => {
+        if (!profile?.email) return false;
+        if (profile.isAdmin) return true;
+        if (myBelongingInfo.homeroom) return true;
+        if (orgData?.homerooms) {
+            const emailLower = profile.email.toLowerCase();
+            return Object.values(orgData.homerooms).some((e: any) => e?.toLowerCase() === emailLower);
+        }
+        return false;
+    }, [profile, myBelongingInfo, orgData]);
+
+    const hasAssignedBus = useMemo(() => {
+        if (isBusManager) return true;
+        if ((profile as any)?.assignedBusId) return true;
+        return false;
+    }, [isBusManager, profile]);
+
+    const taskContext: TaskAssignmentContext = useMemo(() => ({
+        email: profile?.email || '',
+        profile,
+        orgData,
+        isAdmin: profile?.isAdmin === true,
+        isHead: myBelongingInfo.isHead,
+        homeroom: myBelongingInfo.homeroom,
+        department: myBelongingInfo.department,
+        isAfterschoolManager,
+        isBusManager,
+        hasAfterschoolCourses: myAfterschoolCourses.length > 0,
+        hasAssignedBus,
+        canAccessPe,
+        canAccessHealth,
+        isHomeroomTeacher,
+    }), [profile, orgData, myBelongingInfo, isAfterschoolManager, isBusManager, myAfterschoolCourses, hasAssignedBus, canAccessPe, canAccessHealth, isHomeroomTeacher]);
+
+    // 사용자의 실제 담당 업무 목록 (자신의 담당 업무 중에서만 노출)
+    const myAvailableTasks = useMemo(() => {
+        if (!profile?.email) return [];
+        return ALL_MAJOR_TASKS.filter((task) => task.checkAssigned(taskContext));
+    }, [profile?.email, taskContext]);
+
+    // 사용자별 주요 업무 선택 상태 동기화 (계정별 localStorage 및 담당 업무 필터링)
+    useEffect(() => {
+        if (!profile?.email || myAvailableTasks.length === 0) return;
+        const availableIds = myAvailableTasks.map((t) => t.id);
+        const saved = getSavedMajorTaskIds(profile.email, availableIds);
+        setSelectedMajorTaskIds(saved);
+    }, [profile?.email, myAvailableTasks]);
+
+    // 실제 화면에 렌더링될 유효한 주요 업무 ID 목록 (담당 업무에 속한 것만)
+    const effectiveMajorTaskIds = useMemo(() => {
+        const availableIds = new Set(myAvailableTasks.map((t) => t.id));
+        return selectedMajorTaskIds.filter((id) => availableIds.has(id));
+    }, [selectedMajorTaskIds, myAvailableTasks]);
 
     // ── 주요 학교 일정 계산 (오늘 D-day ~ 향후 7일간 일정) ──
     const mainSchoolSchedules = useMemo(() => {
@@ -1070,128 +1150,155 @@ export default function InboxPage() {
                             </div>
                         )}
 
-                        {/* 2-1. 개인화 주요 업무 바로가기 (최대 3개 나란히 배치) */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                            {selectedMajorTaskIds.map((taskId) => {
-                                if (taskId === 'afterschool') {
-                                    const pendingCourses = afterschoolCourses.filter(c => c.status === 'PENDING');
-                                    const openCourses = afterschoolCourses.filter(c => c.status === 'OPEN');
-                                    const isTimerOpen = afterschoolTimer?.masterStatus === 'OPEN';
+                        {/* 2-1. 개인화 주요 업무 바로가기 (본인 담당 업무 중 최대 3개 나란히 배치) */}
+                        {effectiveMajorTaskIds.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                {effectiveMajorTaskIds.map((taskId) => {
+                                    if (taskId === 'afterschool') {
+                                        const pendingCourses = afterschoolCourses.filter(c => c.status === 'PENDING');
+                                        const openCourses = afterschoolCourses.filter(c => c.status === 'OPEN');
+                                        const isTimerOpen = afterschoolTimer?.masterStatus === 'OPEN';
 
-                                    let stageBadge = '강좌 개설';
-                                    let stageTitle = '방과후학교';
-                                    let stageDesc = `신규 강좌 ${pendingCourses.length}건 심사 대기`;
+                                        let stageBadge = '강좌 개설';
+                                        let stageTitle = '방과후학교';
+                                        let stageDesc = `신규 강좌 ${pendingCourses.length}건 심사 대기`;
 
-                                    if (isTimerOpen) {
-                                        stageBadge = '수강신청 접수';
-                                        stageDesc = `수강신청 총 ${afterschoolEnrollments.length}건 접수`;
-                                    } else if (pendingCourses.length > 0) {
-                                        stageBadge = '강좌 심사';
-                                        stageDesc = `계획서 ${pendingCourses.length}건 검토·승인`;
-                                    } else if (openCourses.length > 0) {
-                                        stageBadge = '운영 관리';
-                                        stageDesc = `총 ${openCourses.length}개 강좌·출석 관리`;
-                                    } else {
-                                        stageBadge = '방과후 총괄';
-                                        stageDesc = '강좌 개설, 수강 확정, 출석부';
+                                        if (isTimerOpen) {
+                                            stageBadge = '수강신청 접수';
+                                            stageDesc = `수강신청 총 ${afterschoolEnrollments.length}건 접수`;
+                                        } else if (pendingCourses.length > 0) {
+                                            stageBadge = '강좌 심사';
+                                            stageDesc = `계획서 ${pendingCourses.length}건 검토·승인`;
+                                        } else if (openCourses.length > 0) {
+                                            stageBadge = '운영 관리';
+                                            stageDesc = `총 ${openCourses.length}개 강좌·출석 관리`;
+                                        } else {
+                                            stageBadge = '방과후 총괄';
+                                            stageDesc = '강좌 개설, 수강 확정, 출석부';
+                                        }
+
+                                        return (
+                                            <Link 
+                                                key={taskId}
+                                                href={isAfterschoolManager ? "/admin/afterschool" : "/teacher/afterschool"} 
+                                                className="group block" 
+                                                onClick={handleAfterschoolClick}
+                                            >
+                                                <div className="p-2 sm:p-2.5 rounded-xl border border-teal-200 bg-linear-to-br from-teal-50/70 via-white to-white hover:border-teal-400 hover:shadow-2xs transition-all h-full flex flex-col justify-between">
+                                                    <div className="space-y-0.5 min-w-0">
+                                                        <div className="flex items-center justify-between">
+                                                            <Badge className="bg-teal-600 text-white text-[9px] px-1.5 py-0 font-bold leading-tight">
+                                                                {stageBadge}
+                                                            </Badge>
+                                                            <span className="text-[10px] text-teal-600 font-bold group-hover:translate-x-0.5 transition-transform">
+                                                                →
+                                                            </span>
+                                                        </div>
+                                                        <h4 className="font-bold text-slate-900 text-xs truncate mt-0.5">{stageTitle}</h4>
+                                                        <p className="text-[10.5px] text-slate-500 truncate">
+                                                            {stageDesc}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </Link>
+                                        );
                                     }
 
-                                    return (
-                                        <Link 
-                                            key={taskId}
-                                            href={isAfterschoolManager ? "/admin/afterschool" : "/teacher/afterschool"} 
-                                            className="group block" 
-                                            onClick={handleAfterschoolClick}
-                                        >
-                                            <div className="p-2 sm:p-2.5 rounded-xl border border-teal-200 bg-linear-to-br from-teal-50/70 via-white to-white hover:border-teal-400 hover:shadow-2xs transition-all h-full flex flex-col justify-between">
-                                                <div className="space-y-0.5 min-w-0">
-                                                    <div className="flex items-center justify-between">
-                                                        <Badge className="bg-teal-600 text-white text-[9px] px-1.5 py-0 font-bold leading-tight">
-                                                            {stageBadge}
-                                                        </Badge>
-                                                        <span className="text-[10px] text-teal-600 font-bold group-hover:translate-x-0.5 transition-transform">
-                                                            →
-                                                        </span>
+                                    if (taskId === 'bus') {
+                                        return (
+                                            <Link 
+                                                key={taskId}
+                                                href={isBusManager ? "/admin/bus" : "/teacher/bus"} 
+                                                className="group block" 
+                                                onClick={handleBusClick}
+                                            >
+                                                <div className="p-2 sm:p-2.5 rounded-xl border border-blue-200 bg-linear-to-br from-blue-50/70 via-white to-white hover:border-blue-400 hover:shadow-2xs transition-all h-full flex flex-col justify-between">
+                                                    <div className="space-y-0.5 min-w-0">
+                                                        <div className="flex items-center justify-between">
+                                                            <Badge className="bg-blue-600 text-white text-[9px] px-1.5 py-0 font-bold leading-tight">
+                                                                {isBusManager ? '스쿨버스 관리' : '스쿨버스 탑승'}
+                                                            </Badge>
+                                                            <span className="text-[10px] text-blue-600 font-bold group-hover:translate-x-0.5 transition-transform">
+                                                                →
+                                                            </span>
+                                                        </div>
+                                                        <h4 className="font-bold text-slate-900 text-xs truncate mt-0.5">
+                                                            스쿨버스
+                                                        </h4>
+                                                        <p className="text-[10.5px] text-slate-500 truncate">
+                                                            {isBusManager ? '버스 등록, 노선, 좌석 및 탑승 관리' : '호차별 탑승 명단 및 실시간 체크'}
+                                                        </p>
                                                     </div>
-                                                    <h4 className="font-bold text-slate-900 text-xs truncate mt-0.5">{stageTitle}</h4>
-                                                    <p className="text-[10.5px] text-slate-500 truncate">
-                                                        {stageDesc}
-                                                    </p>
                                                 </div>
-                                            </div>
-                                        </Link>
-                                    );
-                                }
+                                            </Link>
+                                        );
+                                    }
 
-                                if (taskId === 'bus') {
+                                    const def = ALL_MAJOR_TASKS.find(t => t.id === taskId);
+                                    if (!def) return null;
+
+                                    let title = def.name;
+                                    let desc = def.description;
+
+                                    if (taskId === 'homeroom' && myBelongingInfo.homeroom) {
+                                        title = `${myBelongingInfo.homeroom} 담임 업무`;
+                                    } else if (taskId === 'duty') {
+                                        desc = `연가 잔여 ${dutyStats?.annualRemaining ?? 21}일 / 사용 ${dutyStats?.annualUsed ?? 0}일`;
+                                    } else if (taskId === 'overtime') {
+                                        const totalOt = Array.isArray(overtimeChart) ? overtimeChart.reduce((acc: number, cur: any) => acc + (cur.hours || 0), 0) : 0;
+                                        desc = `올해 총 ${totalOt.toFixed(1)}시간 인정`;
+                                    }
+
+                                    const href = def.getHref(profile?.isAdmin, myBelongingInfo.isHead);
+                                    const colorStyles: Record<string, { border: string; bg: string; badge: string; text: string }> = {
+                                        emerald: { border: 'border-emerald-200 hover:border-emerald-400', bg: 'from-emerald-50/70 via-white to-white', badge: 'bg-emerald-600', text: 'text-emerald-600' },
+                                        amber: { border: 'border-amber-200 hover:border-amber-400', bg: 'from-amber-50/70 via-white to-white', badge: 'bg-amber-600', text: 'text-amber-600' },
+                                        violet: { border: 'border-violet-200 hover:border-violet-400', bg: 'from-violet-50/70 via-white to-white', badge: 'bg-violet-600', text: 'text-violet-600' },
+                                        rose: { border: 'border-rose-200 hover:border-rose-400', bg: 'from-rose-50/70 via-white to-white', badge: 'bg-rose-600', text: 'text-rose-600' },
+                                        indigo: { border: 'border-indigo-200 hover:border-indigo-400', bg: 'from-indigo-50/70 via-white to-white', badge: 'bg-indigo-600', text: 'text-indigo-600' },
+                                        teal: { border: 'border-teal-200 hover:border-teal-400', bg: 'from-teal-50/70 via-white to-white', badge: 'bg-teal-600', text: 'text-teal-600' },
+                                        blue: { border: 'border-blue-200 hover:border-blue-400', bg: 'from-blue-50/70 via-white to-white', badge: 'bg-blue-600', text: 'text-blue-600' },
+                                        sky: { border: 'border-sky-200 hover:border-sky-400', bg: 'from-sky-50/70 via-white to-white', badge: 'bg-sky-600', text: 'text-sky-600' },
+                                    };
+                                    const cStyle = colorStyles[def.themeColor] || colorStyles.indigo;
+
                                     return (
-                                        <Link 
-                                            key={taskId}
-                                            href={isBusManager ? "/admin/bus" : "/teacher/bus"} 
-                                            className="group block" 
-                                            onClick={handleBusClick}
-                                        >
-                                            <div className="p-2 sm:p-2.5 rounded-xl border border-blue-200 bg-linear-to-br from-blue-50/70 via-white to-white hover:border-blue-400 hover:shadow-2xs transition-all h-full flex flex-col justify-between">
+                                        <Link key={taskId} href={href} className="group block">
+                                            <div className={cn("p-2 sm:p-2.5 rounded-xl border bg-linear-to-br transition-all h-full flex flex-col justify-between shadow-2xs", cStyle.border, cStyle.bg)}>
                                                 <div className="space-y-0.5 min-w-0">
                                                     <div className="flex items-center justify-between">
-                                                        <Badge className="bg-blue-600 text-white text-[9px] px-1.5 py-0 font-bold leading-tight">
-                                                            {isBusManager ? '스쿨버스 관리' : '스쿨버스 탑승'}
+                                                        <Badge className={cn("text-white text-[9px] px-1.5 py-0 font-bold leading-tight", cStyle.badge)}>
+                                                            {def.badge}
                                                         </Badge>
-                                                        <span className="text-[10px] text-blue-600 font-bold group-hover:translate-x-0.5 transition-transform">
+                                                        <span className={cn("text-[10px] font-bold group-hover:translate-x-0.5 transition-transform", cStyle.text)}>
                                                             →
                                                         </span>
                                                     </div>
                                                     <h4 className="font-bold text-slate-900 text-xs truncate mt-0.5">
-                                                        스쿨버스
+                                                        {title}
                                                     </h4>
                                                     <p className="text-[10.5px] text-slate-500 truncate">
-                                                        {isBusManager ? '버스 등록, 노선, 좌석 및 탑승 관리' : '호차별 탑승 명단 및 실시간 체크'}
+                                                        {desc}
                                                     </p>
                                                 </div>
                                             </div>
                                         </Link>
                                     );
-                                }
-
-                                const def = ALL_MAJOR_TASKS.find(t => t.id === taskId);
-                                if (!def) return null;
-
-                                const href = def.getHref(profile?.isAdmin, myBelongingInfo.isHead);
-                                const colorStyles: Record<string, { border: string; bg: string; badge: string; text: string }> = {
-                                    emerald: { border: 'border-emerald-200 hover:border-emerald-400', bg: 'from-emerald-50/70 via-white to-white', badge: 'bg-emerald-600', text: 'text-emerald-600' },
-                                    amber: { border: 'border-amber-200 hover:border-amber-400', bg: 'from-amber-50/70 via-white to-white', badge: 'bg-amber-600', text: 'text-amber-600' },
-                                    violet: { border: 'border-violet-200 hover:border-violet-400', bg: 'from-violet-50/70 via-white to-white', badge: 'bg-violet-600', text: 'text-violet-600' },
-                                    rose: { border: 'border-rose-200 hover:border-rose-400', bg: 'from-rose-50/70 via-white to-white', badge: 'bg-rose-600', text: 'text-rose-600' },
-                                    indigo: { border: 'border-indigo-200 hover:border-indigo-400', bg: 'from-indigo-50/70 via-white to-white', badge: 'bg-indigo-600', text: 'text-indigo-600' },
-                                    teal: { border: 'border-teal-200 hover:border-teal-400', bg: 'from-teal-50/70 via-white to-white', badge: 'bg-teal-600', text: 'text-teal-600' },
-                                    blue: { border: 'border-blue-200 hover:border-blue-400', bg: 'from-blue-50/70 via-white to-white', badge: 'bg-blue-600', text: 'text-blue-600' },
-                                };
-                                const cStyle = colorStyles[def.themeColor] || colorStyles.indigo;
-
-                                return (
-                                    <Link key={taskId} href={href} className="group block">
-                                        <div className={cn("p-2 sm:p-2.5 rounded-xl border bg-linear-to-br transition-all h-full flex flex-col justify-between shadow-2xs", cStyle.border, cStyle.bg)}>
-                                            <div className="space-y-0.5 min-w-0">
-                                                <div className="flex items-center justify-between">
-                                                    <Badge className={cn("text-white text-[9px] px-1.5 py-0 font-bold leading-tight", cStyle.badge)}>
-                                                        {def.badge}
-                                                    </Badge>
-                                                    <span className={cn("text-[10px] font-bold group-hover:translate-x-0.5 transition-transform", cStyle.text)}>
-                                                        →
-                                                    </span>
-                                                </div>
-                                                <h4 className="font-bold text-slate-900 text-xs truncate mt-0.5">
-                                                    {def.name}
-                                                </h4>
-                                                <p className="text-[10.5px] text-slate-500 truncate">
-                                                    {def.description}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </Link>
-                                );
-                            })}
-                        </div>
+                                })}
+                            </div>
+                        ) : myAvailableTasks.length > 0 ? (
+                            <div className="p-2.5 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/30 flex items-center justify-between text-xs text-slate-600">
+                                <span className="font-medium text-[11px] text-slate-600">선생님의 담당 업무 중 대시보드 상단에 표시할 바로가기를 설정해 보세요.</span>
+                                <Button 
+                                    size="sm" 
+                                    variant="outline" 
+                                    className="h-6.5 px-2 text-[11px] font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-100" 
+                                    onClick={() => setIsMajorTasksModalOpen(true)}
+                                >
+                                    업무 선택
+                                </Button>
+                            </div>
+                        ) : null}
 
                         {/* 2-2. 부서·학년 업무 할당/제출 워크플로우 탭 */}
                         <div className="space-y-1.5 pt-1 border-t border-slate-100 flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -1584,8 +1691,15 @@ export default function InboxPage() {
             <MajorTasksModal
               open={isMajorTasksModalOpen}
               onOpenChange={setIsMajorTasksModalOpen}
-              selectedIds={selectedMajorTaskIds}
-              onSave={(newIds) => setSelectedMajorTaskIds(newIds)}
+              selectedIds={effectiveMajorTaskIds}
+              availableTasks={myAvailableTasks}
+              userEmail={profile?.email}
+              onSave={(newIds) => {
+                setSelectedMajorTaskIds(newIds);
+                if (profile?.email) {
+                  saveMajorTaskIds(newIds, profile.email);
+                }
+              }}
             />
 
             {/* 9. 주간 및 월간 교육일정 캘린더 동기화 모달 */}

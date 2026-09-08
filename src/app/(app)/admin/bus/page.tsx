@@ -242,7 +242,7 @@ const AdminPageContent: React.FC<{
     return (
         <div className="w-full min-w-0">
             <Tabs value={activeTab} onValueChange={setActiveTab} defaultValue="student-management" id="admin-tabs-root" className="w-full">
-                {/* 🌟 스크롤 여부와 상관 없이 헤더 바로 아래에 0px 오차 없이 완전히 딱 고정되는 탭 및 버스 설정 필터 래퍼 */}
+                {/* 🌟 스크롤 여부와 상관 없이 관리자 헤더 바로 아래에 0px 오차 없이 완전히 딱 고정되는 탭 및 버스 설정 필터 래퍼 */}
                 <div className="sticky top-[var(--site-header-height,64px)] z-20 bg-background/95 backdrop-blur-md px-2.5 sm:px-4 md:px-6 py-2 space-y-2 border-b border-slate-200/50 shadow-xs">
                     <TabsList className="grid grid-cols-3 sm:grid-cols-6 h-auto w-full bg-slate-100 p-1 sm:p-1.5 rounded-2xl gap-1 border border-slate-200/80">
                         <TabsTrigger value="bus-registration" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_registration')}</TabsTrigger>
@@ -1042,7 +1042,7 @@ export default function AdminPage() {
                 const emailLower = (profile?.email || user?.email || '').toLowerCase();
                 const busManagers = orgData?.busManagers || (orgData?.busManager ? [orgData.busManager] : []);
                 const isBusManager = busManagers.some((m: string) => m.toLowerCase() === emailLower) || emailLower === 'bus@kshcm.net';
-                const isSystemAdmin = profile?.isAdmin === true || emailLower === 'beside1s@kshcm.net' || emailLower === 'bus@kshcm.net';
+                const isSystemAdmin = profile?.isAdmin === true || emailLower === 'beside1s@kshcm.net';
                 
                 if (isSystemAdmin || isBusManager) {
                     setIsAuthorized(true);

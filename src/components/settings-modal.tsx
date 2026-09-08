@@ -87,7 +87,7 @@ import {
 } from "@/components/ui/table"
 import { useAuth } from '@/hooks/use-auth';
 
-const ROLES = ['교사', '교감', '교장', '행정실장', '주무관', '담당'];
+const ROLES = ['교사', '교감', '교장', '행정실장', '주무관', '담당', '강사'];
 
 function getUserDepartmentOrClass(email: string, orgStructure: OrgStructure): string {
   if (!email) return '미배정';
@@ -654,7 +654,7 @@ function SearchableUserSelect({
 }
 
 export function SettingsModal() {
-  const { profile } = useAuth();
+  const { profile, updateProfile } = useAuth();
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, startSaving] = useTransition();
@@ -1051,7 +1051,7 @@ export function SettingsModal() {
       toast({ variant: 'destructive', title: '추출 오류', description: err.message });
     }
   };
-  const [newUser, setNewUser] = useState({ email: '', name: '', role: '교사', dept: '', grade: '' });
+  const [newUser, setNewUser] = useState({ email: '', name: '', role: '교사', dept: '', grade: '', loginRedirectUrl: '' });
   const [newStudent, setNewStudent] = useState({ grade: '', class: '', number: '', studentName: '', parentName: '', email: '', phone: '' });
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
   // 학생/학부모 인라인 편집 state
@@ -1148,7 +1148,7 @@ export function SettingsModal() {
       getDelegationRules().then(data => {
         setDelegationRules(data || []);
       });
-      fetchUsers();
+      fetchUsers(true);
       fetchAuditLogs();
     }
   }, [isOpen]);
@@ -1405,11 +1405,14 @@ export function SettingsModal() {
     }, '담당 업무 배정이 해제되었습니다.');
   };
   
-  const handleUserUpdate = async (uid: string, email: string, field: 'role' | 'isAdmin' | 'annualLeaveLimit', value: string | boolean | number) => {
+  const handleUserUpdate = async (uid: string, email: string, field: 'role' | 'isAdmin' | 'annualLeaveLimit' | 'loginRedirectUrl', value: string | boolean | number) => {
     const result = await saveUserProfile(uid, email, { [field]: value });
     if (result.success) {
       toast({ title: '사용자 정보 업데이트됨' });
       setUsers(prev => prev.map(u => u.email === email ? { ...u, [field]: value } as UserProfile : u));
+      if (profile?.email && email.toLowerCase() === profile.email.toLowerCase()) {
+        updateProfile({ [field]: value });
+      }
     } else {
       toast({ variant: 'destructive', title: '업데이트 실패', description: result.error });
     }
@@ -1436,6 +1439,7 @@ export function SettingsModal() {
         isStaff: true,
         isManualFaculty: true,
         registrationSource: 'manual_faculty' as const,
+        ...(newUser.loginRedirectUrl?.trim() ? { loginRedirectUrl: newUser.loginRedirectUrl.trim() } : {}),
       };
 
       const result = await saveUserProfile('', finalEmail, payload as any);
@@ -1479,7 +1483,7 @@ export function SettingsModal() {
           toast({ title: '교직원 추가 완료', description: '사용자 정보 및 조직도에 반영되었습니다.' });
           await fetchUsers(true); // 강제 새로고침으로 목록 즉시 반영
           setIsAddingNewUser(false);
-          setNewUser({ email: '', name: '', role: '교사', dept: '', grade: '' });
+          setNewUser({ email: '', name: '', role: '교사', dept: '', grade: '', loginRedirectUrl: '' });
       } else {
           toast({ variant: 'destructive', title: '추가 실패', description: result.error });
       }
@@ -4842,10 +4846,30 @@ export function SettingsModal() {
                                 </div>
                               </TableCell>
                               <TableCell className="align-top pt-3">
-                                  <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r }))}>
-                                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                                      <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
-                                  </Select>
+                                  <div className="flex flex-col gap-1.5">
+                                    <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r, loginRedirectUrl: r === '담당' ? p.loginRedirectUrl : (r === '강사' ? (p.loginRedirectUrl || '/teacher/afterschool') : '') }))}>
+                                        <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                                        <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+                                    </Select>
+                                    {(newUser.role === '담당' || newUser.role === '강사') && (
+                                      <Select value={newUser.loginRedirectUrl || (newUser.role === '강사' ? '/teacher/afterschool' : '')} onValueChange={(v) => setNewUser(p => ({ ...p, loginRedirectUrl: v }))}>
+                                        <SelectTrigger className="h-8 text-xs text-slate-600">
+                                          <SelectValue placeholder="로그인 후 이동 페이지" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="/teacher/afterschool">방과후 출석부</SelectItem>
+                                          <SelectItem value="/teacher/bus">교사 버스 탑승 관리</SelectItem>
+                                          {newUser.role !== '강사' && (
+                                            <>
+                                              <SelectItem value="/admin/bus">스쿨버스 관리자</SelectItem>
+                                              <SelectItem value="/teacher/pe">학교체육</SelectItem>
+                                              <SelectItem value="/inbox">전자결재 대시보드</SelectItem>
+                                            </>
+                                          )}
+                                        </SelectContent>
+                                      </Select>
+                                    )}
+                                  </div>
                               </TableCell>
                               <TableCell className="align-top pt-3"></TableCell>
                               <TableCell></TableCell>
@@ -4903,17 +4927,40 @@ export function SettingsModal() {
                             </div>
                           </TableCell>
                           <TableCell>
-                          <Select 
-                              value={user.role} 
-                              onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
+                          <div className="flex flex-col gap-1.5">
+                            <Select 
+                                value={user.role} 
+                                onValueChange={(newRole) => handleUserUpdate(user.uid, user.email, 'role', newRole)}
+                                >
+                                <SelectTrigger className="h-8">
+                                    <SelectValue placeholder="직책" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {Array.from(new Set([...ROLES, ...(user.role ? [user.role] : [])])).map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                            {(user.role === '담당' || user.role === '강사' || user.loginRedirectUrl) && (
+                              <Select
+                                value={user.loginRedirectUrl || (user.role === '강사' ? '/teacher/afterschool' : '')}
+                                onValueChange={(v) => handleUserUpdate(user.uid, user.email, 'loginRedirectUrl', v)}
                               >
-                              <SelectTrigger className="h-8">
-                                  <SelectValue placeholder="직책" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                  {Array.from(new Set([...ROLES, ...(user.role ? [user.role] : [])])).map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                              </SelectContent>
+                                <SelectTrigger className="h-8 text-xs text-slate-600">
+                                  <SelectValue placeholder="로그인 후 이동 페이지" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="/teacher/afterschool">방과후 출석부</SelectItem>
+                                  <SelectItem value="/teacher/bus">교사 버스 탑승 관리</SelectItem>
+                                  {user.role !== '강사' && (
+                                    <>
+                                      <SelectItem value="/admin/bus">스쿨버스 관리자</SelectItem>
+                                      <SelectItem value="/teacher/pe">학교체육</SelectItem>
+                                      <SelectItem value="/inbox">전자결재 대시보드</SelectItem>
+                                    </>
+                                  )}
+                                </SelectContent>
                               </Select>
+                            )}
+                          </div>
                           </TableCell>
                           <TableCell className="text-center">
                               <Input

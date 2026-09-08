@@ -23,7 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import type { UserProfile } from '@/lib/types';
 import { saveUserProfile } from '@/lib/services/userService';
 
-const ROLES = ['교사', '교감', '교장', '행정실장', '주무관', '담당'];
+const ROLES = ['교사', '교감', '교장', '행정실장', '주무관', '담당', '강사'];
 const ADMIN_EMAIL = 'beside1s@kshcm.net';
 
 export function ProfileModal({ children }: { children: React.ReactNode }) {

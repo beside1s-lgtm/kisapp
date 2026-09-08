@@ -40,7 +40,7 @@ export const MainLayout: FC<MainLayoutProps> = ({
 }) => {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, logout, loading: authLoading } = useAuth();
+  const { user, profile, logout, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const { t } = useTranslation();
   
@@ -104,7 +104,43 @@ export const MainLayout: FC<MainLayoutProps> = ({
     );
   }
 
+  // 강사 직책 접근 통제 가드: 방과후 출석부 및 스쿨버스 탑승 관리만 허용
+  const isInstructor = profile?.role === '강사';
+  const isAllowedForInstructor = 
+    pathname.startsWith('/teacher/afterschool') || 
+    pathname.startsWith('/teacher/bus') || 
+    pathname.startsWith('/attendance/share/');
+
+  if (!authLoading && user && isInstructor && !isAllowedForInstructor) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-4 font-sans text-center">
+        <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-200/80 max-w-md w-full flex flex-col items-center">
+          <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mb-4 text-amber-600">
+            <ShieldAlert className="w-9 h-9 stroke-[2]" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">접근 권한 제한</h2>
+          <p className="text-xs text-slate-500 leading-relaxed mb-6">
+            강사 직책은 <strong>방과후수업 출석부</strong>와 <strong>스쿨버스 탑승 관리</strong> 페이지만 이용할 수 있습니다.
+          </p>
+          <div className="flex flex-col gap-2.5 w-full">
+            <Button asChild className="w-full h-11 font-bold text-sm bg-teal-600 hover:bg-teal-700 text-white shadow-md">
+              <Link href="/teacher/afterschool">
+                방과후수업 출석부로 이동
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full h-10 text-xs font-semibold text-slate-600">
+              <Link href="/teacher/bus">
+                스쿨버스 탑승 관리로 이동
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const showHomeButton = pathname.startsWith('/admin') || pathname.startsWith('/teacher') || pathname === '/inbox';
+  const homeHref = isInstructor ? '/teacher/afterschool' : '/';
   const headerStickyClass = 'sticky top-0 z-30';
   const headerRef = React.useRef<HTMLElement>(null);
 
@@ -143,8 +179,8 @@ export const MainLayout: FC<MainLayoutProps> = ({
                             </Button>
                           )}
                           {showHomeButton && (
-                            <Button asChild variant="outline" size="icon" className="h-8 w-8 shrink-0" title="결재 홈">
-                              <Link href="/">
+                            <Button asChild variant="outline" size="icon" className="h-8 w-8 shrink-0" title={isInstructor ? "방과후 출석부 홈" : "결재 홈"}>
+                              <Link href={homeHref}>
                                 <Home className="h-4 w-4" />
                                 <span className="sr-only">Home</span>
                               </Link>
@@ -217,8 +253,8 @@ export const MainLayout: FC<MainLayoutProps> = ({
                         </Button>
                       )}
                       {showHomeButton && (
-                        <Button asChild variant="outline" size="icon" className="h-8 w-8 shrink-0" title="결재 홈">
-                          <Link href="/">
+                        <Button asChild variant="outline" size="icon" className="h-8 w-8 shrink-0" title={isInstructor ? "방과후 출석부 홈" : "결재 홈"}>
+                          <Link href={homeHref}>
                             <Home className="h-4 w-4" />
                             <span className="sr-only">Home</span>
                           </Link>

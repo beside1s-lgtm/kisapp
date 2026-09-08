@@ -27,7 +27,7 @@ const MobileNavItem = ({ href, label, icon }: { href: string; label: string; ico
 };
 
 export function MobileBottomNav() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const pathname = usePathname();
 
   // 비로그인 상태이거나 스쿨버스/공유 출석부 페이지에서 로그인 인증이 안 된 경우 하단 네비게이션바 숨김 처리
@@ -38,6 +38,16 @@ export function MobileBottomNav() {
   // 일반 페이지에서도 비로그인 사용자는 네비게이션바 미표시
   if (!user) {
     return null;
+  }
+
+  // 강사 계정은 방과후 출석부와 스쿨버스만 2분할로 깔끔하게 제공
+  if (profile?.role === '강사') {
+    return (
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-card/95 backdrop-blur border-t z-40 grid grid-cols-2 items-center justify-around px-6 print:hidden shadow-lg">
+        <MobileNavItem href="/teacher/afterschool" label="방과후 출석부" icon={<BookOpen size={20} />} />
+        <MobileNavItem href="/teacher/bus" label="스쿨버스 탑승" icon={<Bus size={20} />} />
+      </div>
+    );
   }
 
   return (

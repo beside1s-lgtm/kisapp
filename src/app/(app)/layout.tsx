@@ -26,8 +26,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       if (!pathname.startsWith('/parents')) {
         router.push('/parents');
       }
+    } else if (!loading && user && profile?.role === '강사') {
+      const isAllowed = 
+        pathname.startsWith('/teacher/afterschool') || 
+        pathname.startsWith('/teacher/bus') || 
+        pathname.startsWith('/attendance/share/');
+      if (!isAllowed) {
+        router.replace('/teacher/afterschool');
+      }
     }
-  }, [user, loading, isParent, router, pathname]);
+  }, [user, loading, isParent, profile?.role, router, pathname]);
   
   if (loading || !user || profileLoading) {
     return (
