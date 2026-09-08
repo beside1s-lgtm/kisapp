@@ -134,21 +134,30 @@ export default function TeamBalancer({ allStudents, allItems, allRecords, teamGr
   const [isSending, setIsSending] = useState(false);
   const [studentSearchTerm, setStudentSearchTerm] = useState("");
 
-  const { grades, classNumsByGrade, groupedItems } = useMemo(() => {
+  const { grades, classNumsByGrade, groupedItems, uniqueItems } = useMemo(() => {
     const grades = [...new Set(allStudents.map((s) => s.grade))].sort((a,b) => parseInt(a) - parseInt(b));
     const classNumsByGrade: Record<string, string[]> = {};
     grades.forEach((grade) => {
       const classes = [...new Set(allStudents.filter((s) => s.grade === grade).map((s) => s.classNum))].sort((a,b) => parseInt(a) - parseInt(b));
       classNumsByGrade[grade] = classes;
     });
+
+    const seenNames = new Set<string>();
+    const uniqueItems: MeasurementItem[] = [];
     const grouped: Record<string, MeasurementItem[]> = { PAPS: [] };
+
     allItems.forEach((item) => {
       if (item.isArchived || item.isDeactivated) return;
+      const nameKey = (item.name || '').trim();
+      if (!nameKey || seenNames.has(nameKey)) return;
+      seenNames.add(nameKey);
+      uniqueItems.push(item);
+
       const category = item.category || (item.isPaps ? "PAPS" : "기타");
       if (!grouped[category]) grouped[category] = [];
       grouped[category].push(item);
     });
-    return { grades, classNumsByGrade, groupedItems: grouped };
+    return { grades, classNumsByGrade, groupedItems: grouped, uniqueItems };
   }, [allStudents, allItems]);
 
   useEffect(() => {
@@ -181,10 +190,19 @@ export default function TeamBalancer({ allStudents, allItems, allRecords, teamGr
     setSelectedTeamGroupId(groupId);
     setTeamGroupName(group.description);
     const studentMap = new Map(allStudents.map(s => [s.id, s]));
-    const teamsWithMembers = group.teams.map(team => ({
-        ...team,
-        members: team.memberIds.map(id => studentMap.get(id)).filter((s): s is Student => !!s)
-    }));
+    const teamsWithMembers = group.teams.map(team => {
+        const members = team.memberIds.map(id => studentMap.get(id)).filter((s): s is Student => !!s);
+        members.sort((a, b) => {
+            const scoreA = studentScores.get(a.id)?.totalScore ?? 0;
+            const scoreB = studentScores.get(b.id)?.totalScore ?? 0;
+            if (scoreB !== scoreA) return scoreB - scoreA;
+            return a.name.localeCompare(b.name);
+        });
+        return {
+            ...team,
+            members
+        };
+    });
     setTeams(teamsWithMembers);
     setSelectedGender(group.gender || 'all');
     setSelectedItemNames(group.itemNamesForBalancing || []);
@@ -222,7 +240,7 @@ export default function TeamBalancer({ allStudents, allItems, allRecords, teamGr
       // Cache ranks by grade to avoid repeated calculations
       distinctGrades.forEach(g => {
           if (!ranksByGrade.has(g)) {
-              ranksByGrade.set(g, calculateRanks(school, allItems, allRecords, allStudents, g));
+              ranksByGrade.set(g, calculateRanks(school, uniqueItems, allRecords, allStudents, g));
           }
       });
       
@@ -311,11 +329,22 @@ export default function TeamBalancer({ allStudents, allItems, allRecords, teamGr
     const ids = Object.entries(balancingSelection).filter(([, s]) => s).map(([id]) => id);
     if (!ids.length) { toast({ variant: "destructive", title: "학생을 선택하세요" }); return; }
     
-    const studentsToBalance = allStudents.filter(s => ids.includes(s.id));
-    let balancedArrays: Student[][] = [];
+    // 대상 학생 중 선택된 학생만 추출 + 성별 필터 엄격 적용
+    let studentsToBalance = targetStudents.filter(s => ids.includes(s.id));
+    if (selectedGender === '남') {
+      studentsToBalance = studentsToBalance.filter(s => s.gender === '남');
+    } else if (selectedGender === '여') {
+      studentsToBalance = studentsToBalance.filter(s => s.gender === '여');
+    }
+
+    if (!studentsToBalance.length) {
+      toast({ variant: "destructive", title: "선택된 성별 조건에 맞는 대상 학생이 없습니다" });
+      return;
+    }
     
     // Helper to balance a single list of students into N teams
     const balanceList = (list: Student[], count: number): Student[][] => {
+        if (count <= 0 || list.length === 0) return [];
         const result: Student[][] = Array.from({ length: count }, () => []);
         let baseList = [...list];
         
@@ -348,32 +377,89 @@ export default function TeamBalancer({ allStudents, allItems, allRecords, teamGr
         return result;
     };
 
+    let generatedTeams: { name: string; members: Student[] }[] = [];
+    let allLeftovers: Student[] = [];
+
     if (selectedGender === 'separate') {
+        // [성별 분리 편성] 남학생과 여학생을 완전히 독립된 팀으로 편성
         const males = studentsToBalance.filter(s => s.gender === '남');
         const females = studentsToBalance.filter(s => s.gender === '여');
-        
-        let teamCount = 0;
-        if (divideBy === 'teams') {
-            teamCount = numTeams;
-        } else {
-            teamCount = Math.max(1, Math.floor(studentsToBalance.length / membersPerTeam));
-        }
 
-        const maleGroups = balanceList(males, teamCount);
-        const femaleGroups = balanceList(females, teamCount);
-        
-        balancedArrays = Array.from({ length: teamCount }, (_, i) => {
-            return [...maleGroups[i], ...femaleGroups[i]];
-        });
-        
-        // Find leftovers for 'members-per-team' mode if any
-        if (divideBy === 'members') {
-            // Simplified: logic above already distributes everyone. 
-            // If we want exact leftovers:
+        if (divideBy === 'teams') {
+            const maleTeamCount = males.length > 0 ? numTeams : 0;
+            const femaleTeamCount = females.length > 0 ? numTeams : 0;
+
+            const maleGroups = balanceList(males, maleTeamCount);
+            const femaleGroups = balanceList(females, femaleTeamCount);
+
+            maleGroups.forEach((arr, i) => {
+                if (arr.length > 0) {
+                    const gradeClass = `${arr[0]?.grade || ''}-${arr[0]?.classNum || ''}`.replace(/^-|-$/, '');
+                    generatedTeams.push({
+                        name: gradeClass ? `${gradeClass} 남 ${i + 1}팀` : `남자 ${i + 1}팀`,
+                        members: arr,
+                    });
+                }
+            });
+
+            femaleGroups.forEach((arr, i) => {
+                if (arr.length > 0) {
+                    const gradeClass = `${arr[0]?.grade || ''}-${arr[0]?.classNum || ''}`.replace(/^-|-$/, '');
+                    generatedTeams.push({
+                        name: gradeClass ? `${gradeClass} 여 ${i + 1}팀` : `여자 ${i + 1}팀`,
+                        members: arr,
+                    });
+                }
+            });
+            setLeftoverStudents([]);
+        } else if (divideBy === 'members') {
+            const maleTeamCount = Math.floor(males.length / membersPerTeam);
+            const femaleTeamCount = Math.floor(females.length / membersPerTeam);
+
+            if (maleTeamCount === 0 && femaleTeamCount === 0) {
+                toast({ variant: "destructive", title: "인원이 팀당 인원 설정보다 적습니다" });
+                return;
+            }
+
+            if (maleTeamCount > 0) {
+                const toDistMale = males.slice(0, maleTeamCount * membersPerTeam);
+                const leftoversMale = males.slice(maleTeamCount * membersPerTeam);
+                allLeftovers.push(...leftoversMale);
+                const maleGroups = balanceList(toDistMale, maleTeamCount);
+                maleGroups.forEach((arr, i) => {
+                    const gradeClass = `${arr[0]?.grade || ''}-${arr[0]?.classNum || ''}`.replace(/^-|-$/, '');
+                    generatedTeams.push({
+                        name: gradeClass ? `${gradeClass} 남 ${i + 1}팀` : `남자 ${i + 1}팀`,
+                        members: arr,
+                    });
+                });
+            } else if (males.length > 0) {
+                allLeftovers.push(...males);
+            }
+
+            if (femaleTeamCount > 0) {
+                const toDistFemale = females.slice(0, femaleTeamCount * membersPerTeam);
+                const leftoversFemale = females.slice(femaleTeamCount * membersPerTeam);
+                allLeftovers.push(...leftoversFemale);
+                const femaleGroups = balanceList(toDistFemale, femaleTeamCount);
+                femaleGroups.forEach((arr, i) => {
+                    const gradeClass = `${arr[0]?.grade || ''}-${arr[0]?.classNum || ''}`.replace(/^-|-$/, '');
+                    generatedTeams.push({
+                        name: gradeClass ? `${gradeClass} 여 ${i + 1}팀` : `여자 ${i + 1}팀`,
+                        members: arr,
+                    });
+                });
+            } else if (females.length > 0) {
+                allLeftovers.push(...females);
+            }
+            setLeftoverStudents(allLeftovers);
+        } else {
+            if (males.length > 0) generatedTeams.push({ name: "남자 단일팀", members: males });
+            if (females.length > 0) generatedTeams.push({ name: "여자 단일팀", members: females });
             setLeftoverStudents([]);
         }
     } else {
-        // Original combined logic
+        // 전체(혼성), 남자만, 여자만
         let baseList = [...studentsToBalance];
         
         if (balancingStrategy === 'random') {
@@ -384,73 +470,51 @@ export default function TeamBalancer({ allStudents, allItems, allRecords, teamGr
                        .map(x => x.s);
         }
         
+        let balancedArrays: Student[][] = [];
         if (divideBy === 'teams') {
             const count = numTeams;
-            balancedArrays = Array.from({ length: count }, () => []);
-            
-            if (balancingStrategy === 'balanced') {
-                let dir = 1, idx = 0;
-                baseList.forEach(s => {
-                    balancedArrays[idx].push(s);
-                    idx += dir;
-                    if (idx < 0 || idx >= count) { dir *= -1; idx += dir; }
-                });
-            } else if (balancingStrategy === 'by-ability') {
-                const perTeam = baseList.length / count;
-                baseList.forEach((s, i) => {
-                    const tIdx = Math.min(count - 1, Math.floor(i / perTeam));
-                    balancedArrays[tIdx].push(s);
-                });
-            } else {
-                baseList.forEach((s, i) => {
-                    balancedArrays[i % count].push(s);
-                });
-            }
+            balancedArrays = balanceList(baseList, count);
             setLeftoverStudents([]);
         } else if (divideBy === 'members') {
             const teamCount = Math.floor(baseList.length / membersPerTeam);
             if (teamCount === 0) { toast({ variant: "destructive", title: "인원이 너무 적습니다" }); return; }
-            balancedArrays = Array.from({ length: teamCount }, () => []);
             const toDist = baseList.slice(0, teamCount * membersPerTeam);
             const leftovers = baseList.slice(teamCount * membersPerTeam);
-            
-            if (balancingStrategy === 'balanced') {
-                let dir = 1, idx = 0;
-                toDist.forEach(s => {
-                    balancedArrays[idx].push(s);
-                    idx += dir;
-                    if (idx < 0 || idx >= teamCount) { dir *= -1; idx += dir; }
-                });
-            } else if (balancingStrategy === 'by-ability') {
-                toDist.forEach((s, i) => {
-                    const tIdx = Math.floor(i / membersPerTeam);
-                    balancedArrays[tIdx].push(s);
-                });
-            } else {
-                toDist.forEach((s, i) => {
-                    balancedArrays[i % teamCount].push(s);
-                });
-            }
+            balancedArrays = balanceList(toDist, teamCount);
             setLeftoverStudents(leftovers);
         } else {
             balancedArrays = [baseList];
             setLeftoverStudents([]);
         }
+
+        const genderSuffix = selectedGender === '남' ? ' (남)' : selectedGender === '여' ? ' (여)' : '';
+
+        balancedArrays.forEach((arr, i) => {
+            if (arr.length > 0) {
+                const gradeClass = `${arr[0]?.grade || ''}-${arr[0]?.classNum || ''}`.replace(/^-|-$/, '');
+                generatedTeams.push({
+                    name: gradeClass ? `${gradeClass} 팀 ${i + 1}${genderSuffix}` : `팀 ${i + 1}${genderSuffix}`,
+                    members: arr,
+                });
+            }
+        });
     }
 
-    setTeams(balancedArrays.map((arr, i) => ({
-        id: uuidv4(),
-        name: `${arr[0]?.grade || ''}-${arr[0]?.classNum || ''} 팀 ${i+1}`,
-        teamIndex: i,
-        memberIds: arr.sort((a,b) => {
-            if (a.gender !== b.gender) return a.gender === '남' ? -1 : 1;
-            return 0;
-        }).map(s => s.id),
-        members: arr.sort((a,b) => {
-            if (a.gender !== b.gender) return a.gender === '남' ? -1 : 1;
-            return 0;
-        })
-    })));
+    setTeams(generatedTeams.map((gt, i) => {
+        const sortedMembers = [...gt.members].sort((a, b) => {
+            const scoreA = studentScores.get(a.id)?.totalScore ?? 0;
+            const scoreB = studentScores.get(b.id)?.totalScore ?? 0;
+            if (scoreB !== scoreA) return scoreB - scoreA;
+            return a.name.localeCompare(b.name);
+        });
+        return {
+            id: uuidv4(),
+            name: gt.name,
+            teamIndex: i,
+            memberIds: sortedMembers.map(s => s.id),
+            members: sortedMembers
+        };
+    }));
     toast({ title: "팀 편성 완료" });
   };
 
@@ -472,10 +536,16 @@ export default function TeamBalancer({ allStudents, allItems, allRecords, teamGr
           };
         }
         if (t.id === targetTeamId) {
+          const nextMembers = [...(t.members || []), student].sort((a, b) => {
+            const scoreA = studentScores.get(a.id)?.totalScore ?? 0;
+            const scoreB = studentScores.get(b.id)?.totalScore ?? 0;
+            if (scoreB !== scoreA) return scoreB - scoreA;
+            return a.name.localeCompare(b.name);
+          });
           return {
             ...t,
-            memberIds: [...t.memberIds, studentId],
-            members: [...(t.members || []), student]
+            memberIds: nextMembers.map(m => m.id),
+            members: nextMembers
           };
         }
         return t;
@@ -789,18 +859,29 @@ export default function TeamBalancer({ allStudents, allItems, allRecords, teamGr
                                           </RadarChart>
                                       </ResponsiveContainer>
                                   </div>
-                                  <div className="space-y-1">
-                                      {t.members?.map(m => (
-                                          <div key={m.id} className={cn(
-                                              "flex items-center gap-2 p-1.5 px-2 rounded text-xs transition-colors", 
-                                              movingStudent?.studentId === m.id ? "bg-primary text-white" : "hover:bg-muted"
-                                          )} onClick={(e) => { e.stopPropagation(); setMovingStudent({ studentId: m.id, sourceTeamId: t.id }); }}>
-                                              <span className="font-bold">{m.name}</span>
-                                              <span className="text-[9px] opacity-60 ml-auto">{studentScores.get(m.id)?.totalScore}점</span>
-                                              {movingStudent?.studentId === m.id && <Move className="h-3 w-3" />}
-                                          </div>
-                                      ))}
-                                  </div>
+                                   <div className="space-y-1">
+                                       {[...(t.members || [])].sort((a, b) => {
+                                           const scoreA = studentScores.get(a.id)?.totalScore ?? 0;
+                                           const scoreB = studentScores.get(b.id)?.totalScore ?? 0;
+                                           if (scoreB !== scoreA) return scoreB - scoreA;
+                                           return a.name.localeCompare(b.name);
+                                       }).map((m, idx) => {
+                                           const score = studentScores.get(m.id)?.totalScore ?? 0;
+                                           return (
+                                           <div key={m.id} className={cn(
+                                               "flex items-center gap-1.5 p-1.5 px-2 rounded text-xs transition-colors", 
+                                               movingStudent?.studentId === m.id ? "bg-primary text-white" : "hover:bg-muted"
+                                           )} onClick={(e) => { e.stopPropagation(); setMovingStudent({ studentId: m.id, sourceTeamId: t.id }); }}>
+                                               <span className="text-[10px] text-muted-foreground w-4 text-center font-bold">{idx + 1}</span>
+                                               <span className="font-bold">{m.name}</span>
+                                               {idx === 0 && (
+                                                   <span className="text-[9px] font-bold px-1 py-0.5 bg-primary/10 text-primary rounded border border-primary/20">주장후보</span>
+                                               )}
+                                               <span className="text-[10px] font-bold text-muted-foreground ml-auto">{score}점</span>
+                                               {movingStudent?.studentId === m.id && <Move className="h-3 w-3 ml-1" />}
+                                           </div>
+                                       )})}
+                                   </div>
                               </CardContent>
                           </Card>
                       ))}

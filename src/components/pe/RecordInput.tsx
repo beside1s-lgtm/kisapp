@@ -486,14 +486,14 @@ export default function RecordInput({
             {activeTab === 'batch' ? (
               <div className="flex flex-wrap items-center gap-1.5 justify-end">
                 <Select value={selectedGrade} onValueChange={v => { setSelectedGrade(v); setSelectedClassNum('all'); setSelectedGroupId(''); }}>
-                  <SelectTrigger className="w-[85px] sm:w-[95px] h-8 text-xs bg-slate-50 font-bold border-slate-300">
+                  <SelectTrigger className="w-[82px] sm:w-[90px] h-8 px-2 text-xs bg-slate-50 font-bold border-slate-300 shrink-0">
                     <SelectValue placeholder="학년" />
                   </SelectTrigger>
                   <SelectContent>{grades.map(g => <SelectItem key={g} value={g} className="text-xs font-bold">{g}학년</SelectItem>)}</SelectContent>
                 </Select>
 
                 <Select value={selectedClassNum} onValueChange={setSelectedClassNum} disabled={!selectedGrade}>
-                  <SelectTrigger className="w-[75px] sm:w-[85px] h-8 text-xs bg-slate-50 font-bold border-slate-300">
+                  <SelectTrigger className="w-[72px] sm:w-[80px] h-8 px-2 text-xs bg-slate-50 font-bold border-slate-300 shrink-0">
                     <SelectValue placeholder="반" />
                   </SelectTrigger>
                   <SelectContent>
@@ -503,7 +503,7 @@ export default function RecordInput({
                 </Select>
 
                 <Select value={selectedGroupId} onValueChange={v => { setSelectedGroupId(v); setSelectedGrade(''); }}>
-                  <SelectTrigger className="w-[110px] sm:w-[125px] h-8 text-xs bg-slate-50 font-medium border-slate-300">
+                  <SelectTrigger className="w-[105px] sm:w-[120px] h-8 px-2 text-xs bg-slate-50 font-medium border-slate-300 shrink-0">
                     <SelectValue placeholder="그룹 선택" />
                   </SelectTrigger>
                   <SelectContent>
@@ -515,18 +515,23 @@ export default function RecordInput({
 
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" className="h-8 px-2 text-xs justify-start w-[88px] sm:w-[95px] bg-slate-50 font-medium border-slate-300">
-                      <CalendarIcon className="mr-1 h-3.5 w-3.5 text-slate-400" />
-                      {batchRecordDate ? format(batchRecordDate, "MM/dd") : "날짜"}
+                    <Button
+                      variant="outline"
+                      className="h-8 px-2 text-xs font-medium bg-slate-50 border-slate-300 shrink-0 inline-flex items-center justify-center gap-1.5 w-[86px] sm:w-[94px]"
+                    >
+                      <CalendarIcon className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                      <span className="tabular-nums whitespace-nowrap text-slate-700">
+                        {batchRecordDate ? format(batchRecordDate, "MM/dd") : "날짜"}
+                      </span>
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
+                  <PopoverContent className="w-auto p-0" align="end">
                     <Calendar mode="single" selected={batchRecordDate} onSelect={setBatchRecordDate} initialFocus />
                   </PopoverContent>
                 </Popover>
 
                 <Select value={batchRecordItem} onValueChange={setBatchRecordItem}>
-                  <SelectTrigger className="w-[140px] sm:w-[170px] h-8 text-xs font-bold text-indigo-950 bg-indigo-50/60 border-indigo-200">
+                  <SelectTrigger className="w-[145px] sm:w-[170px] h-8 px-2 text-xs font-bold text-indigo-950 bg-indigo-50/60 border-indigo-200 shrink-0">
                     <SelectValue placeholder="종목 선택" />
                   </SelectTrigger>
                   <SelectContent>

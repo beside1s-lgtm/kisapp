@@ -176,19 +176,23 @@ export default function TeacherPePage() {
         peUuidToMasterIdMap.set(masterId, masterId);
       });
 
-      const mappedStudents: Student[] = masterList.map(s => ({
-        id: s.id || s.studentId,
-        school: '호치민시한국국제학교',
-        grade: String(s.grade || ''),
-        classNum: String(s.classNum || (s as any).class || ''),
-        studentNum: String(s.studentNum || (s as any).number || ''),
-        name: s.nameKo || s.name,
-        gender: (s.gender as string)?.toLowerCase() === 'female' || (s.gender as any) === '여' ? '여' : '남',
-        accessCode: (s as any).studentCode || '',
-        personalCode: (s as any).studentCode || '',
-        photoUrl: s.photoUrl || (s as any).photo || '',
-        peStudentId: (s as any).peStudentId || '',
-      }));
+      const mappedStudents: Student[] = masterList.map(s => {
+        const rawG = String(s.gender || '').trim().toLowerCase();
+        const isFemale = rawG === 'female' || rawG === '여' || rawG === '여자' || rawG === 'f' || rawG === 'w';
+        return {
+          id: s.id || s.studentId,
+          school: '호치민시한국국제학교',
+          grade: String(s.grade || ''),
+          classNum: String(s.classNum || (s as any).class || ''),
+          studentNum: String(s.studentNum || (s as any).number || ''),
+          name: s.nameKo || s.name,
+          gender: isFemale ? '여' : '남',
+          accessCode: (s as any).studentCode || '',
+          personalCode: (s as any).studentCode || '',
+          photoUrl: s.photoUrl || (s as any).photo || '',
+          peStudentId: (s as any).peStudentId || '',
+        };
+      });
 
       // 필수 기본 데이터가 확보되는 즉시 화면 렌더링 해제 (사용자가 즉시 UI 조작 가능)
       setData(prev => ({
@@ -441,7 +445,7 @@ export default function TeacherPePage() {
               <div className="flex items-center gap-1">
                 <span className="text-[11px] font-bold text-slate-500 whitespace-nowrap hidden sm:inline">구분:</span>
                 <Select value={mainCategory} onValueChange={(v) => handleMainCategoryChange(v as any)}>
-                  <SelectTrigger className="w-[120px] sm:w-[130px] h-8 text-xs font-bold bg-slate-50 border-slate-300 focus:ring-1">
+                  <SelectTrigger className="w-[120px] sm:w-[130px] h-8 px-2.5 text-xs font-bold bg-slate-50 border-slate-300 focus:ring-1 shrink-0">
                     <SelectValue placeholder="메뉴 선택" />
                   </SelectTrigger>
                   <SelectContent>
@@ -457,7 +461,7 @@ export default function TeacherPePage() {
               <div className="flex items-center gap-1">
                 <span className="text-[11px] font-bold text-slate-500 whitespace-nowrap hidden sm:inline">기능:</span>
                 <Select value={subCategory} onValueChange={setSubCategory}>
-                  <SelectTrigger className="w-[125px] sm:w-[145px] h-8 text-xs font-bold bg-indigo-50/70 border-indigo-200 text-indigo-900 focus:ring-1">
+                  <SelectTrigger className="w-[125px] sm:w-[145px] h-8 px-2.5 text-xs font-bold bg-indigo-50/70 border-indigo-200 text-indigo-900 focus:ring-1 shrink-0">
                     <SelectValue placeholder="세부 기능" />
                   </SelectTrigger>
                   <SelectContent>

@@ -23,11 +23,75 @@ export const isStudentEmail = (email?: string | null): boolean => {
 
 export const getAllMasterStudents = async (): Promise<MasterStudent[]> => {
   try {
-    const [masterSnap, userSnap] = await Promise.all([
+    const [masterSnap, userSnap, busSnap] = await Promise.all([
       getDocs(collection(getDb(), COLLECTION_NAME)),
       getDocs(collection(getDb(), 'users')),
+      getDocs(collection(getKisbusDb(), 'students')),
     ]);
     
+    const busStudentList: any[] = busSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+
+    // 빠른 조회를 위한 버스 학생 인덱스 맵 생성
+    const busByEmail = new Map<string, any>();
+    const busByGradeClassNumber = new Map<string, any>();
+    const busByGradeClassName = new Map<string, any>();
+    const busByName = new Map<string, any>();
+
+    busStudentList.forEach(bs => {
+      if (bs.studentEmail) busByEmail.set(bs.studentEmail.toLowerCase().trim(), bs);
+      const name = bs.nameKo || bs.name;
+      const grade = String(bs.grade || '');
+      const cls = String(bs.class || bs.classNum || '');
+      const num = String(bs.number || bs.studentNum || '');
+
+      if (grade && cls && num) {
+        busByGradeClassNumber.set(`${grade}_${cls}_${num}`, bs);
+      }
+      if (grade && cls && name) {
+        busByGradeClassName.set(`${grade}_${cls}_${name}`, bs);
+      }
+      if (name) {
+        busByName.set(name, bs);
+      }
+    });
+
+    const findBusStudent = (s: any, email?: string) => {
+      if (email && busByEmail.has(email.toLowerCase().trim())) {
+        return busByEmail.get(email.toLowerCase().trim());
+      }
+      const name = s.nameKo || s.name || s.studentName;
+      const grade = String(s.grade || s.studentGrade || '');
+      const cls = String(s.classNum || s.class || s.studentClass || '');
+      const num = String(s.studentNum || s.number || s.studentNumber || '');
+
+      if (grade && cls && name && busByGradeClassName.has(`${grade}_${cls}_${name}`)) {
+        return busByGradeClassName.get(`${grade}_${cls}_${name}`);
+      }
+      if (grade && cls && num && busByGradeClassNumber.has(`${grade}_${cls}_${num}`)) {
+        return busByGradeClassNumber.get(`${grade}_${cls}_${num}`);
+      }
+      if (name && busByName.has(name)) {
+        return busByName.get(name);
+      }
+      return null;
+    };
+
+    const resolveGender = (rawGender: any, busStudent?: any, studentNum?: string): 'Male' | 'Female' => {
+      if (rawGender) {
+        const g = String(rawGender).trim().toLowerCase();
+        if (g === 'female' || g === '여' || g === '여자' || g === 'f' || g === 'w') return 'Female';
+        if (g === 'male' || g === '남' || g === '남자' || g === 'm') return 'Male';
+      }
+      if (busStudent && busStudent.gender) {
+        const bg = String(busStudent.gender).trim().toLowerCase();
+        if (bg === 'female' || bg === '여' || bg === '여자' || bg === 'f' || bg === 'w') return 'Female';
+        if (bg === 'male' || bg === '남' || bg === '남자' || bg === 'm') return 'Male';
+      }
+      const n = parseInt(studentNum || '0', 10);
+      if (n >= 21 && n <= 50) return 'Female';
+      return 'Male';
+    };
+
     const map = new Map<string, MasterStudent>();
     
     userSnap.docs.forEach(doc => {
@@ -45,6 +109,10 @@ export const getAllMasterStudents = async (): Promise<MasterStudent[]> => {
         const studentName = u.studentName || u.nameKo || u.name || '';
         if (!studentName || studentName === '사용자' || studentName === '학생') return;
 
+        const sNum = String(u.studentNum || u.number || u.studentNumber || '');
+        const matchedBus = findBusStudent(u, email);
+        const resolvedGen = resolveGender(u.gender, matchedBus, sNum);
+
         map.set(email, {
           studentEmail: email,
           studentId: doc.id,
@@ -52,8 +120,8 @@ export const getAllMasterStudents = async (): Promise<MasterStudent[]> => {
           nameKo: studentName,
           grade: String(grade),
           classNum: String(u.classNum || u.class || u.studentClass || '1'),
-          studentNum: String(u.studentNum || u.number || u.studentNumber || ''),
-          gender: u.gender === 'Female' || u.gender === 'female' || u.gender === '여' ? 'Female' : 'Male',
+          studentNum: sNum,
+          gender: resolvedGen,
           contact: u.phone || u.parentPhone || u.contact || '',
           parentEmail: u.parentEmail || '',
           address: u.address || u.residenceDestinationId || '',
@@ -70,6 +138,9 @@ export const getAllMasterStudents = async (): Promise<MasterStudent[]> => {
       const key = email || doc.id;
       const existing = email ? map.get(email) : map.get(doc.id);
       const studentName = s.nameKo || s.name || s.studentName || existing?.nameKo || existing?.name || '';
+      const sNum = String(s.studentNum || s.number || s.studentNumber || existing?.studentNum || '');
+      const matchedBus = findBusStudent(s, email) || (existing ? findBusStudent(existing, email) : null);
+      const resolvedGen = resolveGender(s.gender || existing?.gender, matchedBus, sNum);
       
       map.set(key, {
         ...existing,
@@ -81,8 +152,8 @@ export const getAllMasterStudents = async (): Promise<MasterStudent[]> => {
         nameKo: studentName || '학생',
         grade: String(s.grade || s.studentGrade || existing?.grade || '1'),
         classNum: String(s.classNum || s.class || s.studentClass || existing?.classNum || '1'),
-        studentNum: String(s.studentNum || s.number || s.studentNumber || existing?.studentNum || ''),
-        gender: s.gender === 'Female' || s.gender === 'female' || s.gender === '여' ? 'Female' : 'Male',
+        studentNum: sNum,
+        gender: resolvedGen,
         photoUrl: s.photoUrl || (existing as any)?.photoUrl || '',
         peStudentId: (s as any).peStudentId || (existing as any)?.peStudentId || '',
       } as MasterStudent);
@@ -229,6 +300,10 @@ export const onMasterStudentsUpdate = (
       let assignedSeatNumber: number | null = null;
 
       if (matchedBusStudent) {
+        if (matchedBusStudent.gender) {
+          const bg = String(matchedBusStudent.gender).toLowerCase().trim();
+          master.gender = bg === 'female' || bg === '여' || bg === '여자' || bg === 'f' || bg === 'w' ? 'Female' : 'Male';
+        }
         morningDestId = matchedBusStudent.morningDestinationId || matchedBusStudent.suggestedMorningDestination || null;
         afternoonDestId = matchedBusStudent.afternoonDestinationId || matchedBusStudent.suggestedAfternoonDestination || null;
         const destName = (morningDestId ? (destMap.get(morningDestId) || morningDestId) : null) || 
