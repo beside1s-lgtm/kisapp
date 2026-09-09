@@ -215,6 +215,15 @@ export default function AppSidebar() {
     );
   }, [user?.email, isParent, profile, orgStructure]);
 
+  // 통합 학생 계정 관리 바로가기 표출 조건: isAdmin 또는 systemManagers 등록자 전용
+  const canAccessStudentAdmin = useMemo(() => {
+    if (!user?.email || isParent) return false;
+    if (profile?.isAdmin) return true;
+    const emailLower = user.email.trim().toLowerCase();
+    if (orgStructure?.systemManagers?.some((m) => m.toLowerCase() === emailLower)) return true;
+    return false;
+  }, [user?.email, isParent, profile, orgStructure]);
+
   useEffect(() => {
     if (!user || isParent) return;
 
@@ -635,25 +644,28 @@ export default function AppSidebar() {
                       </Link>
                     )}
 
-                    <Link
-                      href="/admin/students"
-                      className={cn(
-                        "flex items-center justify-between p-2 rounded-xl text-xs font-bold transition-all group",
-                        pathname?.startsWith('/admin/students')
-                          ? "bg-purple-500/15 text-purple-800 font-black shadow-xs"
-                          : "text-slate-700 hover:bg-purple-50 hover:text-purple-800"
-                      )}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="p-1 rounded-lg bg-purple-500/10 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                          <Users size={14} />
+
+                    {canAccessStudentAdmin && (
+                      <Link
+                        href="/admin/students"
+                        className={cn(
+                          "flex items-center justify-between p-2 rounded-xl text-xs font-bold transition-all group",
+                          pathname?.startsWith('/admin/students')
+                            ? "bg-purple-500/15 text-purple-800 font-black shadow-xs"
+                            : "text-slate-700 hover:bg-purple-50 hover:text-purple-800"
+                        )}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="p-1 rounded-lg bg-purple-500/10 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                            <Users size={14} />
+                          </div>
+                          <span className="truncate">통합 학생 계정 관리</span>
                         </div>
-                        <span className="truncate">통합 학생 계정 관리</span>
-                      </div>
-                      <span className="text-[10px] text-purple-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                        →
-                      </span>
-                    </Link>
+                        <span className="text-[10px] text-purple-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                          →
+                        </span>
+                      </Link>
+                    )}
                   </>
                 )}
               </div>

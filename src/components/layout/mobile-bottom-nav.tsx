@@ -1,12 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { BookOpen, Bus, Plus, Activity, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
+import { onOrgStructureUpdate } from '@/lib/services/settingsService';
 
 const MobileNavItem = ({ href, label, icon }: { href: string; label: string; icon: React.ReactNode }) => {
   const pathname = usePathname();
@@ -29,6 +30,22 @@ const MobileNavItem = ({ href, label, icon }: { href: string; label: string; ico
 export function MobileBottomNav() {
   const { user, profile } = useAuth();
   const pathname = usePathname();
+  const [orgStructure, setOrgStructure] = useState<any>(null);
+
+  useEffect(() => {
+    if (!user || profile?.role === '강사') return;
+    const unsub = onOrgStructureUpdate((org) => setOrgStructure(org));
+    return () => unsub();
+  }, [user, profile?.role]);
+
+  // 통합 학생 계정 관리 접근 권한: isAdmin 또는 systemManagers 등록자 전용
+  const canAccessStudentAdmin = useMemo(() => {
+    if (!user?.email) return false;
+    if (profile?.isAdmin) return true;
+    const emailLower = user.email.trim().toLowerCase();
+    if (orgStructure?.systemManagers?.some((m: string) => m.toLowerCase() === emailLower)) return true;
+    return false;
+  }, [user?.email, profile?.isAdmin, orgStructure]);
 
   // 비로그인 상태이거나 스쿨버스/공유 출석부 페이지에서 로그인 인증이 안 된 경우 하단 네비게이션바 숨김 처리
   if (!user && (pathname === '/teacher/bus' || pathname.startsWith('/attendance/share/'))) {
@@ -51,7 +68,10 @@ export function MobileBottomNav() {
   }
 
   return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-card/95 backdrop-blur border-t z-40 grid grid-cols-5 items-center justify-around px-2 print:hidden shadow-lg">
+    <div className={cn(
+      "lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-card/95 backdrop-blur border-t z-40 items-center justify-around px-2 print:hidden shadow-lg",
+      canAccessStudentAdmin ? "grid grid-cols-5" : "grid grid-cols-4"
+    )}>
       <MobileNavItem href="/teacher/afterschool" label="방과후" icon={<BookOpen size={18} />} />
       <MobileNavItem href="/teacher/bus" label="스쿨버스" icon={<Bus size={18} />} />
       <div className="flex justify-center">
@@ -63,7 +83,9 @@ export function MobileBottomNav() {
         </Button>
       </div>
       <MobileNavItem href="/teacher/pe" label="학교체육" icon={<Activity size={18} />} />
-      <MobileNavItem href="/admin/students" label="학생계정" icon={<Users size={18} />} />
+      {canAccessStudentAdmin && (
+        <MobileNavItem href="/admin/students" label="학생계정" icon={<Users size={18} />} />
+      )}
     </div>
   );
 }
