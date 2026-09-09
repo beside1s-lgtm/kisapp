@@ -48,6 +48,7 @@ import { LostAndFound } from '@/components/bus/lost-and-found';
 import { AfterSchoolInquiryDialog } from '@/components/bus/after-school-inquiry-dialog';
 import { MorningGateDutyDialog } from '@/components/bus/morning-gate-duty-dialog';
 import { onTeacherApplySettingsUpdate, onAttendanceRecordsUpdate, onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsUpdate } from '@/lib/services/settingsService';
+import { onAllHomeroomAttendanceByDateUpdate, type HomeroomAttendanceRecord } from '@/lib/services/homeroomAttendanceSync';
 import { useTranslation } from '@/hooks/use-translation';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -1064,7 +1065,9 @@ export default function TeacherPage() {
     return null;
   }, [teachers, afterSchoolTeachers, saturdayTeachers, currentTeacherId, currentTeacherName, profile]);
 
-  // 실시간 노선(routes) 데이터 기반 담당 버스 자동 조회
+  // 실시간 노선(routes) 데이터 기반 담당 버스 자동 조회 (등하교, 방과후, 토요일 3대 노선 체계)
+  // - 사용원칙: "등하교 모두 같은 선생님이 담당. 하교로 되어 있는 번호가 맞고 등하교 버스는 같음"
+  // - 하교(Afternoon) 노선 배정을 등하교(commute) 담당 버스의 정본(Single Source of Truth)으로 사용
   const teacherAssignedBuses = useMemo(() => {
     const tId = loggedInTeacherDoc?.id || currentTeacherId;
     const tName = (currentTeacherName || loggedInTeacherDoc?.name || profile?.name || '').trim();
@@ -1083,43 +1086,74 @@ export default function TeacherPage() {
       return false;
     };
 
-    const commuteRoute = targetRoutes.find(r => 
-      (r.type === 'Morning' || r.type === 'Afternoon') && 
+    // 1. 등하교(commute) 버스: 하교(Afternoon) 노선 배정 1순위 (정본) -> 등교(Morning) fallback -> 교사 문서 assignedBusId
+    const afternoonRoute = targetRoutes.find(r => 
+      r.type === 'Afternoon' && 
+      r.dayOfWeek === selectedDay &&
+      (r.semesterMode || 'regular') === semesterMode && 
+      isMatchingTeacher(r)
+    ) || targetRoutes.find(r => 
+      r.type === 'Afternoon' && 
       (r.semesterMode || 'regular') === semesterMode && 
       isMatchingTeacher(r)
     );
 
+    const morningFallbackRoute = targetRoutes.find(r => 
+      r.type === 'Morning' && 
+      r.dayOfWeek === selectedDay &&
+      (r.semesterMode || 'regular') === semesterMode && 
+      isMatchingTeacher(r)
+    ) || targetRoutes.find(r => 
+      r.type === 'Morning' && 
+      (r.semesterMode || 'regular') === semesterMode && 
+      isMatchingTeacher(r)
+    );
+
+    const commuteBusId = afternoonRoute?.busId || morningFallbackRoute?.busId || loggedInTeacherDoc?.assignedBusId || '';
+
+    // 2. 방과후(AfterSchool) 버스
     const afterSchoolRoute = targetRoutes.find(r => 
+      r.type === 'AfterSchool' && 
+      r.dayOfWeek === selectedDay &&
+      (r.semesterMode || 'regular') === semesterMode && 
+      isMatchingTeacher(r)
+    ) || targetRoutes.find(r => 
       r.type === 'AfterSchool' && 
       (r.semesterMode || 'regular') === semesterMode && 
       isMatchingTeacher(r)
     );
 
+    // 3. 토요(Saturday) 버스
     const saturdayRoute = targetRoutes.find(r => 
       r.type === 'Saturday' && 
       isMatchingTeacher(r)
     );
 
-    const commuteBusId = commuteRoute?.busId || loggedInTeacherDoc?.assignedBusId || '';
     const afterSchoolBusId = afterSchoolRoute?.busId || loggedInTeacherDoc?.assignedAfterSchoolBusId || '';
     const saturdayBusId = saturdayRoute?.busId || '';
 
     return { commuteBusId, afterSchoolBusId, saturdayBusId };
-  }, [loggedInTeacherDoc, currentTeacherId, currentTeacherName, profile?.name, allStaticRoutes, allRoutes, semesterMode, teachers, afterSchoolTeachers, saturdayTeachers]);
+  }, [loggedInTeacherDoc, currentTeacherId, currentTeacherName, profile?.name, allStaticRoutes, allRoutes, semesterMode, selectedDay, teachers, afterSchoolTeachers, saturdayTeachers]);
 
   const shortTeacherBusText = useMemo(() => {
     if (!loggedInTeacherDoc && !currentTeacherName) return lang === 'ko' ? '미지정' : 'Unassigned';
     
-    const commuteBusName = buses.find(b => b.id === teacherAssignedBuses.commuteBusId)?.name;
-    const afterSchoolBusName = buses.find(b => b.id === teacherAssignedBuses.afterSchoolBusId)?.name;
-    const saturdayBusName = buses.find(b => b.id === teacherAssignedBuses.saturdayBusId)?.name;
+    // 등하교(Morning/Afternoon)는 동일한 commuteBusId 사용
+    const currentTypeBusId = (selectedRouteType === 'Morning' || selectedRouteType === 'Afternoon')
+      ? teacherAssignedBuses.commuteBusId
+      : selectedRouteType === 'AfterSchool'
+        ? teacherAssignedBuses.afterSchoolBusId
+        : teacherAssignedBuses.saturdayBusId;
 
-    const mainBusName = commuteBusName || afterSchoolBusName || saturdayBusName;
+    const currentBusName = buses.find(b => b.id === currentTypeBusId)?.name;
+    const fallbackBusName = buses.find(b => b.id === (teacherAssignedBuses.commuteBusId || teacherAssignedBuses.afterSchoolBusId))?.name;
+
+    const mainBusName = currentBusName || fallbackBusName;
     if (!mainBusName) return lang === 'ko' ? '미지정' : 'Unassigned';
 
     // '담당 버스' 접두사를 빼고 '00호' 형태로 간결하게 포맷팅
     return mainBusName.endsWith('호차') ? mainBusName.replace('차', '') : mainBusName;
-  }, [loggedInTeacherDoc, currentTeacherName, buses, teacherAssignedBuses, lang]);
+  }, [loggedInTeacherDoc, currentTeacherName, buses, teacherAssignedBuses, selectedRouteType, lang]);
 
   const teacherBusInfoText = useMemo(() => {
     if (!loggedInTeacherDoc && !currentTeacherName) return lang === 'ko' ? '담당 버스: 미지정' : 'Bus: Unassigned';
@@ -1541,9 +1575,10 @@ export default function TeacherPage() {
     }
 
     const loggedInTeacher = currentTeacherId ? teachers.find(t => t.id === currentTeacherId) : null;
-    const assignedBusId = teacherAssignedBuses.commuteBusId || loggedInTeacher?.assignedBusId || '';
+    const assignedCommuteBusId = teacherAssignedBuses.commuteBusId || loggedInTeacher?.assignedBusId || '';
     const assignedAfterSchoolBusId = teacherAssignedBuses.afterSchoolBusId || loggedInTeacher?.assignedAfterSchoolBusId || '';
-    const defaultBuses = [assignedBusId, assignedAfterSchoolBusId].filter(Boolean);
+    const assignedSaturdayBusId = teacherAssignedBuses.saturdayBusId || '';
+    const defaultBuses = Array.from(new Set([assignedCommuteBusId, assignedAfterSchoolBusId, assignedSaturdayBusId].filter(Boolean)));
 
     if (selectedBusId === 'all') {
       subscribeToAllRoutes();
@@ -1787,6 +1822,8 @@ export default function TeacherPage() {
 
   // 방과후 출석 레코드 실시간 구독 (방과후 결석/개별하교 실시간 연동)
   const [afterschoolAttendanceRecords, setAfterschoolAttendanceRecords] = useState<any[]>([]);
+  // 담임 일일 출결 레코드 실시간 구독 (담임 결석/조퇴/개별하교 실시간 연동)
+  const [homeroomAttendanceRecords, setHomeroomAttendanceRecords] = useState<HomeroomAttendanceRecord[]>([]);
 
   useEffect(() => {
     const unsub = onAttendanceRecordsUpdate((records) => {
@@ -1794,6 +1831,35 @@ export default function TeacherPage() {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!selectedDate) return;
+    const unsub = onAllHomeroomAttendanceByDateUpdate(selectedDate, (records) => {
+      setHomeroomAttendanceRecords(records || []);
+    });
+    return () => unsub();
+  }, [selectedDate]);
+
+  // 담임 출결 기반 해당 경로 미탑승 학생 ID 추출
+  const homeroomAbsentStudentIds = useMemo(() => {
+    const set = new Set<string>();
+    if (!homeroomAttendanceRecords || homeroomAttendanceRecords.length === 0) return set;
+
+    homeroomAttendanceRecords.forEach((r) => {
+      if (r.date !== selectedDate) return;
+      if (r.status === 'ABSENT') {
+        // 결석: 등교, 하교, 방과후 전체 미탑승
+        set.add(r.studentId);
+      } else if (r.status === 'EARLY_LEAVE' || r.status === 'INDIVIDUAL_DISMISSAL') {
+        // 조퇴 or 개별하교: 하교 및 방과후 미탑승
+        if (selectedRouteType === 'Afternoon' || selectedRouteType === 'AfterSchool') {
+          set.add(r.studentId);
+        }
+      }
+    });
+
+    return set;
+  }, [homeroomAttendanceRecords, selectedDate, selectedRouteType]);
 
   // 방과후 수업 결석 or 개별하교 학생 ID 추출 (해당 날짜 기준)
   const afterschoolAbsentStudentIds = useMemo(() => {
@@ -1821,14 +1887,15 @@ export default function TeacherPage() {
         disembarkedStudentIds = attendance?.disembarked || [], 
         completedDestinations = attendance?.completedDestinations || [];
 
-  // 최종 notBoarding: 버스 출석부 notBoarding + 방과후 결석/개별하교 학생 자동 포함
+  // 최종 notBoarding: 버스 출석부 notBoarding + 담임 결석/조퇴/개별하교 + 방과후 결석/개별하교 학생 자동 포함
   const notBoardingStudentIds = useMemo(() => {
-    if (selectedRouteType !== 'AfterSchool' || afterschoolAbsentStudentIds.size === 0) {
-      return rawNotBoardingStudentIds;
+    const combined = new Set(rawNotBoardingStudentIds);
+    homeroomAbsentStudentIds.forEach((id) => combined.add(id));
+    if (selectedRouteType === 'AfterSchool') {
+      afterschoolAbsentStudentIds.forEach((id) => combined.add(id));
     }
-    const combined = new Set([...rawNotBoardingStudentIds, ...Array.from(afterschoolAbsentStudentIds)]);
     return Array.from(combined);
-  }, [rawNotBoardingStudentIds, selectedRouteType, afterschoolAbsentStudentIds]);
+  }, [rawNotBoardingStudentIds, homeroomAbsentStudentIds, selectedRouteType, afterschoolAbsentStudentIds]);
 
   useEffect(() => {
     if (lastClickedStudentId) {

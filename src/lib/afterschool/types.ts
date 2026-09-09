@@ -108,7 +108,7 @@ export interface AttendanceRecord {
   sessionNo?: number;
   studentId: string;
   status: AttendanceStatus;
-  markSymbol?: 'O' | 'V' | 'X';
+  markSymbol?: 'O' | 'V' | 'X' | '';
   isIndividualDismissal?: boolean;
   inTime?: string;
   outTime?: string;

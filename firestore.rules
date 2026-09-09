@@ -265,5 +265,12 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isSignedIn();
     }
+
+    // --- [담임 일일 출석부] ---
+    // 담임 교사가 매일 학급 출결을 기록하고, 스쿨버스/방과후 시스템과 연동
+    match /homeroom_daily_attendance/{id} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
   }
 }

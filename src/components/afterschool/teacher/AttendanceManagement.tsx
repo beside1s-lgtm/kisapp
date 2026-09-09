@@ -3,7 +3,7 @@ import type { Course, Enrollment, AttendanceRecord, Student, SyllabusSession, Su
 import { generateCalendarSchedule, generateCalendarScheduleByDateRange, ScheduleDay, getCourseSessionsPerClass, extractHolidayDatesFromEvents } from '@/lib/afterschool/schedule';
 import {
   Printer, Calendar, X, FileSpreadsheet,
-  Send, FileText, UserCheck,
+  Send, FileText,
   Users, Package, AlertCircle, ChevronLeft, ChevronRight,
   Phone, CheckCircle2, UserPlus, UserMinus, Edit3, Trash2, Share2, XCircle
 } from 'lucide-react';
@@ -465,6 +465,10 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const sessionScrollRef = useRef<HTMLDivElement>(null);
+  // 최신 attendanceRecords를 타이머 콜백에서 읽기 위한 ref (stale closure 방지)
+  const attendanceRecordsRef = useRef(attendanceRecords);
+  // 자동 출석 초기화가 완료된 dayKey 추적 (중복 초기화 방지)
+  const autoInitializedDaysRef = useRef<Set<string>>(new Set());
 
   // 오늘 날짜("YYYY-MM-DD")와 가장 가까운 회차 자동 탐색
   const findInitialDayIndex = (days: ScheduleDay[]): number => {
@@ -597,7 +601,79 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     }
   }, [selectedCourseId, scheduleDays.length]);
 
+  // attendanceRecords prop 변경 시 ref 동기화 (타이머 콜백에서 stale closure 방지)
+  useEffect(() => {
+    attendanceRecordsRef.current = attendanceRecords;
+  }, [attendanceRecords]);
+
+  // 강좌 변경 시 자동 초기화 완료 목록 리셋
+  useEffect(() => {
+    autoInitializedDaysRef.current = new Set();
+  }, [currentCourse?.id]);
+
   const activeDay = scheduleDays.find((d) => d.dayIndex === activeSessionNo) || scheduleDays[0];
+
+  // 회차(activeSessionNo) 전환 시 출결 기록 없는 수강생을 자동으로 '출석(O)'으로 초기화
+  // - Firestore 초기 로드 완료를 기다리기 위해 800ms 딜레이 사용 (stale closure 방지를 위해 ref로 읽음)
+  // - 이미 기록이 존재하는 회차는 절대 덮어쓰지 않음
+  useEffect(() => {
+    if (!activeDay || !currentCourse?.id || courseStudents.length === 0) return;
+
+    const dayKey = `${currentCourse.id}_${activeDay.dayIndex}`;
+    if (autoInitializedDaysRef.current.has(dayKey)) return;
+
+    const timer = setTimeout(() => {
+      if (autoInitializedDaysRef.current.has(dayKey)) return;
+
+      const currentRecords = attendanceRecordsRef.current;
+      const hasAnyRecord = currentRecords.some(
+        (r) => r.courseId === currentCourse.id && activeDay.sessionNos.includes(r.sessionNo || 0)
+      );
+
+      // 이미 기록이 있으면 건드리지 않음
+      if (hasAnyRecord) {
+        autoInitializedDaysRef.current.add(dayKey);
+        return;
+      }
+
+      autoInitializedDaysRef.current.add(dayKey);
+
+      const dayKor = getDayKor(activeDay);
+      const attendingStudents = courseStudents.filter((st) => {
+        if (st.selectedDays && st.selectedDays.length > 0 && dayKor) {
+          return st.selectedDays.includes(dayKor);
+        }
+        return true;
+      });
+
+      if (attendingStudents.length === 0) return;
+
+      setAttendanceRecords((prev) => {
+        // 이미 다른 경로로 레코드가 생성된 경우 중복 방지
+        const alreadyHas = prev.some(
+          (r) => r.courseId === currentCourse.id && activeDay.sessionNos.includes(r.sessionNo || 0)
+        );
+        if (alreadyHas) return prev;
+
+        const newRecords: AttendanceRecord[] = attendingStudents.flatMap((st) =>
+          activeDay.sessionNos.map((sNo) => ({
+            id: `att_${st.studentId}_s${sNo}`,
+            courseId: currentCourse.id,
+            studentId: st.studentId,
+            sessionNo: sNo,
+            date: activeDay.fullDate || activeDay.dateStr,
+            status: 'ATTEND' as const,
+            markSymbol: 'O' as const,
+            isIndividualDismissal: false,
+          }))
+        );
+        return [...prev, ...newRecords];
+      });
+    }, 800);
+
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionNo, currentCourse?.id, courseStudents]);
 
   // 엑셀 내보내기 및 호환용 sessions 맵핑
   const sessions: SyllabusSession[] = scheduleDays.flatMap((day) =>
@@ -1087,14 +1163,6 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
               </span>
               <div className="flex items-center gap-1 shrink-0">
                 <button
-                  onClick={() => handleBulkAttendDay(activeSessionNo)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white p-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center justify-center cursor-pointer active:scale-95"
-                  title={t('teacher_afterschool.bulk_attend', '전원출석')}
-                  aria-label={t('teacher_afterschool.bulk_attend', '전원출석')}
-                >
-                  <UserCheck className="w-4 h-4 shrink-0" />
-                </button>
-                <button
                   onClick={handleCopyShareLink}
                   className="bg-sky-600 hover:bg-sky-700 text-white p-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center justify-center cursor-pointer active:scale-95"
                   title={t('teacher_afterschool.share_sheet', '출석부 공유')}
@@ -1117,14 +1185,6 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
             <div className="flex items-center gap-1.5 sm:gap-2 w-full min-w-0">
               {/* 데스크톱 전용 좌측 고정 액션 버튼 그룹 */}
               <div className="hidden sm:flex items-center gap-1.5 shrink-0 z-10 bg-white pr-1.5 border-r border-slate-200">
-                <button
-                  onClick={() => handleBulkAttendDay(activeSessionNo)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
-                  title="현재 선택한 날짜의 모든 수강 확정생을 출석(○) 처리합니다"
-                >
-                  <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                  <span>{t('teacher_afterschool.bulk_attend', '전원출석')}</span>
-                </button>
                 <button
                   onClick={handleCopyShareLink}
                   className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"

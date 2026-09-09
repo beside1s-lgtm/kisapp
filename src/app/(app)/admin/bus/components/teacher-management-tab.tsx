@@ -333,7 +333,13 @@ const TeacherAssignmentDialog = ({ targetBus, allRoutes, teachers, assignmentTyp
 
     useEffect(() => {
         const initial: any = {};
-        relevantRoutes.forEach(r => {
+        // 등하교의 경우 Afternoon 노선을 정본(Single Source of Truth)으로 우선 조회
+        const sortedRoutes = [...relevantRoutes].sort((a, b) => {
+            if (a.type === 'Afternoon' && b.type !== 'Afternoon') return -1;
+            if (b.type === 'Afternoon' && a.type !== 'Afternoon') return 1;
+            return 0;
+        });
+        sortedRoutes.forEach(r => {
             if (initial[r.dayOfWeek] && initial[r.dayOfWeek].length > 0) {
                 return;
             }

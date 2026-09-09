@@ -8,22 +8,36 @@ import { Printer, X } from 'lucide-react';
 export const OfficialSeal: React.FC<{ name: string; signatureUrl?: string; size?: 'sm' | 'md' }> = ({
   name,
   signatureUrl,
+  size = 'sm',
 }) => {
+  const isSm = size === 'sm';
   if (signatureUrl && (signatureUrl.startsWith('http') || signatureUrl.startsWith('data:') || signatureUrl.startsWith('/') || signatureUrl.length > 50)) {
     return (
       <img
         src={signatureUrl}
         alt={`${name} 서명`}
-        className="object-contain inline-block shrink-0 max-w-[20mm] max-h-[15mm] w-auto h-auto print:max-w-[20mm] print:max-h-[15mm]"
-        style={{ maxWidth: '20mm', maxHeight: '15mm' }}
+        className={`object-contain inline-block shrink-0 ${
+          isSm ? 'max-w-[14mm] max-h-[10mm]' : 'max-w-[20mm] max-h-[14mm]'
+        } w-auto h-auto`}
+        style={{ maxWidth: isSm ? '14mm' : '20mm', maxHeight: isSm ? '10mm' : '14mm' }}
       />
     );
   }
   const char = name ? (name.length >= 3 ? name.slice(-2) : name) : '인';
   return (
     <span
-      className="inline-flex items-center justify-center rounded-full border border-red-600 font-serif font-black text-red-600 select-none shrink-0 bg-red-50/50 leading-none shadow-2xs w-[15mm] h-[15mm] min-w-[15mm] min-h-[15mm] text-[11px] border-[1.5px] print:w-[15mm] print:h-[15mm]"
-      style={{ width: '15mm', height: '15mm', minWidth: '15mm', minHeight: '15mm', letterSpacing: '-0.06em' }}
+      className={`inline-flex items-center justify-center rounded-full border border-red-600 font-serif font-black text-red-600 select-none shrink-0 bg-red-50/50 leading-none shadow-2xs ${
+        isSm
+          ? 'w-[10.5mm] h-[10.5mm] min-w-[10.5mm] min-h-[10.5mm] text-[9px] border-[1.2px]'
+          : 'w-[14mm] h-[14mm] min-w-[14mm] min-h-[14mm] text-[11px] border-[1.5px]'
+      }`}
+      style={{
+        width: isSm ? '10.5mm' : '14mm',
+        height: isSm ? '10.5mm' : '14mm',
+        minWidth: isSm ? '10.5mm' : '14mm',
+        minHeight: isSm ? '10.5mm' : '14mm',
+        letterSpacing: '-0.06em',
+      }}
       title={`${name} 직인`}
     >
       {char}
@@ -69,10 +83,8 @@ export interface OfficialAttendanceSheetProps {
   onClose: () => void;
 }
 
-// 페이지당 최대 학생 수 (초과 시 2페이지 분리)
-const ROWS_PER_PAGE = 30;
-// 빈 행으로 채울 최소 행 수 (1페이지 단독)
-const MIN_ROWS_SINGLE = 19;
+// 2페이지 분리 기준 (30명 초과 시에만 2페이지 분리)
+const MULTI_PAGE_THRESHOLD = 30;
 
 export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = ({
   course,
@@ -96,11 +108,15 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
   ].filter((name): name is string => Boolean(name && name.trim() !== mainInstructor.trim()));
 
   const allInstructors = [mainInstructor, ...assistantInstructors].filter(Boolean);
-  const isMultiPage = students.length > ROWS_PER_PAGE;
 
-  // 페이지별 학생 분배 (30명 이하 → 단일 페이지, 31명 이상 → 2페이지)
+  // 30명 초과인 경우에만 2페이지 모드 적용 (30명 이하는 무조건 1페이지 고정)
+  const isMultiPage = students.length > MULTI_PAGE_THRESHOLD;
+
+  // 페이지별 학생 분배
+  // 30명 이하: [students] (단일 페이지 1장 고정)
+  // 30명 초과: [students.slice(0, 30), students.slice(30)] (2장 고정)
   const pageStudentsList: AttendanceStudent[][] = isMultiPage
-    ? [students.slice(0, ROWS_PER_PAGE), students.slice(ROWS_PER_PAGE)]
+    ? [students.slice(0, 30), students.slice(30)]
     : [students];
 
   const handlePrint = () => {
@@ -117,12 +133,12 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
 
   // 지도교사 영역 — 우측 정렬, 이름 바로 옆 도장
   const renderInstructorArea = () => (
-    <div className="flex justify-end items-center gap-2 mb-1 mt-1 text-sm font-bold text-black font-sans flex-wrap">
+    <div className="flex justify-end items-center gap-2 mb-1 mt-0.5 text-xs sm:text-sm font-bold text-black font-sans flex-wrap">
       <span className="font-extrabold whitespace-nowrap">지도교사:</span>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-2.5 flex-wrap">
         {allInstructors.map((name) => (
           <div key={name} className="flex items-center gap-1">
-            <span className="font-black">{name}</span>
+            <span className="font-black text-xs sm:text-sm">{name}</span>
             <OfficialSeal
               name={name}
               signatureUrl={getInstructorSeal(name)}
@@ -148,17 +164,17 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
   const renderTableHead = () => (
     <thead>
       <tr className="bg-slate-100">
-        <th rowSpan={2} className="border border-black font-bold p-1 w-[36px] min-w-[36px] text-[11px] leading-tight text-center align-middle">일련<br />번호</th>
-        <th rowSpan={2} className="border border-black font-bold p-1 w-[30px] min-w-[30px] text-[11px] text-center align-middle">학년</th>
-        <th rowSpan={2} className="border border-black font-bold p-1 w-[30px] min-w-[30px] text-[11px] text-center align-middle">반</th>
-        <th rowSpan={2} className="border border-black font-bold p-1 w-[60px] min-w-[60px] text-[11px] text-center align-middle whitespace-nowrap">성명</th>
-        <th colSpan={scheduleDays.length} className="border border-black font-bold py-1 px-2 text-[12px] tracking-wider text-center">활동 시간 누가 기록</th>
+        <th rowSpan={2} className="border border-black font-bold p-0.5 w-[34px] min-w-[34px] text-[10px] leading-tight text-center align-middle">일련<br />번호</th>
+        <th rowSpan={2} className="border border-black font-bold p-0.5 w-[28px] min-w-[28px] text-[10px] text-center align-middle">학년</th>
+        <th rowSpan={2} className="border border-black font-bold p-0.5 w-[28px] min-w-[28px] text-[10px] text-center align-middle">반</th>
+        <th rowSpan={2} className="border border-black font-bold p-0.5 w-[56px] min-w-[56px] text-[10.5px] text-center align-middle whitespace-nowrap">성명</th>
+        <th colSpan={scheduleDays.length} className="border border-black font-bold py-0.5 px-1 text-[11px] tracking-wider text-center">활동 시간 누가 기록</th>
       </tr>
       <tr className="bg-white">
         {scheduleDays.map((d) => {
           const shortDate = d.dateStr.replace(/\([가-힣]\)/g, '').replace(/^0/, '').replace(/\/0/, '/').trim();
           return (
-            <th key={d.dayIndex} className="border border-black font-medium py-1 px-0.5 text-[10px] min-w-[22px] text-center whitespace-nowrap">
+            <th key={d.dayIndex} className="border border-black font-medium py-0.5 px-0.5 text-[9.5px] min-w-[20px] text-center whitespace-nowrap">
               {shortDate}
             </th>
           );
@@ -167,10 +183,21 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
     </thead>
   );
 
-  // 테이블 바디 (rowOffset: 이전 페이지 행 수 → 일련번호 이어받기)
+  // 테이블 바디
+  // 단일 페이지일 때:
+  // - 18명 이하: 최소 18행 채움 (큼직하게 꽉 찬 1장)
+  // - 19~30명: 학생 수 그대로 (빈 행 추가로 2페이지 넘치는 것 원천 차단!)
+  // 2페이지일 때:
+  // - 1페이지: 30행 고정
+  // - 2페이지: 남은 학생 수 (최소 18행 채움)
   const renderTableBody = (pageStudents: AttendanceStudent[], rowOffset: number, rowHeightClass: string) => {
-    const minRows = isMultiPage ? ROWS_PER_PAGE : MIN_ROWS_SINGLE;
-    const totalRows = Math.max(pageStudents.length, minRows);
+    let totalRows: number;
+    if (isMultiPage) {
+      totalRows = rowOffset === 0 ? 30 : Math.max(pageStudents.length, 18);
+    } else {
+      totalRows = students.length <= 18 ? 18 : students.length;
+    }
+
     const rows = Array.from({ length: totalRows }, (_, i) => pageStudents[i] || null);
     return (
       <tbody>
@@ -178,10 +205,10 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
           const rowNum = rowOffset + idx + 1;
           return (
             <tr key={enr?.id || `empty-${rowOffset}-${idx}`} className={`text-center ${rowHeightClass}`}>
-              <td className="border border-black text-slate-800 text-[10.5px] font-normal align-middle">{rowNum}</td>
-              <td className="border border-black text-slate-900 text-[10.5px] align-middle">{enr ? enr.grade : ''}</td>
-              <td className="border border-black text-slate-900 text-[10.5px] align-middle">{enr ? enr.classNum : ''}</td>
-              <td className="border border-black font-bold text-slate-950 text-[10.5px] align-middle whitespace-nowrap px-1">{enr ? enr.name : ''}</td>
+              <td className="border border-black text-slate-800 text-[10px] font-normal align-middle">{rowNum}</td>
+              <td className="border border-black text-slate-900 text-[10px] align-middle">{enr ? enr.grade : ''}</td>
+              <td className="border border-black text-slate-900 text-[10px] align-middle">{enr ? enr.classNum : ''}</td>
+              <td className="border border-black font-bold text-slate-950 text-[10px] align-middle whitespace-nowrap px-0.5">{enr ? enr.name : ''}</td>
               {scheduleDays.map((d) => {
                 if (!enr) return <td key={d.dayIndex} className="border border-black align-middle">&nbsp;</td>;
                 const rm = getDayMark(enr.studentId, d.dayIndex);
@@ -192,7 +219,7 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
                 return (
                   <td
                     key={d.dayIndex}
-                    className={`border border-black text-[11px] font-bold align-middle ${
+                    className={`border border-black text-[10.5px] font-bold align-middle ${
                       isO ? 'text-black font-black' : isTri ? 'text-purple-700' : isX ? 'text-rose-600' : 'text-slate-300'
                     }`}
                   >
@@ -207,12 +234,23 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
     );
   };
 
-  // 행 높이: 2페이지(30행) h-[7.5mm] / 1페이지≤18 h-[7.2mm] / 1페이지 19~30 h-[6.0mm]
+  // 행 높이 및 폰트 크기 동적 산출:
+  // - 2페이지(30행): h-[6.0mm] print:h-[5.8mm]
+  // - 단일 페이지 <= 18명: h-[8.5mm] print:h-[8.2mm] (1페이지에 큼직하게 꽉 참)
+  // - 단일 페이지 19~24명: h-[7.0mm] print:h-[6.8mm]
+  // - 단일 페이지 25~30명: h-[5.9mm] print:h-[5.7mm] (절대 2페이지 안 넘침)
   const rowHeightClass = isMultiPage
-    ? 'h-[7.5mm] print:h-[7.5mm]'
-    : students.length > 18
-      ? 'h-[6.0mm] print:h-[5.8mm]'
-      : 'h-[7.2mm] print:h-[7.0mm]';
+    ? 'h-[6.0mm] print:h-[5.8mm]'
+    : students.length <= 18
+      ? 'h-[8.5mm] print:h-[8.2mm]'
+      : students.length <= 24
+        ? 'h-[7.0mm] print:h-[6.8mm]'
+        : 'h-[5.9mm] print:h-[5.7mm]';
+
+  // 제목 상단 패딩: 학생 수가 많으면 상단 패딩을 줄여 높이 확보
+  const titlePaddingClass = (!isMultiPage && students.length <= 18)
+    ? 'pt-[8mm] pb-0'
+    : 'pt-[4mm] pb-0';
 
   if (!mounted) return null;
 
@@ -223,21 +261,23 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
         @media print {
           @page {
             size: A4 portrait;
-            margin: 10mm 10mm 10mm 10mm;
+            margin: 8mm 8mm 8mm 8mm;
           }
           html, body {
             margin: 0 !important;
             padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
             overflow: visible !important;
             background: #ffffff !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          /* admin UI 등 모달 외 모든 요소 레이아웃 공간까지 완전 제거 */
+          /* admin UI 등 모달 외 모든 요소 레이아웃 공간까지 완전 제거 (11장 백지 방지) */
           body > *:not(.oas-modal-overlay) {
             display: none !important;
           }
-          /* 모달 오버레이: position static 정상 흐름 (page-break 활성화) */
+          /* 모달 오버레이: position static 정상 흐름 */
           .oas-modal-overlay {
             position: static !important;
             display: block !important;
@@ -264,7 +304,7 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
           .official-attendance-print-area {
             position: static !important;
             width: 100% !important;
-            max-width: 190mm !important;
+            max-width: 194mm !important;
             margin: 0 auto !important;
             padding: 0 !important;
             border: none !important;
@@ -272,24 +312,36 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
             background: #ffffff !important;
             overflow: visible !important;
           }
-          /* 단일 페이지: 넘침 차단 */
+          /* 타입 1: 30명 이하 단일 페이지 (절대 2페이지 넘침 원천 차단) */
           .attendance-page-single {
-            max-height: 277mm !important;
+            width: 100% !important;
+            height: 280mm !important;
+            max-height: 280mm !important;
             overflow: hidden !important;
             page-break-after: avoid !important;
+            page-break-inside: avoid !important;
             break-after: avoid !important;
+            break-inside: avoid !important;
+            box-sizing: border-box !important;
           }
-          /* 멀티 페이지: 각 블록 1장씩 */
-          .attendance-page-block {
+          /* 타입 2: 30명 초과 2페이지 모드 (정확히 2장 분할) */
+          .attendance-page-multi-first {
             width: 100% !important;
-            height: 277mm !important;
+            height: 280mm !important;
+            max-height: 280mm !important;
             overflow: hidden !important;
             page-break-after: always !important;
-            break-after: always !important;
+            break-after: page !important;
+            box-sizing: border-box !important;
           }
-          .attendance-page-block:last-child {
+          .attendance-page-multi-second {
+            width: 100% !important;
+            height: 280mm !important;
+            max-height: 280mm !important;
+            overflow: hidden !important;
             page-break-after: avoid !important;
             break-after: avoid !important;
+            box-sizing: border-box !important;
           }
           .no-print {
             display: none !important;
@@ -315,8 +367,8 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
             </h3>
             <p className="text-[11px] text-slate-500 mt-0.5">
               {isMultiPage
-                ? `수강생 ${students.length}명 — 30명씩 2페이지로 분리 출력됩니다.`
-                : '사용자 지정 표준 규격에 맞추어 A4 세로 1장으로 깔끔하게 출력됩니다.'}
+                ? `수강생 ${students.length}명 — 30명 초과로 1페이지(1~30번), 2페이지(31번~) 2장으로 분리 출력됩니다.`
+                : `수강생 ${students.length}명 — A4 세로 1장으로 꽉 차게 출력됩니다.`}
             </p>
           </div>
           <div className="flex gap-2">
@@ -341,10 +393,13 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
         {/* 인쇄 대상 본문 */}
         <div className="official-attendance-print-area bg-white border border-slate-300 print:border-none rounded-lg text-slate-950 font-sans">
           {pageStudentsList.map((pageStudents, pageIdx) => {
-            const rowOffset = pageIdx * ROWS_PER_PAGE;
-            const blockClass = isMultiPage
-              ? 'attendance-page-block p-4 md:p-6 print:p-0'
-              : 'attendance-page-single p-4 md:p-6 print:p-0';
+            const rowOffset = pageIdx * 30;
+            const blockClass = !isMultiPage
+              ? 'attendance-page-single p-3 sm:p-5 print:p-0'
+              : pageIdx === 0
+                ? 'attendance-page-multi-first p-3 sm:p-5 print:p-0'
+                : 'attendance-page-multi-second p-3 sm:p-5 print:p-0';
+
             return (
               <div key={pageIdx} className={blockClass}>
                 {/* 화면 전용: 페이지 구분선 */}
@@ -354,9 +409,9 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
                   </div>
                 )}
 
-                {/* 제목 (가운데 정렬, 1cm 상단 여백) */}
-                <div className="text-center pt-[10mm] pb-0">
-                  <h1 className="text-2xl md:text-[26px] font-black tracking-wider text-black font-sans leading-tight">
+                {/* 제목 (가운데 정렬) */}
+                <div className={`text-center ${titlePaddingClass}`}>
+                  <h1 className="text-xl sm:text-2xl font-black tracking-wider text-black font-sans leading-tight">
                     {courseTitle}
                   </h1>
                 </div>
