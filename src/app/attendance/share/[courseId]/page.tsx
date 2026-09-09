@@ -219,11 +219,28 @@ export default function SharedAttendancePage() {
   const getStudentBusNo = useCallback((studentId: string, studentName: string, grade?: string, classNum?: string, enrollment?: Enrollment, targetDay?: any) => {
     const busesByDay: Record<string, string> = {};
 
-    // 1순위: routes에서 해당 학생의 요일별 AfterSchool 노선 좌석 배정 조회
-    if (routes && routes.length > 0) {
+    // 수강명단 기준 버스 신청 여부 검증 (수강명단과 1:1 일치)
+    const isExplicitlyNoBus = Boolean(
+      (enrollment?.kisbusNo && (enrollment.kisbusNo === '-' || enrollment.kisbusNo === '미신청')) ||
+      (enrollment?.afterSchoolBusNo && (enrollment.afterSchoolBusNo === '-' || enrollment.afterSchoolBusNo === '미신청')) ||
+      enrollment?.needsBus === false
+    );
+    const hasBusApplication = Boolean(
+      enrollment?.needsBus === true ||
+      (enrollment?.kisbusNo && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청') ||
+      (enrollment?.afterSchoolBusNo && enrollment.afterSchoolBusNo !== '-' && enrollment.afterSchoolBusNo !== '미신청')
+    );
+
+    if (isExplicitlyNoBus || !hasBusApplication) {
+      return '미탑승';
+    }
+
+    // 실제 routes 매칭을 수행하는 내부 헬퍼
+    const resolveByStudentId = (sid: string) => {
+      if (!routes || routes.length === 0 || !sid) return;
       const assignedRoutes = routes.filter((r: any) =>
         r.type === 'AfterSchool' &&
-        (r.seating || []).some((seat: any) => seat.studentId === studentId)
+        (r.seating || []).some((seat: any) => seat.studentId === sid)
       );
       assignedRoutes.forEach((r: any) => {
         const foundBus = (buses || []).find((b: any) => b.id === r.busId);
@@ -232,6 +249,23 @@ export default function SharedAttendancePage() {
           busesByDay[r.dayOfWeek] = formatStandardBusNo(bName);
         }
       });
+    };
+
+    // 1순위: routes에서 enrollment.studentId로 직접 AfterSchool 노선 좌석 조회
+    resolveByStudentId(studentId);
+
+    // 1.5순위: st_* 임시 ID 등 직접 매칭 실패 시, masterStudents에서 이름+학년+반으로
+    //          kisbus student ID를 역조회하여 재시도
+    if (Object.keys(busesByDay).length === 0 && studentName) {
+      const cleanStr = (s: any) => String(s || '').replace(/\s+/g, '').toLowerCase();
+      const fallbackStudent = masterStudents.find(ms =>
+        cleanStr(ms.name) === cleanStr(studentName) &&
+        String(ms.grade) === String(grade) &&
+        String(ms.classNum) === String(classNum)
+      );
+      if (fallbackStudent?.studentId && fallbackStudent.studentId !== studentId) {
+        resolveByStudentId(fallbackStudent.studentId);
+      }
     }
 
     // targetDay를 영문 요일명으로 정규화
@@ -346,6 +380,7 @@ export default function SharedAttendancePage() {
     async (studentId: string, dayIndex: number, nextMark: MarkSymbol) => {
       const day = scheduleDays.find((d) => d.dayIndex === dayIndex);
       if (!day) return;
+      const recordDate = day.fullDate || day.dateStr; // yyyy-MM-dd 우선 (버스 selectedDate와 형식 통일)
       // 낙관적 UI 업데이트
       setAttendanceRecords((prev) => {
         const filtered = prev.filter(
@@ -357,7 +392,7 @@ export default function SharedAttendancePage() {
           courseId,
           studentId,
           sessionNo: sNo,
-          date: day.dateStr,
+          date: recordDate,
           status: nextMark === 'X' ? 'ABSENT' : 'ATTEND',
           markSymbol: nextMark,
           isIndividualDismissal: nextMark === 'V',
@@ -375,7 +410,7 @@ export default function SharedAttendancePage() {
               courseId,
               studentId,
               sessionNo: sNo,
-              date: day.dateStr,
+              date: recordDate,
               status: nextMark === 'X' ? ('ABSENT' as const) : ('ATTEND' as const),
               markSymbol: nextMark,
               isIndividualDismissal: nextMark === 'V',
@@ -399,6 +434,7 @@ export default function SharedAttendancePage() {
   const handleBulkAttendDay = useCallback(async (dayIndex: number) => {
     const day = scheduleDays.find((d) => d.dayIndex === dayIndex);
     if (!day || courseStudents.length === 0) return;
+    const recordDate = day.fullDate || day.dateStr; // yyyy-MM-dd 우선 (버스 selectedDate와 형식 통일)
 
     // 1. 낙관적 UI 업데이트
     setAttendanceRecords((prev) => {
@@ -414,7 +450,7 @@ export default function SharedAttendancePage() {
             courseId,
             studentId: st.studentId,
             sessionNo: sNo,
-            date: day.dateStr,
+            date: recordDate,
             status: 'ATTEND',
             markSymbol: 'O',
             isIndividualDismissal: false,
@@ -440,7 +476,7 @@ export default function SharedAttendancePage() {
             courseId,
             studentId: st.studentId,
             sessionNo: sNo,
-            date: day.dateStr,
+            date: recordDate,
             status: 'ATTEND',
             markSymbol: 'O',
             isIndividualDismissal: false,

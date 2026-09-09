@@ -490,22 +490,67 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     return 1;
   };
 
-  // 강좌 설정 기반 달력 스케줄 자동 산우 ([이슈 4] 운영기간 연동)
+  // 기본 학기 시작일 fallback (현재 연도 및 학기에 자동 맞춤: 8~1월은 2학기, 2~7월은 1학기)
+  const defaultSemesterStartDate = React.useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+    return (m >= 8 || m === 1) ? `${y}-08-24` : `${y}-03-02`;
+  }, []);
+
+  // 마스터 설정 구독 (operatingStartDate, operatingEndDate, allowedDays)
+  // 로컬 캐시를 초기 상태로 사용하여 첫 렌더링 시 3월 출석부 깜빡임(지연)을 원천 차단
+  const [masterSettings, setMasterSettings] = useState<any>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('kis_afterschool_master_settings');
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return null;
+  });
+  const [docConfig, setDocConfig] = useState<DocConfig | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('kis_doc_config');
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return null;
+  });
+
+  // 강좌 설정 기반 달력 스케줄 자동 산출 ([이슈 4] 운영기간 연동)
   const sessionsPerClass = currentCourse?.sessionsPerClass || 2;
   const operatingWeeks = currentCourse?.operatingWeeks || 20;
   const classDays = currentCourse?.classDays || ['월'];
-  const startDateStr = currentCourse?.startDate || '2026-03-30';
-
-  // 마스터 설정 구독 (operatingStartDate, operatingEndDate, allowedDays)
-  const [masterSettings, setMasterSettings] = useState<any>(null);
-  const [docConfig, setDocConfig] = useState<DocConfig | null>(null);
+  const startDateStr = currentCourse?.startDate || masterSettings?.operatingStartDate || defaultSemesterStartDate;
 
   useEffect(() => {
-    getTeacherApplySettings().then(s => { if (s) setMasterSettings(s); });
-    getDocConfig().then(c => { if (c) setDocConfig(c as DocConfig); });
+    getTeacherApplySettings().then(s => {
+      if (s) {
+        setMasterSettings(s);
+        try { localStorage.setItem('kis_afterschool_master_settings', JSON.stringify(s)); } catch {}
+      }
+    });
+    getDocConfig().then(c => {
+      if (c) {
+        setDocConfig(c as DocConfig);
+        try { localStorage.setItem('kis_doc_config', JSON.stringify(c)); } catch {}
+      }
+    });
 
-    const unsub = onTeacherApplySettingsUpdate((s) => setMasterSettings(s));
-    const unsubDoc = onDocConfigUpdate((c) => setDocConfig(c as DocConfig));
+    const unsub = onTeacherApplySettingsUpdate((s) => {
+      if (s) {
+        setMasterSettings(s);
+        try { localStorage.setItem('kis_afterschool_master_settings', JSON.stringify(s)); } catch {}
+      }
+    });
+    const unsubDoc = onDocConfigUpdate((c) => {
+      if (c) {
+        setDocConfig(c as DocConfig);
+        try { localStorage.setItem('kis_doc_config', JSON.stringify(c)); } catch {}
+      }
+    });
     return () => {
       unsub();
       unsubDoc();
@@ -528,7 +573,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
       // 운영기간 내의 날짜 범위를 달력에 사용 (학사일정 공휴일/휴업일 전개 반영)
       return generateCalendarScheduleByDateRange(opStart, opEnd, effectiveDays, effectiveSessions, holidayDates);
     }
-    // fallback: 기존 operatingWeeks 기반 방식
+    // fallback: 기존 operatingWeeks 기반 방식 (기본 학기 시작일 반영)
     return generateCalendarSchedule(startDateStr, operatingWeeks, effectiveDays, effectiveSessions, holidayDates);
   }, [masterSettings?.operatingStartDate, masterSettings?.operatingEndDate, masterSettings?.allowedDays, masterSettings?.sessionsPerClass, classDays, currentCourse, holidayDates, startDateStr, operatingWeeks]);
 
@@ -717,7 +762,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
         courseId: currentCourse.id,
         studentId,
         sessionNo: sNo,
-        date: day.dateStr,
+        date: day.fullDate || day.dateStr, // yyyy-MM-dd 우선 저장 (버스 selectedDate와 형식 통일)
         status: nextMark === 'X' ? 'ABSENT' : 'ATTEND',
         markSymbol: nextMark,
         isIndividualDismissal: nextMark === 'V',
@@ -752,7 +797,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
           courseId: currentCourse.id,
           studentId: st.studentId,
           sessionNo: sNo,
-          date: day.dateStr,
+          date: day.fullDate || day.dateStr, // yyyy-MM-dd 우선 저장 (버스 selectedDate와 형식 통일)
           status: 'ATTEND',
           markSymbol: 'O',
           isIndividualDismissal: false,
@@ -825,12 +870,27 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
 
     const photoUrl = m?.photoUrl || (s as any)?.photoUrl || (s as any)?.photo || '';
 
+    // [수강 명단 기준 버스 탑승 여부 검증]
+    // 사용자의 핵심 워크플로우 원칙: "출석부는 수강 명단에서 정보를 받아 그대로 보여준다"
+    // enrollment가 명시적으로 미신청('-' 또는 '미신청' 또는 needsBus === false)이거나,
+    // 버스를 신청하지 않은 학생은 스쿨버스 노선(routes)에 다른 노선 배정 데이터가 있더라도 방과후 버스 미탑승으로 처리
+    const isExplicitlyNoBus = Boolean(
+      (enrollment?.kisbusNo && (enrollment.kisbusNo === '-' || enrollment.kisbusNo === '미신청')) ||
+      (enrollment?.afterSchoolBusNo && (enrollment.afterSchoolBusNo === '-' || enrollment.afterSchoolBusNo === '미신청')) ||
+      enrollment?.needsBus === false
+    );
+    const hasBusApplication = Boolean(
+      enrollment?.needsBus === true ||
+      (enrollment?.kisbusNo && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청') ||
+      (enrollment?.afterSchoolBusNo && enrollment.afterSchoolBusNo !== '-' && enrollment.afterSchoolBusNo !== '미신청')
+    );
+
     // [방과후 버스 번호 요일별 매핑 로직]
-    // 1. routes에서 해당 학생의 요일별 AfterSchool 버스 노선 조회
+    // 1. routes에서 해당 학생의 요일별 AfterSchool 버스 노선 조회 (단, 수강명단에서 버스를 신청한 학생만 적용)
     const targetId = s?.id || studentId;
     const busesByDay: Record<string, string> = {}; // { 'Monday': '39A호차', 'Wednesday': '37호차' }
 
-    if (routes && routes.length > 0) {
+    if (!isExplicitlyNoBus && hasBusApplication && routes && routes.length > 0) {
       const assignedRoutes = routes.filter((r) =>
         r.type === 'AfterSchool' &&
         (r.seating || []).some((seat: any) => seat.studentId === targetId)
@@ -868,14 +928,16 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
       afterSchoolBus = Object.values(busesByDay)[0];
     }
 
-    // 3. routes에 없는 경우 enrollment 객체 또는 students/masterStudents fallback
-    if (!afterSchoolBus) {
-      const rawEnroll = (enrollment as any)?.afterSchoolBusNo || (s as any)?.afterSchoolBusNo || '';
-      afterSchoolBus = typeof rawEnroll === 'string' ? rawEnroll : '';
-    }
-    if (!afterSchoolBus && m?.busSummary) {
-      const rawSummary = (m.busSummary as any).afterSchoolBusNo || (m.busSummary as any).afterSchoolBuses || '';
-      afterSchoolBus = typeof rawSummary === 'string' ? rawSummary : '';
+    // 3. routes에 없는 경우 enrollment 객체 또는 students/masterStudents fallback (단, 명시적 미신청이 아닌 경우만)
+    if (!isExplicitlyNoBus && hasBusApplication) {
+      if (!afterSchoolBus) {
+        const rawEnroll = (enrollment as any)?.afterSchoolBusNo || (s as any)?.afterSchoolBusNo || '';
+        afterSchoolBus = typeof rawEnroll === 'string' ? rawEnroll : '';
+      }
+      if (!afterSchoolBus && m?.busSummary) {
+        const rawSummary = (m.busSummary as any).afterSchoolBusNo || (m.busSummary as any).afterSchoolBuses || '';
+        afterSchoolBus = typeof rawSummary === 'string' ? rawSummary : '';
+      }
     }
 
     let busNo = '';
@@ -884,14 +946,17 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
     if (safeBus && safeBus !== '-' && safeBus !== '미신청' && safeBus !== '미배정') {
       busNo = formatStandardBusNo(safeBus);
     } else {
-      // routes에도 없고 fallback도 없으면 → 미탑승
-      const hasAnyRoute = Object.keys(busesByDay).length > 0;
-      if (hasAnyRoute) {
-        // routes에 배정이 있지만 오늘 요일 버스가 없는 경우 (타 요일 배정)
+      // 수강명단에서 버스를 신청하지 않았거나 명시적 미신청이면 무조건 '미탑승'
+      if (isExplicitlyNoBus || !hasBusApplication) {
         busNo = '미탑승';
       } else {
-        const isBusApplied = Boolean(enrollment?.kisbusNo && typeof enrollment.kisbusNo === 'string' && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청');
-        busNo = isBusApplied ? '미배정' : '미탑승';
+        const hasAnyRoute = Object.keys(busesByDay).length > 0;
+        if (hasAnyRoute) {
+          // routes에 배정이 있지만 오늘 요일 버스가 없는 경우 (타 요일 배정)
+          busNo = '미탑승';
+        } else {
+          busNo = '미배정';
+        }
       }
     }
 

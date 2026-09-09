@@ -1799,9 +1799,14 @@ export default function TeacherPage() {
   const afterschoolAbsentStudentIds = useMemo(() => {
     if (selectedRouteType !== 'AfterSchool') return new Set<string>();
     const absentSet = new Set<string>();
-    
+
     (afterschoolAttendanceRecords || []).forEach((r) => {
-      const isDateMatch = r.date === selectedDate || (r.date && selectedDate.endsWith(r.date.split('(')[0].replace('/', '-')));
+      // 1차: yyyy-MM-dd 직접 일치 (신규 저장 형식)
+      // 2차: 구형 MM/DD(요일) 형식 하위 호환 — "09/08(월)" → "09-08" → selectedDate.endsWith("09-08")
+      const legacyPart = r.date ? r.date.split('(')[0].replace('/', '-') : '';
+      const isDateMatch =
+        r.date === selectedDate ||
+        (legacyPart.length === 5 && selectedDate.endsWith(legacyPart));
       if (isDateMatch) {
         if (r.status === 'ABSENT' || r.markSymbol === 'X' || r.isIndividualDismissal === true || r.markSymbol === 'V') {
           absentSet.add(r.studentId);

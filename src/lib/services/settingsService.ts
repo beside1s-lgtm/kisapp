@@ -253,19 +253,44 @@ export function onAfterschoolTimerUpdate(callback: (config: import('@/lib/afters
   });
 }
 
-export function onAfterschoolCoursesUpdate(callback: (courses: import('@/lib/afterschool/types').Course[]) => void): () => void {
+export function onAfterschoolCoursesUpdate(
+  callback: (courses: import('@/lib/afterschool/types').Course[]) => void,
+  onError?: (error: Error) => void
+): () => void {
   const colRef = collection(getDb(), 'afterschool_courses');
-  return onSnapshot(colRef, (snap) => {
-    if (snap.empty) {
+  return onSnapshot(
+    colRef,
+    (snap) => {
+      if (snap.empty) {
+        callback([]);
+      } else {
+        const list = snap.docs.map(d => ({
+          id: d.id,
+          ...(d.data() as any)
+        } as import('@/lib/afterschool/types').Course));
+        callback(list.sort((a, b) => (a.id || '').localeCompare(b.id || '')));
+      }
+    },
+    (err) => {
+      console.warn('[settingsService] onAfterschoolCoursesUpdate error:', err);
+      if (onError) onError(err);
       callback([]);
-    } else {
-      const list = snap.docs.map(d => ({
-        id: d.id,
-        ...(d.data() as any)
-      } as import('@/lib/afterschool/types').Course));
-      callback(list.sort((a, b) => (a.id || '').localeCompare(b.id || '')));
     }
-  });
+  );
+}
+
+export async function getAfterschoolCoursesDirectly(): Promise<import('@/lib/afterschool/types').Course[]> {
+  try {
+    const colRef = collection(getDb(), 'afterschool_courses');
+    const snap = await getDocs(colRef);
+    if (snap.empty) return [];
+    return snap.docs
+      .map(d => ({ id: d.id, ...(d.data() as any) } as import('@/lib/afterschool/types').Course))
+      .sort((a, b) => (a.id || '').localeCompare(b.id || ''));
+  } catch (err) {
+    console.warn('[settingsService] getAfterschoolCoursesDirectly error:', err);
+    return [];
+  }
 }
 
 export async function updateAfterschoolCourse(courseId: string, data: Partial<import('@/lib/afterschool/types').Course>): Promise<void> {
@@ -279,19 +304,30 @@ export async function deleteAfterschoolCourse(courseId: string): Promise<void> {
   await deleteDoc(docRef);
 }
 
-export function onAfterschoolEnrollmentsUpdate(callback: (enrollments: import('@/lib/afterschool/types').Enrollment[]) => void): () => void {
+export function onAfterschoolEnrollmentsUpdate(
+  callback: (enrollments: import('@/lib/afterschool/types').Enrollment[]) => void,
+  onError?: (error: Error) => void
+): () => void {
   const colRef = collection(getDb(), 'afterschool_enrollments');
-  return onSnapshot(colRef, (snap) => {
-    if (snap.empty) {
+  return onSnapshot(
+    colRef,
+    (snap) => {
+      if (snap.empty) {
+        callback([]);
+      } else {
+        const list = snap.docs.map(d => ({
+          id: d.id,
+          ...(d.data() as any)
+        } as import('@/lib/afterschool/types').Enrollment));
+        callback(list);
+      }
+    },
+    (err) => {
+      console.warn('[settingsService] onAfterschoolEnrollmentsUpdate error:', err);
+      if (onError) onError(err);
       callback([]);
-    } else {
-      const list = snap.docs.map(d => ({
-        id: d.id,
-        ...(d.data() as any)
-      } as import('@/lib/afterschool/types').Enrollment));
-      callback(list);
     }
-  });
+  );
 }
 
 export async function saveAfterschoolEnrollment(enrollment: import('@/lib/afterschool/types').Enrollment): Promise<void> {

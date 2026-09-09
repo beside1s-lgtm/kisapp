@@ -178,9 +178,17 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       return { isBusApplied: false, zone: '미신청', fare: 0, destinationName: '미신청', isSaturday: true };
     }
 
-    // 3. 평일 방과후 강좌: 기존 등하교 버스 대상자이거나 needsBus === true 또는 kisbusNo가 있는 경우 신청으로 간주
-    const isRegularRider = Boolean(busInfo?.busNo && busInfo.busNo !== '-' && busInfo.busNo !== '미신청');
-    const isWeekdayApplied = isRegularRider || enrollment.needsBus === true || (enrollment.kisbusNo && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청');
+    // 3. 평일 방과후 강좌: 명시적 버스 신청(needsBus, kisbusNo, afterSchoolBusNo) 또는
+    //    실제 AfterSchool 노선 좌석 배정 여부로만 판단.
+    //    등하교 버스(isRegularRider)는 방과후 버스 신청 여부와 무관하므로 단독 판단 기준에서 제외.
+    const hasAfterSchoolRouteAssignment = Boolean(
+      busInfo && Object.keys(busInfo.afterSchoolBusesByDay || {}).length > 0
+    );
+    const isWeekdayApplied =
+      enrollment.needsBus === true ||
+      (enrollment.kisbusNo && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청') ||
+      (enrollment.afterSchoolBusNo && enrollment.afterSchoolBusNo !== '-' && enrollment.afterSchoolBusNo !== '미신청') ||
+      hasAfterSchoolRouteAssignment;
 
     if (!isSaturdayCourse && !isWeekdayApplied) {
       return { isBusApplied: false, zone: '미신청', fare: 0, destinationName: '미신청', isSaturday: false };
@@ -718,10 +726,26 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     }
 
     const courseEnrollmentsList = enrollments.filter(e => e.courseId === targetCourse.id);
+
+    // 채우기 버튼 미사용 시에도 이름+학년+반으로 kisbus students에서 ID 자동 매칭
+    const cleanStr = (s: any) => String(s || '').replace(/\s+/g, '').toLowerCase();
+    const autoMatchedStudent = selectedStudentToRegister || (studentsList && studentsList.length > 0
+      ? (studentsList.find(s =>
+          cleanStr(s.name) === cleanStr(regName.trim()) &&
+          Number(s.grade) === Number(regGrade) &&
+          Number(s.class) === Number(regClassNum) &&
+          (regStudentNum ? Number((s as any).studentNum || s.number) === Number(regStudentNum) : true)
+        ) || studentsList.find(s =>
+          cleanStr(s.name) === cleanStr(regName.trim()) &&
+          Number(s.grade) === Number(regGrade) &&
+          Number(s.class) === Number(regClassNum)
+        ))
+      : null);
+
     const newEnrollment: Enrollment = {
       id: `e_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       courseId: targetCourse.id,
-      studentId: selectedStudentToRegister?.id || `st_${Date.now()}`,
+      studentId: autoMatchedStudent?.id || `st_${Date.now()}`,
       yearNo: courseEnrollmentsList.length + 1,
       grade: Number(regGrade) || 1,
       classNum: Number(regClassNum) || 1,

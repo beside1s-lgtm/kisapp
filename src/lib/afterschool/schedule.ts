@@ -49,8 +49,15 @@ export function extractHolidayDatesFromEvents(events: Array<any> = []): string[]
   return Array.from(holidaySet).sort();
 }
 
+export function getDefaultSemesterStartDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth() + 1;
+  return (m >= 8 || m === 1) ? `${y}-08-24` : `${y}-03-02`;
+}
+
 export function generateCalendarSchedule(
-  startDateStr: string = '2026-03-30',
+  startDateStr: string = getDefaultSemesterStartDate(),
   operatingWeeks: number = 10,
   classDays: string[] = ['월'],
   sessionsPerClass: number = 2,
@@ -66,7 +73,7 @@ export function generateCalendarSchedule(
 
   let start = new Date(startDateStr.replace(' ', 'T'));
   if (isNaN(start.getTime())) {
-    start = new Date('2026-03-30');
+    start = new Date(getDefaultSemesterStartDate());
   }
 
   let current = new Date(start);

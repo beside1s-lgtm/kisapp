@@ -195,3 +195,42 @@
 2. **관리자 토글 변경 시 세션 상태 실시간 동기화**:
    - 시스템 설정의 사용자 관리 탭에서 특정 계정의 `isAdmin` 스위치를 변경할 때, 현재 로그인한 사용자 본인의 계정이면 `updateProfile({ isAdmin: checked })`를 즉시 호출하여 헤더의 설정 톱니바퀴 아이콘 및 관리자 메뉴가 페이지 새로고침 없이 즉각 동기화되도록 보장한다.
    - 설정 모달 열림 시(`isOpen === true`) 사용자 목록(`fetchUsers(true)`)을 강제 무효화하여 최신 Firestore 값을 온전히 반영한다.
+
+## 방과후 공식 출석부 인쇄 레이아웃 규칙
+
+1. **30명 초과 시 2페이지 분리 원칙 (잘림 원천 차단)**:
+   - `OfficialAttendanceSheet.tsx`는 `students.length > 30`(ROWS_PER_PAGE)일 때 자동으로 2페이지로 분리한다.
+   - 1페이지(1~30번), 2페이지(31번~)에 동일한 제목 + 지도교사 영역을 렌더링하고, 일련번호는 연속으로 이어진다.
+   - CSS: `attendance-page-block { height: 277mm; page-break-after: always }`, 마지막 블록은 `page-break-after: avoid`.
+   - `overflow: hidden + max-height` 구속은 단일 페이지 전용 클래스(`attendance-page-single`)에만 적용하며, 다중 페이지 래퍼에는 `overflow: visible`을 적용한다.
+
+2. **출석부 인쇄 시 React Portal 필수 사용 원칙**:
+   - `OfficialAttendanceSheet`는 반드시 `createPortal(content, document.body)`로 body 직속 자식으로 렌더링한다.
+   - 이유: admin UI 레이아웃이 `visibility: hidden`으로 숨겨도 공간을 점유하여 빈 페이지가 발생하고, `position: fixed`는 인쇄 시 모든 페이지에 반복 렌더링되기 때문.
+   - Print CSS는 `body > *:not(.oas-modal-overlay) { display: none }`으로 admin UI 레이아웃 공간까지 완전 제거하고, 모달 오버레이는 `position: static`으로 정상 흐름에 배치하여 `page-break-after`가 동작하도록 한다.
+   - SSR 가드: `const [mounted, setMounted] = useState(false); useEffect(() => setMounted(true), []);`로 클라이언트 마운트 후에만 portal 렌더링.
+
+3. **출석부 상단 여백은 콘텐츠 내부 패딩으로만 조정**:
+   - `position: absolute; top: Nmm` 방식으로 인쇄 영역 전체를 이동하면 `max-height`와의 합산 초과로 하단 행이 잘린다.
+   - 제목 div의 `pt-[Nmm]`으로 내부 여백만 조정하고, 박스 크기는 건드리지 않는다.
+
+4. **지도교사 영역 정렬 및 서명 배치 표준**:
+   - 제목: 가운데 정렬(`text-center`).
+   - 지도교사: 우측 정렬(`justify-end`), 각 강사 이름 바로 옆에 도장(`OfficialSeal`)을 쌍으로 배치.
+   - 보조강사 구분 없이 전체를 `allInstructors = [mainInstructor, ...assistantInstructors]`로 통합하여 단일 라인에 나열.
+
+## 방과후 강사 출근부 다중 강사 레이아웃 규칙
+
+1. **출근부 열 폭 비율 표준 (4인 서명 가로 배치 보장)**:
+   - `OfficialWorkRegister.tsx`의 출근부 표 열 폭은 차시 9% · 날짜 13% · 서명 28% (합계 50%, 좌우 동일).
+   - 서명 칸 28% = 190mm 기준 53.2mm → 11mm 도장 4개 + 간격 4.5mm = 48.5mm → 한 줄 배치 가능.
+   - 차시/날짜 폰트는 13px, 행 높이는 44px(11.6mm)로 유지하여 11mm 도장이 행을 넘치지 않도록 한다.
+
+2. **강사 4명 이상 시 메타 정보 표 이름 2명씩 줄바꿈**:
+   - `강사` 셀에서 `allCourseInstructors.length >= 4`이면 `slice(0,2)` 1행 + `slice(2)` 2행으로 분리 렌더링.
+   - 3명 이하는 기존대로 한 줄 표기.
+
+3. **`WorkRegisterSeal` 크기 표준**:
+   - 이미지 서명: `maxWidth: 12mm, maxHeight: 11mm`.
+   - 원형 직인: `width/height: 11mm`.
+   - 출근부 행 높이 44px 기준 내에서 4인이 가로로 배치되도록 설계.

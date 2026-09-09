@@ -27,7 +27,19 @@ import {
 } from '@/lib/afterschool/mock/data';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Classroom, SubmittedApprovalDoc, SessionPeriod } from '@/lib/afterschool/types';
-import { onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsUpdate, onAttendanceRecordsUpdate, saveAttendanceRecordsBatch, onAfterschoolClassroomsUpdate, onAfterschoolApprovalDocsUpdate, getTeacherApplySettings, saveTeacherApplySettings, onTeacherApplySettingsUpdate } from '@/lib/services/settingsService';
+import {
+  onAfterschoolCoursesUpdate,
+  getAfterschoolCoursesDirectly,
+  onAfterschoolEnrollmentsUpdate,
+  onAttendanceRecordsUpdate,
+  saveAttendanceRecordsBatch,
+  onAfterschoolClassroomsUpdate,
+  onAfterschoolApprovalDocsUpdate,
+  getTeacherApplySettings,
+  saveTeacherApplySettings,
+  onTeacherApplySettingsUpdate,
+  getOrgStructure,
+} from '@/lib/services/settingsService';
 import { onMasterStudentsUpdate } from '@/lib/services/masterStudentService';
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import { getUsersDirectory } from '@/lib/services/userService';
@@ -79,8 +91,9 @@ function AfterschoolConsole() {
   const queryCourseId = searchParams.get('courseId');
   const { user, profile } = useAuth();
   const { t } = useTranslation();
+  const [isAfterschoolManager, setIsAfterschoolManager] = useState(false);
 
-  // 관리자 권한 확인 (강사 로그인 불가 시 대리 출석체크 권한 부여)
+  // 관리자 권한 확인 (시스템 관리자, 학교 리더십, 또는 조직도에 등록된 방과후학교 담당자)
   const isAdmin = Boolean(
     profile?.isAdmin === true ||
     profile?.role === 'admin' ||
@@ -88,23 +101,25 @@ function AfterschoolConsole() {
     profile?.role === '부장' ||
     profile?.role === '교감' ||
     profile?.role === '교장' ||
+    isAfterschoolManager ||
     user?.email?.toLowerCase() === 'beside1s@kshcm.net'
   );
 
   const [activeTab, setActiveTab] = useState<string>('course');
 
   // Shared States
-  const [courses, setCourses] = useState<import('@/lib/afterschool/types').Course[]>(initialCourses);
-  const [studentsList, setStudentsList] = useState<any[]>(initialStudents);
+  const [courses, setCourses] = useState<import('@/lib/afterschool/types').Course[]>([]);
+  const [isLoadingCourses, setIsLoadingCourses] = useState<boolean>(true);
+  const [studentsList, setStudentsList] = useState<any[]>([]);
   const [routes, setRoutes] = useState<any[]>([]);
   const [buses, setBuses] = useState<any[]>([]);
-  const [enrollments, setEnrollments] = useState<import('@/lib/afterschool/types').Enrollment[]>(initialEnrollments);
-  const [attendanceRecords, setAttendanceRecords] = useState<import('@/lib/afterschool/types').AttendanceRecord[]>(initialAttendance);
-  const [classrooms, setClassrooms] = useState<Classroom[]>(initialClassrooms);
+  const [enrollments, setEnrollments] = useState<import('@/lib/afterschool/types').Enrollment[]>([]);
+  const [attendanceRecords, setAttendanceRecords] = useState<import('@/lib/afterschool/types').AttendanceRecord[]>([]);
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   
   // 차시별 수강료 고정 금액 설정
   const [tuitionPerSession] = useState<number>(15000);
-  const [periods, setPeriods] = useState<SessionPeriod[]>(initialPeriods);
+  const [periods, setPeriods] = useState<SessionPeriod[]>([]);
   const [schoolTeachers, setSchoolTeachers] = useState<UserProfile[]>([]);
 
   useEffect(() => {
@@ -130,15 +145,52 @@ function AfterschoolConsole() {
   }, [user?.email]);
 
   // Firestore DB 실시간 연동 (강좌, 수강신청, 출석, 스쿨버스 노선/학생/버스)
+  // isSavingRef: 출석 저장 중에는 snapshot으로 인한 로컬 state 덮어쓰기 차단
+  const isSavingRef = useRef(false);
+
   useEffect(() => {
+    let isMounted = true;
+
+    // 안전 타임아웃: Firestore 연결 지연 또는 스냅샷 지연 시에도 최대 1200ms 후 무조건 로딩 해제 (무한 로딩 원천 차단)
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) {
+        setIsLoadingCourses(false);
+      }
+    }, 1200);
+
+    // 1회 직접 페치 병행 (캐시/서버로부터 snapshot보다 빠르게 1차 수신)
+    getAfterschoolCoursesDirectly().then(list => {
+      if (isMounted && list && list.length > 0) {
+        setCourses(list);
+        setIsLoadingCourses(false);
+        clearTimeout(safetyTimer);
+      }
+    }).catch(err => console.warn('[AfterschoolConsole] getAfterschoolCoursesDirectly error:', err));
+
     const unsubCourses = onAfterschoolCoursesUpdate((data) => {
-      if (data && data.length > 0) setCourses(data);
+      if (!isMounted) return;
+      if (data && data.length > 0) {
+        setCourses(data);
+      } else {
+        setCourses(prev => (prev && prev.length > 0 ? prev : (initialCourses || [])));
+      }
+      setIsLoadingCourses(false);
+      clearTimeout(safetyTimer);
+    }, (err) => {
+      if (!isMounted) return;
+      console.warn('[AfterschoolConsole] courses update error:', err);
+      setIsLoadingCourses(false);
+      clearTimeout(safetyTimer);
     });
     const unsubEnrollments = onAfterschoolEnrollmentsUpdate((data) => {
       if (data && data.length > 0) setEnrollments(data);
     });
     const unsubAttendance = onAttendanceRecordsUpdate((data) => {
-      if (data && data.length > 0) setAttendanceRecords(data);
+      // 저장 중(isSavingRef.current === true)에는 snapshot이 와도 로컬 state를 덮어쓰지 않음.
+      // 저장이 완료된 뒤 Firestore에서 오는 최신 데이터만 반영하여 체크 풀림 방지.
+      if (!isSavingRef.current && data && data.length > 0) {
+        setAttendanceRecords(data);
+      }
     });
     const unsubClassrooms = onAfterschoolClassroomsUpdate((data) => {
       if (data && data.length > 0) setClassrooms(data);
@@ -156,6 +208,8 @@ function AfterschoolConsole() {
       if (list) setBuses(list);
     });
     return () => {
+      isMounted = false;
+      clearTimeout(safetyTimer);
       unsubCourses();
       unsubEnrollments();
       unsubAttendance();
@@ -168,24 +222,52 @@ function AfterschoolConsole() {
   }, []);
 
   // 출석 변경 시 Firestore 저장 핸들러
-  const handleSaveAttendance = async (
+  // isSavingRef.current = true 동안은 snapshot 리스너가 로컬 state를 덮어쓰지 않음
+  // saveDebounceRef: 연속 체크 시 300ms 디바운스로 마지막 상태만 저장 (write stream exhausted 방지)
+  const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<{
+    next: import('@/lib/afterschool/types').AttendanceRecord[];
+    base: import('@/lib/afterschool/types').AttendanceRecord[];
+  } | null>(null);
+
+  const handleSaveAttendance = (
     nextRecords: import('@/lib/afterschool/types').AttendanceRecord[],
     prevRecords: import('@/lib/afterschool/types').AttendanceRecord[]
   ) => {
-    // 새로 추가/변경된 레코드 upsert
-    const toUpsert = nextRecords.filter(r => {
-      const prev = prevRecords.find(p => p.id === r.id);
-      return !prev || JSON.stringify(prev) !== JSON.stringify(r);
-    });
-    // 삭제된 레코드 id
-    const toDeleteIds = prevRecords
-      .filter(p => !nextRecords.some(r => r.id === p.id))
-      .map(p => p.id);
-    if (toUpsert.length > 0 || toDeleteIds.length > 0) {
-      await saveAttendanceRecordsBatch(toUpsert, toDeleteIds).catch(err =>
-        console.error('[Attendance] Firestore 저장 오류:', err)
-      );
-    }
+    // 이전에 예약된 저장이 있으면 취소하고 base(최초 prev)를 유지하여 diff 누락 방지
+    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+    pendingSaveRef.current = {
+      next: nextRecords,
+      base: pendingSaveRef.current?.base ?? prevRecords, // 최초 prev 기준 유지
+    };
+
+    saveDebounceRef.current = setTimeout(async () => {
+      const pending = pendingSaveRef.current;
+      pendingSaveRef.current = null;
+      if (!pending) return;
+
+      const { next, base } = pending;
+      const toUpsert = next.filter(r => {
+        const orig = base.find(p => p.id === r.id);
+        return !orig || JSON.stringify(orig) !== JSON.stringify(r);
+      });
+      const toDeleteIds = base
+        .filter(p => !next.some(r => r.id === p.id))
+        .map(p => p.id);
+
+      if (toUpsert.length > 0 || toDeleteIds.length > 0) {
+        isSavingRef.current = true;
+        try {
+          await saveAttendanceRecordsBatch(toUpsert, toDeleteIds);
+        } catch (err) {
+          console.error('[Attendance] Firestore 저장 오류:', err);
+        } finally {
+          // 저장 완료 후 500ms 뒤 잠금 해제 — Firestore snapshot echo가 먼저 오더라도 무시하고
+          // 그 이후의 snapshot(외부 변경)은 정상 반영
+          setTimeout(() => { isSavingRef.current = false; }, 500);
+        }
+      }
+    }, 300); // 300ms 내 연속 체크는 묶어서 한 번만 저장
   };
 
   // Selected course for Student Management
@@ -205,6 +287,14 @@ function AfterschoolConsole() {
     getTeacherApplySettings().then(s => {
       if (s?.afterschoolStageStatus) setStageStatus(s.afterschoolStageStatus);
     });
+    getOrgStructure().then(orgData => {
+      const emailLower = (profile?.email || user?.email || '').toLowerCase();
+      const afterschoolManagers = orgData?.afterschoolManagers || (orgData?.afterschoolManager ? [orgData.afterschoolManager] : []);
+      if (afterschoolManagers.some((m: string) => m.toLowerCase() === emailLower)) {
+        setIsAfterschoolManager(true);
+      }
+    }).catch(err => console.warn('[AfterschoolConsole] Failed to load orgStructure:', err));
+
     const unsubStage = onTeacherApplySettingsUpdate(s => {
       if (s?.afterschoolStageStatus) setStageStatus(s.afterschoolStageStatus);
     });
@@ -215,7 +305,7 @@ function AfterschoolConsole() {
       unsubStage();
       unsubMaster();
     };
-  }, []);
+  }, [profile?.email, user?.email]);
 
   const handleToggleStageStatus = async () => {
     const nextStatus = stageStatus === 'OPERATING' ? 'CLOSED' : stageStatus === 'CLOSED' ? 'RECRUITING' : 'OPERATING';
@@ -226,9 +316,23 @@ function AfterschoolConsole() {
     }
   };
 
-  const handleSelectCourseForStudent = (courseId: string) => {
+  const userSelectedCourseIdRef = useRef<string | null>(null);
+
+  const handleSelectCourse = (courseId: string) => {
+    userSelectedCourseIdRef.current = courseId;
     setSelectedCourseId(courseId);
     setActiveSubTab('studentSheet');
+    try {
+      const params = new URLSearchParams(window.location.search);
+      params.set('courseId', courseId);
+      router.replace(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+    } catch {
+      // browser environment fallback
+    }
+  };
+
+  const handleSelectCourseForStudent = (courseId: string) => {
+    handleSelectCourse(courseId);
   };
 
   const myName = (profile?.name || user?.displayName || '').trim();
@@ -252,13 +356,8 @@ function AfterschoolConsole() {
   }, [courses, myName, myUid]);
 
   const teacherCourses = useMemo(() => {
-    // 강사 직책인 경우: 오직 본인의 담당 강좌만 노출 (타 강좌 및 관리자/전체 fallback 완전 차단)
-    const isInstructor = profile?.role === '강사';
-    if (isInstructor) {
-      return myOwnCourses;
-    }
-
-    // 관리자는 전체 강좌를 열람할 수 있으나, 본인 담당 강좌가 있다면 최상단에 먼저 배치
+    // 1. 관리자 권한이 있는 경우 (시스템 관리자, 학교 리더십, 방과후 담당자):
+    //    전체 강좌 출석부를 열람하고 대리 출석체크할 수 있으며, 본인 담당 강좌가 있다면 최상단에 먼저 배치
     if (isAdmin) {
       const otherCourses = courses.filter(c => !myOwnCourses.some(mc => mc.id === c.id));
       const sortedOthers = [...otherCourses].sort((a, b) => {
@@ -269,6 +368,15 @@ function AfterschoolConsole() {
       });
       return [...myOwnCourses, ...sortedOthers];
     }
+
+    // 2. 순수 외부 강사(직책: '강사', 관리자 권한 없음):
+    //    오직 본인의 담당 강좌만 노출 (타 강좌 및 관리자/전체 fallback 완전 차단)
+    const isInstructor = profile?.role === '강사';
+    if (isInstructor) {
+      return myOwnCourses;
+    }
+
+    // 3. 일반 교사: 본인 강좌가 있으면 본인 강좌, 없으면 전체 강좌
     if (myOwnCourses.length > 0) return myOwnCourses;
     return courses;
   }, [courses, myOwnCourses, isAdmin, profile?.role]);
@@ -291,19 +399,28 @@ function AfterschoolConsole() {
   const hasAutoSelectedCourseRef = useRef(false);
 
   useEffect(() => {
-    // 1순위: URL 파라미터로 지정된 강좌가 있으면 최우선 선택
-    if (queryCourseId && courses.some(c => c.id === queryCourseId)) {
+    // 0. 사용자가 수동으로 특정 강좌를 직접 선택한 경우, 자동 선택 로직으로 덮어쓰지 않음
+    if (userSelectedCourseIdRef.current) {
+      if (selectedCourseId !== userSelectedCourseIdRef.current) {
+        setSelectedCourseId(userSelectedCourseIdRef.current);
+      }
+      return;
+    }
+
+    // 1순위: URL 파라미터(queryCourseId)로 지정된 강좌가 목록에 존재하는 경우
+    if (queryCourseId && myCourses.some(c => c.id === queryCourseId)) {
       setSelectedCourseId(queryCourseId);
       setActiveSubTab('studentSheet');
       hasAutoSelectedCourseRef.current = true;
       return;
     }
 
-    // 이미 유효한 강좌를 보고 있다면 유지
+    // 이미 한 번 자동 선택을 완료했고 현재 선택된 강좌가 내 강좌 목록에 유효하게 존재한다면 유지
     if (hasAutoSelectedCourseRef.current && selectedCourseId && myCourses.some(c => c.id === selectedCourseId)) {
       return;
     }
 
+    // 초기 1회 자동 선택:
     // 2순위: 로그인한 교사의 본인 담당 강좌가 있다면 그 강좌를 기본으로 선택!
     if (myOwnCourses.length > 0) {
       setSelectedCourseId(myOwnCourses[0].id);
@@ -318,7 +435,7 @@ function AfterschoolConsole() {
       setActiveSubTab('studentSheet');
       hasAutoSelectedCourseRef.current = true;
     }
-  }, [myCourses, myOwnCourses, selectedCourseId, queryCourseId, courses]);
+  }, [myCourses, myOwnCourses, queryCourseId, selectedCourseId]);
 
   // 진행 상태 뱃지 컴포넌트 (모바일에서는 완전히 숨기고 큰 디스플레이에서만 노출)
   const renderStageStatusBadge = (extraCls?: string) => (
@@ -361,17 +478,26 @@ function AfterschoolConsole() {
 
   // 데스크톱 전용 강좌 선택 셀렉트
   const renderCourseSelect = (triggerClassName?: string) => {
+    if (isLoadingCourses) {
+      return (
+        <div className={cn("h-7.5 bg-slate-100 border border-slate-200 rounded-lg flex items-center px-2.5 gap-1.5 text-xs text-slate-400 animate-pulse", triggerClassName)}>
+          <Loader2 className="w-3 h-3 animate-spin text-slate-400" />
+          <span>{t('common.loading', '강좌 로딩 중…')}</span>
+        </div>
+      );
+    }
     if (myCourses.length === 0) return null;
     return (
       <Select
         value={selectedCourseId}
         onValueChange={(val) => {
-          setSelectedCourseId(val);
-          setActiveSubTab('studentSheet');
+          handleSelectCourse(val);
         }}
       >
-        <SelectTrigger className={cn("h-7.5 text-xs bg-white border-slate-300 font-bold px-2 rounded-lg shadow-2xs text-slate-800", triggerClassName)}>
-          <SelectValue placeholder={t('teacher_afterschool.select_course', '강좌 선택')} />
+        <SelectTrigger className={cn("h-7.5 text-xs bg-white border-slate-300 font-bold px-2 rounded-lg shadow-2xs text-slate-800 flex items-center justify-between gap-1 overflow-hidden [&>svg]:shrink-0", triggerClassName)}>
+          <span className="truncate text-left min-w-0 flex-1">
+            {selectedCourseFullTitle}
+          </span>
         </SelectTrigger>
         <SelectContent className="max-h-80">
           {myCourses.map(c => {
@@ -400,13 +526,20 @@ function AfterschoolConsole() {
 
   // 모바일 전용 강좌 선택 셀렉트 (언어 선택 버튼 직전까지 100% 꽉 차게 확장 및 CSS 말줄임)
   const renderCourseSelectMobile = () => {
+    if (isLoadingCourses) {
+      return (
+        <div className="h-8 bg-slate-100 border border-slate-200 rounded-lg flex items-center px-2.5 gap-1.5 text-xs text-slate-400 w-full animate-pulse">
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400 shrink-0" />
+          <span className="truncate">{t('common.loading', '강좌 로딩 중…')}</span>
+        </div>
+      );
+    }
     if (myCourses.length === 0) return null;
     return (
       <Select
         value={selectedCourseId}
         onValueChange={(val) => {
-          setSelectedCourseId(val);
-          setActiveSubTab('studentSheet');
+          handleSelectCourse(val);
         }}
       >
         <SelectTrigger className="h-8 text-xs bg-white border-slate-300 font-bold px-2 w-full min-w-0 max-w-full rounded-lg shadow-2xs text-slate-800 flex items-center justify-between gap-1 overflow-hidden [&>svg]:shrink-0">
@@ -559,7 +692,15 @@ function AfterschoolConsole() {
       contentClassName="p-2 sm:p-3 pt-1.5 sm:pt-2"
     >
       <div className="max-w-7xl mx-auto space-y-2.5">
-        {activeSubTab === 'course' ? (
+        {isLoadingCourses ? (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 flex flex-col items-center justify-center min-h-[360px] gap-3 text-slate-500">
+            <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+            <div className="text-center">
+              <p className="text-sm font-bold text-slate-800">{t('common.loading', '출석부 데이터를 불러오는 중입니다…')}</p>
+              <p className="text-xs text-slate-400 mt-0.5">강좌 및 수강생 정보를 동기화하고 있습니다.</p>
+            </div>
+          </div>
+        ) : activeSubTab === 'course' ? (
           <div className="space-y-2">
             <div className="flex items-center justify-between bg-indigo-50/70 border border-indigo-200/80 px-3.5 py-2 rounded-xl text-xs text-indigo-900">
               <span className="font-bold flex items-center gap-1.5">
@@ -596,9 +737,12 @@ function AfterschoolConsole() {
             enrollments={myEnrollments}
             attendanceRecords={myAttendanceRecords}
             setAttendanceRecords={(updater) => {
+              // React setState updater는 순수해야 하므로 async side-effect를 분리
+              // prev를 먼저 읽어 next를 계산한 뒤, setState와 Firestore 저장을 독립 실행
               setAttendanceRecords(prev => {
                 const next = typeof updater === 'function' ? updater(prev) : updater;
-                handleSaveAttendance(next, prev);
+                // 저장은 다음 microtask로 분리 (updater 밖에서 실행)
+                Promise.resolve().then(() => handleSaveAttendance(next, prev));
                 return next;
               });
             }}
