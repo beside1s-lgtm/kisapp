@@ -299,5 +299,18 @@
    - 공식 출석부(`OfficialAttendanceSheet`), 강사 출근부(`OfficialWorkRegister`), 사이드바 및 결재함 본인 강좌 필터링에서도 6명 전체 강사를 누락 없이 검증 및 표출한다.
 
 
+## UI 컴포넌트 Radix Dialog + Popover 포커스 트랩 원칙
 
+1. **Dialog 내부 Popover/Combobox 포커스 트랩 해결**:
+   - Radix UI `Dialog` 컴포넌트 내부에서 `Popover` 기반 컴포넌트(Combobox, Command, DatePicker 등)를 사용할 때 Dialog의 포커스 트랩(focus trap)으로 인해 팝오버가 열리지 않는 현상이 발생할 수 있다.
+   - 이를 해결하려면 `Popover` 컴포넌트에 `modal={true}` prop을 명시하여 팝오버가 독립적인 포커스 레이어에서 동작하도록 강제한다.
+   - `Combobox` 등 공용 컴포넌트에는 `modal?: boolean` prop을 추가하고, Dialog 내부에서 사용 시 `modal={true}`로 전달한다.
+
+## 스쿨버스 신규 학생 추가 원칙
+
+1. **통합 계정 명단 기반 학생 추가 필수**:
+   - 스쿨버스 관리자(`/admin/bus`)에서 새 학생을 스쿨버스 명단에 추가할 때, 직접 정보를 수기 입력하는 방식을 허용하지 않는다.
+   - 반드시 통합 학생 마스터(`master_students`) 계정 명단에서 이름/이메일 검색 및 학년 필터로 학생을 찾아 선택한 뒤 kisbus `students` 컬렉션에 연동 등록하는 방식을 사용한다.
+   - 이미 kisbus에 등록된 학생(`studentEmail` 또는 `이름+학년+반` 복합 키 중복)은 검색 결과에서 자동 제외하여 중복 등록을 원천 차단한다.
+   - 학생 추가 시 `studentEmail`을 포함하여 저장함으로써 이후 통합 계정과의 자동 매핑이 가능하도록 보장한다.
 

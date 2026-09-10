@@ -26,15 +26,16 @@ interface ComboboxProps {
     onSelect: (value: string | null) => void;
     placeholder?: string;
     disabled?: boolean;
+    modal?: boolean;
 }
 
-export function Combobox({ options, value, onSelect, placeholder = "Select an option", disabled }: ComboboxProps) {
+export function Combobox({ options, value, onSelect, placeholder = "Select an option", disabled, modal = false }: ComboboxProps) {
   const [open, setOpen] = React.useState(false)
 
   const selectedOption = options.find((option) => option.value === value);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={modal}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"

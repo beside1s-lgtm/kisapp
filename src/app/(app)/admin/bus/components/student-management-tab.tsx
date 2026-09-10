@@ -7,6 +7,8 @@ import {
     addStudent, addDestinationsInBatch, getDestinations, updateRoute
 } from '@/lib/kisbus';
 import type { Bus, Student, Route, Destination, DayOfWeek, RouteType, SeatingAssignment, NewStudent, AfterSchoolClass, Teacher } from '@/lib/kisbus/types';
+import { getAllMasterStudents } from '@/lib/services/masterStudentService';
+import type { MasterStudent } from '@/lib/types/masterStudent';
 import { BusSeatMap, getLayoutInfo } from '@/components/bus/bus-seat-map';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -156,10 +158,12 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
     const [afterSchoolTargetDay, setAfterSchoolTargetDay] = useState<DayOfWeek>('Monday');
 
     const [isAddStudentDialogOpen, setIsAddStudentDialogOpen] = useState(false);
-    const [newStudent, setNewStudent] = useState<Partial<NewStudent>>({
-        name: '', grade: '', class: '', number: '', gender: 'Male', contact: '',
-        afterSchoolDestinations: {}, applicationStatus: 'reviewed'
-    });
+    // 통합 계정 검색 기반 학생 추가
+    const [masterStudentSearchQuery, setMasterStudentSearchQuery] = useState('');
+    const [masterStudentSearchResults, setMasterStudentSearchResults] = useState<MasterStudent[]>([]);
+    const [masterStudentSearchLoading, setMasterStudentSearchLoading] = useState(false);
+    const [selectedMasterStudent, setSelectedMasterStudent] = useState<MasterStudent | null>(null);
+    const [masterGradeFilter, setMasterGradeFilter] = useState('');
 
     const selectedBus = useMemo(() => buses.find(b => b.id === selectedBusId), [buses, selectedBusId]);
     const currentRoute = useMemo(() => routes.find(r => r.busId === selectedBusId && r.dayOfWeek === selectedDay && r.type === selectedRouteType), [routes, selectedBusId, selectedDay, selectedRouteType]);
@@ -833,24 +837,78 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
         catch (error) { toast({ title: t('error'), description: t('admin.student_management.seat.copy.error'), variant: "destructive" }); }
     }, [currentRoute, routes, daysToCopySeatingTo, routeTypesToCopySeatingTo, copyScope, selectedDay, selectedRouteType, semesterMode, t, dayOrder]);
 
-    const handleManualAddStudent = async () => {
-        if (!newStudent.name || !newStudent.grade || !newStudent.class) {
-            toast({ title: t('error'), description: t('admin.student_management.add_student.validation_error'), variant: 'destructive' });
+    // 통합 계정 명단 검색 핸들러
+    const handleMasterStudentSearch = useCallback(async () => {
+        const q = masterStudentSearchQuery.trim();
+        if (!q && !masterGradeFilter) {
+            setMasterStudentSearchResults([]);
+            return;
+        }
+        setMasterStudentSearchLoading(true);
+        try {
+            const all = await getAllMasterStudents();
+            const existingEmails = new Set(students.map(s => (s.studentEmail || '').toLowerCase().trim()));
+            const existingNames = new Set(students.map(s => `${s.nameKo || s.name || ''}_${s.grade}_${s.class}`));
+
+            const filtered = all.filter(ms => {
+                // 이미 kisbus에 등록된 학생 제외
+                const emailKey = (ms.studentEmail || '').toLowerCase().trim();
+                const nameKey = `${ms.name || ''}_${ms.grade}_${ms.classNum || ''}`;
+                if (emailKey && existingEmails.has(emailKey)) return false;
+                if (existingNames.has(nameKey)) return false;
+                // 학년 필터
+                if (masterGradeFilter && String(ms.grade) !== String(masterGradeFilter)) return false;
+                // 이름 검색 필터
+                if (q) {
+                    const name = (ms.name || '').toLowerCase();
+                    const email = (ms.studentEmail || '').toLowerCase();
+                    if (!name.includes(q.toLowerCase()) && !email.includes(q.toLowerCase())) return false;
+                }
+                return true;
+            }).slice(0, 30);
+            setMasterStudentSearchResults(filtered);
+        } catch (err) {
+            toast({ title: t('error'), description: '통합 계정 명단을 불러오는 중 오류가 발생했습니다.', variant: 'destructive' });
+        } finally {
+            setMasterStudentSearchLoading(false);
+        }
+    }, [masterStudentSearchQuery, masterGradeFilter, students, t]);
+
+    const handleAddMasterStudentToKisbus = async () => {
+        if (!selectedMasterStudent) {
+            toast({ title: t('error'), description: '추가할 학생을 선택해 주세요.', variant: 'destructive' });
             return;
         }
         try {
             const added = await addStudent({
-                ...newStudent,
-                name: newStudent.nameEn || newStudent.nameKo || '',
+                name: selectedMasterStudent.name,
+                nameKo: selectedMasterStudent.name,
+                nameEn: selectedMasterStudent.nameEn || '',
+                grade: selectedMasterStudent.grade,
+                class: selectedMasterStudent.classNum || '',
+                number: selectedMasterStudent.studentNum || '',
+                gender: selectedMasterStudent.gender,
+                contact: selectedMasterStudent.contact || '',
+                studentEmail: selectedMasterStudent.studentEmail || '',
+                morningDestinationId: null,
+                afternoonDestinationId: null,
+                afterSchoolDestinations: {},
+                satMorningDestinationId: null,
+                satAfternoonDestinationId: null,
+                applicationStatus: 'reviewed',
             } as NewStudent);
-            setNewStudent({ name: '', nameKo: '', nameEn: '', grade: '', class: '', number: '', gender: 'Male', contact: '', afterSchoolDestinations: {}, applicationStatus: 'reviewed' });
+            setMasterStudentSearchQuery('');
+            setMasterStudentSearchResults([]);
+            setSelectedMasterStudent(null);
+            setMasterGradeFilter('');
             setIsAddStudentDialogOpen(false);
-            toast({ title: t('success'), description: t('admin.student_management.add_student.success') });
+            toast({ title: t('success'), description: `${selectedMasterStudent.name} 학생이 스쿨버스 명단에 추가되었습니다.` });
             setSelectedGlobalStudent(added);
         } catch (error) {
             toast({ title: t('error'), description: t('admin.student_management.add_student.error'), variant: 'destructive' });
         }
     };
+
 
     const handleDownloadAllStudents = useCallback(() => {
         if (students.length === 0) { toast({ title: t('notice'), description: "등록된 학생이 없습니다." }); return; }
@@ -1342,51 +1400,94 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                         <CardContent className="space-y-4">
                             {/* 버튼 하단 통합 툴바 */}
                             <div className="flex flex-wrap gap-2 items-center justify-start bg-slate-50/90 p-2.5 rounded-xl border border-slate-200/80">
-                                <Dialog open={isAddStudentDialogOpen} onOpenChange={setIsAddStudentDialogOpen}>
+                                <Dialog open={isAddStudentDialogOpen} onOpenChange={(open) => {
+                                    setIsAddStudentDialogOpen(open);
+                                    if (!open) {
+                                        setMasterStudentSearchQuery('');
+                                        setMasterStudentSearchResults([]);
+                                        setSelectedMasterStudent(null);
+                                        setMasterGradeFilter('');
+                                    }
+                                }}>
                                     <DialogTrigger asChild>
                                         <Button variant="outline" size="sm">
                                             <UserPlus className="mr-2 h-4 w-4" /> {t('admin.student_management.add_student.button')}
                                         </Button>
                                     </DialogTrigger>
-                                    <DialogContent className="sm:max-w-[500px]">
+                                    <DialogContent className="sm:max-w-[520px]">
                                         <DialogHeader>
-                                            <DialogTitle>{t('admin.student_management.add_student.title')}</DialogTitle>
-                                            <DialogDescription>직접 새로운 학생 정보를 등록합니다.</DialogDescription>
+                                            <DialogTitle>통합 계정 명단에서 학생 추가</DialogTitle>
+                                            <DialogDescription>통합 학생 계정 명단에서 검색하여 스쿨버스 신청자로 등록합니다.</DialogDescription>
                                         </DialogHeader>
-                                        <div className="grid gap-4 py-4">
-                                            <div className="grid grid-cols-4 items-center gap-4">
-                                                <Label htmlFor="nameKo" className="text-right">{t('student.name_ko', '한글 이름')}</Label>
-                                                <Input id="nameKo" value={newStudent.nameKo || ''} onChange={e => setNewStudent({...newStudent, nameKo: e.target.value})} className="col-span-3" placeholder={t('student.name_ko_placeholder', '한글 성함')} />
-                                            </div>
-                                            <div className="grid grid-cols-4 items-center gap-4">
-                                                <Label htmlFor="nameEn" className="text-right">{t('student.name_en', '영문 이름')}</Label>
-                                                <Input id="nameEn" value={newStudent.nameEn || ''} onChange={e => setNewStudent({...newStudent, nameEn: e.target.value})} className="col-span-3" placeholder={t('student.name_en_placeholder', 'English Name')} />
-                                            </div>
-                                            <div className="grid grid-cols-4 items-center gap-4">
-                                                <Label htmlFor="grade" className="text-right">학년</Label>
-                                                <Input id="grade" value={newStudent.grade || ''} onChange={e => setNewStudent({...newStudent, grade: e.target.value})} className="col-span-3" placeholder="예: 1" />
-                                            </div>
-                                            <div className="grid grid-cols-4 items-center gap-4">
-                                                <Label htmlFor="class" className="text-right">반</Label>
-                                                <Input id="class" value={newStudent.class || ''} onChange={e => setNewStudent({...newStudent, class: e.target.value})} className="col-span-3" placeholder="예: 1" />
-                                            </div>
-                                            <div className="grid grid-cols-4 items-center gap-4">
-                                                <Label htmlFor="gender" className="text-right">성별</Label>
-                                                <Select value={newStudent.gender} onValueChange={(v: any) => setNewStudent({...newStudent, gender: v})}>
-                                                    <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
+                                        <div className="space-y-3 py-2">
+                                            {/* 학년 필터 + 이름 검색 */}
+                                            <div className="flex gap-2">
+                                                <Select value={masterGradeFilter || '_ALL_'} onValueChange={(v) => setMasterGradeFilter(v === '_ALL_' ? '' : v)}>
+                                                    <SelectTrigger className="w-28 shrink-0">
+                                                        <SelectValue placeholder="학년" />
+                                                    </SelectTrigger>
                                                     <SelectContent>
-                                                        <SelectItem value="Male">{t('student.male')}</SelectItem>
-                                                        <SelectItem value="Female">{t('student.female')}</SelectItem>
+                                                        <SelectItem value="_ALL_">전체 학년</SelectItem>
+                                                        {['1','2','3','4','5','6'].map(g => (
+                                                            <SelectItem key={g} value={g}>{g}학년</SelectItem>
+                                                        ))}
                                                     </SelectContent>
                                                 </Select>
+                                                <Input
+                                                    placeholder="이름 또는 이메일 검색..."
+                                                    value={masterStudentSearchQuery}
+                                                    onChange={e => setMasterStudentSearchQuery(e.target.value)}
+                                                    onKeyDown={e => e.key === 'Enter' && handleMasterStudentSearch()}
+                                                    className="flex-1"
+                                                />
+                                                <Button onClick={handleMasterStudentSearch} size="sm" disabled={masterStudentSearchLoading}>
+                                                    <Search className="h-4 w-4" />
+                                                </Button>
                                             </div>
-                                            <div className="grid grid-cols-4 items-center gap-4">
-                                                <Label htmlFor="contact" className="text-right">연락처</Label>
-                                                <Input id="contact" value={newStudent.contact || ''} onChange={e => setNewStudent({...newStudent, contact: e.target.value})} className="col-span-3" placeholder="베트남 전화번호" />
-                                            </div>
+
+                                            {/* 검색 결과 목록 */}
+                                            {masterStudentSearchLoading && (
+                                                <div className="text-center text-sm text-slate-400 py-4">검색 중...</div>
+                                            )}
+                                            {!masterStudentSearchLoading && masterStudentSearchResults.length > 0 && (
+                                                <div className="border rounded-lg max-h-52 overflow-y-auto overscroll-contain divide-y">
+                                                    {masterStudentSearchResults.map(ms => (
+                                                        <div
+                                                            key={ms.studentId}
+                                                            className={`flex items-center justify-between px-3 py-2 cursor-pointer text-sm hover:bg-blue-50 transition-colors ${selectedMasterStudent?.studentId === ms.studentId ? 'bg-blue-100 border-l-4 border-blue-500' : ''}`}
+                                                            onClick={() => setSelectedMasterStudent(ms)}
+                                                        >
+                                                            <div>
+                                                                <span className="font-semibold">{ms.name}</span>
+                                                                <span className="ml-2 text-slate-500 text-xs">{ms.grade}학년 {ms.classNum}반 {ms.studentNum ? `${ms.studentNum}번` : ''}</span>
+                                                                {ms.gender === 'Female' ? <span className="ml-1 text-[10px] text-pink-500">여</span> : <span className="ml-1 text-[10px] text-blue-500">남</span>}
+                                                            </div>
+                                                            <span className="text-[10px] text-slate-400 truncate max-w-[140px]">{ms.studentEmail || ''}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            {!masterStudentSearchLoading && masterStudentSearchResults.length === 0 && (masterStudentSearchQuery || masterGradeFilter) && (
+                                                <div className="text-center text-sm text-slate-400 py-4">검색 결과가 없습니다.</div>
+                                            )}
+
+                                            {/* 선택된 학생 미리보기 */}
+                                            {selectedMasterStudent && (
+                                                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm space-y-0.5">
+                                                    <div className="font-bold text-blue-800">{selectedMasterStudent.name} 학생 선택됨</div>
+                                                    <div className="text-slate-600">{selectedMasterStudent.grade}학년 {selectedMasterStudent.classNum}반 {selectedMasterStudent.studentNum ? `${selectedMasterStudent.studentNum}번` : ''} · {selectedMasterStudent.gender === 'Female' ? '여학생' : '남학생'}</div>
+                                                    {selectedMasterStudent.studentEmail && <div className="text-xs text-slate-400">{selectedMasterStudent.studentEmail}</div>}
+                                                </div>
+                                            )}
                                         </div>
                                         <DialogFooter>
-                                            <Button onClick={handleManualAddStudent} className="w-full">{t('add')}</Button>
+                                            <Button
+                                                onClick={handleAddMasterStudentToKisbus}
+                                                className="w-full"
+                                                disabled={!selectedMasterStudent}
+                                            >
+                                                <UserPlus className="mr-2 h-4 w-4" /> 스쿨버스 명단에 추가
+                                            </Button>
                                         </DialogFooter>
                                     </DialogContent>
                                 </Dialog>

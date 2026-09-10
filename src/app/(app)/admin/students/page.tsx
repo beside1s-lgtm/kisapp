@@ -1688,6 +1688,7 @@ export default function AdminMasterStudentsPage() {
                   value={editStudentForm.address || null}
                   onSelect={(val) => setEditStudentForm({ ...editStudentForm, address: val || '' })}
                   placeholder="스쿨버스 정류장/목적지 검색 (예: Hung Vuong KFC, Sky 1,2...)"
+                  modal={true}
                 />
               </div>
               <div className="space-y-1">
