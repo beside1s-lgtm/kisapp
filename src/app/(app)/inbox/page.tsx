@@ -427,7 +427,7 @@ export default function InboxPage() {
             if (currentTeacherName) {
                 if (course.instructorName === currentTeacherName) return true;
                 if (course.teacherName === currentTeacherName) return true;
-                if (course.instructor2 === currentTeacherName || course.instructor3 === currentTeacherName || course.instructor4 === currentTeacherName) return true;
+                if (course.instructor2 === currentTeacherName || course.instructor3 === currentTeacherName || course.instructor4 === currentTeacherName || course.instructor5 === currentTeacherName || course.instructor6 === currentTeacherName) return true;
                 if (Array.isArray(course.assistantTeachers) && course.assistantTeachers.includes(currentTeacherName)) return true;
             }
             return false;

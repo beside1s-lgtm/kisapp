@@ -4,7 +4,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MainLayout } from '@/components/layout/main-layout';
 import { 
   onMasterStudentsUpdate, createMasterStudent, updateMasterStudent, 
-  deleteMasterStudent, batchImportMasterStudents, batchPromoteStudents, isStudentEmail
+  deleteMasterStudent, batchImportMasterStudents, batchPromoteStudents, isStudentEmail,
+  extractEnglishNameFromEmail
 } from '@/lib/services/masterStudentService';
 import type { MasterStudent, NewMasterStudent } from '@/lib/types/masterStudent';
 import { onDestinationsUpdate } from '@/lib/kisbus';
@@ -227,8 +228,10 @@ export default function AdminMasterStudentsPage() {
     }
 
     try {
+      const defaultEnName = newStudent.nameEn || extractEnglishNameFromEmail(cleanEmail);
       await createMasterStudent({
         name: newStudent.name!,
+        nameEn: defaultEnName,
         studentEmail: cleanEmail,
         grade: String(newStudent.grade || '1'),
         classNum: String(newStudent.classNum || '1'),
@@ -242,7 +245,8 @@ export default function AdminMasterStudentsPage() {
       });
       setIsAddDialogOpen(false);
       setNewStudent({
-        name: '', 
+        name: '',
+        nameEn: '',
         studentEmail: '', 
         grade: '1', 
         classNum: '1', 
@@ -307,7 +311,11 @@ export default function AdminMasterStudentsPage() {
 
   // 학생 정보 수정 저장
   const handleStartEditStudent = (student: MasterStudent) => {
-    setEditStudentForm({ ...student });
+    const defaultEnName = student.nameEn || extractEnglishNameFromEmail(student.studentEmail || '');
+    setEditStudentForm({
+      ...student,
+      nameEn: defaultEnName,
+    });
     setIsEditDialogOpen(true);
   };
 
@@ -316,6 +324,7 @@ export default function AdminMasterStudentsPage() {
     try {
       await updateMasterStudent(editStudentForm.studentId, {
         name: editStudentForm.name,
+        nameEn: editStudentForm.nameEn || '',
         grade: String(editStudentForm.grade || '1'),
         classNum: String(editStudentForm.classNum || '1'),
         studentNum: String(editStudentForm.studentNum || ''),
@@ -1092,16 +1101,33 @@ export default function AdminMasterStudentsPage() {
                         <Input 
                           placeholder="예: 2023kangdongyun@kshcm.net" 
                           value={newStudent.studentEmail} 
-                          onChange={e => setNewStudent({...newStudent, studentEmail: e.target.value})} 
+                          onChange={e => {
+                            const val = e.target.value;
+                            setNewStudent(prev => ({
+                              ...prev, 
+                              studentEmail: val,
+                              nameEn: prev.nameEn || extractEnglishNameFromEmail(val)
+                            }));
+                          }} 
                         />
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs font-bold">학생 이름</Label>
-                        <Input 
-                          placeholder="예: 강동윤" 
-                          value={newStudent.name} 
-                          onChange={e => setNewStudent({...newStudent, name: e.target.value})} 
-                        />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs font-bold">학생 이름</Label>
+                          <Input 
+                            placeholder="예: 강동윤" 
+                            value={newStudent.name} 
+                            onChange={e => setNewStudent({...newStudent, name: e.target.value})} 
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs font-bold">학생 영문 이름 (선택)</Label>
+                          <Input 
+                            placeholder="예: Kang Dong-yun" 
+                            value={newStudent.nameEn || ''} 
+                            onChange={e => setNewStudent({...newStudent, nameEn: e.target.value})} 
+                          />
+                        </div>
                       </div>
                       <div className="grid grid-cols-4 gap-2">
                         <div>
@@ -1600,13 +1626,24 @@ export default function AdminMasterStudentsPage() {
                 <Label className="text-xs font-bold text-slate-700">학생 이메일 계정</Label>
                 <Input value={editStudentForm.studentEmail || ''} disabled className="h-8 bg-slate-100 font-mono text-xs text-slate-600" />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">학생 이름</Label>
-                <Input 
-                  value={editStudentForm.name || ''} 
-                  onChange={e => setEditStudentForm({...editStudentForm, name: e.target.value})} 
-                  className="h-8 text-xs"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs font-bold text-slate-700">학생 이름</Label>
+                  <Input 
+                    value={editStudentForm.name || ''} 
+                    onChange={e => setEditStudentForm({...editStudentForm, name: e.target.value})} 
+                    className="h-8 text-xs font-medium"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-bold text-slate-700">학생 영문 이름</Label>
+                  <Input 
+                    value={editStudentForm.nameEn || ''} 
+                    onChange={e => setEditStudentForm({...editStudentForm, nameEn: e.target.value})} 
+                    placeholder="예: Kang Soobin"
+                    className="h-8 text-xs font-medium"
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-4 gap-2">
                 <div className="space-y-1">

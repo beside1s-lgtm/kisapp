@@ -70,6 +70,8 @@ export interface OfficialAttendanceSheetProps {
     instructor2?: string;
     instructor3?: string;
     instructor4?: string;
+    instructor5?: string;
+    instructor6?: string;
     assistantTeachers?: string[];
     period?: string;
     startDate?: string;
@@ -104,6 +106,8 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
     course.instructor2,
     course.instructor3,
     course.instructor4,
+    course.instructor5,
+    course.instructor6,
     ...(course.assistantTeachers || []),
   ].filter((name): name is string => Boolean(name && name.trim() !== mainInstructor.trim()));
 

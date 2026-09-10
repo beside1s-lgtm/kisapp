@@ -551,6 +551,8 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
       course.instructor2,
       course.instructor3,
       course.instructor4,
+      course.instructor5,
+      course.instructor6,
       ...(course.assistantTeachers || [])
     ].filter(Boolean).map(s => String(s).trim());
     setAssistantDraftList(Array.from(new Set(existing)));
@@ -569,8 +571,8 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
       alert('이미 배정된 강사입니다.');
       return;
     }
-    if (assistantDraftList.length >= 3) {
-      alert('보조강사는 최대 3명(총 강사 4명)까지 배정 가능합니다.');
+    if (assistantDraftList.length >= 5) {
+      alert('보조강사는 최대 5명(총 강사 6명)까지 배정 가능합니다.');
       return;
     }
     setAssistantDraftList(prev => [...prev, trimmed]);
@@ -588,6 +590,8 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
       instructor2: assistantDraftList[0] || '',
       instructor3: assistantDraftList[1] || '',
       instructor4: assistantDraftList[2] || '',
+      instructor5: assistantDraftList[3] || '',
+      instructor6: assistantDraftList[4] || '',
       assistantTeachers: assistantDraftList,
     };
 
@@ -884,6 +888,8 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
             course.instructor2,
             course.instructor3,
             course.instructor4,
+            course.instructor5,
+            course.instructor6,
             ...(course.assistantTeachers || [])
           ].filter(Boolean).map(s => String(s).trim());
           const uniqueInstructors = Array.from(new Set(allInstructors));

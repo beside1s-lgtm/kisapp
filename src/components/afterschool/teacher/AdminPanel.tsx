@@ -113,6 +113,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       course.instructor2,
       course.instructor3,
       course.instructor4,
+      course.instructor5,
+      course.instructor6,
       ...(course.assistantTeachers || [])
     ].filter(Boolean) as string[];
 
@@ -602,6 +604,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [visibleInstructorCount, setVisibleInstructorCount] = useState<number>(2);
+
+  const handleStartEditCourse = (course: Course) => {
+    let initialCount = 2;
+    if (course.instructor6) initialCount = 6;
+    else if (course.instructor5) initialCount = 5;
+    else if (course.instructor4) initialCount = 4;
+    else if (course.instructor3) initialCount = 3;
+    setVisibleInstructorCount(initialCount);
+    setEditingCourse(course);
+  };
 
   const handleSaveCourseEdit = () => {
     if (!editingCourse) return;
@@ -612,6 +625,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       console.error("[AdminPanel] Failed to save course edit in Firestore:", e);
     });
     setEditingCourse(null);
+    setVisibleInstructorCount(2);
   };
 
   const pendingDocs = approvalDocs.filter((d) => d.status === 'PENDING');
@@ -683,7 +697,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (appliedSearch) {
       const q = appliedSearch.toLowerCase();
       const titleMatch = c.title?.toLowerCase().includes(q);
-      const instructors = [c.instructorName, c.instructor2, c.instructor3, c.instructor4]
+      const instructors = [c.instructorName, c.instructor2, c.instructor3, c.instructor4, c.instructor5, c.instructor6]
         .filter(Boolean)
         .map(n => String(n).toLowerCase());
       const teacherMatch = instructors.some(name => name.includes(q));
@@ -1296,7 +1310,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       import('xlsx').then(XLSX => {
                         const headers = ['강좌명', '지도교사', '장소', '수업요일', '수업시간', '정원', '현재수강생', '수강료', '상태'];
                         const rows = targetCourses.map(c => {
-                          const teacherNames = [c.instructorName, c.instructor2, c.instructor3, c.instructor4]
+                          const teacherNames = [c.instructorName, c.instructor2, c.instructor3, c.instructor4, c.instructor5, c.instructor6]
                             .filter(Boolean).join(', ');
                           const classDays = (c.classDays || []).join(', ');
                           const statusLabel =
@@ -1648,7 +1662,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             </label>
                           </div>
                           <div className="text-[11px] text-slate-500 mt-1 space-x-2">
-                            <span>강사: {[c.instructorName, c.instructor2, c.instructor3, c.instructor4].filter(Boolean).join(' · ') || '-'}</span>
+                            <span>강사: {[c.instructorName, c.instructor2, c.instructor3, c.instructor4, c.instructor5, c.instructor6].filter(Boolean).join(' · ') || '-'}</span>
                             <span>·</span>
                             <span>장소: {c.classroom || '-'}</span>
                             <span>·</span>
@@ -1842,7 +1856,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         {/* 정보 수정 단추 */}
                         <button
                           type="button"
-                          onClick={() => setEditingCourse(c)}
+                          onClick={() => handleStartEditCourse(c)}
                           className="text-slate-400 hover:text-amber-600 p-1.5 bg-slate-100 hover:bg-amber-50 rounded-lg transition-colors shrink-0"
                           title="강좌 정보 수정"
                         >
@@ -2039,7 +2053,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               <td className="p-2.5 font-bold text-slate-900">{c.title}</td>
                               <td className="p-2">
                                 <div className="text-xs text-center font-medium leading-tight">
-                                  {[c.instructorName, c.instructor2, c.instructor3, c.instructor4].filter(Boolean).join(' · ') || '-'}
+                                  {[c.instructorName, c.instructor2, c.instructor3, c.instructor4, c.instructor5, c.instructor6].filter(Boolean).join(' · ') || '-'}
                                 </div>
                               </td>
                               <td className="p-2 text-slate-700">
@@ -2384,7 +2398,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <h3 className="font-bold text-sm">강좌 정보 마스터 수정</h3>
               </div>
               <button 
-                onClick={() => setEditingCourse(null)}
+                onClick={() => {
+                  setEditingCourse(null);
+                  setVisibleInstructorCount(2);
+                }}
                 className="text-white/80 hover:text-white bg-white/10 hover:bg-white/20 p-1.5 rounded-lg transition-colors"
               >
                 <X className="w-4 h-4" />
@@ -2403,51 +2420,126 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">강사 1 (주강사)</label>
-                  <input
-                    type="text"
-                    value={editingCourse.instructorName || ''}
-                    onChange={(e) => setEditingCourse({ ...editingCourse, instructorName: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                    placeholder="주강사 이름"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">강사 2 (보조강사)</label>
-                  <input
-                    type="text"
-                    value={editingCourse.instructor2 || ''}
-                    onChange={(e) => setEditingCourse({ ...editingCourse, instructor2: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                    placeholder="보조강사 이름"
-                  />
-                </div>
-              </div>
+              {/* 강사진 입력 섹션 (기본 2명, 추가 버튼으로 최대 6명까지 확장) */}
+              {(() => {
+                const instructorSlots = [
+                  {
+                    num: 1,
+                    label: '강사 1 (주강사)',
+                    placeholder: '주강사 이름',
+                    value: editingCourse.instructorName || '',
+                    onChange: (val: string) => setEditingCourse({ ...editingCourse, instructorName: val }),
+                    canRemove: false,
+                  },
+                  {
+                    num: 2,
+                    label: '강사 2 (보조강사)',
+                    placeholder: '보조강사 이름',
+                    value: editingCourse.instructor2 || '',
+                    onChange: (val: string) => setEditingCourse({ ...editingCourse, instructor2: val }),
+                    canRemove: false,
+                  },
+                  {
+                    num: 3,
+                    label: '강사 3 (선택)',
+                    placeholder: '강사 3 이름 (선택)',
+                    value: editingCourse.instructor3 || '',
+                    onChange: (val: string) => setEditingCourse({ ...editingCourse, instructor3: val }),
+                    canRemove: true,
+                    onClear: () => {
+                      setEditingCourse({ ...editingCourse, instructor3: '' });
+                      setVisibleInstructorCount(prev => Math.max(2, Math.min(prev - 1, 5)));
+                    }
+                  },
+                  {
+                    num: 4,
+                    label: '강사 4 (선택)',
+                    placeholder: '강사 4 이름 (선택)',
+                    value: editingCourse.instructor4 || '',
+                    onChange: (val: string) => setEditingCourse({ ...editingCourse, instructor4: val }),
+                    canRemove: true,
+                    onClear: () => {
+                      setEditingCourse({ ...editingCourse, instructor4: '' });
+                      setVisibleInstructorCount(prev => Math.max(2, Math.min(prev - 1, 5)));
+                    }
+                  },
+                  {
+                    num: 5,
+                    label: '강사 5 (선택)',
+                    placeholder: '강사 5 이름 (선택)',
+                    value: editingCourse.instructor5 || '',
+                    onChange: (val: string) => setEditingCourse({ ...editingCourse, instructor5: val }),
+                    canRemove: true,
+                    onClear: () => {
+                      setEditingCourse({ ...editingCourse, instructor5: '' });
+                      setVisibleInstructorCount(prev => Math.max(2, Math.min(prev - 1, 5)));
+                    }
+                  },
+                  {
+                    num: 6,
+                    label: '강사 6 (선택)',
+                    placeholder: '강사 6 이름 (선택)',
+                    value: editingCourse.instructor6 || '',
+                    onChange: (val: string) => setEditingCourse({ ...editingCourse, instructor6: val }),
+                    canRemove: true,
+                    onClear: () => {
+                      setEditingCourse({ ...editingCourse, instructor6: '' });
+                      setVisibleInstructorCount(prev => Math.max(2, Math.min(prev - 1, 5)));
+                    }
+                  },
+                ];
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">강사 3 (선택)</label>
-                  <input
-                    type="text"
-                    value={editingCourse.instructor3 || ''}
-                    onChange={(e) => setEditingCourse({ ...editingCourse, instructor3: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                    placeholder="강사 3 이름 (선택)"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">강사 4 (선택)</label>
-                  <input
-                    type="text"
-                    value={editingCourse.instructor4 || ''}
-                    onChange={(e) => setEditingCourse({ ...editingCourse, instructor4: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                    placeholder="강사 4 이름 (선택)"
-                  />
-                </div>
-              </div>
+                const visibleCount = Math.max(2, Math.min(6, visibleInstructorCount));
+                const currentVisibleSlots = instructorSlots.slice(0, visibleCount);
+
+                return (
+                  <div className="space-y-3 bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200/80">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-xs font-bold text-slate-800">강사진 구성</label>
+                        <span className="text-[10px] text-slate-500 font-medium">(최대 6명)</span>
+                      </div>
+                      {visibleCount < 6 && (
+                        <button
+                          type="button"
+                          onClick={() => setVisibleInstructorCount(Math.min(6, visibleCount + 1))}
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-100/80 hover:bg-amber-200/80 px-2.5 py-1 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3" />
+                          강사 추가 ({visibleCount}/6)
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {currentVisibleSlots.map((slot) => (
+                        <div key={slot.num} className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-slate-700">{slot.label}</label>
+                            {slot.canRemove && (
+                              <button
+                                type="button"
+                                onClick={slot.onClear}
+                                className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors"
+                                title="제거"
+                              >
+                                삭제
+                              </button>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={slot.value}
+                            onChange={(e) => slot.onChange(e.target.value)}
+                            className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                            placeholder={slot.placeholder}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
@@ -2598,7 +2690,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             {/* Modal Footer */}
             <div className="border-t border-slate-100 px-6 py-4 flex justify-end gap-2 bg-slate-50 shrink-0">
               <button
-                onClick={() => setEditingCourse(null)}
+                onClick={() => {
+                  setEditingCourse(null);
+                  setVisibleInstructorCount(2);
+                }}
                 className="bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold px-4 py-2.5 rounded-xl border transition"
               >
                 취소
@@ -2629,6 +2724,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           c.instructor2,
           c.instructor3,
           c.instructor4,
+          c.instructor5,
+          c.instructor6,
           ...(c.assistantTeachers || [])
         ].filter((name): name is string => Boolean(name && name.trim() !== mainInstructor.trim()));
         const allInstructors = [mainInstructor, ...assistantInstructors];
@@ -3014,6 +3111,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   viewingDocCourse.instructor2,
                   viewingDocCourse.instructor3,
                   viewingDocCourse.instructor4,
+                  viewingDocCourse.instructor5,
+                  viewingDocCourse.instructor6,
                   ...(viewingDocCourse.assistantTeachers || [])
                 ].filter(Boolean) as string[];
 

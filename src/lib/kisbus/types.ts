@@ -53,6 +53,10 @@ export type AfterSchoolClass = {
   teacherName3?: string | null;
   teacherId4?: string | null;
   teacherName4?: string | null;
+  teacherId5?: string | null;
+  teacherName5?: string | null;
+  teacherId6?: string | null;
+  teacherName6?: string | null;
   semesterMode?: 'regular' | 'vacation';
 };
 export type NewAfterSchoolClass = Omit<AfterSchoolClass, 'id'>;

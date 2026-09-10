@@ -16,8 +16,10 @@ import { SignatureRegisterModal } from './SignatureRegisterModal';
 import { OfficialAttendanceSheet } from './OfficialAttendanceSheet';
 import { OfficialWorkRegister } from './OfficialWorkRegister';
 import { useTranslation } from '@/hooks/use-translation';
+import { useLanguage } from '@/contexts/language-context';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
+import { extractEnglishNameFromEmail } from '@/lib/services/masterStudentService';
 
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -281,6 +283,8 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   setApprovalDocs,
 }) => {
   const { t } = useTranslation();
+  const { language } = useLanguage();
+  const isEnglish = language === 'en';
   const [internalSelectedCourseId, setInternalSelectedCourseId] = useState<string>(courses?.[0]?.id || 'c1');
   const selectedCourseId = externalSelectedCourseId || internalSelectedCourseId;
   const setSelectedCourseId = externalSetSelectedCourseId || setInternalSelectedCourseId;
@@ -296,6 +300,8 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   const [modalStudent, setModalStudent] = useState<{
     photoUrl: string;
     name: string;
+    rawName?: string;
+    nameEn?: string;
     grade: string;
     classNum: string;
     studentNum: string;
@@ -372,6 +378,8 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
       currentCourse?.instructor2,
       currentCourse?.instructor3,
       currentCourse?.instructor4,
+      currentCourse?.instructor5,
+      currentCourse?.instructor6,
       ...(currentCourse?.assistantTeachers || [])
     ].filter(Boolean) as string[];
 
@@ -1038,6 +1046,15 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
 
     const contact = m?.contact || (s as any)?.parentPhone || (s as any)?.phone || (s as any)?.contact || enrollment?.parentPhone || '';
 
+    // 학생 영문 이름 계산 (우선순위: masterStudent.nameEn -> student.nameEn -> enrollment.nameEn -> 이메일 추출)
+    const sEmail = m?.studentEmail || enrollment?.studentEmail || (s as any)?.studentEmail || (s as any)?.email || '';
+    const rawEn = m?.nameEn || (s as any)?.nameEn || (enrollment as any)?.nameEn || extractEnglishNameFromEmail(sEmail);
+    const nameEn = rawEn ? rawEn.trim() : '';
+
+    // 언어 설정이 영문('en')일 경우 영문 이름을 표시
+    const displayName = isEnglish && nameEn ? nameEn : studentName;
+    const initialChars = isEnglish && nameEn ? nameEn.slice(0, 2).toUpperCase() : studentName.slice(0, 2);
+
     return {
       photoUrl,
       busNo,
@@ -1046,7 +1063,10 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
       grade: String(m?.grade || grade || '1'),
       classNum: String(m?.classNum || classNum || '1'),
       studentNum: String(m?.studentNum || (s as any)?.number || enrollment?.studentNum || ''),
-      name: studentName
+      name: displayName,
+      rawName: studentName,
+      nameEn,
+      initials: initialChars
     };
   };
 
@@ -1262,7 +1282,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                           <AvatarImage src={sInfo.photoUrl} alt={sInfo.name} className="object-cover rounded-xl" />
                         ) : (
                           <AvatarFallback className="bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-xl">
-                            {sInfo.name.slice(0, 2)}
+                            {sInfo.initials || sInfo.name.slice(0, 2)}
                           </AvatarFallback>
                         )}
                       </Avatar>
@@ -1271,6 +1291,11 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                           <span className="font-extrabold text-slate-900 text-sm group-hover:text-indigo-600 transition">
                             {sInfo.name}
                           </span>
+                          {isEnglish && sInfo.nameEn && sInfo.rawName && sInfo.name !== sInfo.rawName && (
+                            <span className="text-[11px] text-slate-400 font-normal">
+                              ({sInfo.rawName})
+                            </span>
+                          )}
                           {enrollment.selectedDays && enrollment.selectedDays.length > 0 && (
                             <span className="text-[10px] bg-amber-100 text-amber-900 font-black px-1.5 py-0.5 rounded border border-amber-300">
                               주1회({enrollment.selectedDays.join(',')})
@@ -1394,7 +1419,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                                 <AvatarImage src={sInfo.photoUrl} alt={sInfo.name} className="object-cover rounded-xl" />
                               ) : (
                                 <AvatarFallback className="bg-indigo-100 text-indigo-700 font-black text-xs rounded-xl">
-                                  {sInfo.name.slice(0, 2)}
+                                  {sInfo.initials || sInfo.name.slice(0, 2)}
                                 </AvatarFallback>
                               )}
                             </Avatar>
@@ -1403,6 +1428,11 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                                 <span className="font-extrabold text-slate-900 text-xs group-hover:text-indigo-600 transition">
                                   {sInfo.name}
                                 </span>
+                                {isEnglish && sInfo.nameEn && sInfo.rawName && sInfo.name !== sInfo.rawName && (
+                                  <span className="text-[10px] text-slate-400 font-normal">
+                                    ({sInfo.rawName})
+                                  </span>
+                                )}
                                 {enrollment.selectedDays && enrollment.selectedDays.length > 0 && (
                                   <span className="text-[9px] bg-amber-100 text-amber-900 font-black px-1 py-0.2 rounded border border-amber-300 whitespace-nowrap" title={`주 1회 (${enrollment.selectedDays.join(', ')}) 수강생`}>
                                     주1회({enrollment.selectedDays.join(',')})
@@ -1633,6 +1663,9 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
 
               <div>
                 <h3 className="text-xl font-extrabold text-slate-900">{modalStudent.name}</h3>
+                {modalStudent.nameEn && modalStudent.rawName && modalStudent.name !== modalStudent.rawName && (
+                  <p className="text-xs text-slate-400 font-semibold mt-0.5">({modalStudent.rawName})</p>
+                )}
                 <p className="text-xs font-bold text-slate-500 mt-0.5">
                   {modalStudent.grade}학년 {modalStudent.classNum}반 {modalStudent.studentNum ? `${modalStudent.studentNum}번` : ''}
                 </p>
@@ -1813,6 +1846,8 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                   currentCourse?.instructor2,
                   currentCourse?.instructor3,
                   currentCourse?.instructor4,
+                  currentCourse?.instructor5,
+                  currentCourse?.instructor6,
                   ...(currentCourse?.assistantTeachers || [])
                 ].filter(Boolean) as string[];
 

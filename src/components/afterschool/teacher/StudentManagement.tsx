@@ -36,6 +36,8 @@ import {
 import { getGlobalSettings } from '@/lib/kisbus/settings';
 import { hideAfternoonBusForStudent, restoreAfternoonBusForStudent } from '@/lib/kisbus/students';
 import { useTranslation } from '@/hooks/use-translation';
+import { useLanguage } from '@/contexts/language-context';
+import { extractEnglishNameFromEmail } from '@/lib/services/masterStudentService';
 import {
   saveAfterschoolEnrollment,
   saveAfterschoolEnrollmentsBatch,
@@ -73,6 +75,17 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   teacherApplySettings,
 }) => {
   const { t } = useTranslation();
+  const { language } = useLanguage();
+  const isEnglish = language === 'en';
+
+  const getDisplayName = (item: Enrollment) => {
+    if (!isEnglish) return item.name;
+    const rawEn = item.nameEn || (item as any)?.studentEmail ? extractEnglishNameFromEmail((item as any).studentEmail) : '';
+    const s = studentsList.find(st => st.id === item.studentId || (st.name === item.name && Number(st.grade) === Number(item.grade) && Number(st.class) === Number(item.classNum)));
+    const finalEn = rawEn || s?.nameEn || extractEnglishNameFromEmail((s as any)?.studentEmail || (s as any)?.email);
+    return finalEn ? `${finalEn} (${item.name})` : item.name;
+  };
+
   const [busFareSettings, setBusFareSettings] = React.useState<Record<string, number>>({
     'Zone A (근거리)': 50000,
     'Zone B (중거리)': 80000,
@@ -1546,7 +1559,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                         <td className="py-2 px-2 text-center font-bold text-slate-700 text-[11px]">{item.grade}</td>
                         <td className="py-2 px-2 text-center text-[11px]">{item.classNum}</td>
                         <td className="py-2 px-2 text-center text-[11px]">{item.studentNum}</td>
-                        <td className="py-2 px-2 font-bold text-slate-900 text-xs whitespace-nowrap">{item.name}</td>
+                        <td className="py-2 px-2 font-bold text-slate-900 text-xs whitespace-nowrap">{getDisplayName(item)}</td>
                         {(() => {
                           const matchedCourse = getMatchedCourse(item);
                           const courseTitle = matchedCourse
@@ -1833,7 +1846,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                     <td className="py-2 px-3 text-center">{item.grade}</td>
                     <td className="py-2 px-3 text-center">{item.classNum}</td>
                     <td className="py-2 px-3 text-center">{item.studentNum}</td>
-                    <td className="py-2 px-3 font-bold text-slate-800">{item.name}</td>
+                    <td className="py-2 px-3 font-bold text-slate-800">{getDisplayName(item)}</td>
                     <td className="py-2 px-3 text-center">
                       <input
                         type="number"
@@ -2056,7 +2069,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                           );
                         })()}
                         <td className="py-3 px-3 font-bold text-slate-900 whitespace-nowrap">
-                          {item.name}
+                          {getDisplayName(item)}
                         </td>
                         <td className="py-3 px-3 font-mono">{item.parentPhone}</td>
                         <td className="py-3 px-3">

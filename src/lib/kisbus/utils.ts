@@ -94,6 +94,8 @@ export function getComplementaryInstructors(
     instructor2?: string | null;
     instructor3?: string | null;
     instructor4?: string | null;
+    instructor5?: string | null;
+    instructor6?: string | null;
     assistantTeachers?: string[] | string | null;
     assistantInstructor?: string | null;
     [key: string]: any;
@@ -129,17 +131,21 @@ export function getComplementaryInstructors(
     }
   };
 
-  // 2. 방과후 Course의 추가강사(2~4) 및 보조강사 수집
+  // 2. 방과후 Course의 추가강사(2~6) 및 보조강사 수집
   addName(matchedCourse?.instructor2);
   addName(matchedCourse?.instructor3);
   addName(matchedCourse?.instructor4);
+  addName(matchedCourse?.instructor5);
+  addName(matchedCourse?.instructor6);
   addName(matchedCourse?.assistantInstructor);
   addName(matchedCourse?.assistantTeachers);
 
-  // 3. 스쿨버스 AfterSchoolClass의 추가교사(2~4) 및 보조교사 수집
+  // 3. 스쿨버스 AfterSchoolClass의 추가교사(2~6) 및 보조교사 수집
   addName(cls?.teacherName2);
   addName(cls?.teacherName3);
   addName(cls?.teacherName4);
+  addName((cls as any)?.teacherName5);
+  addName((cls as any)?.teacherName6);
   addName(cls?.assistantTeacherNames);
 
   // cls.teacherName에 쉼표로 여러 명이 들어있었던 경우

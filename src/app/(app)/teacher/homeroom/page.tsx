@@ -42,7 +42,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getDocConfig, onOrgStructureUpdate } from '@/lib/services/settingsService';
 import { checkHomeroomAccessPermission } from '@/lib/services/permissionService';
-import { onMasterStudentsUpdate, updateMasterStudent } from '@/lib/services/masterStudentService';
+import { onMasterStudentsUpdate, updateMasterStudent, extractEnglishNameFromEmail } from '@/lib/services/masterStudentService';
 import { getStudentFieldTripDays, getStudentAbsenceDays, createDocument, approveDocument } from '@/lib/services/documentService';
 import { getApproversByGradeClass } from '@/lib/services/userService';
 import { getWorkingDaysCount, cn } from '@/lib/utils';
@@ -58,6 +58,10 @@ import {
 } from '@/lib/services/homeroomAttendanceSync';
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import type { OrgStructure, DocConfig } from '@/lib/types';
+import { onRoutesUpdate } from '@/lib/kisbus/routes';
+import { onBusesUpdate } from '@/lib/kisbus/buses';
+import { unassignStudentFromAllRoutes } from '@/lib/kisbus/assignments';
+import type { Route, Bus, DayOfWeek } from '@/lib/kisbus/types';
 
 // ─── 학급 키 정렬 및 라벨 포맷 헬퍼 ──────────────────────────────────────────
 
@@ -167,6 +171,21 @@ export default function TeacherHomeroomApplyPage() {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // 스쿨버스 요일별 하교 노선 실시간 구독 상태
+  const [afternoonRoutes, setAfternoonRoutes] = useState<Route[]>([]);
+  const [kisbuses, setKisbuses] = useState<Bus[]>([]);
+
+  // 하교 버스 해제 확인 팝업 상태
+  const [busUnassignTarget, setBusUnassignTarget] = useState<{
+    studentId: string;
+    studentName: string;
+    dayOfWeek: DayOfWeek;
+    dayLabel: string;
+    routeId: string;
+    busNo: string;
+  } | null>(null);
+  const [isBusUnassigning, setIsBusUnassigning] = useState(false);
+
   // 문서 유형 (체험학습 신청서 vs 결석계)
   const [docCategory, setDocCategory] = useState<'field-trip' | 'absence'>('field-trip');
 
@@ -178,10 +197,12 @@ export default function TeacherHomeroomApplyPage() {
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
 
   const handleStartEditStudent = (student: MasterStudent) => {
+    const defaultEnName = student.nameEn || extractEnglishNameFromEmail(student.studentEmail || '');
     setEditStudentForm({
       ...student,
       studentId: student.studentId || student.id,
       name: student.nameKo || student.name || '',
+      nameEn: defaultEnName,
       studentEmail: student.studentEmail || '',
       grade: String(student.grade || '1'),
       classNum: String(student.classNum || '1'),
@@ -212,6 +233,7 @@ export default function TeacherHomeroomApplyPage() {
     try {
       await updateMasterStudent(editStudentForm.studentId, {
         name: editStudentForm.name,
+        nameEn: editStudentForm.nameEn || '',
         grade: String(editStudentForm.grade || '1'),
         classNum: String(editStudentForm.classNum || '1'),
         studentNum: String(editStudentForm.studentNum || ''),
@@ -296,11 +318,23 @@ export default function TeacherHomeroomApplyPage() {
       }
     });
 
+    const unsubRoutes = onRoutesUpdate(routes => {
+      if (isMounted) {
+        setAfternoonRoutes(routes.filter(r => r.type === 'Afternoon'));
+      }
+    });
+
+    const unsubBuses = onBusesUpdate(buses => {
+      if (isMounted) setKisbuses(buses);
+    });
+
     return () => {
       isMounted = false;
       clearTimeout(safetyTimer);
       unsubOrg();
       unsubStudents();
+      unsubRoutes();
+      unsubBuses();
     };
   }, []);
 
@@ -382,6 +416,38 @@ export default function TeacherHomeroomApplyPage() {
       return false;
     }).sort((a, b) => (Number(a.studentNum) || 0) - (Number(b.studentNum) || 0));
   }, [selectedClassKey, allStudents]);
+
+  // ─── 학생별 요일별 하교 버스 맵 ────────────────────────────────────────────
+  // key: studentId, value: { dayOfWeek: { busNo, routeId } }
+  const studentAfternoonBusMap = useMemo(() => {
+    const DAY_ORDER: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    const busMap = new Map<string, string>(); // busId -> busNo
+    kisbuses.forEach(b => { if (b.name) busMap.set(b.id, b.name); });
+
+    const result = new Map<string, Record<DayOfWeek, { busNo: string; routeId: string } | null>>();
+    const studentIds = new Set<string>(
+      classStudents.map(s => (s.studentId || s.id || '') as string).filter(Boolean)
+    );
+
+    studentIds.forEach(sid => {
+      const dayRecord: Record<DayOfWeek, { busNo: string; routeId: string } | null> = {
+        Monday: null, Tuesday: null, Wednesday: null, Thursday: null, Friday: null, Saturday: null,
+      };
+      DAY_ORDER.forEach(day => {
+        const route = afternoonRoutes.find(r =>
+          r.dayOfWeek === day &&
+          r.seating.some(seat => seat.studentId === sid)
+        );
+        if (route) {
+          const busNo = busMap.get(route.busId) || route.busId;
+          dayRecord[day] = { busNo, routeId: route.id };
+        }
+      });
+      result.set(sid as string, dayRecord);
+    });
+
+    return result;
+  }, [afternoonRoutes, kisbuses, classStudents]);
 
   // ─── 오늘 출석부 연동 상태 ──────────────────────────────────────────────────
   const [attendanceDate, setAttendanceDate] = useState<string>(() => format(new Date(), 'yyyy-MM-dd'));
@@ -1286,37 +1352,70 @@ export default function TeacherHomeroomApplyPage() {
                                 <span className="text-xs text-slate-400 italic whitespace-nowrap">미수강</span>
                               )}
                             </TableCell>
-                            <TableCell className="whitespace-normal min-w-[130px] max-w-[200px]">
+                            <TableCell className="whitespace-normal min-w-[150px] max-w-[220px]">
                               {(() => {
                                 const bSum = student.busSummary;
+                                const sid = (student.studentId || student.id || '') as string;
+                                const afternoonByDay = studentAfternoonBusMap.get(sid);
                                 const afterschoolBuses = bSum?.afterSchoolBuses || [];
-                                const hasRegularBus = !!bSum?.regularBusName;
+                                const hasAfternoonBus = afternoonByDay
+                                  ? Object.values(afternoonByDay).some(v => v !== null)
+                                  : false;
+                                const hasMorningBus = !!bSum?.regularBusName;
                                 const hasAfterschoolBuses = afterschoolBuses.length > 0;
-                                const hasEnrolledCourses = (student.afterschoolSummary?.enrolledCourses?.length ?? 0) > 0;
 
-                                if (!hasRegularBus && !hasAfterschoolBuses && !bSum?.assignedBusName) {
+                                const DAY_LABELS: Record<string, string> = {
+                                  Monday: '월', Tuesday: '화', Wednesday: '수', Thursday: '목', Friday: '금',
+                                };
+                                const DAY_ORDER: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+                                if (!hasMorningBus && !hasAfternoonBus && !hasAfterschoolBuses && !bSum?.assignedBusName) {
                                   return <span className="text-xs text-slate-400 italic whitespace-nowrap">자가 귀가</span>;
                                 }
 
                                 return (
                                   <div className="flex flex-col gap-1 py-1">
-                                    {hasRegularBus && (
+                                    {/* 등교 버스 (정규) */}
+                                    {hasMorningBus && (
                                       <Badge variant="outline" className="bg-sky-50 text-sky-800 border-sky-200 text-[11px] font-semibold py-0.5 px-2 w-fit">
-                                        <span className="font-bold text-sky-950 mr-1">
-                                          {hasEnrolledCourses && bSum?.regularBusDays && bSum.regularBusDays.length > 0
-                                            ? `[${bSum.regularBusDays.join(',')}]`
-                                            : `[정규]`}
-                                        </span>
-                                        <span>{bSum.regularBusName}</span>
+                                        <span className="font-bold text-sky-950 mr-1">[등교]</span>
+                                        <span>{bSum!.regularBusName}</span>
                                       </Badge>
                                     )}
+                                    {/* 하교 버스 - 요일별 항상 표시, 클릭 시 해제 팝업 */}
+                                    {afternoonByDay && DAY_ORDER.map(day => {
+                                      const info = afternoonByDay[day];
+                                      if (!info) return null;
+                                      const dayLabel = DAY_LABELS[day] || day;
+                                      return (
+                                        <Badge
+                                          key={day}
+                                          variant="outline"
+                                          className="bg-blue-50 text-blue-800 border-blue-200 text-[11px] font-semibold py-0.5 px-2 w-fit cursor-pointer hover:bg-red-50 hover:border-red-300 hover:text-red-700 transition-colors"
+                                          title={`${dayLabel}요일 하교 버스 해제/유지 선택`}
+                                          onClick={() => setBusUnassignTarget({
+                                            studentId: sid,
+                                            studentName: student.nameKo || student.name || '',
+                                            dayOfWeek: day,
+                                            dayLabel,
+                                            routeId: info.routeId,
+                                            busNo: info.busNo,
+                                          })}
+                                        >
+                                          <span className="font-bold text-blue-950 mr-1">[하교 {dayLabel}]</span>
+                                          <span>{info.busNo}</span>
+                                        </Badge>
+                                      );
+                                    })}
+                                    {/* 방과후 버스 */}
                                     {afterschoolBuses.map((asb, idx) => (
                                       <Badge key={idx} variant="outline" className="bg-amber-50 text-amber-900 border-amber-200 text-[11px] font-semibold py-0.5 px-2 w-fit">
-                                        <span className="font-bold text-amber-950 mr-1">[{asb.day}]</span>
+                                        <span className="font-bold text-amber-950 mr-1">[방과후 {asb.day}]</span>
                                         <span>{asb.busName}</span>
                                       </Badge>
                                     ))}
-                                    {!hasRegularBus && !hasAfterschoolBuses && bSum?.assignedBusName && (
+                                    {/* 기타 assignedBus (위에 아무것도 없을 때) */}
+                                    {!hasMorningBus && !hasAfternoonBus && !hasAfterschoolBuses && bSum?.assignedBusName && (
                                       <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-[11px] font-bold w-fit">
                                         {bSum.assignedBusName}
                                       </Badge>
@@ -1441,20 +1540,20 @@ export default function TeacherHomeroomApplyPage() {
                 />
               </div>
               <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-700">학생 영문 이름</Label>
+                <Input
+                  value={editStudentForm.nameEn || ''}
+                  onChange={(e) => setEditStudentForm(prev => ({ ...prev, nameEn: e.target.value }))}
+                  placeholder="예: Kwon Garim"
+                  className="h-8 text-xs bg-white font-medium"
+                />
+              </div>
+              <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-700">출석 번호</Label>
                 <Input
                   value={editStudentForm.studentNum || ''}
                   onChange={(e) => setEditStudentForm(prev => ({ ...prev, studentNum: e.target.value }))}
                   placeholder="예: 5"
-                  className="h-8 text-xs bg-white"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">보호자 연락처</Label>
-                <Input
-                  value={editStudentForm.contact || ''}
-                  onChange={(e) => setEditStudentForm(prev => ({ ...prev, contact: e.target.value }))}
-                  placeholder="010-0000-0000"
                   className="h-8 text-xs bg-white"
                 />
               </div>
@@ -1472,6 +1571,15 @@ export default function TeacherHomeroomApplyPage() {
                     <SelectItem value="Female">여학생</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-1 col-span-2 sm:col-span-1">
+                <Label className="text-xs font-bold text-slate-700">보호자 연락처</Label>
+                <Input
+                  value={editStudentForm.contact || ''}
+                  onChange={(e) => setEditStudentForm(prev => ({ ...prev, contact: e.target.value }))}
+                  placeholder="010-0000-0000"
+                  className="h-8 text-xs bg-white"
+                />
               </div>
             </div>
 
@@ -1503,6 +1611,76 @@ export default function TeacherHomeroomApplyPage() {
               className="h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white"
             >
               저장 완료
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 하교 버스 해제 확인 Dialog */}
+      <Dialog open={!!busUnassignTarget} onOpenChange={(open) => { if (!open) setBusUnassignTarget(null); }}>
+        <DialogContent className="sm:max-w-[420px] w-[95vw] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <LogOut className="h-4 w-4 text-red-500 shrink-0" />
+              하교 버스 탑승 해제
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 pt-1">
+              {busUnassignTarget && (
+                <>
+                  <span className="font-semibold text-slate-700">{busUnassignTarget.studentName}</span> 학생을{' '}
+                  <span className="font-semibold text-blue-700">{busUnassignTarget.dayLabel}요일 하교</span> 버스(
+                  <span className="font-semibold">{busUnassignTarget.busNo}</span>)에서 미배정 처리합니다.
+                  <br />
+                  해제 후 스쿨버스 관리자/교사 페이지에 실시간 반영됩니다.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-2 border-t flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setBusUnassignTarget(null)}
+              className="h-8 text-xs font-medium"
+              disabled={isBusUnassigning}
+            >
+              유지
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              disabled={isBusUnassigning}
+              className="h-8 text-xs font-bold"
+              onClick={async () => {
+                if (!busUnassignTarget) return;
+                setIsBusUnassigning(true);
+                try {
+                  await unassignStudentFromAllRoutes(
+                    busUnassignTarget.studentId,
+                    ['Afternoon'],
+                    busUnassignTarget.dayOfWeek
+                  );
+                  toast({
+                    title: '버스 탑승 해제 완료',
+                    description: `${busUnassignTarget.studentName} - ${busUnassignTarget.dayLabel}요일 하교 버스(${busUnassignTarget.busNo}) 미배정 처리되었습니다.`,
+                  });
+                  setBusUnassignTarget(null);
+                } catch (err) {
+                  console.error('[BusUnassign]', err);
+                  toast({
+                    title: '해제 실패',
+                    description: '버스 탑승 해제 중 오류가 발생했습니다.',
+                    variant: 'destructive',
+                  });
+                } finally {
+                  setIsBusUnassigning(false);
+                }
+              }}
+            >
+              {isBusUnassigning ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+              해제
             </Button>
           </DialogFooter>
         </DialogContent>

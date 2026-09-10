@@ -21,6 +21,28 @@ export const isStudentEmail = (email?: string | null): boolean => {
   return /^\d{4}[a-zA-Z0-9._-]+@kshcm\.net$/i.test(lower);
 };
 
+/**
+ * 학생 이메일 계정에서 영문 이름 추출
+ * 형식: [입학년도 4자리][영문이름]@kshcm.net (예: 2022kangsoobin@kshcm.net -> kangsoobin)
+ */
+export const extractEnglishNameFromEmail = (email?: string | null): string => {
+  if (!email) return '';
+  const clean = email.trim();
+  const atIdx = clean.indexOf('@');
+  const localPart = atIdx !== -1 ? clean.slice(0, atIdx) : clean;
+  // 앞의 입학년도(4자리 숫자 등) 제거
+  const enName = localPart.replace(/^\d+/, '').replace(/^[^a-zA-Z]+/, '');
+  return enName;
+};
+
+/**
+ * 학생의 유효한 영문 이름 반환 (기존 nameEn 우선, 없으면 이메일에서 추출)
+ */
+export const getStudentEnglishName = (nameEn?: string | null, email?: string | null): string => {
+  if (nameEn && nameEn.trim()) return nameEn.trim();
+  return extractEnglishNameFromEmail(email);
+};
+
 export const getAllMasterStudents = async (): Promise<MasterStudent[]> => {
   try {
     const [masterSnap, userSnap, busSnap] = await Promise.all([
@@ -414,10 +436,15 @@ export const onMasterStudentsUpdate = (
     ? query(collection(getDb(), COLLECTION_NAME), where('grade', 'in', gradeValues))
     : collection(getDb(), COLLECTION_NAME);
   const unsubMaster = onSnapshot(masterQuery, (snapshot) => {
-    masterList = snapshot.docs.map(doc => ({
-      studentId: doc.id,
-      ...doc.data()
-    } as MasterStudent));
+    masterList = snapshot.docs.map(doc => {
+      const data = doc.data();
+      const email = data.studentEmail || '';
+      return {
+        studentId: doc.id,
+        ...data,
+        nameEn: data.nameEn || extractEnglishNameFromEmail(email)
+      } as MasterStudent;
+    });
     mergeAndEmit();
   }, (err) => console.error('master_students snapshot error:', err));
 
@@ -454,6 +481,7 @@ export const onMasterStudentsUpdate = (
       studentId: u.docId || u.email,
       name: u.studentName || u.nameKo || u.name,
       nameKo: u.studentName || u.nameKo || u.name,
+      nameEn: u.nameEn || extractEnglishNameFromEmail(u.email),
       grade: String(u.grade || u.studentGrade),
       classNum: String(u.class || u.classNum || u.studentClass || '1'),
       studentNum: String(u.number || u.studentNum || u.studentNumber || ''),
@@ -618,6 +646,7 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
 
   const emailToSearch = (updateData.studentEmail || existingData?.studentEmail || (isStudentEmail(studentId) ? studentId : '')).trim();
   const nameToUse = updateData.name || existingData?.name;
+  const nameEnToUse = updateData.nameEn !== undefined ? updateData.nameEn : existingData?.nameEn;
   const gradeToUse = updateData.grade || existingData?.grade;
   const classToUse = updateData.classNum || existingData?.classNum;
   const numToUse = updateData.studentNum !== undefined ? updateData.studentNum : existingData?.studentNum;
@@ -634,6 +663,9 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
     if (nameToUse) {
       userPayload.name = nameToUse;
       userPayload.studentName = nameToUse;
+    }
+    if (nameEnToUse !== undefined) {
+      userPayload.nameEn = nameEnToUse;
     }
     if (gradeToUse) {
       userPayload.grade = gradeToUse;
@@ -674,7 +706,7 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
     }
   }
 
-  // 스쿨버스 students 컬렉션 동시 양방향 동기화 (성별, 목적지, 연락처 등)
+  // 스쿨버스 students 컬렉션 동시 양방향 동기화 (성별, 목적지, 연락처, 영문이름 등)
   if (nameToUse) {
     await syncAddressToKisbusStudent(
       nameToUse, 
@@ -683,7 +715,8 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
       addressToUse, 
       contactToUse,
       genderToUse,
-      emailToSearch
+      emailToSearch,
+      nameEnToUse
     );
   }
 
@@ -709,7 +742,8 @@ export const syncAddressToKisbusStudent = async (
   address?: string | null,
   contact?: string | null,
   gender?: 'Male' | 'Female',
-  studentEmail?: string | null
+  studentEmail?: string | null,
+  nameEn?: string | null
 ) => {
   try {
     if (!name) return;
@@ -754,6 +788,9 @@ export const syncAddressToKisbusStudent = async (
       }
       if (studentEmail) {
         busPayload.studentEmail = studentEmail;
+      }
+      if (nameEn !== undefined && nameEn !== null) {
+        busPayload.nameEn = nameEn;
       }
       if (Object.keys(busPayload).length > 0) {
         await updateDoc(doc(busDb, 'students', targetStudent.id), busPayload);

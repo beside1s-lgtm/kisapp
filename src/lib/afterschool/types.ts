@@ -29,6 +29,8 @@ export interface Course {
   instructor2?: string;        // 강사 2 (개별 필드, 쉼표 합산 금지)
   instructor3?: string;        // 강사 3
   instructor4?: string;        // 강사 4
+  instructor5?: string;        // 강사 5
+  instructor6?: string;        // 강사 6
   instructorPhone?: string;
   classTime: string;
   classroom?: string;       // 수업 장소 (Classroom.name)

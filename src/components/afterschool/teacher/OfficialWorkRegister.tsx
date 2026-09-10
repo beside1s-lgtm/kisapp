@@ -21,6 +21,8 @@ export interface OfficialWorkRegisterProps {
     instructor2?: string;
     instructor3?: string;
     instructor4?: string;
+    instructor5?: string;
+    instructor6?: string;
     assistantTeachers?: string[];
     classTime?: string;
     startDate?: string;
@@ -128,6 +130,8 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
     course.instructor2,
     course.instructor3,
     course.instructor4,
+    course.instructor5,
+    course.instructor6,
     ...(course.assistantTeachers || []),
   ].filter((name): name is string => Boolean(name && name.trim() !== mainInstructor.trim()));
 
@@ -174,7 +178,10 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
         return;
       }
     }
+    const prevTitle = document.title;
+    document.title = `${displayCourseTitle} 출근부`;
     window.print();
+    document.title = prevTitle;
   };
 
   // 단일 차시 셀/데이터 렌더링 헬퍼 (표 안 글씨 150% 확대: 11px -> 16px)
@@ -542,8 +549,8 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
             margin: 0 !important;
             padding: 0 !important;
             width: 100% !important;
-            height: 100% !important;
-            overflow: hidden !important;
+            height: auto !important;
+            overflow: visible !important;
             background: #ffffff !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
@@ -556,7 +563,7 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
             visibility: visible !important;
           }
           .official-work-register-modal-print {
-            position: absolute !important;
+            position: fixed !important;
             top: 10mm !important;
             left: 0 !important;
             right: 0 !important;
@@ -564,12 +571,13 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
             max-width: 190mm !important;
             margin: 0 auto !important;
             padding: 0 !important;
-            padding-top: 10mm !important;
+            padding-top: 0 !important;
             border: none !important;
             box-shadow: none !important;
             background: #ffffff !important;
-            overflow: visible !important;
+            overflow: hidden !important;
             page-break-after: avoid !important;
+            break-after: avoid !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
           }

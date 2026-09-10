@@ -349,6 +349,8 @@ function AfterschoolConsole() {
         c.instructor2,
         c.instructor3,
         c.instructor4,
+        c.instructor5,
+        c.instructor6,
         ...(c.assistantTeachers || [])
       ].filter(Boolean).map(s => String(s).trim());
       return instructors.includes(myName);

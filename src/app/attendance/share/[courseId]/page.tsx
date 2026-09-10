@@ -12,7 +12,7 @@ import {
   getTeacherApplySettings,
   onDocConfigUpdate,
 } from '@/lib/services/settingsService';
-import { onMasterStudentsUpdate } from '@/lib/services/masterStudentService';
+import { onMasterStudentsUpdate, extractEnglishNameFromEmail } from '@/lib/services/masterStudentService';
 import type { Course, Enrollment, AttendanceRecord } from '@/lib/afterschool/types';
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import type { DocConfig } from '@/lib/types';
@@ -701,11 +701,26 @@ export default function SharedAttendancePage() {
                 const busNo = getStudentBusNo(enrollment.studentId, enrollment.name, String(enrollment.grade ?? ''), String(enrollment.classNum ?? ''), enrollment, activeDay);
                 const isAssigned = busNo && busNo !== '미배정' && busNo !== '미지정';
 
+                const matchedM = (masterStudents || []).find(ms =>
+                  ms.studentId === enrollment.studentId ||
+                  ms.studentEmail?.toLowerCase() === enrollment.studentId?.toLowerCase() ||
+                  (ms.name === enrollment.name && String(ms.grade) === String(enrollment.grade) && String(ms.classNum) === String(enrollment.classNum))
+                );
+                const sEmail = matchedM?.studentEmail || enrollment?.studentEmail || '';
+                const enName = matchedM?.nameEn || (enrollment as any)?.nameEn || extractEnglishNameFromEmail(sEmail);
+
                 return (
                   <div key={enrollment.id} className="px-4 py-3 flex items-center justify-between gap-3 bg-white hover:bg-slate-50/70 transition">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-extrabold text-slate-900 text-sm">{enrollment.name}</span>
+                        <span className="font-extrabold text-slate-900 text-sm">
+                          {enName || enrollment.name}
+                        </span>
+                        {enName && (
+                          <span className="text-xs text-slate-400 font-normal">
+                            ({enrollment.name})
+                          </span>
+                        )}
                         <span className="text-[11px] text-slate-500 font-semibold">
                           {enrollment.grade}-{enrollment.classNum}
                         </span>

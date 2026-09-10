@@ -422,11 +422,13 @@ export function parseCourseExcel(file: File): Promise<any[]> {
             id: `excel_${idx}_${Date.now()}`,
             title: base,
             category: '',
-            // 강사 4명 개별 필드로 저장 (쉼표 합산 금지)
+            // 강사 최대 6명 개별 필드로 저장 (쉼표 합산 금지)
             instructorName: instructorList[0] || '',
             instructor2: instructorList[1] || '',
             instructor3: instructorList[2] || '',
             instructor4: instructorList[3] || '',
+            instructor5: instructorList[4] || '',
+            instructor6: instructorList[5] || '',
             instructorPhone: '',
             classTime,
             selectedPeriods,
