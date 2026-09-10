@@ -16,6 +16,9 @@ export type UserProfile = {
   studentGrade?: string;
   studentClass?: string;
   studentNumber?: string;
+  gender?: 'Male' | 'Female' | string;
+  class?: string;
+  number?: string;
   residenceDestinationId?: string;
   customResidenceDestination?: string;
   address?: string;

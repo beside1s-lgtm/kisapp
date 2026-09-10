@@ -41,12 +41,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getDocConfig, onOrgStructureUpdate } from '@/lib/services/settingsService';
+import { checkHomeroomAccessPermission } from '@/lib/services/permissionService';
 import { onMasterStudentsUpdate, updateMasterStudent } from '@/lib/services/masterStudentService';
 import { getStudentFieldTripDays, getStudentAbsenceDays, createDocument, approveDocument } from '@/lib/services/documentService';
 import { getApproversByGradeClass } from '@/lib/services/userService';
 import { getWorkingDaysCount, cn } from '@/lib/utils';
 import { resizeStudentPhoto } from '@/lib/imageResize';
 import { BatchPhotoModal } from '@/app/(app)/admin/students/batch-photo-modal';
+import { MainLayout } from '@/components/layout/main-layout';
 import {
   onHomeroomAttendanceUpdate,
   getApprovedAbsenceStudentsForDate,
@@ -317,12 +319,19 @@ export default function TeacherHomeroomApplyPage() {
     return keys.sort(compareClassKeys);
   }, [user?.email, orgStructure]);
 
-  // 관리자 여부 확인 (관리자라면 전체 반 선택 가능)
-  const isAdmin = Boolean(profile?.isAdmin || profile?.role === '관리자' || profile?.role === 'admin');
+  // 권한 판별: 학급 담임, 학생출결 담당자, 시스템 설정 담당자
+  const homeroomPermissions = useMemo(() => {
+    return checkHomeroomAccessPermission(user?.email, profile, orgStructure);
+  }, [user?.email, profile, orgStructure]);
 
-  // 선택 가능한 반 목록 (오름차순 정렬: 유치원 -> 1학년 -> 2학년 ... -> 6학년)
+  // 전교 학급 접근 권한 여부: 학생출결 담당자 또는 시스템 설정 담당자만 모든 학년/학급 접근 가능
+  const canAccessAllClasses = homeroomPermissions.canAccessAllClasses;
+
+  // 선택 가능한 반 목록:
+  // - 학생출결 담당자 및 시스템 설정 담당자: 전교 모든 학급 선택 가능
+  // - 학급 담임 교사: 본인의 담당 학급(myHomeroomKeys)만 엄격 격리 선택 가능
   const availableClassKeys = useMemo(() => {
-    if (isAdmin) {
+    if (canAccessAllClasses) {
       const set = new Set<string>();
       if (orgStructure?.homerooms) {
         Object.keys(orgStructure.homerooms).forEach(k => set.add(k));
@@ -333,7 +342,7 @@ export default function TeacherHomeroomApplyPage() {
       return Array.from(set).sort(compareClassKeys);
     }
     return myHomeroomKeys.sort(compareClassKeys);
-  }, [isAdmin, myHomeroomKeys, orgStructure, allStudents]);
+  }, [canAccessAllClasses, myHomeroomKeys, orgStructure, allStudents]);
 
   // 기본 반 자동 지정
   useEffect(() => {
@@ -682,28 +691,33 @@ export default function TeacherHomeroomApplyPage() {
 
   if (loading) {
     return (
-      <div className="flex h-[50vh] items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
+      <MainLayout title="담임 업무 관리소">
+        <div className="flex h-[50vh] items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </MainLayout>
     );
   }
 
-  // 담임도 아니고 관리자도 아닌 경우 안내
-  if (availableClassKeys.length === 0 && !isAdmin) {
+  // 학급 담임, 학생출결 담당자, 시스템 설정 담당자가 아닌 경우 접근 차단 안내
+  if (availableClassKeys.length === 0 && !homeroomPermissions.canAccess) {
     return (
-      <div className="max-w-xl mx-auto my-12 p-6 bg-amber-50 border border-amber-200 rounded-2xl text-center space-y-3">
-        <AlertCircle className="w-10 h-10 text-amber-600 mx-auto" />
-        <h2 className="text-lg font-bold text-amber-900">담임 교사 권한이 없습니다</h2>
-        <p className="text-xs text-amber-700 leading-relaxed">
-          현재 로그인하신 계정({user?.email})으로 배정된 담임 학급이 조직도에 등록되어 있지 않습니다.
-          조직도 설정을 확인하시거나 관리자에게 문의해 주세요.
-        </p>
-      </div>
+      <MainLayout title="담임 업무 관리소">
+        <div className="max-w-xl mx-auto my-12 p-6 bg-amber-50 border border-amber-200 rounded-2xl text-center space-y-3">
+          <AlertCircle className="w-10 h-10 text-amber-600 mx-auto" />
+          <h2 className="text-lg font-bold text-amber-900">담임 및 출결 관리 권한이 없습니다</h2>
+          <p className="text-xs text-amber-700 leading-relaxed">
+            현재 로그인하신 계정({user?.email})은 학급 담임, 학생출결 담당자, 또는 시스템 설정 담당자로 등록되어 있지 않습니다.
+            조직도 설정을 확인하시거나 관리자에게 문의해 주세요.
+          </p>
+        </div>
+      </MainLayout>
     );
   }
 
   return (
-    <div className="w-full p-4 md:p-6 space-y-6 font-body">
+    <MainLayout title="담임 교사 업무 관리소" contentClassName="p-4 md:p-6 font-body">
+      <div className="w-full space-y-6">
       {/* 헤더 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
         <div>
@@ -714,9 +728,21 @@ export default function TeacherHomeroomApplyPage() {
             <h1 className="text-2xl font-bold tracking-tight text-foreground font-headline">
               담임 교사 업무 관리소
             </h1>
+            {canAccessAllClasses && (
+              <Badge variant="secondary" className="bg-amber-100 text-amber-900 border-amber-200 text-xs font-bold px-2 py-0.5">
+                {homeroomPermissions.isSystemManager ? '시스템 설정 담당 (전교 권한)' : '학생출결 담당 (전교 권한)'}
+              </Badge>
+            )}
+            {!canAccessAllClasses && homeroomPermissions.isHomeroomTeacher && (
+              <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 text-xs font-semibold px-2 py-0.5">
+                학급 담임
+              </Badge>
+            )}
           </div>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            담당 학급 학생들의 계정 정보를 확인하고 사진을 관리하며, 출결 및 체험학습 신청을 대리 작성합니다.
+            {canAccessAllClasses 
+              ? '전교 모든 학급의 학생 정보 확인, 출결 관리 및 결석/체험학습 대리 작성을 총괄합니다.'
+              : '담당 학급 학생들의 계정 정보를 확인하고 사진을 관리하며, 출결 및 체험학습 신청을 대리 작성합니다.'}
           </p>
         </div>
       </div>
@@ -1482,5 +1508,6 @@ export default function TeacherHomeroomApplyPage() {
         </DialogContent>
       </Dialog>
     </div>
-  );
+  </MainLayout>
+);
 }

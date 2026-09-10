@@ -68,7 +68,7 @@ import {
   MajorTaskDefinition,
   TaskAssignmentContext
 } from "@/components/dashboard/major-tasks-modal";
-import { checkPeAccessPermission, checkHealthAccessPermission } from "@/lib/services/permissionService";
+import { checkPeAccessPermission, checkHealthAccessPermission, checkHomeroomAccessPermission } from "@/lib/services/permissionService";
 import { MainLayout } from "@/components/layout/main-layout";
 import { WeeklyEducationPlanModal } from "@/components/tasks/weekly-education-plan-modal";
 import { MonthlyEducationPlanModal } from "@/components/tasks/monthly-education-plan-modal";
@@ -444,14 +444,9 @@ export default function InboxPage() {
 
     const isHomeroomTeacher = useMemo(() => {
         if (!profile?.email) return false;
-        if (profile.isAdmin) return true;
-        if (myBelongingInfo.homeroom) return true;
-        if (orgData?.homerooms) {
-            const emailLower = profile.email.toLowerCase();
-            return Object.values(orgData.homerooms).some((e: any) => e?.toLowerCase() === emailLower);
-        }
-        return false;
-    }, [profile, myBelongingInfo, orgData]);
+        const { canAccess } = checkHomeroomAccessPermission(profile.email, profile, orgData);
+        return canAccess;
+    }, [profile, orgData]);
 
     const hasAssignedBus = useMemo(() => {
         if (isBusManager) return true;

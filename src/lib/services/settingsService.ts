@@ -583,6 +583,11 @@ export async function runAfterschoolEnrollmentTransaction(
     phone: string;
     parentPhone: string;
     kisbusNo?: string;
+    grade?: number;
+    classNum?: number;
+    studentNum?: number;
+    studentEmail?: string;
+    needsBus?: boolean;
   },
   courseTuition: number,
   courseTextbookFee: number,
@@ -618,9 +623,11 @@ export async function runAfterschoolEnrollmentTransaction(
           courseId,
           studentId,
           yearNo: 99,
-          grade: 1,
-          classNum: 1,
-          studentNum: 1,
+          grade: studentProfile.grade || 1,
+          classNum: studentProfile.classNum || 1,
+          studentNum: studentProfile.studentNum || 1,
+          studentEmail: studentProfile.studentEmail || '',
+          needsBus: Boolean(studentProfile.needsBus),
           name: studentProfile.name,
           phone: studentProfile.phone,
           parentPhone: studentProfile.parentPhone,

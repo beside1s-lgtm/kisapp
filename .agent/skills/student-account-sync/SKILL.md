@@ -24,3 +24,10 @@ description: 신학기 또는 전입생 학생 계정 엑셀 일괄 등록, Fire
 - 시스템 설정의 "학부모 PIN 인증 사용" 토글 상태를 확인한다:
   - **PIN 인증 ON**: 학생 계정으로 최초 로그인 시 `/parents/setup`으로 자동 리다이렉트되어 PIN 등록 및 서명 저장이 요구되는지 확인한다.
   - **PIN 인증 OFF**: PIN 번호 등록 절차가 생략되고 서명만 저장되면 즉시 학부모 메인 대시보드로 진입하는지 확인한다.
+
+## 5. 5대 모듈 정합성 점검 항목
+- **담임 출결 연동**: 담임 출석부에서 결석/조퇴 처리 시 스쿨버스 `notBoarding` 및 방과후 출석부에 동기화되는지 확인한다 (`homeroomAttendanceSync.ts`).
+- **방과후 수강 신청 프로필 보존**: 학부모 다자녀 대리 신청 시 `afterschool_enrollments`에 각 자녀의 `grade`, `classNum`, `studentNum`, `studentEmail`이 정확히 기록되는지 확인한다 (`StudentView.tsx`, `settingsService.ts`).
+- **방과후 버스 자동 프로비저닝**: 등하교 버스 미등록 학생이 방과후 버스를 신청했을 때 `kisbus.students`에 자동 생성되어 배정 목록에 노출되는지 확인한다 (`assignments.ts`).
+- **학교체육 성별 소급 연동**: 학생 성별 변경 시 당해 연도 `pe_schools` 기록의 `gender`가 소급 갱신되는지 확인한다 (`syncStudentGenderToPeRecords`).
+

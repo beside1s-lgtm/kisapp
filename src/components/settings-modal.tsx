@@ -1,6 +1,7 @@
 'use client';
 
 import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache, normalizeGrade, resolveDepartment, syncAllUsersToOrgStructure, isFacultyMember, resetParentPin } from '@/lib/services/userService';
+import { createMasterStudent, updateMasterStudent, deleteMasterStudent } from '@/lib/services/masterStudentService';
 import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES, getGoogleDriveConfig, saveGoogleDriveConfig, DEFAULT_GOOGLE_DRIVE_CONFIG } from '@/lib/services/settingsService';
 import { getAuditLogs } from '@/lib/services/documentService';
 import { DocConfig, UserProfile, OrgStructure, DelegationRule, AcademicCalendarConfig, AcademicEvent, AcademicSemesterPeriod, FieldTripBlackoutPeriod, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, CustomDutyRole, DutyRolePermission, DutyRoleAttendanceScope, ClassPeriodSchedule, DEFAULT_PERIOD_SCHEDULES, GoogleDriveConfig } from '@/lib/types';
@@ -1489,25 +1490,45 @@ export function SettingsModal() {
       }
   };
   const handleAddNewStudent = async () => {
-      if (!newStudent.email || !newStudent.studentName || !newStudent.parentName) {
-          toast({ variant: 'destructive', title: '입력 오류', description: '이메일, 학생 이름, 학부모 이름을 모두 입력해야 합니다.' });
+      const cleanEmail = (newStudent.email || '').trim().toLowerCase();
+      if (!cleanEmail || !newStudent.studentName?.trim()) {
+          toast({ variant: 'destructive', title: '입력 오류', description: '이메일과 학생 이름을 모두 입력해야 합니다.' });
           return;
       }
       const payload = {
-          email: newStudent.email,
-          name: newStudent.parentName,
-          parentName: newStudent.parentName,
-          studentName: newStudent.studentName,
-          studentGrade: newStudent.grade,
-          studentClass: newStudent.class,
-          studentNumber: newStudent.number,
-          parentPhone: newStudent.phone,
-          role: '학부모'
+          email: cleanEmail,
+          name: newStudent.parentName?.trim() || newStudent.studentName.trim(),
+          parentName: newStudent.parentName?.trim() || '',
+          studentName: newStudent.studentName.trim(),
+          studentGrade: newStudent.grade || '1',
+          grade: newStudent.grade || '1',
+          studentClass: newStudent.class || '1',
+          class: newStudent.class || '1',
+          studentNumber: newStudent.number || '',
+          number: newStudent.number || '',
+          parentPhone: newStudent.phone || '',
+          phone: newStudent.phone || '',
+          gender: 'Male',
+          role: 'student'
       };
-      const result = await saveUserProfile('', newStudent.email, payload as any);
+      const result = await saveUserProfile('', cleanEmail, payload as any);
       if (result.success) {
-          toast({ title: '학생/학부모 추가됨' });
-          fetchUsers();
+          try {
+            await createMasterStudent({
+              name: newStudent.studentName.trim(),
+              studentEmail: cleanEmail,
+              grade: String(newStudent.grade || '1'),
+              classNum: String(newStudent.class || '1'),
+              studentNum: String(newStudent.number || ''),
+              gender: 'Male',
+              contact: newStudent.phone || '',
+              parentEmail: cleanEmail,
+            });
+          } catch (mErr) {
+            console.warn('createMasterStudent sync in settings failed:', mErr);
+          }
+          toast({ title: '학생/학부모 추가 완료', description: '사용자 및 통합 학생 마스터에 등록되었습니다.' });
+          await fetchUsers(true);
           setIsAddingNewUser(false);
           setNewStudent({ grade: '', class: '', number: '', studentName: '', parentName: '', email: '', phone: '' });
       } else {
@@ -1518,10 +1539,10 @@ export function SettingsModal() {
   const handleStartEditStudent = (user: UserProfile) => {
     setEditingStudent(user);
     setEditStudentForm({
-      grade: user.studentGrade || '',
-      class: user.studentClass || '',
-      number: user.studentNumber || '',
-      studentName: user.studentName || '',
+      grade: user.studentGrade || user.grade || '',
+      class: user.studentClass || user.class || '',
+      number: user.studentNumber || user.number || '',
+      studentName: user.studentName || user.name || '',
       parentName: user.parentName || user.name || '',
       phone: user.parentPhone || '',
     });
@@ -1529,18 +1550,36 @@ export function SettingsModal() {
 
   const handleSaveEditStudent = async () => {
     if (!editingStudent) return;
+    const cleanEmail = (editingStudent.email || '').trim().toLowerCase();
     const payload = {
       studentName: editStudentForm.studentName.trim(),
+      name: editStudentForm.parentName?.trim() || editStudentForm.studentName.trim(),
       studentGrade: editStudentForm.grade,
+      grade: editStudentForm.grade,
       studentClass: editStudentForm.class,
+      class: editStudentForm.class,
       studentNumber: editStudentForm.number,
-      parentName: editStudentForm.parentName.trim(),
-      parentPhone: editStudentForm.phone,
+      number: editStudentForm.number,
+      parentName: editStudentForm.parentName?.trim() || '',
+      parentPhone: editStudentForm.phone || '',
+      phone: editStudentForm.phone || '',
     };
-    const result = await saveUserProfile(editingStudent.uid || '', editingStudent.email, payload as any);
+    const result = await saveUserProfile(editingStudent.uid || '', cleanEmail, payload as any);
     if (result.success) {
-      toast({ title: '수정 완료', description: '학생/학부모 정보가 업데이트되었습니다.' });
-      fetchUsers();
+      try {
+        await updateMasterStudent(cleanEmail, {
+          name: editStudentForm.studentName.trim(),
+          studentEmail: cleanEmail,
+          grade: String(editStudentForm.grade || '1'),
+          classNum: String(editStudentForm.class || '1'),
+          studentNum: String(editStudentForm.number || ''),
+          contact: editStudentForm.phone || '',
+        });
+      } catch (mErr) {
+        console.warn('updateMasterStudent sync in settings failed:', mErr);
+      }
+      toast({ title: '수정 완료', description: '학생 정보가 모든 모듈에 성공적으로 업데이트되었습니다.' });
+      await fetchUsers(true);
       setEditingStudent(null);
     } else {
       toast({ variant: 'destructive', title: '수정 실패', description: result.error });
@@ -2126,8 +2165,17 @@ export function SettingsModal() {
 
     const result = await deleteUser(userToDelete.email);
     if (result.success) {
+      // 학생 계정인 경우 마스터 및 스쿨버스 컬렉션에서도 동시 정리
+      const isStudent = userToDelete.role === 'student' || Boolean(userToDelete.studentGrade || userToDelete.grade);
+      if (isStudent && userToDelete.email) {
+        try {
+          await deleteMasterStudent(userToDelete.email.toLowerCase().trim());
+        } catch (mErr) {
+          console.warn('deleteMasterStudent sync in settings failed:', mErr);
+        }
+      }
       toast({ title: '사용자 삭제됨', description: `${userToDelete.name} (${userToDelete.email}) 사용자가 삭제되었습니다.`});
-      fetchUsers();
+      await fetchUsers(true);
     } else {
       toast({ variant: 'destructive', title: '삭제 실패', description: result.error });
     }

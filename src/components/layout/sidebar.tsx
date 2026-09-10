@@ -41,7 +41,7 @@ import {
   getParentServiceDocuments 
 } from '@/lib/services/documentService';
 import { onAfterschoolCoursesUpdate, onOrgStructureUpdate } from '@/lib/services/settingsService';
-import { checkPeAccessPermission, checkHealthAccessPermission } from '@/lib/services/permissionService';
+import { checkPeAccessPermission, checkHealthAccessPermission, checkHomeroomAccessPermission } from '@/lib/services/permissionService';
 import type { Course } from '@/lib/afterschool/types';
 import type { OrgStructure } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -204,15 +204,11 @@ export default function AppSidebar() {
     return checkHealthAccessPermission(user?.email, profile, orgStructure);
   }, [user?.email, profile, orgStructure]);
 
-  // 담임 교사 또는 관리자 여부 판별 (담임 업무 바로가기 노출 조건)
-  const isHomeroomTeacher = useMemo(() => {
+  // 담임 업무 바로가기 노출 조건: 학급 담임, 학생출결 담당자, 시스템 설정 담당자만 노출
+  const canAccessHomeroom = useMemo(() => {
     if (!user?.email || isParent) return false;
-    if (profile?.isAdmin || profile?.role === '관리자' || profile?.role === 'admin') return true;
-    if (!orgStructure?.homerooms) return false;
-    const normalizedEmail = user.email.trim().toLowerCase();
-    return Object.values(orgStructure.homerooms).some(
-      (teacherEmail) => teacherEmail && teacherEmail.trim().toLowerCase() === normalizedEmail
-    );
+    const { canAccess } = checkHomeroomAccessPermission(user.email, profile, orgStructure);
+    return canAccess;
   }, [user?.email, isParent, profile, orgStructure]);
 
   // 통합 학생 계정 관리 바로가기 표출 조건: isAdmin 또는 systemManagers 등록자 전용
@@ -533,8 +529,8 @@ export default function AppSidebar() {
                   </>
                 ) : (
                   <>
-                    {/* 담임 교사 및 관리자에게 노출: '담임 업무 (출결/체험 대리)' */}
-                    {isHomeroomTeacher && (
+                    {/* 담임 교사, 학생출결 담당자, 시스템 설정 담당자에게 노출: '담임 업무 (출결/체험 대리)' */}
+                    {canAccessHomeroom && (
                       <Link
                         href="/teacher/homeroom"
                         className={cn(

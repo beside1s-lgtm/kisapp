@@ -362,6 +362,10 @@ export const deactivateItem = async (school: string, itemId: string) => {
   const itemRef = doc(db, 'pe_schools', school, 'items', itemId);
   await setDoc(itemRef, { isDeactivated: true }, { merge: true });
 };
+export const reactivateItem = async (school: string, itemId: string) => {
+  const itemRef = doc(db, 'pe_schools', school, 'items', itemId);
+  await setDoc(itemRef, { isDeactivated: false }, { merge: true });
+};
 export const deactivateCategory = async (school: string, category: string, allItems: MeasurementItem[]) => {
   const batch = writeBatch(db);
   allItems.filter(i => (i.category || (i.isPaps ? 'PAPS' : '기타')) === category).forEach(i => {
@@ -616,5 +620,31 @@ export async function suggestPeEventToDepartment(
     updatedAt: serverTimestamp(),
   });
 }
+
+// 학생 성별 변경 시 학교체육(PAPS) 측정 기록 소급 동기화
+export async function syncStudentGenderToPeRecords(
+  school: string = 'KISH',
+  studentIdOrEmail: string,
+  newGender: 'Male' | 'Female'
+): Promise<number> {
+  try {
+    const korGender = newGender === 'Female' ? '여' : '남';
+    const recordsRef = collection(db, 'pe_schools', school, 'records');
+    const q = query(recordsRef, where('studentId', '==', studentIdOrEmail));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return 0;
+
+    const batch = writeBatch(db);
+    snapshot.docs.forEach(d => {
+      batch.update(d.ref, { gender: korGender });
+    });
+    await batch.commit();
+    return snapshot.size;
+  } catch (err) {
+    console.warn('[PeService] syncStudentGenderToPeRecords failed:', err);
+    return 0;
+  }
+}
+
 
 

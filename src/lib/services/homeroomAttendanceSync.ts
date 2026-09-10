@@ -183,7 +183,21 @@ export async function saveHomeroomAttendanceAndSync(
 // ─── 4. 스쿨버스 및 방과후 연동 세부 로직 ──────────────────────────────────
 
 async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
-  const { date, studentId, status } = record;
+  const { date, studentId, studentName, gradeClass, status } = record;
+  const db = getDb();
+
+  const [grade, classNum] = (gradeClass || '').split('-');
+
+  // 마스터 학생 정보 조회 (이메일 및 정확한 프로필 확보)
+  let studentEmail = '';
+  try {
+    const masterDoc = await getDoc(doc(db, 'master_students', studentId));
+    if (masterDoc.exists()) {
+      studentEmail = (masterDoc.data()?.studentEmail || masterDoc.data()?.email || '').trim().toLowerCase();
+    }
+  } catch (err) {
+    console.warn('[HomeroomSync] Master student lookup failed:', err);
+  }
 
   const dayOfWeekMap: Record<number, string> = {
     0: 'Sunday',
@@ -196,9 +210,29 @@ async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
   };
   const targetDayOfWeek = dayOfWeekMap[new Date(date + 'T12:00:00').getDay()];
 
-  // 1) 스쿨버스 (kisbusDb) 연동
+  // 1) 스쿨버스 (kisbusDb) 연동: 스쿨버스 학생 고유 ID 역추적
   try {
     const kisbusDb = getKisbusDb();
+    const clean = (str: any) => String(str || '').replace(/\s+/g, '').toLowerCase();
+    const targetCleanName = clean(studentName);
+
+    // 스쿨버스 students 컬렉션에서 해당 학생 역추적
+    const busStudentsSnap = await getDocs(collection(kisbusDb, 'students'));
+    const matchedBusStudent = busStudentsSnap.docs.find(d => {
+      const s = d.data();
+      if (d.id === studentId) return true;
+      if (studentEmail && s.studentEmail && s.studentEmail.toLowerCase() === studentEmail) return true;
+      const nameMatch = clean(s.name) === targetCleanName || clean(s.nameKo) === targetCleanName || clean(s.nameEn) === targetCleanName;
+      const gradeMatch = !grade || String(s.grade) === String(grade);
+      const classMatch = !classNum || String(s.class || s.classNum) === String(classNum);
+      return nameMatch && gradeMatch && classMatch;
+    });
+
+    const targetBusStudentIds = Array.from(new Set([
+      studentId, 
+      matchedBusStudent ? matchedBusStudent.id : null
+    ].filter(Boolean) as string[]));
+
     // 해당 요일(targetDayOfWeek) 노선만 단독 타겟팅 조회
     const routesQuery = query(
       collection(kisbusDb, 'routes'),
@@ -209,7 +243,7 @@ async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
     for (const rDoc of routesSnap.docs) {
       const rData = rDoc.data();
       const seating: any[] = rData.seating || [];
-      const isStudentInRoute = seating.some((s: any) => s.studentId === studentId);
+      const isStudentInRoute = seating.some((s: any) => targetBusStudentIds.includes(s.studentId));
       if (!isStudentInRoute) continue;
 
       const routeType = rData.type; // 'Morning' | 'Afternoon' | 'AfterSchool'
@@ -220,9 +254,9 @@ async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
         await setDoc(
           attendanceRef,
           {
-            notBoarding: arrayUnion(studentId),
-            boarded: arrayRemove(studentId),
-            disembarked: arrayRemove(studentId),
+            notBoarding: arrayUnion(...targetBusStudentIds),
+            boarded: arrayRemove(...targetBusStudentIds),
+            disembarked: arrayRemove(...targetBusStudentIds),
           },
           { merge: true }
         );
@@ -232,9 +266,9 @@ async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
           await setDoc(
             attendanceRef,
             {
-              notBoarding: arrayUnion(studentId),
-              boarded: arrayRemove(studentId),
-              disembarked: arrayRemove(studentId),
+              notBoarding: arrayUnion(...targetBusStudentIds),
+              boarded: arrayRemove(...targetBusStudentIds),
+              disembarked: arrayRemove(...targetBusStudentIds),
             },
             { merge: true }
           );
@@ -244,7 +278,7 @@ async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
         await setDoc(
           attendanceRef,
           {
-            notBoarding: arrayRemove(studentId),
+            notBoarding: arrayRemove(...targetBusStudentIds),
           },
           { merge: true }
         );
@@ -254,25 +288,37 @@ async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
     console.warn('[HomeroomSync] Kisbus sync failed:', busErr);
   }
 
-  // 2) 방과후 출석부 (getDb()) 연동
+  // 2) 방과후 출석부 (getDb()) 연동: 학생 ID 및 복합 조건 검색
   try {
-    const db = getDb();
     const koreanDays = ['일', '월', '화', '수', '목', '금', '토'];
     const korDay = koreanDays[new Date(date + 'T12:00:00').getDay()];
 
-    // 해당 학생이 수강 중인 확정 강좌 찾기
+    // 1차: studentId 직접 조회
     const enrollmentsRef = collection(db, 'afterschool_enrollments');
-    const enrollQuery = query(
-      enrollmentsRef,
-      where('studentId', '==', studentId),
-      where('status', '==', 'ENROLLED')
-    );
-    const enrollSnap = await getDocs(enrollQuery);
+    let targetEnrollments: any[] = [];
+    const directSnap = await getDocs(query(enrollmentsRef, where('studentId', '==', studentId), where('status', '==', 'ENROLLED')));
+    targetEnrollments = directSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    if (!enrollSnap.empty) {
-      for (const eDoc of enrollSnap.docs) {
-        const eData = eDoc.data();
-        const courseId = eData.courseId;
+    // 2차: 직접 조회 결과가 없을 시 학생 이름/학년/반 및 이메일로 검색
+    if (targetEnrollments.length === 0 && studentName) {
+      const clean = (str: any) => String(str || '').replace(/\s+/g, '').toLowerCase();
+      const targetCleanName = clean(studentName);
+      const allEnrolledSnap = await getDocs(query(enrollmentsRef, where('status', '==', 'ENROLLED')));
+      targetEnrollments = allEnrolledSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter((e: any) => {
+          const nameMatch = clean(e.name || e.studentName) === targetCleanName;
+          const gradeMatch = !grade || String(e.grade) === String(grade);
+          const classMatch = !classNum || String(e.classNum || e.class) === String(classNum);
+          const emailMatch = studentEmail && e.studentEmail && e.studentEmail.toLowerCase() === studentEmail;
+          return emailMatch || (nameMatch && gradeMatch && classMatch);
+        });
+    }
+
+    if (targetEnrollments.length > 0) {
+      for (const enroll of targetEnrollments) {
+        const courseId = enroll.courseId;
+        const enrollStudentId = enroll.studentId || studentId;
 
         // 해당 강좌가 오늘(korDay) 수업하는지 확인
         const courseDoc = await getDoc(doc(db, 'afterschool_courses', courseId));
@@ -282,7 +328,7 @@ async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
         if (!classDays.includes(korDay)) continue;
 
         // 출석 레코드 ID 및 데이터 생성
-        const attId = `att_${studentId}_${courseId}_${date}`;
+        const attId = `att_${enrollStudentId}_${courseId}_${date}`;
         const attRef = doc(db, 'afterschool_attendance', attId);
 
         if (status === 'ABSENT') {
@@ -292,7 +338,7 @@ async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
             {
               id: attId,
               courseId,
-              studentId,
+              studentId: enrollStudentId,
               date,
               status: 'ABSENT',
               markSymbol: 'X',
@@ -309,7 +355,7 @@ async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
             {
               id: attId,
               courseId,
-              studentId,
+              studentId: enrollStudentId,
               date,
               status: 'ATTEND',
               markSymbol: 'V',

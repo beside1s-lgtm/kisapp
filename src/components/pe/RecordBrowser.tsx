@@ -107,13 +107,26 @@ export default function RecordBrowser({
   const [quizResults, setQuizResults] = useState<QuizResult[]>([]);
   const [quizAssignments, setQuizAssignments] = useState<QuizAssignment[]>([]);
 
-  // Filter for items that actually have at least one record
+  // Filter for items that actually have at least one record — 이름 기준 중복 제거
   const itemsWithRecords = useMemo(() => {
     const recordedItemNames = new Set(allRecords.map(r => r.item));
+    const seen = new Set<string>();
     return allItems
       .filter(item => recordedItemNames.has(item.name))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .filter(item => {
+        if (seen.has(item.name)) return false;
+        seen.add(item.name);
+        return true;
+      });
   }, [allItems, allRecords]);
+
+  // 선택된 종목의 측정 날짜 목록 (최신순)
+  const itemDatesForSelected = useMemo(() => {
+    if (!selectedItem || selectedItem === 'theory-exam') return [];
+    const dates = new Set(allRecords.filter(r => r.item === selectedItem).map(r => r.date));
+    return [...dates].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+  }, [selectedItem, allRecords]);
 
   useEffect(() => {
     if (school && selectedItem === 'theory-exam') {
@@ -721,7 +734,7 @@ export default function RecordBrowser({
                 </TabsContent>
                 <TabsContent value="item" className="space-y-2 sm:space-y-4">
                     <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 pt-2">
-                       <Select value={selectedItem} onValueChange={setSelectedItem}>
+                       <Select value={selectedItem} onValueChange={(v) => { setSelectedItem(v); setItemDateFilter('latest'); }}>
                           <SelectTrigger className="w-[120px] sm:w-[160px] h-7 sm:h-8 text-[11px] sm:text-xs font-semibold">
                             <SelectValue placeholder="종목 선택" />
                           </SelectTrigger>
@@ -772,6 +785,21 @@ export default function RecordBrowser({
                             ))}
                             </SelectContent>
                         </Select>
+                        {/* 날짜 선택 드롭다운 */}
+                        {selectedItem && selectedItem !== 'theory-exam' && itemDatesForSelected.length > 0 && (
+                          <Select value={itemDateFilter} onValueChange={setItemDateFilter}>
+                            <SelectTrigger className="w-[110px] sm:w-[140px] h-7 sm:h-8 text-[11px] sm:text-xs font-semibold">
+                              <CalendarIcon className="h-3 w-3 mr-1 shrink-0" />
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="latest">최신 기록</SelectItem>
+                              {itemDatesForSelected.map(date => (
+                                <SelectItem key={date} value={date}>{date}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                         <Button onClick={handleItemDownloadExcel} variant="outline" size="sm" className="ml-auto h-7 sm:h-8 px-2 text-xs" disabled={!selectedItem} title="엑셀 다운로드">
                             <FileDown className="h-3.5 w-3.5 sm:mr-1.5" />
                             <span className="hidden sm:inline">엑셀 다운로드</span>

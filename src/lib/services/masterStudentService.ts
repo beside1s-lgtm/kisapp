@@ -1,7 +1,7 @@
 import { getDb } from '@/lib/firebase';
 import { getKisbusDb } from '@/lib/kisbus/firebase';
 import { 
-  collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, getDocs, query, where 
+  collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, getDocs, getDoc, query, where 
 } from 'firebase/firestore';
 import type { MasterStudent, NewMasterStudent } from '@/lib/types/masterStudent';
 
@@ -551,41 +551,54 @@ export const createMasterStudent = async (studentData: NewMasterStudent): Promis
 
   await setDoc(docRef, payload);
 
-  // users 컬렉션에도 동시 등록/업데이트하여 연동 완벽 보장
+  // users 컬렉션에도 동시 등록/업데이트하여 연동 완벽 보장 (난수 ID가 아닌 이메일 기반 doc ID 사용 및 필드 완결 저장)
   if (studentData.studentEmail) {
-    const q = query(collection(getDb(), 'users'), where("email", "==", studentData.studentEmail.trim()));
+    const cleanEmail = studentData.studentEmail.trim();
+    const userPayload: any = {
+      email: cleanEmail,
+      name: studentData.name,
+      studentName: studentData.name,
+      displayName: studentData.name,
+      studentGrade: studentData.grade,
+      grade: studentData.grade,
+      studentClass: studentData.classNum,
+      class: studentData.classNum,
+      studentNumber: studentData.studentNum || '',
+      number: studentData.studentNum || '',
+      gender: studentData.gender || 'Male',
+      phone: studentData.contact || '',
+      parentPhone: studentData.contact || '',
+      address: studentData.address || '',
+      photoUrl: studentData.photoUrl || '',
+      role: 'student'
+    };
+
+    const q = query(collection(getDb(), 'users'), where("email", "==", cleanEmail));
     const snapshot = await getDocs(q);
     if (!snapshot.empty) {
-      const userDoc = snapshot.docs[0];
-      await updateDoc(doc(getDb(), 'users', userDoc.id), {
-        studentName: studentData.name,
-        grade: studentData.grade,
-        class: studentData.classNum,
-        number: studentData.studentNum,
-        phone: studentData.contact,
-        address: studentData.address || '',
-        photoUrl: studentData.photoUrl || ''
-      });
+      for (const userDoc of snapshot.docs) {
+        await updateDoc(doc(getDb(), 'users', userDoc.id), userPayload);
+      }
     } else {
-      const userRef = doc(collection(getDb(), 'users'));
+      const userRef = doc(getDb(), 'users', cleanEmail.toLowerCase());
       await setDoc(userRef, {
-        email: studentData.studentEmail.trim(),
-        name: studentData.name,
-        studentName: studentData.name,
-        grade: studentData.grade,
-        class: studentData.classNum,
-        number: studentData.studentNum,
-        phone: studentData.contact,
-        address: studentData.address || '',
-        photoUrl: studentData.photoUrl || '',
-        role: 'student'
-      });
+        uid: cleanEmail.toLowerCase(),
+        ...userPayload
+      }, { merge: true });
     }
   }
 
-  // 스쿨버스 students 컬렉션에도 거주지 주소(목적지) 동기화
-  if (studentData.address && studentData.name) {
-    await syncAddressToKisbusStudent(studentData.name, studentData.grade, studentData.classNum, studentData.address, studentData.contact);
+  // 스쿨버스 students 컬렉션에도 거주지 주소(목적지), 성별, 연락처 완결 동기화
+  if (studentData.name) {
+    await syncAddressToKisbusStudent(
+      studentData.name, 
+      studentData.grade, 
+      studentData.classNum, 
+      studentData.address || '', 
+      studentData.contact,
+      studentData.gender || 'Male',
+      studentData.studentEmail
+    );
   }
 
   return docRef.id;
@@ -594,67 +607,131 @@ export const createMasterStudent = async (studentData: NewMasterStudent): Promis
 // 3. 마스터 학생 정보 수정 (기본 프로필 + users 컬렉션 + 스쿨버스 students 동시 양방향 업데이트)
 export const updateMasterStudent = async (studentId: string, updateData: Partial<MasterStudent>): Promise<void> => {
   const docRef = doc(getDb(), COLLECTION_NAME, studentId);
+  const existingSnap = await getDoc(docRef);
+  const existingData = existingSnap.exists() ? (existingSnap.data() as MasterStudent) : null;
+
   const now = new Date().toISOString();
   await updateDoc(docRef, {
     ...updateData,
     updatedAt: now
   });
 
+  const emailToSearch = (updateData.studentEmail || existingData?.studentEmail || (isStudentEmail(studentId) ? studentId : '')).trim();
+  const nameToUse = updateData.name || existingData?.name;
+  const gradeToUse = updateData.grade || existingData?.grade;
+  const classToUse = updateData.classNum || existingData?.classNum;
+  const numToUse = updateData.studentNum !== undefined ? updateData.studentNum : existingData?.studentNum;
+  const genderToUse = updateData.gender || existingData?.gender;
+  const contactToUse = updateData.contact !== undefined ? updateData.contact : existingData?.contact;
+  const addressToUse = updateData.address !== undefined ? updateData.address : existingData?.address;
+  const photoToUse = updateData.photoUrl !== undefined ? updateData.photoUrl : existingData?.photoUrl;
+
   // users 컬렉션 동시 업데이트
-  if (updateData.studentEmail || updateData.name || updateData.grade || updateData.address || updateData.photoUrl !== undefined) {
-    const emailToSearch = updateData.studentEmail || studentId;
-    const q = query(collection(getDb(), 'users'), where("email", "==", emailToSearch.trim()));
+  if (emailToSearch) {
+    const q = query(collection(getDb(), 'users'), where("email", "==", emailToSearch));
     const snapshot = await getDocs(q);
+    const userPayload: any = {};
+    if (nameToUse) {
+      userPayload.name = nameToUse;
+      userPayload.studentName = nameToUse;
+    }
+    if (gradeToUse) {
+      userPayload.grade = gradeToUse;
+      userPayload.studentGrade = gradeToUse;
+    }
+    if (classToUse) {
+      userPayload.class = classToUse;
+      userPayload.studentClass = classToUse;
+    }
+    if (numToUse !== undefined) {
+      userPayload.number = numToUse;
+      userPayload.studentNumber = numToUse;
+    }
+    if (genderToUse) {
+      userPayload.gender = genderToUse;
+    }
+    if (contactToUse !== undefined) {
+      userPayload.phone = contactToUse;
+      userPayload.parentPhone = contactToUse;
+    }
+    if (addressToUse !== undefined) {
+      userPayload.address = addressToUse;
+    }
+    if (photoToUse !== undefined) {
+      userPayload.photoUrl = photoToUse;
+    }
+
     if (!snapshot.empty) {
-      const userDoc = snapshot.docs[0];
-      const payload: any = {};
-      if (updateData.name) payload.studentName = updateData.name;
-      if (updateData.grade) payload.grade = updateData.grade;
-      if (updateData.classNum) payload.class = updateData.classNum;
-      if (updateData.studentNum) payload.number = updateData.studentNum;
-      if (updateData.contact) payload.phone = updateData.contact;
-      if (updateData.address !== undefined) payload.address = updateData.address;
-      if (updateData.photoUrl !== undefined) payload.photoUrl = updateData.photoUrl;
-      await updateDoc(doc(getDb(), 'users', userDoc.id), payload);
+      for (const userDoc of snapshot.docs) {
+        await updateDoc(doc(getDb(), 'users', userDoc.id), userPayload);
+      }
+    } else {
+      const directRef = doc(getDb(), 'users', emailToSearch.toLowerCase());
+      const directSnap = await getDoc(directRef);
+      if (directSnap.exists()) {
+        await updateDoc(directRef, userPayload);
+      }
     }
   }
 
-  // 스쿨버스 students 컬렉션 동시 양방향 동기화
-  if (updateData.name || updateData.address !== undefined) {
-    const name = updateData.name;
-    const grade = updateData.grade;
-    const classNum = updateData.classNum;
-    const address = updateData.address;
-    const contact = updateData.contact;
-    if (name && address) {
-      await syncAddressToKisbusStudent(name, grade, classNum, address, contact);
+  // 스쿨버스 students 컬렉션 동시 양방향 동기화 (성별, 목적지, 연락처 등)
+  if (nameToUse) {
+    await syncAddressToKisbusStudent(
+      nameToUse, 
+      gradeToUse, 
+      classToUse, 
+      addressToUse, 
+      contactToUse,
+      genderToUse,
+      emailToSearch
+    );
+  }
+
+  // 학교체육(PAPS) 측정 기록 성별 동기화
+  if (genderToUse) {
+    try {
+      const { syncStudentGenderToPeRecords } = await import('./peService');
+      await syncStudentGenderToPeRecords('KISH', studentId, genderToUse);
+      if (emailToSearch && emailToSearch !== studentId) {
+        await syncStudentGenderToPeRecords('KISH', emailToSearch, genderToUse);
+      }
+    } catch (peErr) {
+      console.warn('[MasterStudentService] syncStudentGenderToPeRecords failed:', peErr);
     }
   }
 };
 
-// 스쿨버스 학생 목적지 동기화 헬퍼 함수
+// 스쿨버스 학생 목적지 및 성별 동기화 헬퍼 함수
 export const syncAddressToKisbusStudent = async (
   name: string, 
   grade?: string, 
   classNum?: string, 
   address?: string | null,
-  contact?: string | null
+  contact?: string | null,
+  gender?: 'Male' | 'Female',
+  studentEmail?: string | null
 ) => {
   try {
-    if (!name || !address) return;
+    if (!name) return;
     const busDb = getKisbusDb();
     
-    // 1. 목적지 목록에서 목적지 ID 조회
-    const destSnap = await getDocs(collection(busDb, 'destinations'));
-    const destinations = destSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const matchedDest = destinations.find((d: any) => d.name === address || d.id === address);
-    const destIdToSet = matchedDest ? matchedDest.id : address;
+    // 1. 목적지 목록에서 목적지 ID 조회 (address가 제공된 경우)
+    let destIdToSet: string | null = null;
+    if (address) {
+      const destSnap = await getDocs(collection(busDb, 'destinations'));
+      const destinations = destSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const matchedDest = destinations.find((d: any) => d.name === address || d.id === address);
+      destIdToSet = matchedDest ? matchedDest.id : address;
+    }
 
     // 2. 스쿨버스 students 컬렉션에서 학생 조회
     const studSnap = await getDocs(collection(busDb, 'students'));
     const busStudents = studSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     
     const targetStudent = busStudents.find((s: any) => {
+      if (studentEmail && s.studentEmail && s.studentEmail.toLowerCase() === studentEmail.toLowerCase()) {
+        return true;
+      }
       const nameMatches = s.name === name || s.nameKo === name || (s.name && s.name.includes(name));
       const gradeMatches = !grade || String(s.grade) === String(grade);
       const classMatches = !classNum || String(s.class) === String(classNum);
@@ -662,16 +739,28 @@ export const syncAddressToKisbusStudent = async (
     }) || busStudents.find((s: any) => s.name === name || s.nameKo === name);
 
     if (targetStudent) {
-      await updateDoc(doc(busDb, 'students', targetStudent.id), {
-        morningDestinationId: destIdToSet,
-        afternoonDestinationId: destIdToSet,
-        suggestedMorningDestination: destIdToSet,
-        suggestedAfternoonDestination: destIdToSet,
-        contact: contact ? contact.replace(/\D/g, '') : (targetStudent as any).contact
-      });
+      const busPayload: any = {};
+      if (destIdToSet) {
+        busPayload.morningDestinationId = destIdToSet;
+        busPayload.afternoonDestinationId = destIdToSet;
+        busPayload.suggestedMorningDestination = destIdToSet;
+        busPayload.suggestedAfternoonDestination = destIdToSet;
+      }
+      if (contact !== undefined && contact !== null) {
+        busPayload.contact = contact ? contact.replace(/\D/g, '') : (targetStudent as any).contact;
+      }
+      if (gender) {
+        busPayload.gender = gender;
+      }
+      if (studentEmail) {
+        busPayload.studentEmail = studentEmail;
+      }
+      if (Object.keys(busPayload).length > 0) {
+        await updateDoc(doc(busDb, 'students', targetStudent.id), busPayload);
+      }
     }
   } catch (err) {
-    console.error("Error syncing address to kisbus student:", err);
+    console.error("Error syncing to kisbus student:", err);
   }
 };
 
@@ -708,12 +797,25 @@ export const batchImportMasterStudents = async (students: NewMasterStudent[]): P
 // 6. 학년/반 일괄 진급 처리 (Grade Advancement Batch Update + Automatic Academic Year Archiving)
 export const batchPromoteStudents = async (advancements: { studentEmail: string; newGrade: string; newClassNum: string; newStudentNum: string }[]): Promise<number> => {
   const batch = writeBatch(getDb());
+  const kisbusDb = getKisbusDb();
+  const kisbusBatch = writeBatch(kisbusDb);
   let count = 0;
   const currentYear = new Date().getFullYear();
   const previousAcademicYear = currentYear - 1; // 진급 전 학학년도 (예: 2025학년도)
 
+  // 스쿨버스 전체 학생 사전 로드
+  let busStudents: { id: string; ref: any; data: any }[] = [];
+  try {
+    const busSnap = await getDocs(collection(kisbusDb, 'students'));
+    busStudents = busSnap.docs.map(d => ({ id: d.id, ref: d.ref, data: d.data() }));
+  } catch (bLoadErr) {
+    console.warn('Failed to load kisbus students for promote:', bLoadErr);
+  }
+
   for (const item of advancements) {
     if (!item.studentEmail) continue;
+    const cleanEmail = item.studentEmail.trim().toLowerCase();
+
     const qMaster = query(collection(getDb(), COLLECTION_NAME), where("studentEmail", "==", item.studentEmail.trim()));
     const snapMaster = await getDocs(qMaster);
     snapMaster.forEach(d => {
@@ -750,14 +852,35 @@ export const batchPromoteStudents = async (advancements: { studentEmail: string;
     snapUser.forEach(d => {
       batch.update(doc(getDb(), 'users', d.id), {
         grade: item.newGrade,
+        studentGrade: item.newGrade,
+        class: item.newClassNum,
+        studentClass: item.newClassNum,
+        number: item.newStudentNum,
+        studentNumber: item.newStudentNum
+      });
+    });
+
+    // 스쿨버스 students 컬렉션 진급 일괄 업데이트
+    const matchedBus = busStudents.find(bs => 
+      bs.data.studentEmail && bs.data.studentEmail.trim().toLowerCase() === cleanEmail
+    );
+    if (matchedBus) {
+      kisbusBatch.update(matchedBus.ref, {
+        grade: item.newGrade,
         class: item.newClassNum,
         number: item.newStudentNum
       });
-    });
+    }
+
     count++;
   }
 
   await batch.commit();
+  try {
+    await kisbusBatch.commit();
+  } catch (bErr) {
+    console.warn('kisbus batch promote error:', bErr);
+  }
   return count;
 };
 

@@ -125,20 +125,21 @@ export async function getUsersDirectory(forceRefresh = false): Promise<UserProfi
     const result = snapshot.docs.map((d: any) => {
       const data = d.data();
       return {
-        email: d.id,
-        uid: data.uid,
+        email: data.email || d.id,
+        uid: data.uid || d.id,
         name: data.name,
         role: data.role,
         // signature, parentSignature는 목록에서 불필요 → 제외로 데이터 60~80% 경량화
         isAdmin: data.isAdmin,
-        parentPhone: data.parentPhone,
+        parentPhone: data.parentPhone || data.phone || null,
         hashedPin: data.hashedPin,
         // 학부모/학생 정보
         parentName: data.parentName ?? null,
-        studentName: data.studentName ?? null,
-        studentGrade: data.studentGrade ?? null,
-        studentClass: data.studentClass ?? null,
-        studentNumber: data.studentNumber ?? null,
+        studentName: data.studentName ?? data.name ?? null,
+        studentGrade: data.studentGrade ?? data.grade ?? null,
+        studentClass: data.studentClass ?? data.class ?? null,
+        studentNumber: data.studentNumber ?? data.number ?? null,
+        gender: data.gender ?? null,
         // 추가 교직원 정보
         annualLeaveLimit: data.annualLeaveLimit ?? null,
         dept: data.dept ?? null,
@@ -163,20 +164,21 @@ export function onUsersDirectoryUpdate(callback: (users: UserProfile[]) => void)
     const list = snapshot.docs.map((d: any) => {
       const data = d.data();
       return {
-        email: d.id,
-        uid: data.uid,
+        email: data.email || d.id,
+        uid: data.uid || d.id,
         name: data.name,
         role: data.role,
         signature: data.signature,
         isAdmin: data.isAdmin,
-        parentPhone: data.parentPhone,
+        parentPhone: data.parentPhone || data.phone || null,
         parentSignature: data.parentSignature,
         hashedPin: data.hashedPin,
         parentName: data.parentName ?? null,
-        studentName: data.studentName ?? null,
-        studentGrade: data.studentGrade ?? null,
-        studentClass: data.studentClass ?? null,
-        studentNumber: data.studentNumber ?? null,
+        studentName: data.studentName ?? data.name ?? null,
+        studentGrade: data.studentGrade ?? data.grade ?? null,
+        studentClass: data.studentClass ?? data.class ?? null,
+        studentNumber: data.studentNumber ?? data.number ?? null,
+        gender: data.gender ?? null,
         annualLeaveLimit: data.annualLeaveLimit ?? null,
         dept: data.dept ?? null,
         isFaculty: data.isFaculty ?? null,

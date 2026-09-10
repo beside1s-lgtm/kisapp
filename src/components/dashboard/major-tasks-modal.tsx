@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SlidersHorizontal, CheckCircle2, RotateCcw, AlertCircle } from 'lucide-react';
 import type { OrgStructure, UserProfile } from '@/lib/types';
-import { checkPeAccessPermission, checkHealthAccessPermission } from '@/lib/services/permissionService';
+import { checkPeAccessPermission, checkHealthAccessPermission, checkHomeroomAccessPermission } from '@/lib/services/permissionService';
 
 export interface TaskAssignmentContext {
   email: string;
@@ -45,13 +45,8 @@ export const ALL_MAJOR_TASKS: MajorTaskDefinition[] = [
     themeColor: 'amber',
     checkAssigned: (ctx) => {
       if (ctx.profile?.role === '강사') return false;
-      if (ctx.isAdmin) return true;
-      if (ctx.isHomeroomTeacher || ctx.homeroom) return true;
-      if (ctx.orgData?.homerooms) {
-        const emailLower = ctx.email.toLowerCase();
-        return Object.values(ctx.orgData.homerooms).some((e: any) => e?.toLowerCase() === emailLower);
-      }
-      return false;
+      const { canAccess } = checkHomeroomAccessPermission(ctx.email, ctx.profile, ctx.orgData);
+      return canAccess;
     },
   },
   {

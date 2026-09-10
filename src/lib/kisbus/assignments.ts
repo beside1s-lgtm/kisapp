@@ -1,5 +1,5 @@
 import { getKisbusDb as db } from './firebase';
-import { collection, doc, writeBatch, query, getDocs, where } from 'firebase/firestore';
+import { collection, doc, writeBatch, query, getDocs, where, setDoc } from 'firebase/firestore';
 import type { Route, Student, RouteType, DayOfWeek } from './types';
 import { errorEmitter } from '@/lib/error-emitter';
 import { FirestorePermissionError, type SecurityRuleContext } from '@/lib/errors';
@@ -251,18 +251,46 @@ export const syncAfterschoolBusAssignmentsOnStageChange = async (
 
     // 학생별로 모든 수강신청을 묶어서 요일별 목적지를 깨끗하게 재구성
     const studentEnrollmentMap = new Map<string, typeof allEnrolled>();
-    allEnrolled.forEach(enroll => {
-      const busStudent = findBusStudent(enroll);
-      if (!busStudent) return;
-      const key = busStudent.id;
-      if (!studentEnrollmentMap.has(key)) {
-        studentEnrollmentMap.set(key, []);
+    for (const enroll of allEnrolled) {
+      let busStudent = findBusStudent(enroll);
+      const desiresBus = enroll.needsBus === true || (enroll.kisbusNo && enroll.kisbusNo !== '-' && enroll.kisbusNo !== '미신청');
+      // 평소 스쿨버스 미탑승생이 방과후 버스 탑승 희망 시 스쿨버스 DB에 자동 레코드 생성
+      if (!busStudent && desiresBus) {
+        const rawName = (enroll.name || enroll.studentName || '').trim();
+        if (rawName) {
+          const newStudentDocRef = doc(collection(busDbInstance, 'students'));
+          const newStudentData: any = {
+            name: rawName,
+            nameKo: rawName,
+            grade: String(enroll.grade || '1'),
+            class: String(enroll.classNum || '1'),
+            number: String(enroll.studentNum || ''),
+            gender: 'Male',
+            contact: enroll.parentPhone || enroll.phone || '',
+            studentEmail: enroll.studentEmail || '',
+            morningDestinationId: null,
+            afternoonDestinationId: null,
+            afterSchoolDestinations: {},
+            afterSchoolClassIds: {},
+            applicationStatus: 'reviewed',
+            createdAt: new Date().toISOString()
+          };
+          await setDoc(newStudentDocRef, newStudentData);
+          busStudent = { id: newStudentDocRef.id, ref: newStudentDocRef, data: newStudentData };
+          busStudentsList.push(busStudent);
+        }
       }
-      studentEnrollmentMap.get(key)!.push(enroll);
-    });
 
-    studentsSnap.docs.forEach((docSnap: any) => {
-      const busStudent = { id: docSnap.id, ref: docSnap.ref, data: docSnap.data() as Student };
+      if (busStudent) {
+        const key = busStudent.id;
+        if (!studentEnrollmentMap.has(key)) {
+          studentEnrollmentMap.set(key, []);
+        }
+        studentEnrollmentMap.get(key)!.push(enroll);
+      }
+    }
+
+    busStudentsList.forEach((busStudent) => {
       const enrolls = studentEnrollmentMap.get(busStudent.id);
 
       if (!enrolls || enrolls.length === 0) {

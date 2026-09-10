@@ -200,7 +200,13 @@ export const StudentView: React.FC<StudentViewProps> = ({
   const router = useRouter();
   const { t, i18n } = useTranslation();
   const currentStudentName = (profile?.studentName || profile?.name || '').trim();
-  const currentStudentId = profile?.uid || profile?.email || (currentStudentName ? `s_${currentStudentName}` : 's1');
+  const currentGrade = profile?.studentGrade || profile?.grade || '1';
+  const currentClass = profile?.studentClass || profile?.class || '1';
+  const currentNumber = profile?.studentNumber || profile?.number || '';
+  // 자녀 고유 식별자: 학부모 UID 단독 사용을 배제하고 학년-반-번호-이름 복합 고유 키 또는 학생 이메일 우선 사용 (다자녀 중복 신청 충돌 방지)
+  const currentStudentId = (profile?.role === 'student' && profile?.email)
+    ? profile.email.toLowerCase()
+    : `s_${currentGrade}_${currentClass}_${currentNumber || '0'}_${currentStudentName || profile?.email || 'student'}`;
 
   // Bus & Settings States
   const [busStudents, setBusStudents] = useState<BusStudent[]>([]);
@@ -486,6 +492,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
           grade: Number(profile?.studentGrade) || 1,
           classNum: Number(profile?.studentClass) || 1,
           studentNum: Number(profile?.studentNumber) || 1,
+          studentEmail: (profile as any)?.studentEmail || (profile?.role === 'student' ? profile.email : '') || '',
           phone: profile?.parentPhone || '',
           parentPhone: profile?.parentPhone || '',
           kisbusNo: needsBus ? '신청' : '-',

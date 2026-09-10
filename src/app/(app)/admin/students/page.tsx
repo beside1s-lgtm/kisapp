@@ -25,7 +25,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Users, GraduationCap, Bus, Calendar, Plus, Upload, Download, Search, 
-  UserCheck, Mail, Phone, MapPin, CreditCard, ShieldCheck, Trash2, Edit3, FileText, CheckCircle2, ArrowUpRight, Sparkles, CheckSquare, Square, Filter, Camera, Image as ImageIcon 
+  UserCheck, Mail, Phone, MapPin, CreditCard, ShieldCheck, Trash2, Edit3, FileText, CheckCircle2, ArrowUpRight, Sparkles, CheckSquare, Square, Filter, Camera, Image as ImageIcon, AlertCircle, BookOpen, CheckCheck
 } from 'lucide-react';
 import { cn } from '@/lib/kisbus/utils';
 import { resizeStudentPhoto } from '@/lib/imageResize';
@@ -66,6 +66,25 @@ export default function AdminMasterStudentsPage() {
   const [isPromoteDialogOpen, setIsPromoteDialogOpen] = useState(false);
   const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false);
   const [isBatchPhotoOpen, setIsBatchPhotoOpen] = useState(false);
+  const [isExcelPreviewOpen, setIsExcelPreviewOpen] = useState(false);
+  const [isExcelPreviewLoading, setIsExcelPreviewLoading] = useState(false);
+
+  // 엑셀 미리보기 행 데이터
+  type ExcelPreviewRow = {
+    grade: string;
+    classNum: string;
+    studentNum: string;
+    name: string;
+    nameEn: string;
+    gender: 'Male' | 'Female';
+    studentEmail: string;
+    contact: string;
+    afterschoolStatus: string; // 방과후 수강 현황 (연동 결과)
+    busStatus: string;         // 스쿨버스 노선 현황 (연동 결과)
+    error?: string;            // 유효성 오류 메시지
+  };
+  const [excelPreviewRows, setExcelPreviewRows] = useState<ExcelPreviewRow[]>([]);
+
 
   // 명단 다운로드 시 선택된 학년/반 목록 (Set or array of "grade-classNum")
   const [selectedClassesForDownload, setSelectedClassesForDownload] = useState<string[]>([]);
@@ -623,53 +642,213 @@ export default function AdminMasterStudentsPage() {
     });
   };
 
-  // 엑셀 일괄 생성 업로드
+  // 엑셀 일괄 등록 양식 다운로드
+  const handleDownloadStudentTemplate = async () => {
+    const XLSX = await import('xlsx');
+    const headers = [
+      '학년', '반', '번호', '이름', '영문이름(선택)', '성별', '계정(이메일)', '학부모 연락처(선택)'
+    ];
+    const sampleRows = [
+      ['1', '1', '1', '홍길동', 'GilDong Hong', '남', '2023hongbildong@kshcm.net', '010-1234-5678'],
+      ['1', '1', '2', '김영희', 'YoungHee Kim', '여', '2023kimyounghee@kshcm.net', ''],
+      ['2', '3', '5', '이순신', 'SunSin Lee', '남', '2022leesunsin@kshcm.net', '010-9876-5432'],
+    ];
+    const wsData = [headers, ...sampleRows];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // 열 너비 설정
+    ws['!cols'] = [
+      { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 12 }, { wch: 20 },
+      { wch: 6 }, { wch: 30 }, { wch: 20 }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '학생일괄등록_양식');
+    XLSX.writeFile(wb, '학생계정_일괄등록_양식.xlsx');
+    toast({ title: '양식 다운로드 완료', description: '학생 일괄 등록 양식이 다운로드되었습니다. 작성 후 업로드하세요.' });
+  };
+
+  // 엑셀 일괄 등록 업로드 - 헤더명 기반 유연 파싱 + 방과후/버스 연동 미리보기
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
+        setIsExcelPreviewLoading(true);
         const XLSX = await import('xlsx');
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsName = wb.SheetNames[0];
         const ws = wb.Sheets[wsName];
-        const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        // header: 1 → 첫 행을 헤더로 사용
+        const jsonRows: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
 
-        const newStudentsList: NewMasterStudent[] = [];
-        for (let i = 1; i < data.length; i++) {
-          const row = data[i];
-          if (!row || row.length === 0 || !row[0]) continue;
-          const email = String(row[0]).trim();
-          const name = String(row[1] || '').trim();
-          if (!email || !name) continue;
+        if (jsonRows.length === 0) {
+          toast({ title: '빈 파일', description: '엑셀 파일에 데이터가 없습니다.', variant: 'destructive' });
+          setIsExcelPreviewLoading(false);
+          return;
+        }
 
-          newStudentsList.push({
-            studentEmail: email,
-            name: name,
-            grade: String(row[2] || '1'),
-            classNum: String(row[3] || '1'),
-            studentNum: String(row[4] || '1'),
-            gender: row[5] === '여' ? 'Female' : 'Male',
-            contact: String(row[6] || ''),
-            address: String(row[7] || ''),
-            kisbusNo: String(row[8] || '')
+        // 헤더명 유연 매핑 (띄어쓰기·괄호·한글 등 무관)
+        const normalize = (k: string) => k.replace(/[\s()\[\]선택필수]/g, '').toLowerCase();
+        const findCol = (row: Record<string, any>, ...candidates: string[]): string => {
+          const keys = Object.keys(row);
+          for (const cand of candidates) {
+            const normCand = normalize(cand);
+            const matched = keys.find(k => normalize(k) === normCand);
+            if (matched !== undefined && row[matched] !== undefined && row[matched] !== '') {
+              return String(row[matched]).trim();
+            }
+          }
+          return '';
+        };
+
+        // 방과후 및 버스 데이터를 Firestore에서 조회
+        const { getDocs, collection, where, query } = await import('firebase/firestore');
+        const { getDb } = await import('@/lib/firebase');
+        const { getKisbusDb } = await import('@/lib/kisbus/firebase');
+
+        let afterschoolEnrollments: any[] = [];
+        let busStudents: any[] = [];
+
+        try {
+          const [enrollSnap, busSnap] = await Promise.all([
+            getDocs(collection(getDb(), 'afterschool_enrollments')),
+            getDocs(collection(getKisbusDb(), 'students')),
+          ]);
+          afterschoolEnrollments = enrollSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+          busStudents = busSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+        } catch (dbErr) {
+          console.warn('방과후/버스 조회 오류 (연동 생략):', dbErr);
+        }
+
+        // 인덱스맵 생성 (학년_반_이름 복합키)
+        const afterschoolByKey = new Map<string, any[]>();
+        afterschoolEnrollments.forEach(e => {
+          if (e.status === 'CANCELLED') return;
+          const g = String(e.grade || '');
+          const c = String(e.classNum || e.class || '');
+          const n = String(e.name || e.studentName || '');
+          if (g && c && n) {
+            const key = `${g}_${c}_${n}`;
+            if (!afterschoolByKey.has(key)) afterschoolByKey.set(key, []);
+            afterschoolByKey.get(key)!.push(e);
+          }
+        });
+
+        const busByKey = new Map<string, any>();
+        busStudents.forEach(bs => {
+          const g = String(bs.grade || '');
+          const c = String(bs.class || bs.classNum || '');
+          const n = String(bs.nameKo || bs.name || '');
+          if (g && c && n) busByKey.set(`${g}_${c}_${n}`, bs);
+        });
+
+        // 파싱
+        const previewRows: typeof excelPreviewRows = [];
+        for (const row of jsonRows) {
+          const gradeRaw = findCol(row, '학년', 'grade', 'year');
+          const classRaw = findCol(row, '반', '학반', 'class', 'classnum');
+          const numRaw = findCol(row, '번호', '번', '출석번호', 'number', 'no', 'studentnum');
+          const name = findCol(row, '이름', '학생이름', '성명', '학생명', 'name', 'studentname');
+          const nameEn = findCol(row, '영문이름', '영문', '영어이름', 'nameen', 'englishname');
+          const genderRaw = findCol(row, '성별', 'gender');
+          const email = findCol(row, '계정', '이메일', '학생계정', '계정이메일', 'email', 'studentemail', '계정(이메일)');
+          const contact = findCol(row, '학부모연락처', '학부모전화', '연락처', '전화번호', 'parentphone', 'contact', 'phone');
+
+          if (!name) continue; // 이름이 없는 행은 무시
+
+          const grade = gradeRaw.replace(/\D/g, '') || '1';
+          const classNum = classRaw.replace(/\D/g, '') || '1';
+          const studentNum = numRaw.replace(/\D/g, '') || '';
+          const gender: 'Male' | 'Female' = (genderRaw === '여' || genderRaw.toLowerCase() === 'female' || genderRaw === 'F') ? 'Female' : 'Male';
+
+          // 이메일 유효성 검사
+          let error: string | undefined;
+          if (email && !isStudentEmail(email)) {
+            error = '계정 이메일 형식이 올바르지 않습니다. (예: 2023kangdongyun@kshcm.net)';
+          }
+
+          // 방과후 연동 조회
+          const lookupKey = `${grade}_${classNum}_${name}`;
+          const enrollments = afterschoolByKey.get(lookupKey) || [];
+          const afterschoolStatus = enrollments.length > 0
+            ? enrollments.map(e => e.courseTitle || e.title || '강좌').join(', ')
+            : '없음';
+
+          // 버스 연동 조회
+          const busStudent = busByKey.get(lookupKey);
+          let busStatus = '없음';
+          if (busStudent) {
+            const routeNames: string[] = [];
+            if (busStudent.morningBus) routeNames.push(`등교: ${busStudent.morningBus}`);
+            if (busStudent.afternoonBus) routeNames.push(`하교: ${busStudent.afternoonBus}`);
+            if (busStudent.kisbusNo && busStudent.kisbusNo !== '미신청') routeNames.push(busStudent.kisbusNo);
+            busStatus = routeNames.length > 0 ? routeNames.join(' / ') : '데이터 있음';
+          }
+
+          previewRows.push({
+            grade, classNum, studentNum, name, nameEn, gender, studentEmail: email, contact,
+            afterschoolStatus, busStatus, error
           });
         }
 
-        if (newStudentsList.length > 0) {
-          const count = await batchImportMasterStudents(newStudentsList);
-          toast({ title: '업로드 성공', description: `${count}명의 학생 계정이 마스터 DB에 일괄 생성되었습니다.` });
+        if (previewRows.length === 0) {
+          toast({ title: '파싱 결과 없음', description: '등록 가능한 행이 없습니다. 양식 형식을 확인하세요.', variant: 'destructive' });
+          setIsExcelPreviewLoading(false);
+          return;
         }
+
+        setExcelPreviewRows(previewRows);
+        setIsExcelPreviewOpen(true);
       } catch (err) {
         console.error(err);
         toast({ title: '오류', description: '엑셀 파싱 중 오류가 발생했습니다.', variant: 'destructive' });
+      } finally {
+        setIsExcelPreviewLoading(false);
       }
     };
     reader.readAsBinaryString(file);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  // 미리보기 확인 후 최종 일괄 등록 실행
+  const handleConfirmExcelImport = async () => {
+    const validRows = excelPreviewRows.filter(r => !r.error && r.studentEmail && isStudentEmail(r.studentEmail));
+    const skipRows = excelPreviewRows.filter(r => !r.studentEmail || !isStudentEmail(r.studentEmail));
+
+    if (validRows.length === 0) {
+      toast({ title: '등록 불가', description: '유효한 계정 이메일이 있는 행이 없습니다.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const studentsList: NewMasterStudent[] = validRows.map(r => ({
+        studentEmail: r.studentEmail,
+        name: r.name,
+        nameEn: r.nameEn || '',
+        grade: r.grade,
+        classNum: r.classNum,
+        studentNum: r.studentNum,
+        gender: r.gender,
+        contact: r.contact,
+        address: '',
+        kisbusNo: '',
+      }));
+
+      const count = await batchImportMasterStudents(studentsList);
+      setIsExcelPreviewOpen(false);
+      setExcelPreviewRows([]);
+      const skipMsg = skipRows.length > 0 ? ` (이메일 없음/오류 ${skipRows.length}명 제외)` : '';
+      toast({ title: '일괄 등록 완료', description: `${count}명의 학생 계정이 마스터 DB에 등록되었습니다.${skipMsg}` });
+    } catch (err) {
+      console.error(err);
+      toast({ title: '등록 오류', description: '일괄 등록 중 오류가 발생했습니다.', variant: 'destructive' });
+    }
+  };
+
+
 
   return (
     <MainLayout>
@@ -924,7 +1103,7 @@ export default function AdminMasterStudentsPage() {
                           onChange={e => setNewStudent({...newStudent, name: e.target.value})} 
                         />
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-4 gap-2">
                         <div>
                           <Label className="text-xs">학년</Label>
                           <Input value={newStudent.grade} onChange={e => setNewStudent({...newStudent, grade: e.target.value})} />
@@ -936,6 +1115,21 @@ export default function AdminMasterStudentsPage() {
                         <div>
                           <Label className="text-xs">번호</Label>
                           <Input value={newStudent.studentNum || ''} onChange={e => setNewStudent({...newStudent, studentNum: e.target.value})} />
+                        </div>
+                        <div>
+                          <Label className="text-xs">성별</Label>
+                          <Select 
+                            value={newStudent.gender || 'Male'} 
+                            onValueChange={(val: 'Male' | 'Female') => setNewStudent({...newStudent, gender: val})}
+                          >
+                            <SelectTrigger className="h-9 text-xs">
+                              <SelectValue placeholder="성별" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Male">남학생</SelectItem>
+                              <SelectItem value="Female">여학생</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
                       <div className="space-y-1">
@@ -970,10 +1164,73 @@ export default function AdminMasterStudentsPage() {
                   <Camera className="mr-1.5 h-3.5 w-3.5" /> 사진 일괄 등록
                 </Button>
 
-                {/* 3. 엑셀 일괄 등록 */}
-                <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="h-8 text-xs px-2.5 font-bold whitespace-nowrap">
-                  <Upload className="mr-1.5 h-3.5 w-3.5" /> 엑셀 일괄 등록
-                </Button>
+                {/* 3. 엑셀 일괄 등록 - 양식 다운로드 + 업로드 Dialog */}
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isExcelPreviewLoading}
+                      className="h-8 text-xs px-2.5 font-bold whitespace-nowrap"
+                    >
+                      <Upload className="mr-1.5 h-3.5 w-3.5" />
+                      {isExcelPreviewLoading ? '분석 중...' : '엑셀 일괄 등록'}
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="text-base font-bold flex items-center gap-2">
+                        <Upload className="h-4 w-4 text-indigo-600" /> 엑셀 학생 일괄 등록
+                      </DialogTitle>
+                      <DialogDescription className="text-xs text-slate-500">
+                        양식을 다운로드하여 작성한 후 업로드하면, 방과후 수강 현황과 스쿨버스 노선 연동 여부를 미리보기로 확인 후 최종 등록합니다.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                      {/* Step 1: 양식 다운로드 */}
+                      <div className="p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl space-y-2">
+                        <p className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                          <Download className="w-3.5 h-3.5" /> 1단계: 등록 양식 다운로드
+                        </p>
+                        <p className="text-[11px] text-indigo-700 leading-relaxed">
+                          <strong>학년 / 반 / 번호 / 이름 / 영문이름(선택) / 성별 / 계정(이메일) / 학부모 연락처(선택)</strong> 항목으로 구성된 양식입니다.
+                          이메일 계정은 <span className="font-mono bg-indigo-100 px-1 rounded">2023kangdongyun@kshcm.net</span> 형식을 따라야 합니다.
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleDownloadStudentTemplate}
+                          className="w-full h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white"
+                        >
+                          <Download className="w-3.5 h-3.5 mr-1.5" /> 학생 일괄 등록 양식 (.xlsx) 다운로드
+                        </Button>
+                      </div>
+
+                      {/* Step 2: 파일 업로드 */}
+                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                        <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <Upload className="w-3.5 h-3.5" /> 2단계: 작성된 파일 업로드
+                        </p>
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                          파일 업로드 시 방과후 수강 현황 및 스쿨버스 노선 연동 여부를 자동 조회하여 미리보기를 표시합니다.
+                        </p>
+                        <Input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleFileUpload}
+                          accept=".xlsx, .xls"
+                          disabled={isExcelPreviewLoading}
+                          className="text-xs h-9 cursor-pointer"
+                        />
+                        {isExcelPreviewLoading && (
+                          <p className="text-xs text-indigo-600 font-medium animate-pulse">
+                            방과후 및 버스 데이터 연동 조회 중...
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
                 {/* 4. 명단 다운로드 */}
                 <Button 
                   variant="outline" 
@@ -983,9 +1240,9 @@ export default function AdminMasterStudentsPage() {
                 >
                   <Download className="mr-1.5 h-3.5 w-3.5" /> 명단 다운로드
                 </Button>
-                <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls" className="hidden" />
               </div>
             </div>
+
 
             {/* 필터 및 검색 바 (엔터 키 또는 검색 버튼 클릭 시에만 필터링) */}
             <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-3">
@@ -1351,7 +1608,7 @@ export default function AdminMasterStudentsPage() {
                   className="h-8 text-xs"
                 />
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 <div className="space-y-1">
                   <Label className="text-xs text-slate-600">학년</Label>
                   <Input value={editStudentForm.grade || ''} onChange={e => setEditStudentForm({...editStudentForm, grade: e.target.value})} className="h-8 text-xs" />
@@ -1363,6 +1620,21 @@ export default function AdminMasterStudentsPage() {
                 <div className="space-y-1">
                   <Label className="text-xs text-slate-600">번호</Label>
                   <Input value={editStudentForm.studentNum || ''} onChange={e => setEditStudentForm({...editStudentForm, studentNum: e.target.value})} className="h-8 text-xs" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-600">성별</Label>
+                  <Select 
+                    value={editStudentForm.gender || 'Male'} 
+                    onValueChange={(val: 'Male' | 'Female') => setEditStudentForm({...editStudentForm, gender: val})}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="성별" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Male">남학생</SelectItem>
+                      <SelectItem value="Female">여학생</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="space-y-1">
@@ -1705,6 +1977,130 @@ export default function AdminMasterStudentsPage() {
           students={students}
         />
       </div>
+
+      {/* 8. 엑셀 일괄 등록 미리보기 모달 */}
+      <Dialog open={isExcelPreviewOpen} onOpenChange={setIsExcelPreviewOpen}>
+        <DialogContent className="max-w-[92vw] w-full max-h-[90vh] flex flex-col p-0 gap-0 rounded-2xl overflow-hidden">
+          <DialogHeader className="px-6 pt-5 pb-3 border-b border-slate-100 shrink-0">
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <CheckCheck className="h-4 w-4 text-indigo-600" /> 엑셀 일괄 등록 미리보기
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              총 <strong>{excelPreviewRows.length}명</strong>이 파싱되었습니다.
+              방과후 수강 현황 및 스쿨버스 노선 연동 여부를 확인 후 최종 등록하세요.
+              {excelPreviewRows.filter(r => r.error).length > 0 && (
+                <span className="text-rose-600 font-bold ml-1">
+                  (오류 {excelPreviewRows.filter(r => r.error).length}명 - 등록 제외)
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 overflow-auto px-4 py-3">
+            <Table>
+              <TableHeader>
+                <TableRow className="text-xs">
+                  <TableHead className="whitespace-nowrap w-8">#</TableHead>
+                  <TableHead className="whitespace-nowrap">학년/반/번호</TableHead>
+                  <TableHead className="whitespace-nowrap">이름</TableHead>
+                  <TableHead className="whitespace-nowrap">영문이름</TableHead>
+                  <TableHead className="whitespace-nowrap">성별</TableHead>
+                  <TableHead className="whitespace-nowrap">계정(이메일)</TableHead>
+                  <TableHead className="whitespace-nowrap">학부모 연락처</TableHead>
+                  <TableHead className="whitespace-nowrap min-w-[140px]">
+                    <span className="flex items-center gap-1">
+                      <BookOpen className="w-3 h-3 text-emerald-600" /> 방과후 수강
+                    </span>
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap min-w-[140px]">
+                    <span className="flex items-center gap-1">
+                      <Bus className="w-3 h-3 text-sky-600" /> 스쿨버스 노선
+                    </span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {excelPreviewRows.map((row, idx) => (
+                  <TableRow
+                    key={idx}
+                    className={cn('text-xs', row.error ? 'bg-rose-50' : '')}
+                  >
+                    <TableCell className="text-slate-400 font-mono">{idx + 1}</TableCell>
+                    <TableCell className="whitespace-nowrap font-medium">
+                      {row.grade}학년 {row.classNum}반 {row.studentNum ? `${row.studentNum}번` : ''}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap font-bold">{row.name}</TableCell>
+                    <TableCell className="text-slate-500">{row.nameEn || '-'}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={cn('text-[10px] px-1.5 py-0', row.gender === 'Female' ? 'border-rose-200 text-rose-600' : 'border-sky-200 text-sky-600')}>
+                        {row.gender === 'Female' ? '여' : '남'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-[220px]">
+                      {row.error ? (
+                        <span className="flex items-center gap-1 text-rose-600 font-medium">
+                          <AlertCircle className="w-3 h-3 shrink-0" />
+                          <span className="truncate text-[10px]">{row.error}</span>
+                        </span>
+                      ) : (
+                        <span className="font-mono text-[11px] text-slate-700">{row.studentEmail || <span className="text-amber-500">이메일 없음</span>}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-slate-500">{row.contact || '-'}</TableCell>
+                    <TableCell>
+                      {row.afterschoolStatus === '없음' ? (
+                        <span className="text-slate-400 text-[11px]">없음</span>
+                      ) : (
+                        <Badge className="bg-emerald-100 text-emerald-800 border-0 text-[10px] font-medium max-w-[130px] truncate block">
+                          {row.afterschoolStatus}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {row.busStatus === '없음' ? (
+                        <span className="text-slate-400 text-[11px]">없음</span>
+                      ) : (
+                        <Badge className="bg-sky-100 text-sky-800 border-0 text-[10px] font-medium max-w-[130px] truncate block">
+                          {row.busStatus}
+                        </Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <DialogFooter className="px-6 py-4 border-t border-slate-100 shrink-0 flex items-center justify-between sm:justify-between gap-3">
+            <div className="text-xs text-slate-500">
+              유효한 계정: <strong className="text-indigo-700">{excelPreviewRows.filter(r => !r.error && isStudentEmail(r.studentEmail)).length}명</strong>
+              {excelPreviewRows.filter(r => r.error || !isStudentEmail(r.studentEmail)).length > 0 && (
+                <span className="text-rose-500 ml-2">
+                  (제외 {excelPreviewRows.filter(r => r.error || !isStudentEmail(r.studentEmail)).length}명)
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setIsExcelPreviewOpen(false); setExcelPreviewRows([]); }}
+                className="text-xs font-bold"
+              >
+                취소
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleConfirmExcelImport}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs"
+              >
+                <CheckCheck className="w-3.5 h-3.5 mr-1.5" />
+                {excelPreviewRows.filter(r => !r.error && isStudentEmail(r.studentEmail)).length}명 최종 등록
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }
