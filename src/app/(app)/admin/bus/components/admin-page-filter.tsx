@@ -23,6 +23,7 @@ interface AdminPageFilterProps {
     filterConfiguredBusesOnly?: boolean;
     showRouteStops?: boolean;
     semesterMode?: 'regular' | 'vacation';
+    rightContent?: React.ReactNode;
 }
 
 export const AdminPageFilter = ({
@@ -39,6 +40,7 @@ export const AdminPageFilter = ({
     filterConfiguredBusesOnly = false,
     showRouteStops = false,
     semesterMode = 'regular',
+    rightContent,
 }: AdminPageFilterProps) => {
     const { t } = useTranslation();
 
@@ -89,8 +91,8 @@ export const AdminPageFilter = ({
     }, [showRouteStops, selectedBusId, routes, selectedDay, selectedRouteType, destinations, t]);
     
     return (
-        <Card className="mb-4 sm:mb-6">
-            <CardContent className="flex flex-col gap-2.5 sm:gap-4 p-3 sm:p-4 sm:flex-row sm:flex-wrap sm:items-end">
+        <Card className="mb-0">
+            <CardContent className="flex flex-col gap-2.5 sm:gap-3 p-3 sm:p-4 sm:flex-row sm:flex-wrap sm:items-end">
                 <div className="w-full sm:w-auto">
                     <Label className="text-[11px] sm:text-xs font-semibold text-slate-700">{t('bus')}</Label>
                     <Select value={selectedBusId || 'all'} onValueChange={setSelectedBusId}>
@@ -138,7 +140,13 @@ export const AdminPageFilter = ({
                         <p className="text-xs sm:text-sm p-2 bg-muted rounded-md truncate">{currentRouteStops}</p>
                     </div>
                 )}
+                {rightContent && (
+                    <div className="sm:ml-auto flex items-end w-full sm:w-auto">
+                        {rightContent}
+                    </div>
+                )}
             </CardContent>
         </Card>
     );
 };
+

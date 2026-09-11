@@ -82,7 +82,7 @@ const getGradeValue = (grade: string): number => {
   return isNaN(num) ? 999 : num;
 };
 
-const AllStudentsBoardingStatus = ({ relevantRoutes, students, buses, allAttendance, formatStudentName, t, afterschoolAbsentStudentIds }: { relevantRoutes: Route[]; students: Student[]; buses: Bus[]; allAttendance: Record<string, AttendanceRecord | null>; formatStudentName: (student: Student) => string; t: any; afterschoolAbsentStudentIds?: Set<string>; }) => {
+const AllStudentsBoardingStatus = ({ relevantRoutes, students, buses, allAttendance, formatStudentName, t, afterschoolAbsentStudentIds, onSelectStudent }: { relevantRoutes: Route[]; students: Student[]; buses: Bus[]; allAttendance: Record<string, AttendanceRecord | null>; formatStudentName: (student: Student) => string; t: any; afterschoolAbsentStudentIds?: Set<string>; onSelectStudent?: (student: Student) => void; }) => {
     const { toast } = useToast();
     const { i18n } = useTranslation();
 
@@ -198,7 +198,11 @@ const AllStudentsBoardingStatus = ({ relevantRoutes, students, buses, allAttenda
                     </TableHeader>
                     <TableBody>
                         {allStudentsOnDay.map(s => (
-                            <TableRow key={s.id}>
+                            <TableRow 
+                                key={s.id}
+                                onClick={() => onSelectStudent?.(s)}
+                                className="cursor-pointer hover:bg-slate-100 transition-colors"
+                            >
                                 <TableCell className="whitespace-nowrap font-medium text-xs">{formatStudentName(s)}</TableCell>
                                 <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{s.busName}</TableCell>
                                 <TableCell className="whitespace-nowrap">
@@ -1717,74 +1721,11 @@ export default function TeacherPage() {
   }, [searchQuery, students, i18n.language]);
 
   const handleSelectStudentFromSearch = (s: Student) => {
-    // 1. 현재 선택된 요일/경로에서 학생의 노선 찾기
-    let targetBusId: string | null = null;
-    let targetBusName: string = '';
-
-    const directRoute = (allRoutes.length > 0 ? allRoutes : allStaticRoutes).find(r => 
-      (r.semesterMode || 'regular') === semesterMode &&
-      r.dayOfWeek === selectedDay && 
-      r.type === selectedRouteType && 
-      r.seating?.some(seat => seat.studentId === s.id)
-    );
-
-    if (directRoute) {
-      targetBusId = directRoute.busId;
-    } else {
-      // 2. 다른 요일/경로라도 해당 학생이 배정된 노선이 있는지 찾기
-      const anyRoute = (allRoutes.length > 0 ? allRoutes : allStaticRoutes).find(r => 
-        (r.semesterMode || 'regular') === semesterMode &&
-        r.seating?.some(seat => seat.studentId === s.id)
-      );
-      if (anyRoute) {
-        targetBusId = anyRoute.busId;
-        if (anyRoute.dayOfWeek) setSelectedDay(anyRoute.dayOfWeek);
-        if (anyRoute.type) setSelectedRouteType(anyRoute.type);
-      } else {
-        // 3. 학생 데이터에 등록된 버스 번호로 매칭
-        const studentBusName = s.afterSchoolBusNo || (selectedRouteType === 'Morning' ? s.morningBusNo : s.afternoonBusNo) || s.morningBusNo || s.afternoonBusNo || (s as any).kisbusNo || (s as any).busNo;
-        if (studentBusName && studentBusName !== '-' && studentBusName !== '미신청') {
-          const matchedBus = filteredBuses.find(b => 
-            b.name === studentBusName || 
-            b.name.includes(studentBusName) || 
-            studentBusName.includes(b.name) ||
-            b.id === studentBusName
-          );
-          if (matchedBus) {
-            targetBusId = matchedBus.id;
-          }
-        }
-      }
-    }
-
-    if (targetBusId) {
-      const foundBus = filteredBuses.find(b => b.id === targetBusId);
-      targetBusName = foundBus ? foundBus.name : '';
-      setSelectedBusId(targetBusId);
-      setLastClickedStudentId(s.id);
-      setSelectedStudent(s);
-      toast({
-        title: `${getStudentName(s, i18n.language)} 학생 선택`,
-        description: targetBusName ? `${targetBusName} 화면으로 이동했습니다.` : '해당 학생의 버스 화면으로 이동했습니다.'
-      });
-    } else {
-      toast({
-        title: t('notice') || '알림',
-        description: `${getStudentName(s, i18n.language)} 학생의 배정된 버스 정보를 찾을 수 없습니다.`
-      });
-      setLastClickedStudentId(s.id);
-      setSelectedStudent(s);
-    }
+    setLastClickedStudentId(s.id);
+    setSelectedStudent(s);
 
     setSearchQuery('');
     setSearchResults([]);
-    
-    setTimeout(() => {
-      const el = document.getElementById('student-info-card') || document.getElementById('boarding-students-list-card');
-      if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 300);
   };
 
   const currentRoute = useMemo(() => {
@@ -1919,7 +1860,15 @@ export default function TeacherPage() {
   }, [currentRoute]);
 
   const toggleGroupLeader = useCallback(() => {
-    if (!selectedStudent || !currentRoute) return;
+    if (!selectedStudent) return;
+    const targetRoute = currentRoute || (allRoutes.length > 0 ? allRoutes : allStaticRoutes).find(r => 
+      (r.semesterMode || 'regular') === semesterMode && 
+      r.dayOfWeek === selectedDay && 
+      r.type === selectedRouteType && 
+      r.seating?.some(se => se.studentId === selectedStudent.id)
+    );
+    if (!targetRoute) return;
+
     const activeLeaders = groupLeaderRecords.filter(r => r.endDate === null);
     const isCurrentlyLeader = activeLeaders.some(r => r.studentId === selectedStudent.id);
     let newRecords = [...groupLeaderRecords];
@@ -1932,10 +1881,10 @@ export default function TeacherPage() {
         toast({ title: t('teacher_page.promote_leader'), description: `${getStudentName(selectedStudent, i18n.language)} 학생이 조장으로 임명되었습니다.` });
     }
     setGroupLeaderRecords(newRecords);
-    if (currentRoute) {
-        saveGroupLeaderRecords(currentRoute.id, newRecords, currentRoute.busId, currentRoute.type).catch(console.error);
+    if (targetRoute) {
+        saveGroupLeaderRecords(targetRoute.id, newRecords, targetRoute.busId, targetRoute.type).catch(console.error);
     }
-  }, [selectedStudent, currentRoute, groupLeaderRecords, t, toast, i18n.language]);
+  }, [selectedStudent, currentRoute, groupLeaderRecords, allRoutes, allStaticRoutes, semesterMode, selectedDay, selectedRouteType, t, toast, i18n.language]);
 
   const toggleStudentAttendance = useCallback(async (sid: string) => {
     if (!currentRoute) return;
@@ -1959,7 +1908,15 @@ export default function TeacherPage() {
   }, [currentRoute, boardedStudentIds, disembarkedStudentIds, selectedDate, t, toast]);
 
   const handleMarkNotBoarding = useCallback(async () => {
-    if (!selectedStudent || !currentRoute) return;
+    if (!selectedStudent) return;
+    const targetRoute = currentRoute || (allRoutes.length > 0 ? allRoutes : allStaticRoutes).find(r => 
+      (r.semesterMode || 'regular') === semesterMode && 
+      r.dayOfWeek === selectedDay && 
+      r.type === selectedRouteType && 
+      r.seating?.some(se => se.studentId === selectedStudent.id)
+    );
+    if (!targetRoute) return;
+
     const isAlreadyNotBoarding = notBoardingStudentIds.includes(selectedStudent.id);
     
     const updates: any = {
@@ -1974,7 +1931,8 @@ export default function TeacherPage() {
           r.seating.some(se => se.studentId === selectedStudent.id)
       );
       
-      await Promise.all(otherRoutes.map(or => 
+      const routesToUpdate = otherRoutes.length > 0 ? otherRoutes : [targetRoute];
+      await Promise.all(routesToUpdate.map(or => 
           updateAttendance(or.id, selectedDate, updates)
       ));
       
@@ -1982,17 +1940,25 @@ export default function TeacherPage() {
     } catch (error) {
       toast({ title: t('error'), variant: "destructive" });
     }
-  }, [selectedStudent, currentRoute, notBoardingStudentIds, selectedDate, allRoutes, selectedDay, t, toast]);
+  }, [selectedStudent, currentRoute, notBoardingStudentIds, selectedDate, allRoutes, allStaticRoutes, semesterMode, selectedDay, selectedRouteType, t, toast]);
 
   const handleExcludeStudentFromDayRoute = useCallback(async () => {
-    if (!selectedStudent || !currentRoute) return;
+    if (!selectedStudent) return;
+    const targetRoute = currentRoute || (allRoutes.length > 0 ? allRoutes : allStaticRoutes).find(r => 
+      (r.semesterMode || 'regular') === semesterMode && 
+      r.dayOfWeek === selectedDay && 
+      r.type === selectedRouteType && 
+      r.seating?.some(se => se.studentId === selectedStudent.id)
+    );
+    if (!targetRoute) return;
+
     try {
-      const newSeating = currentRoute.seating.map(s => 
+      const newSeating = targetRoute.seating.map(s => 
         s.studentId === selectedStudent.id ? { ...s, studentId: null } : s
       );
-      await updateRouteSeating(currentRoute.id, newSeating);
+      await updateRouteSeating(targetRoute.id, newSeating);
 
-      await updateAttendance(currentRoute.id, selectedDate, {
+      await updateAttendance(targetRoute.id, selectedDate, {
         boarded: arrayRemove(selectedStudent.id),
         notBoarding: arrayRemove(selectedStudent.id),
         disembarked: arrayRemove(selectedStudent.id),
@@ -2027,16 +1993,14 @@ export default function TeacherPage() {
         variant: "destructive"
       });
     }
-  }, [selectedStudent, currentRoute, selectedDate, selectedDay, selectedRouteType, t, toast, i18n.language]);
+  }, [selectedStudent, currentRoute, selectedDate, selectedDay, selectedRouteType, allRoutes, allStaticRoutes, semesterMode, t, toast, i18n.language]);
 
   const handleStudentRowClick = (studentId: string) => {
     setLastClickedStudentId(studentId);
-    setTimeout(() => {
-      const el = document.getElementById('student-info-card');
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 150);
+    const s = students.find(x => x.id === studentId);
+    if (s) {
+      setSelectedStudent({ ...s, isGroupLeader: groupLeaderRecords.some(r => r.studentId === s.id && r.endDate === null) });
+    }
   };
 
     const handleMarkDestinationArrival = useCallback(async (destinationId: string) => {
@@ -2110,6 +2074,407 @@ export default function TeacherPage() {
       updates.departureTime = null;
     }
     await updateBus(selectedBus.id, updates);
+  };
+
+  const handlePrintSeatMap = () => {
+    if (!selectedBus || !currentRoute) {
+      toast({ title: t('error'), description: '인쇄할 버스 노선 정보가 없습니다.', variant: 'destructive' });
+      return;
+    }
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast({ title: t('error'), description: '팝업 차단이 활성화되어 있어 인쇄 창을 열 수 없습니다.', variant: 'destructive' });
+      return;
+    }
+
+    const cap = selectedBus.capacity || 45;
+    const seatMap45 = [
+      null, null, null, null, 0,
+      1, 2, null, 3, 4,
+      5, 6, null, 7, 8,
+      9, 10, null, 11, 12,
+      13, 14, null, 15, 16,
+      17, 18, null, 19, 20,
+      21, 22, null, 23, 24,
+      25, 26, null, 27, 28,
+      29, 30, null, 31, 32,
+      33, 34, null, 35, 36,
+      37, 38, null, 39, 40,
+      41, 42, 43, 44, 45,
+    ];
+    const seatMap29 = [
+      1, 2, null, 3, 4,
+      5, 6, null, 7, 8,
+      9, 10, null, 11, 12,
+      13, 14, null, 15, 16,
+      17, 18, null, 19, 20,
+      21, 22, null, 23, 24,
+      25, 26, 27, 28, 29,
+    ];
+    const seatMap16 = [
+      null, null, 1, 2,
+      3, 4, null, 5,
+      6, 7, null, 8,
+      9, 10, null, 11,
+      12, 13, 14, 15
+    ];
+
+    const currentSeatMap = cap === 16 ? seatMap16 : (cap === 29 ? seatMap29 : seatMap45);
+    const cols = cap === 16 ? 4 : 5;
+
+    // 좌석 배정 매핑
+    const seatingMap = new Map<number, Student>();
+    currentRoute.seating.forEach(s => {
+      if (s.studentId) {
+        const stud = students.find(st => st.id === s.studentId);
+        if (stud) seatingMap.set(s.seatNumber, stud);
+      }
+    });
+
+    const activeLeaderStudentIds = new Set(
+      groupLeaderRecords.filter(r => r.endDate === null).map(r => r.studentId)
+    );
+
+    const busNameText = selectedBus.name;
+    const dayText = t(`day.${selectedDay.toLowerCase()}`);
+    const routeTypeText = t(`route_type.${selectedRouteType.toLowerCase()}`);
+    const todayFormatted = selectedDate || format(new Date(), 'yyyy-MM-dd');
+
+    let seatsGridHtml = '';
+    currentSeatMap.forEach((seatNum) => {
+      if (seatNum === null) {
+        seatsGridHtml += '<div class="seat-cell aisle"></div>';
+        return;
+      }
+
+      if (seatNum === 0) {
+        const student = seatingMap.get(0);
+        const name = student ? `${student.grade.toUpperCase()}${student.class} ${getStudentName(student, i18n.language)}` : '운전석';
+        seatsGridHtml += `
+          <div class="seat-cell driver">
+            <span class="seat-no">${seatNum === 0 && !student ? '핸들' : '입석'}</span>
+            <span class="student-name">${name}</span>
+          </div>
+        `;
+        return;
+      }
+
+      const student = seatingMap.get(seatNum);
+      const isLeader = student && activeLeaderStudentIds.has(student.id);
+      const isNotBoarding = student && notBoardingStudentIds.includes(student.id);
+
+      let studentDisplay = '';
+      if (student) {
+        const sName = `${student.grade.toUpperCase()}${student.class} ${getStudentName(student, i18n.language)}`;
+        studentDisplay = `
+          <span class="student-name">${isLeader ? '👑 ' : ''}${sName}</span>
+          ${isNotBoarding ? '<span class="status-badge">오늘안탐</span>' : ''}
+        `;
+      }
+
+      seatsGridHtml += `
+        <div class="seat-cell ${student ? 'assigned' : 'empty'} ${isNotBoarding ? 'not-boarding' : ''}">
+          <span class="seat-no">${seatNum}</span>
+          ${studentDisplay}
+        </div>
+      `;
+    });
+
+    // 레이아웃 외 추가 배정(Overflow) 학생
+    const seatNumbersInMap = new Set(currentSeatMap.filter(n => n !== null) as number[]);
+    const overflowStudents = currentRoute.seating
+      .filter(s => s.studentId && !seatNumbersInMap.has(s.seatNumber))
+      .map(s => {
+        const st = students.find(item => item.id === s.studentId);
+        return st ? { seatNumber: s.seatNumber, student: st } : null;
+      })
+      .filter(Boolean);
+
+    let overflowHtml = '';
+    if (overflowStudents.length > 0) {
+      overflowHtml = `
+        <div class="overflow-section">
+          <div class="overflow-title">기타 / 임시 배정 학생 (${overflowStudents.length}명)</div>
+          <div class="overflow-list">
+            ${overflowStudents.map(item => `
+              <div class="overflow-item">
+                <span class="overflow-seat">${item!.seatNumber}번</span>
+                <span>${item!.student.grade.toUpperCase()}${item!.student.class} ${getStudentName(item!.student, i18n.language)}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>${busNameText} 좌석 배치표 (${dayText} ${routeTypeText})</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap');
+    
+    @page {
+      size: A4 portrait;
+      margin: 8mm 10mm;
+    }
+    
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      color: #0f172a;
+      background-color: #ffffff;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+    }
+
+    .print-header-actions {
+      text-align: center;
+      padding: 12px;
+      background: #f1f5f9;
+      border-bottom: 1px solid #cbd5e1;
+      margin-bottom: 16px;
+    }
+
+    .print-btn {
+      background: #2563eb;
+      color: #ffffff;
+      border: none;
+      padding: 8px 20px;
+      font-size: 14px;
+      font-weight: 700;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .print-container {
+      max-width: 190mm;
+      margin: 0 auto;
+      padding: 4px;
+    }
+
+    .header {
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+
+    .header-title {
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      color: #0f172a;
+    }
+
+    .header-meta {
+      font-size: 12px;
+      font-weight: 600;
+      color: #475569;
+      text-align: right;
+    }
+
+    .meta-badge {
+      display: inline-block;
+      background: #e0e7ff;
+      color: #3730a3;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      margin-left: 6px;
+    }
+
+    /* 버스 좌석 그리드 */
+    .bus-grid {
+      display: grid;
+      grid-template-columns: repeat(${cols}, 1fr);
+      gap: 6px;
+      background: #f8fafc;
+      border: 2px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .seat-cell {
+      position: relative;
+      height: 48px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 2px 4px;
+      text-align: center;
+    }
+
+    .seat-cell.aisle {
+      border: none;
+      background: transparent;
+      height: 48px;
+    }
+
+    .seat-cell.driver {
+      background: #f1f5f9;
+      border: 1.5px dashed #94a3b8;
+    }
+
+    .seat-cell.assigned {
+      background: #ffffff;
+      border: 1.5px solid #64748b;
+    }
+
+    .seat-cell.not-boarding {
+      background: #fef2f2;
+      border-color: #fca5a5;
+    }
+
+    .seat-no {
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      font-size: 9px;
+      font-weight: 800;
+      color: #94a3b8;
+    }
+
+    .student-name {
+      font-size: 11px;
+      font-weight: 700;
+      color: #0f172a;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    .status-badge {
+      font-size: 8px;
+      font-weight: 800;
+      color: #dc2626;
+      background: #fee2e2;
+      padding: 0 3px;
+      border-radius: 2px;
+      margin-top: 1px;
+    }
+
+    /* Overflow */
+    .overflow-section {
+      margin-top: 10px;
+      padding: 8px 12px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 6px;
+    }
+
+    .overflow-title {
+      font-size: 11px;
+      font-weight: 800;
+      color: #b45309;
+      margin-bottom: 6px;
+    }
+
+    .overflow-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .overflow-item {
+      font-size: 11px;
+      font-weight: 700;
+      background: #ffffff;
+      border: 1px solid #fcd34d;
+      padding: 2px 8px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .overflow-seat {
+      color: #d97706;
+      font-weight: 900;
+    }
+
+    .footer-info {
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #64748b;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 6px;
+    }
+
+    @media print {
+      .print-header-actions {
+        display: none !important;
+      }
+      body {
+        background: #ffffff;
+        padding: 0;
+      }
+      .print-container {
+        max-width: 100% !important;
+        padding: 0 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-header-actions">
+    <button class="print-btn" onclick="window.print()">인쇄하기 / PDF 다운로드</button>
+  </div>
+  <div class="print-container">
+    <div class="header">
+      <div class="header-title">🚌 ${busNameText} 좌석 배치표</div>
+      <div class="header-meta">
+        <span>운행일자: ${todayFormatted}</span>
+        <span class="meta-badge">${dayText} ${routeTypeText}</span>
+        <span class="meta-badge">${cap}인승</span>
+      </div>
+    </div>
+
+    <div class="bus-grid">
+      ${seatsGridHtml}
+    </div>
+
+    ${overflowHtml}
+
+    <div class="footer-info">
+      <span>호치민시한국국제학교 스쿨버스 관리 시스템</span>
+      <span>인쇄일시: ${format(new Date(), 'yyyy-MM-dd HH:mm')} · 총 탑승인원: ${seatingMap.size}명</span>
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 500);
+    };
+  </script>
+</body>
+</html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
   };
 
   const playBeep = (type: 'success' | 'error') => {
@@ -2570,82 +2935,10 @@ updates.disembarked = arrayUnion(student.id);
       hideTitle={false}
       hideMobileBottomNav={!user}
     >
-        <div onContextMenu={(e) => { e.preventDefault(); setSwapSourceSeat(null); }} className="min-h-full">
-        {selectedStudent && selectedBusId === 'all' && (
-            <div className="mb-6 max-w-xl">
-                <Card id="student-info-card" className="no-print border-primary/20 bg-primary/5 animate-in fade-in slide-in-from-top-2">
-                    <CardHeader className="pb-3">
-                        <div className="flex justify-between items-center">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                                <CardTitle className="text-lg font-bold truncate">{formatStudentName(selectedStudent)}</CardTitle>
-                            </div>
-                            <Button variant="ghost" size="sm" onClick={() => setSelectedStudent(null)} className="h-7 text-xs">닫기</Button>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="pb-3 space-y-2">
-                        <p className="text-sm text-muted-foreground">학년/반: {selectedStudent.grade}학년 {selectedStudent.class}반</p>
-                        {selectedStudent.contact && (
-                            <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                                <Phone className="w-3.5 h-3.5 text-primary shrink-0" />
-                                <span>연락처:</span>
-                                <a href={`tel:${selectedStudent.contact}`} className="font-medium text-blue-600 hover:underline">{selectedStudent.contact}</a>
-                            </p>
-                        )}
-                        <p className="text-sm text-muted-foreground">목적지: {destinations.find(d => d.id === (selectedDay === 'Saturday' ? (selectedRouteType === 'Morning' ? selectedStudent.satMorningDestinationId : selectedStudent.satAfternoonDestinationId) : (selectedRouteType === 'Morning' ? selectedStudent.morningDestinationId : selectedRouteType === 'Afternoon' ? selectedStudent.afternoonDestinationId : selectedStudent.afterSchoolDestinations?.[selectedDay])))?.name || t('unassigned')}</p>
-                        {(() => {
-                            const classId = selectedStudent.afterSchoolClassIds?.[selectedDay];
-                            if (classId) {
-                                const afterSchoolClass = activeAfterSchoolClasses.find(c => c.id === classId);
-                                if (afterSchoolClass) {
-                                    return (
-                                        <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                                            <GraduationCap className="w-3.5 h-3.5 text-primary shrink-0" />
-                                            <span>방과후 ({t(`day_short.${selectedDay.toLowerCase()}`)}):</span>
-                                            <span className="font-medium text-foreground">{afterSchoolClass.name}</span>
-                                            {afterSchoolClass.teacherName && (
-                                                <span className="text-xs text-muted-foreground/70">({afterSchoolClass.teacherName})</span>
-                                            )}
-                                        </p>
-                                    );
-                                }
-                            }
-                            const destBasedClass = activeAfterSchoolClasses.find(
-                                c => c.id === selectedStudent.afterSchoolDestinations?.[selectedDay] && c.dayOfWeek === selectedDay
-                            );
-                            if (destBasedClass) {
-                                return (
-                                    <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                                        <GraduationCap className="w-3.5 h-3.5 text-primary shrink-0" />
-                                        <span>방과후 ({t(`day_short.${selectedDay.toLowerCase()}`)}):</span>
-                                        <span className="font-medium text-foreground">{destBasedClass.name}</span>
-                                        {destBasedClass.teacherName && (
-                                            <span className="text-xs text-muted-foreground/70">({destBasedClass.teacherName})</span>
-                                        )}
-                                    </p>
-                                );
-                            }
-                            const dayCourseInfo = (selectedStudent as any).afterSchoolCoursesByDay?.[selectedDay];
-                            if (dayCourseInfo?.title) {
-                                return (
-                                    <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                                        <GraduationCap className="w-3.5 h-3.5 text-primary shrink-0" />
-                                        <span>방과후 ({t(`day_short.${selectedDay.toLowerCase()}`)}):</span>
-                                        <span className="font-medium text-foreground">{dayCourseInfo.title}</span>
-                                        {dayCourseInfo.teachersText && (
-                                            <span className="text-xs text-muted-foreground/70">{dayCourseInfo.teachersText}</span>
-                                        )}
-                                    </p>
-                                );
-                            }
-                            return null;
-                        })()}
-                    </CardContent>
-                </Card>
-            </div>
-        )}
+      <div onContextMenu={(e) => { e.preventDefault(); setSwapSourceSeat(null); }} className="min-h-full">
         {selectedBusId === 'all' ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start w-full">
-                <AllStudentsBoardingStatus relevantRoutes={relevantRoutesForDay} students={students} buses={filteredBuses} allAttendance={allAttendance} formatStudentName={formatStudentName} t={t} afterschoolAbsentStudentIds={afterschoolAbsentStudentIds}/>
+                <AllStudentsBoardingStatus relevantRoutes={relevantRoutesForDay} students={students} buses={filteredBuses} allAttendance={allAttendance} formatStudentName={formatStudentName} t={t} afterschoolAbsentStudentIds={afterschoolAbsentStudentIds} onSelectStudent={setSelectedStudent}/>
                 <AllGroupLeadersStatus relevantRoutes={relevantRoutesForDay} students={students} buses={filteredBuses} formatStudentName={formatStudentName} t={t}/>
             </div>
         ) : (
@@ -2810,7 +3103,7 @@ updates.disembarked = arrayUnion(student.id);
                         <CardHeader>
                             <div className="flex justify-between items-start">
                                 <div><CardTitle>{t('teacher_page.seat_map_title')}</CardTitle><CardDescription>{t('teacher_page.seat_map_description')}</CardDescription></div>
-                                <Button variant="outline" size="sm" onClick={() => window.print()} className="no-print"><Printer className="mr-2 h-4 w-4"/>{t('print')}</Button>
+                                <Button variant="outline" size="sm" onClick={handlePrintSeatMap} className="no-print"><Printer className="mr-2 h-4 w-4"/>{t('print')}</Button>
                             </div>
                         </CardHeader>
                         <CardContent>
@@ -2822,146 +3115,6 @@ updates.disembarked = arrayUnion(student.id);
                         </CardContent>
                     </Card>
                     
-                    {selectedStudent && (
-                        <Card id="student-info-card" className="no-print border-primary/20 bg-primary/5 animate-in fade-in slide-in-from-top-2 scroll-mt-36">
-                            <CardHeader className="pb-3">
-                                <div className="flex justify-between items-center">
-                                    <div className="flex items-center gap-1.5 min-w-0">
-                                        <Button 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            className="h-7 w-7 rounded-full hover:bg-slate-200/80 -ml-1 text-slate-700 hover:text-slate-900 shrink-0 border border-slate-200/80 bg-white shadow-2xs transition-all active:scale-95" 
-                                            onClick={() => {
-                                                const el = document.getElementById('boarding-students-list-card');
-                                                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                            }}
-                                            title="탑승 학생 명단으로 이동"
-                                        >
-                                            <ArrowUp className="w-4 h-4" />
-                                            <span className="sr-only">명단으로 이동</span>
-                                        </Button>
-                                        <CardTitle className="text-lg font-bold truncate">{formatStudentName(selectedStudent)}</CardTitle>
-                                    </div>
-                                    <Badge variant={selectedStudent.isGroupLeader ? "default" : "secondary"} className="shrink-0">{selectedStudent.isGroupLeader ? "활동 조장" : "일반 학생"}</Badge>
-                                </div>
-                            </CardHeader>
-                            <CardContent className="pb-3 space-y-2">
-                                <p className="text-sm text-muted-foreground">학년/반: {selectedStudent.grade}학년 {selectedStudent.class}반</p>
-                                {selectedStudent.contact && (
-                                    <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                                        <Phone className="w-3.5 h-3.5 text-primary shrink-0" />
-                                        <span>연락처:</span>
-                                        <a 
-                                            href={`tel:${selectedStudent.contact}`} 
-                                            className="font-medium text-blue-600 hover:underline"
-                                        >
-                                            {selectedStudent.contact}
-                                        </a>
-                                    </p>
-                                )}
-                                <p className="text-sm text-muted-foreground">목적지: {destinations.find(d => d.id === (selectedDay === 'Saturday' ? (selectedRouteType === 'Morning' ? selectedStudent.satMorningDestinationId : selectedStudent.satAfternoonDestinationId) : (selectedRouteType === 'Morning' ? selectedStudent.morningDestinationId : selectedRouteType === 'Afternoon' ? selectedStudent.afternoonDestinationId : selectedStudent.afterSchoolDestinations?.[selectedDay])))?.name || t('unassigned')}</p>
-                                {(() => {
-                                    const classId = selectedStudent.afterSchoolClassIds?.[selectedDay];
-                                    if (classId) {
-                                        const afterSchoolClass = activeAfterSchoolClasses.find(c => c.id === classId);
-                                        if (afterSchoolClass) {
-                                            return (
-                                                <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                                                    <GraduationCap className="w-3.5 h-3.5 text-primary shrink-0" />
-                                                    <span>방과후 ({t(`day_short.${selectedDay.toLowerCase()}`)}):</span>
-                                                    <span className="font-medium text-foreground">{afterSchoolClass.name}</span>
-                                                    {afterSchoolClass.teacherName && (
-                                                        <span className="text-xs text-muted-foreground/70">({afterSchoolClass.teacherName})</span>
-                                                    )}
-                                                </p>
-                                            );
-                                        }
-                                    }
-                                    const destBasedClass = activeAfterSchoolClasses.find(
-                                        c => c.id === selectedStudent.afterSchoolDestinations?.[selectedDay] && c.dayOfWeek === selectedDay
-                                    );
-                                    if (destBasedClass) {
-                                        return (
-                                            <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                                                <GraduationCap className="w-3.5 h-3.5 text-primary shrink-0" />
-                                                <span>방과후 ({t(`day_short.${selectedDay.toLowerCase()}`)}):</span>
-                                                <span className="font-medium text-foreground">{destBasedClass.name}</span>
-                                                {destBasedClass.teacherName && (
-                                                    <span className="text-xs text-muted-foreground/70">({destBasedClass.teacherName})</span>
-                                                )}
-                                            </p>
-                                        );
-                                    }
-                                    const dayCourseInfo = (selectedStudent as any).afterSchoolCoursesByDay?.[selectedDay];
-                                    if (dayCourseInfo?.title) {
-                                        return (
-                                            <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                                                <GraduationCap className="w-3.5 h-3.5 text-primary shrink-0" />
-                                                <span>방과후 ({t(`day_short.${selectedDay.toLowerCase()}`)}):</span>
-                                                <span className="font-medium text-foreground">{dayCourseInfo.title}</span>
-                                                {dayCourseInfo.teachersText && (
-                                                    <span className="text-xs text-muted-foreground/70">{dayCourseInfo.teachersText}</span>
-                                                )}
-                                            </p>
-                                        );
-                                    }
-                                    return null;
-                                })()}
-                            </CardContent>
-                            <CardFooter className="flex flex-col gap-2">
-                                {/* 1행: '오늘 안 탐 처리' 와 '요일 제외' 버튼 나란히 배치 */}
-                                <div className="grid grid-cols-2 gap-2 w-full font-sans">
-                                    {(() => {
-                                        const isNotBoarding = notBoardingStudentIds.includes(selectedStudent.id);
-                                        return (
-                                            <Button 
-                                                variant={isNotBoarding ? "destructive" : "outline"} 
-                                                size="sm" 
-                                                onClick={handleMarkNotBoarding} 
-                                                className={cn("w-full h-9 text-xs font-bold", !isNotBoarding && "text-destructive border-destructive hover:bg-destructive/10")}
-                                            >
-                                                <AlertCircle className="mr-1.5 h-4 w-4 shrink-0" /> 
-                                                <span className="truncate">{isNotBoarding ? "오늘 탑승 복구" : t('teacher_page.mark_not_riding_today')}</span>
-                                            </Button>
-                                        );
-                                    })()}
-
-                                    <Button 
-                                        variant="outline" 
-                                        size="sm" 
-                                        onClick={handleExcludeStudentFromDayRoute} 
-                                        className="w-full h-9 text-xs font-bold text-amber-700 border-amber-300 hover:bg-amber-50 hover:text-amber-800"
-                                        title={`${t(`day.${selectedDay.toLowerCase()}`)} ${t(`route_type.${selectedRouteType.toLowerCase()}`)} 명단에서 제외`}
-                                    >
-                                        <CalendarX className="mr-1.5 h-4 w-4 shrink-0 text-amber-600" /> 
-                                        <span className="truncate">요일 제외</span>
-                                    </Button>
-                                </div>
-
-                                {/* 2행: 조장 임명/해제 */}
-                                {selectedRouteType !== 'AfterSchool' && (
-                                    <Button 
-                                        variant={selectedStudent.isGroupLeader ? "destructive" : "default"} 
-                                        size="sm" 
-                                        onClick={toggleGroupLeader} 
-                                        className="w-full h-9 text-xs font-bold"
-                                    >
-                                        {selectedStudent.isGroupLeader ? (
-                                            <>
-                                                <UserX className="mr-2 h-4 w-4" /> 
-                                                {t('teacher_page.demote_leader')}
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Crown className="mr-2 h-4 w-4" /> 
-                                                {t('teacher_page.promote_leader')}
-                                            </>
-                                        )}
-                                    </Button>
-                                )}
-                            </CardFooter>
-                        </Card>
-                    )}
                     <div className="lg:hidden"><LostAndFound lostItems={lostItems} setLostItems={setLostItems} buses={buses}/></div>
                 </div>
                 <div className="hidden lg:flex flex-col gap-6 no-print">
@@ -2980,6 +3133,200 @@ updates.disembarked = arrayUnion(student.id);
             </div>
         )}
         </div>
+
+        {/* 학생 카드 상세 팝업 Dialog */}
+        <Dialog open={!!selectedStudent} onOpenChange={(open) => {
+            if (!open) {
+                setSelectedStudent(null);
+                setLastClickedStudentId(null);
+            }
+        }}>
+            <DialogContent className="sm:max-w-md p-5">
+                {selectedStudent && (() => {
+                    const studentAssignedRoute = (allRoutes.length > 0 ? allRoutes : allStaticRoutes).find(r => 
+                        (r.semesterMode || 'regular') === semesterMode && 
+                        r.dayOfWeek === selectedDay && 
+                        r.type === selectedRouteType && 
+                        r.seating?.some(se => se.studentId === selectedStudent.id)
+                    );
+                    const busObj = studentAssignedRoute 
+                        ? (filteredBuses.find(b => b.id === studentAssignedRoute.busId) || buses.find(b => b.id === studentAssignedRoute.busId)) 
+                        : null;
+                    const rawBusName = busObj?.name || selectedStudent.afterSchoolBusNo || (selectedRouteType === 'Morning' ? selectedStudent.morningBusNo : selectedStudent.afternoonBusNo) || selectedStudent.morningBusNo || selectedStudent.afternoonBusNo || (selectedStudent as any).kisbusNo || (selectedStudent as any).busNo;
+                    const studentBusNo = formatStandardBusNo(rawBusName);
+                    const hasValidBusNo = studentBusNo && studentBusNo !== '-' && studentBusNo !== '미신청' && studentBusNo !== '미지정';
+
+                    const destId = selectedDay === 'Saturday'
+                        ? (selectedRouteType === 'Morning' ? selectedStudent.satMorningDestinationId : selectedStudent.satAfternoonDestinationId)
+                        : (selectedRouteType === 'Morning' ? selectedStudent.morningDestinationId : selectedRouteType === 'Afternoon' ? selectedStudent.afternoonDestinationId : selectedStudent.afterSchoolDestinations?.[selectedDay]);
+                    const destName = destinations.find(d => d.id === destId)?.name || t('unassigned');
+
+                    const studentNumber = selectedStudent.number || (selectedStudent as any).studentNumber;
+
+                    const isNotBoarding = notBoardingStudentIds.includes(selectedStudent.id);
+
+                    return (
+                        <div className="flex flex-col gap-4">
+                            <DialogHeader className="pb-2 border-b">
+                                <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                        <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                                            <span>{getStudentName(selectedStudent, i18n.language)}</span>
+                                            {selectedStudent.isGroupLeader && (
+                                                <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-300 text-xs px-1.5 py-0.5 font-bold flex items-center gap-1">
+                                                    <Crown className="w-3 h-3 text-amber-600" />
+                                                    {t('group_leader') || '조장'}
+                                                </Badge>
+                                            )}
+                                        </DialogTitle>
+                                        <DialogDescription className="text-xs text-muted-foreground mt-1">
+                                            {selectedStudent.grade.toUpperCase()} {t('student.grade', '학년')} {selectedStudent.class} {t('student.class', '반')}
+                                            {studentNumber ? ` · ${studentNumber}번` : ''}
+                                        </DialogDescription>
+                                    </div>
+                                    <div className="shrink-0">
+                                        {hasValidBusNo ? (
+                                            <Badge variant="secondary" className="bg-indigo-100 text-indigo-800 border-indigo-200 text-xs font-bold px-2 py-1">
+                                                🚌 {studentBusNo}
+                                            </Badge>
+                                        ) : (
+                                            <Badge variant="outline" className="text-xs text-slate-400 border-slate-200">
+                                                미배정
+                                            </Badge>
+                                        )}
+                                    </div>
+                                </div>
+                            </DialogHeader>
+
+                            {/* 세부 정보 그리드 */}
+                            <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50/70 p-3 rounded-lg border border-slate-200/80">
+                                <div>
+                                    <span className="text-muted-foreground block text-[11px] mb-0.5">연락처</span>
+                                    {selectedStudent.contact ? (
+                                        <a 
+                                            href={`tel:${selectedStudent.contact}`}
+                                            className="text-blue-600 font-semibold hover:underline flex items-center gap-1"
+                                        >
+                                            <Phone className="w-3 h-3 shrink-0" />
+                                            <span>{selectedStudent.contact}</span>
+                                        </a>
+                                    ) : (
+                                        <span className="text-slate-400 font-medium">연락처 없음</span>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <span className="text-muted-foreground block text-[11px] mb-0.5">
+                                        {selectedRouteType === 'Morning' ? '등교 목적지' : selectedRouteType === 'Afternoon' ? '하교 목적지' : '방과후 목적지'}
+                                    </span>
+                                    <div className="flex items-center gap-1 font-semibold text-slate-800 truncate" title={destName}>
+                                        <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
+                                        <span className="truncate">{destName}</span>
+                                    </div>
+                                </div>
+
+                                <div className="col-span-2">
+                                    <span className="text-muted-foreground block text-[11px] mb-0.5">오늘 배정 버스</span>
+                                    <div className="flex items-center gap-2">
+                                        {hasValidBusNo ? (
+                                            <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 text-xs">
+                                                {studentBusNo}
+                                            </span>
+                                        ) : (
+                                            <span className="text-slate-400 text-xs">탑승 버스가 배정되지 않았습니다.</span>
+                                        )}
+                                        <span className="text-[11px] text-muted-foreground">
+                                            ({t(`day_short.${selectedDay.toLowerCase()}`)} {t(`route_type.${selectedRouteType.toLowerCase()}`)})
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* 방과후 경로 시 오늘 방과후 수강 강좌 필수 표출 */}
+                                {selectedRouteType === 'AfterSchool' && (() => {
+                                    const classId = selectedStudent.afterSchoolClassIds?.[selectedDay];
+                                    let asClass = activeAfterSchoolClasses.find(c => c.id === classId);
+                                    if (!asClass && semesterMode === 'vacation') {
+                                        const destIdVal = selectedStudent.afterSchoolDestinations?.[selectedDay];
+                                        asClass = activeAfterSchoolClasses.find(c => c.id === destIdVal);
+                                    }
+                                    const dayCourse = (selectedStudent as any).afterSchoolCoursesByDay?.[selectedDay];
+                                    const courseTitle = asClass?.name || dayCourse?.title;
+                                    const teachersText = asClass 
+                                        ? [asClass.teacherName, asClass.teacherName2].filter(Boolean).join(', ')
+                                        : dayCourse?.teachersText;
+
+                                    return (
+                                        <div className="col-span-2 pt-2 border-t border-slate-200">
+                                            <span className="text-muted-foreground block text-[11px] mb-0.5">오늘 방과후 강좌</span>
+                                            {courseTitle ? (
+                                                <div className="flex items-center gap-1.5 font-semibold text-slate-800">
+                                                    <GraduationCap className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                                    <span className="text-slate-900">{courseTitle}</span>
+                                                    {teachersText && (
+                                                        <span className="text-xs text-muted-foreground font-normal">({teachersText})</span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-slate-400">수강 강좌 정보 없음</span>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
+                            {/* 하단 3대 액션 버튼 1줄 나란히 배치 */}
+                            <div className="grid grid-cols-3 gap-2 w-full pt-2 border-t font-sans">
+                                <Button 
+                                    variant={isNotBoarding ? "destructive" : "outline"} 
+                                    size="sm" 
+                                    onClick={handleMarkNotBoarding} 
+                                    className={cn(
+                                        "w-full h-9 px-1 text-xs font-bold truncate",
+                                        !isNotBoarding && "text-destructive border-destructive hover:bg-destructive/10"
+                                    )}
+                                    title={isNotBoarding ? "오늘 탑승 복구" : "오늘 안 탐 처리"}
+                                >
+                                    <AlertCircle className="mr-1 h-3.5 w-3.5 shrink-0" /> 
+                                    <span className="truncate">{isNotBoarding ? "탑승 복구" : "오늘 안 탐"}</span>
+                                </Button>
+
+                                <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    onClick={handleExcludeStudentFromDayRoute} 
+                                    className="w-full h-9 px-1 text-xs font-bold text-amber-700 border-amber-300 hover:bg-amber-50 hover:text-amber-800 truncate"
+                                    title={`${t(`day.${selectedDay.toLowerCase()}`)} ${t(`route_type.${selectedRouteType.toLowerCase()}`)} 명단에서 제외`}
+                                >
+                                    <CalendarX className="mr-1 h-3.5 w-3.5 shrink-0 text-amber-600" /> 
+                                    <span className="truncate">요일 제외</span>
+                                </Button>
+
+                                <Button 
+                                    variant={selectedStudent.isGroupLeader ? "destructive" : "default"} 
+                                    size="sm" 
+                                    onClick={toggleGroupLeader} 
+                                    disabled={selectedRouteType === 'AfterSchool'}
+                                    className="w-full h-9 px-1 text-xs font-bold truncate"
+                                    title={selectedRouteType === 'AfterSchool' ? "방과후 노선에서는 조장을 임명할 수 없습니다." : (selectedStudent.isGroupLeader ? "조장 해제" : "조장 임명")}
+                                >
+                                    {selectedStudent.isGroupLeader ? (
+                                        <>
+                                            <UserX className="mr-1 h-3.5 w-3.5 shrink-0" /> 
+                                            <span className="truncate">조장 해제</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Crown className="mr-1 h-3.5 w-3.5 shrink-0" /> 
+                                            <span className="truncate">조장 임명</span>
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
+                        </div>
+                    );
+                })()}
+            </DialogContent>
+        </Dialog>
 
       <Dialog open={isQrScannerOpen} onOpenChange={(open) => {
           setIsQrScannerOpen(open);
@@ -3519,28 +3866,51 @@ function QrCameraFeed({ onScan }: { onScan: (data: string) => void }) {
 
   useEffect(() => {
     let stream: MediaStream | null = null;
+    let isCancelled = false;
 
     const startCamera = async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' }
         });
+        if (isCancelled) {
+          mediaStream.getTracks().forEach(track => track.stop());
+          return;
+        }
+        stream = mediaStream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.setAttribute('playsinline', 'true');
-          videoRef.current.play();
+          videoRef.current.muted = true;
+          try {
+            const playPromise = videoRef.current.play();
+            if (playPromise !== undefined) {
+              await playPromise;
+            }
+          } catch (playErr: any) {
+            // Unmount 또는 새 스트림 로드 시 AbortError 발생 방어
+            if (playErr?.name !== 'AbortError') {
+              console.warn('Video play interrupted:', playErr);
+            }
+          }
         }
       } catch (err: any) {
-        console.error('Camera open failed:', err);
-        setCameraError(err.message || 'Camera access error');
+        if (!isCancelled) {
+          console.error('Camera open failed:', err);
+          setCameraError(err.message || 'Camera access error');
+        }
       }
     };
 
     startCamera();
 
     return () => {
+      isCancelled = true;
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
       }
       if (stream) {
         stream.getTracks().forEach(track => track.stop());

@@ -207,11 +207,19 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       return { isBusApplied: false, zone: '미신청', fare: 0, destinationName: '미신청', isSaturday: false };
     }
 
-    const student = busInfo?.student || studentsList.find(s => 
-      s.name === enrollment.name && 
-      Number(s.grade) === Number(enrollment.grade) && 
-      Number(s.class) === Number(enrollment.classNum)
-    );
+    const targetEmail = (enrollment.studentEmail || (enrollment as any).email || '').toLowerCase().trim();
+    const student = busInfo?.student || 
+      (targetEmail ? studentsList.find(s => (s.studentEmail || '').toLowerCase().trim() === targetEmail) : null) ||
+      (enrollment.studentId ? studentsList.find(s => s.id === enrollment.studentId) : null) ||
+      studentsList.find(s => 
+        s.name === enrollment.name && 
+        Number(s.grade) === Number(enrollment.grade) && 
+        Number(s.class) === Number(enrollment.classNum)
+      ) ||
+      studentsList.find(s => 
+        (s.name === enrollment.name || s.nameKo === enrollment.name) && 
+        Number(s.grade) === Number(enrollment.grade)
+      );
 
     // 목적지 및 Zone 판별
     let destinationName = '목적지 미지정';
@@ -740,34 +748,55 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 
     const courseEnrollmentsList = enrollments.filter(e => e.courseId === targetCourse.id);
 
-    // 채우기 버튼 미사용 시에도 이름+학년+반으로 kisbus students에서 ID 자동 매칭
+    // 채우기 버튼 미사용 시에도 이름(한글/영문)+학년+반으로 kisbus students에서 ID 자동 매칭
     const cleanStr = (s: any) => String(s || '').replace(/\s+/g, '').toLowerCase();
+    const cRegName = cleanStr(regName.trim());
+    const tRegGrade = Number(regGrade);
+    const tRegClass = Number(regClassNum);
+    const tRegNum = regStudentNum ? Number(regStudentNum) : undefined;
+
     const autoMatchedStudent = selectedStudentToRegister || (studentsList && studentsList.length > 0
-      ? (studentsList.find(s =>
-          cleanStr(s.name) === cleanStr(regName.trim()) &&
-          Number(s.grade) === Number(regGrade) &&
-          Number(s.class) === Number(regClassNum) &&
-          (regStudentNum ? Number((s as any).studentNum || s.number) === Number(regStudentNum) : true)
-        ) || studentsList.find(s =>
-          cleanStr(s.name) === cleanStr(regName.trim()) &&
-          Number(s.grade) === Number(regGrade) &&
-          Number(s.class) === Number(regClassNum)
-        ))
+      ? (studentsList.find(s => {
+          const matchName = cleanStr(s.name) === cRegName || cleanStr(s.nameKo) === cRegName || cleanStr(s.nameEn) === cRegName;
+          const matchGrade = Number(s.grade) === tRegGrade;
+          const matchClass = Number(s.class || s.classNum) === tRegClass;
+          const sNum = Number((s as any).studentNum || s.number || 0);
+          const matchNum = tRegNum ? sNum === tRegNum : true;
+          return matchName && matchGrade && matchClass && matchNum;
+        }) || studentsList.find(s => {
+          const matchName = cleanStr(s.name) === cRegName || cleanStr(s.nameKo) === cRegName || cleanStr(s.nameEn) === cRegName;
+          const matchGrade = Number(s.grade) === tRegGrade;
+          const matchClass = Number(s.class || s.classNum) === tRegClass;
+          return matchName && matchGrade && matchClass;
+        }) || studentsList.find(s => {
+          // 반 불일치 시 학년 내 동명이인 없는 고유 학생 구제
+          const matchName = cleanStr(s.name) === cRegName || cleanStr(s.nameKo) === cRegName || cleanStr(s.nameEn) === cRegName;
+          if (!matchName || Number(s.grade) !== tRegGrade) return false;
+          const sameName = studentsList.filter(item => 
+            (cleanStr(item.name) === cRegName || cleanStr(item.nameKo) === cRegName || cleanStr(item.nameEn) === cRegName) && 
+            Number(item.grade) === tRegGrade
+          );
+          return sameName.length === 1;
+        }))
       : null);
+
+    const autoEmail = autoMatchedStudent?.studentEmail || (autoMatchedStudent as any)?.email || '';
 
     const newEnrollment: Enrollment = {
       id: `e_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       courseId: targetCourse.id,
       studentId: autoMatchedStudent?.id || `st_${Date.now()}`,
+      studentEmail: autoEmail,
+      nameEn: autoMatchedStudent?.nameEn || '',
       yearNo: courseEnrollmentsList.length + 1,
       grade: Number(regGrade) || 1,
       classNum: Number(regClassNum) || 1,
       studentNum: Number(regStudentNum) || 0,
       name: regName.trim(),
       phone: '',
-      parentPhone: regParentPhone.trim(),
+      parentPhone: regParentPhone.trim() || (autoMatchedStudent as any)?.contact || (autoMatchedStudent as any)?.parentPhone || '',
       needsBus: regNeedsBus,
-      kisbusNo: regNeedsBus ? '신청' : '-',
+      kisbusNo: regNeedsBus ? ((autoMatchedStudent as any)?.kisbusNo || (autoMatchedStudent as any)?.morningBusNo || '신청') : '-',
       tuition: targetCourse.tuition,
       textbookFee: targetCourse.textbookFee,
       materialFee: targetCourse.materialFee,
@@ -779,6 +808,31 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     setEnrollments(nextEnrollments);
     await saveAfterschoolEnrollment(newEnrollment);
     await syncCourseStudentCounts(targetCourse.id, nextEnrollments);
+
+    // 스쿨버스 학생 문서에 방과후 강좌 정보 실시간 동기화
+    if (autoMatchedStudent?.id) {
+      try {
+        const { getKisbusDb } = await import('@/lib/kisbus/firebase');
+        const { doc, getDoc, updateDoc } = await import('firebase/firestore');
+        const kDb = getKisbusDb();
+        const stRef = doc(kDb, 'students', autoMatchedStudent.id);
+        const stSnap = await getDoc(stRef);
+        if (stSnap.exists()) {
+          const stData = stSnap.data();
+          const enrolledTitles: string[] = Array.isArray(stData.enrolledCourseTitles) ? [...stData.enrolledCourseTitles] : [];
+          if (targetCourse.title && !enrolledTitles.includes(targetCourse.title)) {
+            enrolledTitles.push(targetCourse.title);
+          }
+          await updateDoc(stRef, {
+            enrolledCourseTitles: enrolledTitles,
+            afterSchoolCourseTitles: enrolledTitles
+          });
+        }
+      } catch (stErr) {
+        console.warn('Failed to sync course title to kisbus student:', stErr);
+      }
+    }
+
     setIsRegisterModalOpen(false);
     setSelectedStudentToRegister(null);
     alert(`[${newEnrollment.name}] 학생이 '${targetCourse.title}' 강좌에 ${registerStatusTarget === 'ENROLLED' ? '수강 확정생' : '신청 대기자'}로 성공적으로 등록되었습니다.`);
@@ -800,6 +854,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     let tClass = 0;
     let tNum: number | undefined = undefined;
     let tStudentId: string | undefined = undefined;
+    let targetEmail = '';
 
     if (typeof nameOrEnroll === 'object' && nameOrEnroll !== null) {
       targetName = String(nameOrEnroll.name || nameOrEnroll.studentName || '').trim();
@@ -807,12 +862,18 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       tClass = Number(nameOrEnroll.classNum);
       tNum = nameOrEnroll.studentNum ? Number(nameOrEnroll.studentNum) : undefined;
       tStudentId = nameOrEnroll.studentId;
+      targetEmail = (nameOrEnroll.studentEmail || nameOrEnroll.email || '').toLowerCase().trim();
       if (!dayOfWeek && nameOrEnroll.dayOfWeek) dayOfWeek = nameOrEnroll.dayOfWeek;
     } else {
       targetName = String(nameOrEnroll || '').trim();
       tGrade = Number(grade);
       tClass = Number(classNum);
       tNum = studentNum ? Number(studentNum) : undefined;
+    }
+
+    if (!tStudentId && targetEmail) {
+      const byEmail = studentsList.find(s => (s.studentEmail || '').toLowerCase().trim() === targetEmail);
+      if (byEmail) tStudentId = byEmail.id;
     }
 
     if (tStudentId) {
@@ -893,6 +954,22 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
         const matchClass = Number(s.class) === tClass;
         return matchName && matchGrade && matchClass;
       });
+    }
+
+    // 3단계: targetEmail 일치 학생 매칭
+    if (!matched && targetEmail) {
+      matched = studentsList.find(s => (s.studentEmail || '').toLowerCase().trim() === targetEmail);
+    }
+
+    // 4단계: 반 불일치 시 동일 학년 내 동명이인이 없는 고유 학생인 경우 구제
+    if (!matched && tGrade) {
+      const sameNameInGrade = studentsList.filter(s => {
+        const matchName = clean(s.name) === cleanTarget || clean(s.nameKo) === cleanTarget || clean(s.nameEn) === cleanTarget;
+        return matchName && Number(s.grade) === tGrade;
+      });
+      if (sameNameInGrade.length === 1) {
+        matched = sameNameInGrade[0];
+      }
     }
 
     if (!matched) return null;

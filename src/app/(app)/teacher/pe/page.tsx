@@ -32,7 +32,7 @@ import { PeEventManagement } from '@/components/pe/PeEventManagement';
 import TheoryExamManagement from '@/components/pe/TheoryExamManagement';
 import MeasurementManagement from '@/components/pe/MeasurementManagement';
 import { getOrgStructure } from '@/lib/services/settingsService';
-import { checkPeAccessPermission } from '@/lib/services/permissionService';
+import { checkPeAccessPermission, getPePermissionDetails } from '@/lib/services/permissionService';
 import type { OrgStructure } from '@/lib/types';
 import { MainLayout } from '@/components/layout/main-layout';
 import {
@@ -48,7 +48,8 @@ import {
   Settings2,
   Filter,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  GraduationCap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -113,9 +114,11 @@ export default function TeacherPePage() {
     });
   }, []);
 
-  const hasPePermission = useMemo(() => {
-    return checkPeAccessPermission(user?.email, profile, org);
+  const pePerms = useMemo(() => {
+    return getPePermissionDetails(user?.email, profile, org);
   }, [user?.email, profile, org]);
+
+  const hasPePermission = pePerms.canAccess;
 
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('measurement');
@@ -300,7 +303,7 @@ export default function TeacherPePage() {
   const handleMainCategoryChange = (val: 'measurement' | 'competition' | 'theory' | 'data') => {
     setMainCategory(val);
     if (val === 'measurement') setSubCategory('input');
-    else if (val === 'competition') setSubCategory('events');
+    else if (val === 'competition') setSubCategory(pePerms.isHomeroomOnly ? 'balancer' : 'events');
     else if (val === 'theory') setSubCategory('theory');
     else if (val === 'data') setSubCategory('data');
   };
@@ -315,6 +318,12 @@ export default function TeacherPePage() {
           { value: 'ranking', label: '명예의 전당' },
         ];
       case 'competition':
+        if (pePerms.isHomeroomOnly) {
+          return [
+            { value: 'balancer', label: '학급 팀 밸런서' },
+            { value: 'tournament', label: '토너먼트/리그' },
+          ];
+        }
         return [
           { value: 'events', label: '체육행사 기획 & 일정' },
           { value: 'tournament', label: '토너먼트/리그' },
@@ -332,22 +341,31 @@ export default function TeacherPePage() {
       default:
         return [];
     }
-  }, [mainCategory]);
+  }, [mainCategory, pePerms.isHomeroomOnly]);
 
   // 전체 사용 가능한 학년 목록
   const availableGrades = useMemo(() => {
+    if (pePerms.isHomeroomOnly && pePerms.homeroom) {
+      return [pePerms.homeroom.grade];
+    }
     const set = new Set<string>();
     data.students.forEach(s => {
       if (s.grade) set.add(String(s.grade));
     });
     return Array.from(set).sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0));
-  }, [data.students]);
+  }, [data.students, pePerms]);
 
-  // 체육 교사가 설정한 담당 학년의 학생만 필터링 (미설정 시 전체 학생)
+  // 담임 교사는 본인 학급 학생만 필터링, 체육 전담 교사는 설정한 담당 학년의 학생 필터링 (미설정 시 전체 학생)
   const filteredStudents = useMemo(() => {
+    if (pePerms.isHomeroomOnly && pePerms.homeroom) {
+      return data.students.filter(s => 
+        String(s.grade) === pePerms.homeroom!.grade && 
+        String(s.classNum || (s as any).class) === pePerms.homeroom!.classNum
+      );
+    }
     if (assignedGrades.length === 0) return data.students;
     return data.students.filter(s => assignedGrades.includes(String(s.grade)));
-  }, [data.students, assignedGrades]);
+  }, [data.students, assignedGrades, pePerms]);
 
   const handleTournamentUpdate = useCallback(() => {
     getPeTeamGroups(school).then(teams => {
@@ -424,18 +442,28 @@ export default function TeacherPePage() {
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
                 <h1 className="hidden sm:inline-block text-sm sm:text-base font-black text-slate-900 whitespace-nowrap">학교 체육 성장 기록</h1>
-                <Badge
-                  variant="outline"
-                  onClick={() => setIsSettingsOpen(true)}
-                  className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200 px-2 py-0.5 cursor-pointer hover:bg-indigo-100 transition-colors"
-                  title="클릭하여 담당 학년 설정"
-                >
-                  {assignedGrades.length > 0 ? (
-                    <>담당 {assignedGrades.join(',')}학년 ({filteredStudents.length}명 / 전체 {data.students.length}명)</>
-                  ) : (
-                    <>학생 {data.students.length}명 (전체)</>
-                  )}
-                </Badge>
+                {pePerms.isHomeroomOnly && pePerms.homeroom ? (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border-emerald-300 px-2 py-0.5 flex items-center gap-1 shadow-2xs"
+                  >
+                    <GraduationCap className="w-3 h-3 text-emerald-600" />
+                    {pePerms.homeroom.grade}학년 {pePerms.homeroom.classNum}반 담임 ({filteredStudents.length}명)
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200 px-2 py-0.5 cursor-pointer hover:bg-indigo-100 transition-colors"
+                    title="클릭하여 담당 학년 설정"
+                  >
+                    {assignedGrades.length > 0 ? (
+                      <>담당 {assignedGrades.join(',')}학년 ({filteredStudents.length}명 / 전체 {data.students.length}명)</>
+                    ) : (
+                      <>학생 {data.students.length}명 (전체)</>
+                    )}
+                  </Badge>
+                )}
               </div>
             </div>
 
@@ -452,7 +480,9 @@ export default function TeacherPePage() {
                     <SelectItem value="measurement" className="text-xs font-bold">측정 & 분석</SelectItem>
                     <SelectItem value="competition" className="text-xs font-bold">체육행사 & 대회</SelectItem>
                     <SelectItem value="theory" className="text-xs font-bold">이론 평가</SelectItem>
-                    <SelectItem value="data" className="text-xs font-bold">종목 관리</SelectItem>
+                    {!pePerms.isHomeroomOnly && (
+                      <SelectItem value="data" className="text-xs font-bold">종목 관리</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -474,17 +504,19 @@ export default function TeacherPePage() {
                 </Select>
               </div>
 
-              {/* 담당 학년 설정 버튼 */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsSettingsOpen(true)}
-                className="h-8 px-2.5 text-xs font-bold text-indigo-700 bg-indigo-50/60 border-indigo-200 hover:bg-indigo-100 shrink-0 flex items-center gap-1"
-                title="체육 교과 담당 학년 설정"
-              >
-                <Settings2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">담당 설정</span>
-              </Button>
+              {/* 담당 학년 설정 버튼 (체육 전담 교사 전용) */}
+              {!pePerms.isHomeroomOnly && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="h-8 px-2.5 text-xs font-bold text-indigo-700 bg-indigo-50/60 border-indigo-200 hover:bg-indigo-100 shrink-0 flex items-center gap-1"
+                  title="체육 교과 담당 학년 설정"
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">담당 설정</span>
+                </Button>
+              )}
 
               {/* AI 인텔리전스 센터 */}
               <Button

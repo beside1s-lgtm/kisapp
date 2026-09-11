@@ -20,7 +20,7 @@ import {
 import type { Bus, Student, Route, Destination, Teacher, DayOfWeek, RouteType, AfterSchoolClass } from '@/lib/kisbus/types';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Trash2, Check, CheckCheck, Bell, ChevronDown, ChevronsUpDown, UserCog, Bus as BusIcon, Users, GraduationCap, Activity, Settings, Download, Send, Upload, Database, FileText, FilePlus, ShieldCheck, CheckCircle2, ChevronRight, PlusCircle, ArrowRightLeft, Loader2 } from 'lucide-react';
+import { Trash2, Check, CheckCheck, Bell, ChevronDown, ChevronsUpDown, UserCog, Bus as BusIcon, Users, GraduationCap, Activity, Settings, Download, Send, Upload, Database, FileText, FilePlus, ShieldCheck, CheckCircle2, ChevronRight, PlusCircle, ArrowRightLeft, Loader2, Search, Users2 } from 'lucide-react';
 import { executeTransferAfterschoolStudentsToBus, executeRevertTransferFromAfterschoolToBus } from '@/lib/kisbus/assignments';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MainLayout } from '@/components/layout/main-layout';
@@ -41,8 +41,10 @@ import { useTranslation } from '@/hooks/use-translation';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/kisbus/utils';
+import { cn, normalizeString, getStudentName } from '@/lib/kisbus/utils';
 import { getOrgStructure, onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsUpdate } from '@/lib/services/settingsService';
+import { onMasterStudentsUpdate } from '@/lib/services/masterStudentService';
+import type { MasterStudent } from '@/lib/types/masterStudent';
 import { getUsersDirectory } from '@/lib/services/userService';
 import type { OrgStructure, UserProfile } from '@/lib/types';
 
@@ -113,6 +115,8 @@ const AdminPageContent: React.FC<{
     const [selectedRouteType, setSelectedRouteType] = useState<RouteType>('Morning');
     const [activeTab, setActiveTab] = useState('student-management');
     const [selectedGlobalStudent, setSelectedGlobalStudent] = useState<Student | null>(null);
+    const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+    const [isStudentRosterOpen, setIsStudentRosterOpen] = useState(false);
     const [docConfig, setDocConfig] = useState<Partial<DocConfig>>({});
     const { toast } = useToast();
     const { t } = useTranslation();
@@ -134,6 +138,26 @@ const AdminPageContent: React.FC<{
     const filteredRoutes = useMemo(() => {
         return routes.filter(r => (r.semesterMode || 'regular') === semesterMode);
     }, [routes, semesterMode]);
+
+    const globalSearchResults = useMemo(() => {
+        if (!globalSearchQuery.trim()) return [];
+        const q = normalizeString(globalSearchQuery);
+        return students.map(student => {
+            const grade = (student.grade || '').toLowerCase();
+            const cls = (student.class || '').toLowerCase();
+            const gradeClass = normalizeString(grade + cls);
+            const nameKo = normalizeString(student.nameKo || '');
+            const nameEn = normalizeString(student.nameEn || '');
+            const nameLegacy = normalizeString(student.name || '');
+            const contact = student.contact?.replace(/\D/g, '') || '';
+            let score = 0;
+            if (gradeClass === q) score += 1000; else if (gradeClass.startsWith(q)) score += 800;
+            if (nameKo.startsWith(q) || nameEn.startsWith(q) || nameLegacy.startsWith(q)) score += 500;
+            else if (nameKo.includes(q) || nameEn.includes(q) || nameLegacy.includes(q)) score += 300;
+            if (contact.startsWith(q)) score += 100; else if (contact.includes(q)) score += 50;
+            return { student, score };
+        }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).map(x => x.student).slice(0, 10);
+    }, [students, globalSearchQuery]);
     
     useEffect(() => {
         if (semesterMode === 'vacation' && selectedRouteType === 'AfterSchool') {
@@ -242,8 +266,8 @@ const AdminPageContent: React.FC<{
     return (
         <div className="w-full min-w-0">
             <Tabs value={activeTab} onValueChange={setActiveTab} defaultValue="student-management" id="admin-tabs-root" className="w-full">
-                {/* 🌟 스크롤 여부와 상관 없이 관리자 헤더 바로 아래에 0px 오차 없이 완전히 딱 고정되는 탭 및 버스 설정 필터 래퍼 */}
-                <div className="sticky top-[var(--site-header-height,64px)] z-20 bg-background/95 backdrop-blur-md px-2.5 sm:px-4 md:px-6 py-2 space-y-2 border-b border-slate-200/50 shadow-xs">
+                {/* 스크롤 시 탭 및 필터 고정 - MainLayout header sticky top-0 z-30 기준 아래에 top-[--site-header-height]로 밀착 */}
+                <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-md px-2.5 sm:px-4 md:px-6 py-2 space-y-2 border-b border-slate-200/50 shadow-xs" style={{ top: 'var(--site-header-height, 56px)' }}>
                     <TabsList className="grid grid-cols-3 sm:grid-cols-6 h-auto w-full bg-slate-100 p-1 sm:p-1.5 rounded-2xl gap-1 border border-slate-200/80">
                         <TabsTrigger value="bus-registration" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_registration')}</TabsTrigger>
                         <TabsTrigger value="teacher-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.teacher_management')}</TabsTrigger>
@@ -276,6 +300,48 @@ const AdminPageContent: React.FC<{
                                 showRouteStops={activeTab === 'student-management'}
                                 destinations={destinations}
                                 semesterMode={semesterMode}
+                                rightContent={activeTab === 'student-management' ? (
+                                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                                        {/* 전체 학생 검색창 */}
+                                        <div className="relative flex-1 sm:w-52">
+                                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                                            <Input
+                                                type="search"
+                                                placeholder="학생 이름 검색..."
+                                                className="pl-8 h-9 sm:h-10 text-xs sm:text-sm w-full"
+                                                value={globalSearchQuery}
+                                                onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                                            />
+                                            {globalSearchResults.length > 0 && globalSearchQuery && (
+                                                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-card border rounded-xl shadow-lg max-h-60 overflow-y-auto overscroll-contain">
+                                                    {globalSearchResults.map(student => (
+                                                        <div
+                                                            key={student.id}
+                                                            className="px-3 py-2 text-sm hover:bg-accent rounded-lg cursor-pointer flex justify-between items-center gap-2"
+                                                            onClick={() => {
+                                                                setSelectedGlobalStudent(student);
+                                                                setGlobalSearchQuery('');
+                                                            }}
+                                                        >
+                                                            <span className="font-medium">{student.nameKo || student.nameEn || student.name}</span>
+                                                            <span className="text-xs text-muted-foreground shrink-0">{student.grade} {student.class}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* 학생명단 관리 버튼 */}
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-9 sm:h-10 shrink-0 text-xs sm:text-sm font-semibold"
+                                            onClick={() => setIsStudentRosterOpen(true)}
+                                        >
+                                            <Users2 className="w-3.5 h-3.5 sm:mr-1.5" />
+                                            <span className="hidden sm:inline">학생명단 관리</span>
+                                        </Button>
+                                    </div>
+                                ) : undefined}
                             />
                         </div>
                     )}
@@ -401,6 +467,11 @@ const AdminPageContent: React.FC<{
                             saturdayTeachers={saturdayTeachers}
                             semesterMode={semesterMode}
                             isTransferred={transferState?.isTransferred === true}
+                            globalSearchQuery={globalSearchQuery}
+                            setGlobalSearchQuery={setGlobalSearchQuery}
+                            globalSearchResults={globalSearchResults}
+                            isStudentRosterOpen={isStudentRosterOpen}
+                            setIsStudentRosterOpen={setIsStudentRosterOpen}
                         />
                     </div>
                 </TabsContent>
@@ -884,6 +955,7 @@ export default function AdminPage() {
     const [afterSchoolTeachers, setAfterSchoolTeachers] = useState<Teacher[]>([]);
     const [saturdayTeachers, setSaturdayTeachers] = useState<Teacher[]>([]);
     const [rawStudents, setRawStudents] = useState<Student[]>([]);
+    const [masterStudents, setMasterStudents] = useState<MasterStudent[]>([]);
     const [afterschoolCourses, setAfterschoolCourses] = useState<any[]>([]);
     const [afterschoolEnrollments, setAfterschoolEnrollments] = useState<any[]>([]);
     const [dataLoading, setDataLoading] = useState(true);
@@ -1083,6 +1155,7 @@ export default function AdminPage() {
             onSaturdayTeachersUpdate(data => setSaturdayTeachers([...data].sort((a, b) => a.name.localeCompare(b.name, 'ko')))),
             onAfterschoolCoursesUpdate(setAfterschoolCourses),
             onAfterschoolEnrollmentsUpdate(setAfterschoolEnrollments),
+            onMasterStudentsUpdate(setMasterStudents),
             onGlobalSettingsUpdate(data => {
                 const mode = data?.semesterMode || 'regular';
                 setActiveSystemMode(mode);
@@ -1173,17 +1246,37 @@ export default function AdminPage() {
             const studentGrade = Number(student.grade);
             const studentClass = Number(student.class || student.classNum);
 
+            const studentEmail = (student.studentEmail || '').toLowerCase().trim();
+
             // 유효한 수강신청만 필터링: CANCELLED 및 미확정(ENROLLED 외) 제외
             const studentEnrollments = afterschoolEnrollments.filter(e => {
                 if (e.status === 'CANCELLED') return false;
                 if (e.status && e.status !== 'ENROLLED' && e.status !== 'enrolled') return false;
 
+                // 1. 고유 ID 우선 일치
                 if (e.studentId && e.studentId === student.id) return true;
+
+                // 2. 학생 이메일 고유 일치
+                const eEmail = (e.studentEmail || (e as any).email || '').toLowerCase().trim();
+                if (studentEmail && eEmail && studentEmail === eEmail) return true;
+
+                // 3. 이름 + 학년 + 반 복합 일치
                 const eName = clean(e.name || e.studentName);
                 const matchName = eName === studentName;
                 const matchGrade = !e.grade || Number(e.grade) === studentGrade;
                 const matchClass = !e.classNum || Number(e.classNum) === studentClass;
-                return matchName && matchGrade && matchClass;
+                if (matchName && matchGrade && matchClass) return true;
+
+                // 4. 반 정보 불일치 시: 이름 + 학년이 일치하고 동일 학년 내 동명이인이 없는 경우 매칭
+                if (matchName && matchGrade) {
+                    const sameNameInGrade = rawStudents.filter(rs => 
+                        clean(rs.nameKo || rs.name || rs.nameEn) === studentName && 
+                        Number(rs.grade) === studentGrade
+                    );
+                    if (sameNameInGrade.length === 1) return true;
+                }
+
+                return false;
             });
 
             if (studentEnrollments.length === 0) {
@@ -1283,8 +1376,19 @@ export default function AdminPage() {
                 });
             });
 
+            // 통합 마스터 학생의 형제·자매 그룹 연동 (MasterStudent의 siblingGroupId 우선)
+            const matchedMaster = masterStudents.find(ms => {
+                if (studentEmail && ms.studentEmail && ms.studentEmail.toLowerCase().trim() === studentEmail) return true;
+                if (student.id && (ms.studentId === student.id || ms.id === student.id)) return true;
+                const mName = clean(ms.name || ms.nameKo || ms.nameEn);
+                return mName === studentName && Number(ms.grade) === studentGrade && Number(ms.classNum) === studentClass;
+            });
+
+            const effectiveSiblingGroupId = matchedMaster?.siblingGroupId || student.siblingGroupId || null;
+
             return {
                 ...student,
+                siblingGroupId: effectiveSiblingGroupId,
                 afterSchoolCourseTitle: enrolledCourseTitles.join(', '),
                 afterSchoolCourseTitles: enrolledCourseTitles,
                 enrolledCourseTitles,
@@ -1298,7 +1402,7 @@ export default function AdminPage() {
 
         setStudents(merged);
         setPendingStudents(merged.filter(s => s.applicationStatus === 'pending'));
-    }, [rawStudents, afterschoolCourses, afterschoolEnrollments, adminViewMode]);
+    }, [rawStudents, masterStudents, afterschoolCourses, afterschoolEnrollments, adminViewMode]);
 
     const getOperatingPeriodString = (yearStr: string, semStr: string, calConfig?: AcademicCalendarConfig) => {
         const yearNum = parseInt(yearStr, 10) || 2026;

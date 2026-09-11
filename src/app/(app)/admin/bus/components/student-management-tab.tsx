@@ -106,6 +106,11 @@ interface StudentManagementTabProps {
     saturdayTeachers: Teacher[];
     semesterMode?: 'regular' | 'vacation';
     isTransferred?: boolean;
+    globalSearchQuery: string;
+    setGlobalSearchQuery: (q: string) => void;
+    globalSearchResults: Student[];
+    isStudentRosterOpen: boolean;
+    setIsStudentRosterOpen: (open: boolean) => void;
 }
 
 export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
@@ -126,6 +131,11 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
     saturdayTeachers,
     semesterMode = 'regular',
     isTransferred = false,
+    globalSearchQuery,
+    setGlobalSearchQuery,
+    globalSearchResults,
+    isStudentRosterOpen,
+    setIsStudentRosterOpen,
 }) => {
     const { toast } = useToast();
     const { t, i18n } = useTranslation();
@@ -141,7 +151,6 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
     const [swapSourceSeat, setSwapSourceSeat] = useState<number | null>(null);
     const [unassignableStudents, setUnassignableStudents] = useState<(Student & { errorReason: string })[]>([]);
     const [isUnassignableFolded, setIsUnassignableFolded] = useState<boolean>(true);
-    const [globalSearchQuery, setGlobalSearchQuery] = useState('');
     const dayOrder: DayOfWeek[] = useMemo(() => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], []);
     
     const [isCopySeatingDialogOpen, setIsCopySeatingDialogOpen] = useState(false);
@@ -158,7 +167,6 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
     const [afterSchoolTargetDay, setAfterSchoolTargetDay] = useState<DayOfWeek>('Monday');
 
     const [isAddStudentDialogOpen, setIsAddStudentDialogOpen] = useState(false);
-    // 통합 계정 검색 기반 학생 추가
     const [masterStudentSearchQuery, setMasterStudentSearchQuery] = useState('');
     const [masterStudentSearchResults, setMasterStudentSearchResults] = useState<MasterStudent[]>([]);
     const [masterStudentSearchLoading, setMasterStudentSearchLoading] = useState(false);
@@ -216,26 +224,6 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
         }
         return s.afterSchoolClassIds || {};
     };
-
-    const globalSearchResults = useMemo(() => {
-        if (!globalSearchQuery.trim()) return [];
-        const q = normalizeString(globalSearchQuery);
-        return students.map(student => {
-            const grade = (student.grade || '').toLowerCase();
-            const cls = (student.class || '').toLowerCase();
-            const gradeClass = normalizeString(grade + cls);
-            const nameKo = normalizeString(student.nameKo || '');
-            const nameEn = normalizeString(student.nameEn || '');
-            const nameLegacy = normalizeString(student.name || '');
-            const contact = student.contact?.replace(/\D/g, '') || '';
-            let score = 0;
-            if (gradeClass === q) score += 1000; else if (gradeClass.startsWith(q)) score += 800;
-            if (nameKo.startsWith(q) || nameEn.startsWith(q) || nameLegacy.startsWith(q)) score += 500; 
-            else if (nameKo.includes(q) || nameEn.includes(q) || nameLegacy.includes(q)) score += 300;
-            if (contact.startsWith(q)) score += 100; else if (contact.includes(q)) score += 50;
-            return { student, score };
-        }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).map(x => x.student).slice(0, 10);
-    }, [students, globalSearchQuery]);
 
     const assignedRoutesForSelectedStudent = useMemo(() => {
         if (!selectedGlobalStudent) return [];
@@ -1978,6 +1966,8 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                         onSelectBusId={onSelectBusId}
                         selectedDay={selectedDay}
                         onSeatClick={handleSeatClick}
+                        isStudentRosterOpen={isStudentRosterOpen}
+                        setIsStudentRosterOpen={setIsStudentRosterOpen}
                     />
                 </div>
             </div>

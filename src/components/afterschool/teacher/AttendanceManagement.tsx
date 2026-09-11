@@ -941,16 +941,48 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
 
   // 학생 프로필 사진 & 스쿨버스 번호 & 학부모 연락처 통합 연동 헬퍼
   const getStudentInfo = (studentId: string, studentName: string, grade?: any, classNum?: any, enrollment?: Enrollment, targetDay?: any) => {
-    // 동명이인 오매칭 방지: 고유 ID 매칭 우선, 없을 경우 이름+학년+반 엄격 일치 (이름만 fallback 절대 금지)
+    const cleanStr = (v: any) => String(v || '').replace(/\s+/g, '').toLowerCase();
+    const cName = cleanStr(studentName);
+    const tGrade = Number(grade);
+    const tClass = Number(classNum);
+    const targetEmail = cleanStr(enrollment?.studentEmail || (enrollment as any)?.email);
+
+    // 1. 마스터 학생 매칭 (동명이인 방지: ID/이메일 우선, 이름+학년+반 일치)
     const m = (masterStudents || []).find(ms =>
-      ms.studentId === studentId ||
-      ms.studentEmail?.toLowerCase() === studentId?.toLowerCase() ||
-      (ms.name === studentName && String(ms.grade) === String(grade) && String(ms.classNum) === String(classNum))
-    );
+      (studentId && ms.studentId === studentId) ||
+      (targetEmail && ms.studentEmail && cleanStr(ms.studentEmail) === targetEmail) ||
+      ((cleanStr(ms.name) === cName || cleanStr(ms.nameKo) === cName || cleanStr(ms.nameEn) === cName) && 
+       Number(ms.grade) === tGrade && Number(ms.classNum) === tClass)
+    ) || (masterStudents || []).find(ms => {
+      // 반 정보 불일치 시 학년 내 고유 학생 구제
+      const matchName = cleanStr(ms.name) === cName || cleanStr(ms.nameKo) === cName || cleanStr(ms.nameEn) === cName;
+      if (!matchName || Number(ms.grade) !== tGrade) return false;
+      const sameNameInGrade = (masterStudents || []).filter(item => 
+        (cleanStr(item.name) === cName || cleanStr(item.nameKo) === cName || cleanStr(item.nameEn) === cName) && 
+        Number(item.grade) === tGrade
+      );
+      return sameNameInGrade.length === 1;
+    });
+
+    const mEmail = cleanStr(m?.studentEmail);
+
+    // 2. 스쿨버스 학생(studentsList) 매칭 (ID, 이메일, 한글/영문 이름+학년+반 다각도 매칭)
     const s = (studentsList || []).find(st =>
-      st.id === studentId ||
-      (st.name === studentName && String(st.grade) === String(grade) && String(st.class) === String(classNum))
-    );
+      (studentId && st.id === studentId) ||
+      (targetEmail && st.studentEmail && cleanStr(st.studentEmail) === targetEmail) ||
+      (mEmail && st.studentEmail && cleanStr(st.studentEmail) === mEmail) ||
+      ((cleanStr(st.name) === cName || cleanStr(st.nameKo) === cName || cleanStr(st.nameEn) === cName) && 
+       Number(st.grade) === tGrade && Number(st.class) === tClass)
+    ) || (studentsList || []).find(st => {
+      // 반 정보 불일치 시 학년 내 고유 학생 구제
+      const matchName = cleanStr(st.name) === cName || cleanStr(st.nameKo) === cName || cleanStr(st.nameEn) === cName;
+      if (!matchName || Number(st.grade) !== tGrade) return false;
+      const sameNameInGrade = (studentsList || []).filter(item => 
+        (cleanStr(item.name) === cName || cleanStr(item.nameKo) === cName || cleanStr(item.nameEn) === cName) && 
+        Number(item.grade) === tGrade
+      );
+      return sameNameInGrade.length === 1;
+    });
 
     const photoUrl = m?.photoUrl || (s as any)?.photoUrl || (s as any)?.photo || '';
 
@@ -966,18 +998,24 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
     const hasBusApplication = Boolean(
       enrollment?.needsBus === true ||
       (enrollment?.kisbusNo && enrollment.kisbusNo !== '-' && enrollment.kisbusNo !== '미신청') ||
-      (enrollment?.afterSchoolBusNo && enrollment.afterSchoolBusNo !== '-' && enrollment.afterSchoolBusNo !== '미신청')
+      (enrollment?.afterSchoolBusNo && enrollment.afterSchoolBusNo !== '-' && enrollment.afterSchoolBusNo !== '미신청') ||
+      (s as any)?.afterSchoolBusNo ||
+      (m as any)?.busSummary?.afterSchoolBusNo
     );
 
     // [방과후 버스 번호 요일별 매핑 로직]
     // 1. routes에서 해당 학생의 요일별 AfterSchool 버스 노선 조회 (단, 수강명단에서 버스를 신청한 학생만 적용)
-    const targetId = s?.id || studentId;
+    const targetId = s?.id || m?.studentId || studentId;
     const busesByDay: Record<string, string> = {}; // { 'Monday': '39A호차', 'Wednesday': '37호차' }
 
     if (!isExplicitlyNoBus && hasBusApplication && routes && routes.length > 0) {
       const assignedRoutes = routes.filter((r) =>
         r.type === 'AfterSchool' &&
-        (r.seating || []).some((seat: any) => seat.studentId === targetId)
+        (r.seating || []).some((seat: any) => 
+          seat.studentId === targetId || 
+          (s?.id && seat.studentId === s.id) || 
+          (studentId && seat.studentId === studentId)
+        )
       );
       assignedRoutes.forEach((r) => {
         const foundBus = (buses || []).find((b: any) => b.id === r.busId);

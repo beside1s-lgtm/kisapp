@@ -5,7 +5,7 @@ import { MainLayout } from '@/components/layout/main-layout';
 import { 
   onMasterStudentsUpdate, createMasterStudent, updateMasterStudent, 
   deleteMasterStudent, batchImportMasterStudents, batchPromoteStudents, isStudentEmail,
-  extractEnglishNameFromEmail
+  extractEnglishNameFromEmail, linkMasterStudentSiblings, unlinkMasterStudentSibling
 } from '@/lib/services/masterStudentService';
 import type { MasterStudent, NewMasterStudent } from '@/lib/types/masterStudent';
 import { onDestinationsUpdate } from '@/lib/kisbus';
@@ -99,6 +99,31 @@ export default function AdminMasterStudentsPage() {
 
   // 4-in-1 상세 모달 내 선택된 학학년도 (아카이브 조회를 위한 연도 선택 state)
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<number>(new Date().getFullYear());
+
+  // 형제·자매 연결 검색 state
+  const [siblingSearchQuery, setSiblingSearchQuery] = useState('');
+
+  // 현재 선택된 학생의 연결된 형제·자매 목록
+  const currentSiblings = useMemo(() => {
+    if (!selectedStudent || !selectedStudent.siblingGroupId) return [];
+    return students.filter(s => 
+      s.siblingGroupId === selectedStudent.siblingGroupId && 
+      (s.studentId !== selectedStudent.studentId && s.id !== selectedStudent.id)
+    );
+  }, [selectedStudent, students]);
+
+  // 형제·자매 연결 후보 학생 검색 결과
+  const siblingCandidates = useMemo(() => {
+    if (!siblingSearchQuery.trim() || !selectedStudent) return [];
+    const q = siblingSearchQuery.toLowerCase().trim();
+    return students.filter(s => {
+      if (s.studentId === selectedStudent.studentId || s.id === selectedStudent.id) return false;
+      if (selectedStudent.siblingGroupId && s.siblingGroupId === selectedStudent.siblingGroupId) return false;
+      const name = (s.name || '').toLowerCase();
+      const email = (s.studentEmail || '').toLowerCase();
+      return name.includes(q) || email.includes(q);
+    }).slice(0, 5);
+  }, [siblingSearchQuery, students, selectedStudent]);
 
   // 신규 등록 폼
   const [newStudent, setNewStudent] = useState<Partial<NewMasterStudent>>({
@@ -1824,6 +1849,103 @@ export default function AdminMasterStudentsPage() {
                     <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
                       <span className="text-slate-500 block mb-1">등하교 목적지</span>
                       <span className="font-medium text-slate-800">{selectedStudent.address || '등록된 목적지 정보가 없습니다.'}</span>
+                    </div>
+
+                    {/* 형제·자매 (가족) 연결 관리 */}
+                    <div className="p-4 rounded-xl bg-purple-50/70 border border-purple-200 text-xs space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h5 className="font-bold text-purple-950 flex items-center gap-1.5 text-sm">
+                          <Users className="h-4 w-4 text-purple-700" /> 형제·자매 연결 관리 (스쿨버스 자동 연동)
+                        </h5>
+                        {currentSiblings.length > 0 && (
+                          <Badge className="bg-purple-600 text-white font-bold text-[10px]">
+                            {currentSiblings.length + 1}남매 (가족 연결됨)
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* 연결된 형제자매 목록 */}
+                      {currentSiblings.length > 0 ? (
+                        <div className="space-y-1.5">
+                          <span className="text-slate-500 text-[11px] font-semibold block">현재 연결된 형제·자매:</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {currentSiblings.map(sib => (
+                              <div key={sib.studentId || sib.id} className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-purple-200/80 shadow-xs">
+                                <div className="flex items-center gap-2">
+                                  <Avatar className="h-7 w-7 rounded-full bg-purple-100 text-purple-800 text-xs font-bold shrink-0">
+                                    <AvatarFallback>{sib.name.slice(0, 2)}</AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <span className="font-bold text-slate-900 block text-xs">{sib.name}</span>
+                                    <span className="text-[10px] text-muted-foreground">{sib.grade}학년 {sib.classNum}반 · {sib.contact}</span>
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-1.5 text-xs text-destructive hover:bg-destructive/10"
+                                  onClick={async () => {
+                                    if (!confirm(`${sib.name} 학생과의 형제자매 연결을 해제하시겠습니까?`)) return;
+                                    try {
+                                      await unlinkMasterStudentSibling(sib.studentId || sib.id!);
+                                      toast({ title: "형제자매 연결 해제 완료" });
+                                    } catch (e) {
+                                      toast({ title: "해제 실패", variant: "destructive" });
+                                    }
+                                  }}
+                                >
+                                  연결 해제
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-slate-500 text-[11px]">
+                          현재 연결된 형제·자매가 없습니다. 아래에서 학생을 검색하여 가족으로 연결하세요.
+                        </p>
+                      )}
+
+                      {/* 형제자매 검색 및 추가 폼 */}
+                      <div className="pt-2 border-t border-purple-200/60 space-y-1.5">
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                          <Input
+                            placeholder="연결할 형제·자매 학생 이름 또는 이메일 검색..."
+                            value={siblingSearchQuery}
+                            onChange={(e) => setSiblingSearchQuery(e.target.value)}
+                            className="h-8 pl-8 text-xs bg-white"
+                          />
+                        </div>
+
+                        {siblingCandidates.length > 0 && (
+                          <div className="bg-white border border-purple-200 rounded-lg p-1 space-y-1 shadow-md">
+                            {siblingCandidates.map(cand => (
+                              <div
+                                key={cand.studentId || cand.id}
+                                className="flex items-center justify-between p-2 hover:bg-purple-50 rounded cursor-pointer transition-colors"
+                                onClick={async () => {
+                                  try {
+                                    await linkMasterStudentSiblings([selectedStudent.studentId || selectedStudent.id!, cand.studentId || cand.id!]);
+                                    setSiblingSearchQuery('');
+                                    toast({ title: "형제자매 연결 완료", description: `${cand.name} 학생과 가족으로 연결되었습니다.` });
+                                  } catch (e: any) {
+                                    toast({ title: "연결 실패", description: e.message, variant: "destructive" });
+                                  }
+                                }}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-slate-900 text-xs">{cand.name}</span>
+                                  <span className="text-[10px] text-muted-foreground">{cand.grade}학년 {cand.classNum}반 · {cand.studentEmail}</span>
+                                </div>
+                                <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 text-purple-700 border-purple-300">
+                                  <Plus className="w-3 h-3 mr-1" /> 연결하기
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </TabsContent>
 

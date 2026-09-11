@@ -706,7 +706,7 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
     }
   }
 
-  // 스쿨버스 students 컬렉션 동시 양방향 동기화 (성별, 목적지, 연락처, 영문이름 등)
+  // 스쿨버스 students 컬렉션 동시 양방향 동기화 (성별, 목적지, 연락처, 영문이름, 학년, 반, 번호 등)
   if (nameToUse) {
     await syncAddressToKisbusStudent(
       nameToUse, 
@@ -716,7 +716,8 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
       contactToUse,
       genderToUse,
       emailToSearch,
-      nameEnToUse
+      nameEnToUse,
+      numToUse
     );
   }
 
@@ -743,7 +744,8 @@ export const syncAddressToKisbusStudent = async (
   contact?: string | null,
   gender?: 'Male' | 'Female',
   studentEmail?: string | null,
-  nameEn?: string | null
+  nameEn?: string | null,
+  studentNum?: string | null
 ) => {
   try {
     if (!name) return;
@@ -779,6 +781,17 @@ export const syncAddressToKisbusStudent = async (
         busPayload.afternoonDestinationId = destIdToSet;
         busPayload.suggestedMorningDestination = destIdToSet;
         busPayload.suggestedAfternoonDestination = destIdToSet;
+      }
+      if (grade !== undefined && grade !== null && grade !== '') {
+        busPayload.grade = String(grade);
+      }
+      if (classNum !== undefined && classNum !== null && classNum !== '') {
+        busPayload.class = String(classNum);
+        busPayload.classNum = String(classNum);
+      }
+      if (studentNum !== undefined && studentNum !== null && studentNum !== '') {
+        busPayload.number = String(studentNum);
+        busPayload.studentNum = String(studentNum);
       }
       if (contact !== undefined && contact !== null) {
         busPayload.contact = contact ? contact.replace(/\D/g, '') : (targetStudent as any).contact;
@@ -930,3 +943,137 @@ export const getMasterStudentByEmail = async (email: string): Promise<MasterStud
   const firstDoc = snapshot.docs[0];
   return { studentId: firstDoc.id, ...firstDoc.data() } as MasterStudent;
 };
+
+/**
+ * 8. 통합 마스터 학생 형제·자매 연결 함수
+ * 선택된 학생들을 하나의 siblingGroupId로 묶고, 스쿨버스 DB(students)에도 실시간 동기화
+ */
+export const linkMasterStudentSiblings = async (studentIds: string[]): Promise<string> => {
+  if (studentIds.length < 2) throw new Error('최소 2명 이상의 학생을 선택해야 합니다.');
+  
+  let targetGroupId: string | null = null;
+  const masterSnaps = await Promise.all(
+    studentIds.map(id => getDoc(doc(getDb(), COLLECTION_NAME, id)))
+  );
+
+  for (const snap of masterSnaps) {
+    if (snap.exists() && snap.data()?.siblingGroupId) {
+      targetGroupId = snap.data().siblingGroupId;
+      break;
+    }
+  }
+
+  if (!targetGroupId) {
+    targetGroupId = `group_${Date.now()}`;
+  }
+
+  const batch = writeBatch(getDb());
+  const studentEmails: string[] = [];
+  const studentNames: { name: string; grade: string; classNum: string }[] = [];
+
+  masterSnaps.forEach((snap, idx) => {
+    if (snap.exists()) {
+      batch.update(doc(getDb(), COLLECTION_NAME, studentIds[idx]), {
+        siblingGroupId: targetGroupId,
+        updatedAt: new Date().toISOString()
+      });
+      const data = snap.data();
+      if (data.studentEmail) studentEmails.push(data.studentEmail.trim().toLowerCase());
+      studentNames.push({
+        name: data.name || '',
+        grade: String(data.grade || ''),
+        classNum: String(data.classNum || '')
+      });
+    }
+  });
+  await batch.commit();
+
+  try {
+    const kisbusDb = getKisbusDb();
+    const busSnap = await getDocs(collection(kisbusDb, 'students'));
+    const kisbusBatch = writeBatch(kisbusDb);
+    let kisbusUpdateCount = 0;
+
+    busSnap.forEach(d => {
+      const bData = d.data();
+      const bEmail = (bData.studentEmail || '').trim().toLowerCase();
+      const bName = (bData.nameKo || bData.name || '').trim();
+      const bGrade = String(bData.grade || '').trim();
+      const bClass = String(bData.class || '').trim();
+
+      const matchedByEmail = bEmail && studentEmails.includes(bEmail);
+      const matchedByNameGrade = studentNames.some(sn => 
+        sn.name === bName && sn.grade === bGrade && sn.classNum === bClass
+      );
+
+      if (matchedByEmail || matchedByNameGrade) {
+        kisbusBatch.update(d.ref, { siblingGroupId: targetGroupId });
+        kisbusUpdateCount++;
+      }
+    });
+
+    if (kisbusUpdateCount > 0) {
+      await kisbusBatch.commit();
+    }
+  } catch (err) {
+    console.warn('스쿨버스 DB 형제자매 동기화 오류 (진행 지속):', err);
+  }
+
+  return targetGroupId;
+};
+
+/**
+ * 9. 통합 마스터 학생 형제·자매 연결 해제 함수
+ */
+export const unlinkMasterStudentSibling = async (targetStudentId: string): Promise<void> => {
+  const targetDoc = await getDoc(doc(getDb(), COLLECTION_NAME, targetStudentId));
+  if (!targetDoc.exists()) return;
+  const oldGroupId = targetDoc.data()?.siblingGroupId;
+  const targetEmail = (targetDoc.data()?.studentEmail || '').trim().toLowerCase();
+  const targetName = (targetDoc.data()?.name || '').trim();
+  const targetGrade = String(targetDoc.data()?.grade || '').trim();
+  const targetClass = String(targetDoc.data()?.classNum || '').trim();
+
+  await updateDoc(doc(getDb(), COLLECTION_NAME, targetStudentId), {
+    siblingGroupId: null,
+    updatedAt: new Date().toISOString()
+  });
+
+  if (oldGroupId) {
+    const qRemaining = query(collection(getDb(), COLLECTION_NAME), where("siblingGroupId", "==", oldGroupId));
+    const snapRemaining = await getDocs(qRemaining);
+    if (snapRemaining.size === 1) {
+      await updateDoc(doc(getDb(), COLLECTION_NAME, snapRemaining.docs[0].id), {
+        siblingGroupId: null,
+        updatedAt: new Date().toISOString()
+      });
+    }
+  }
+
+  try {
+    const kisbusDb = getKisbusDb();
+    const busSnap = await getDocs(collection(kisbusDb, 'students'));
+    const kisbusBatch = writeBatch(kisbusDb);
+    let kisbusUpdateCount = 0;
+
+    busSnap.forEach(d => {
+      const bData = d.data();
+      const bEmail = (bData.studentEmail || '').trim().toLowerCase();
+      const bName = (bData.nameKo || bData.name || '').trim();
+      const bGrade = String(bData.grade || '').trim();
+      const bClass = String(bData.class || '').trim();
+
+      if ((targetEmail && bEmail === targetEmail) || (bName === targetName && bGrade === targetGrade && bClass === targetClass)) {
+        kisbusBatch.update(d.ref, { siblingGroupId: null });
+        kisbusUpdateCount++;
+      }
+    });
+
+    if (kisbusUpdateCount > 0) {
+      await kisbusBatch.commit();
+    }
+  } catch (err) {
+    console.warn('스쿨버스 DB 형제자매 해제 동기화 오류:', err);
+  }
+};
+

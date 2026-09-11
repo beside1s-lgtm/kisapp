@@ -473,12 +473,17 @@ export const executeTransferAfterschoolStudentsToBus = async (): Promise<{ succe
   // 3. 학생 매핑
   const studentsSnap = await getDocs(collection(busDbInstance, 'students'));
   const busStudentMap = new Map<string, any>();
+  const busStudentEmailMap = new Map<string, any>();
   studentsSnap.forEach(d => {
     const data = d.data();
     const cleanName = (data.nameKo || data.name || data.nameEn || '').trim();
     const key = `${Number(data.grade)}-${Number(data.class || data.classNum)}-${cleanName}`;
+    const sEmail = (data.studentEmail || '').toLowerCase().trim();
     busStudentMap.set(d.id, { id: d.id, ref: d.ref, data });
     busStudentMap.set(key, { id: d.id, ref: d.ref, data });
+    if (sEmail) {
+      busStudentEmailMap.set(sEmail, { id: d.id, ref: d.ref, data });
+    }
   });
 
   const dayStudentsMap = new Map<DayOfWeek, Set<string>>();
@@ -489,6 +494,10 @@ export const executeTransferAfterschoolStudentsToBus = async (): Promise<{ succe
     let busStudent = null;
     if (enroll.studentId) {
       busStudent = busStudentMap.get(enroll.studentId);
+    }
+    if (!busStudent && (enroll.studentEmail || (enroll as any).email)) {
+      const eEmail = (enroll.studentEmail || (enroll as any).email || '').toLowerCase().trim();
+      busStudent = busStudentEmailMap.get(eEmail);
     }
     if (!busStudent) {
       const rawName = (enroll.name || enroll.studentName || '').trim();
