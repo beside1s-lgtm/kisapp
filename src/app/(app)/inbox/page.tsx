@@ -73,7 +73,12 @@ import { MainLayout } from "@/components/layout/main-layout";
 import { WeeklyEducationPlanModal } from "@/components/tasks/weekly-education-plan-modal";
 import { MonthlyEducationPlanModal } from "@/components/tasks/monthly-education-plan-modal";
 import { ScheduleCalendarSyncModal } from "@/components/tasks/schedule-calendar-sync-modal";
-import { generateAssignedTasksIcs, downloadIcsFile } from "@/lib/services/calendarExportService";
+import { 
+  generateAssignedTasksIcs, 
+  downloadIcsFile, 
+  buildAssignedTaskGoogleCalendarUrl, 
+  buildGoogleCalendarUrl 
+} from "@/lib/services/calendarExportService";
 
 // ─── 순수 SVG 막대 차트 컴포넌트 ─────────────────────────────────────
 function OvertimeBarChart({ data }: { data: { month: string; hours: number }[] }) {
@@ -287,7 +292,7 @@ export default function InboxPage() {
         };
     }, []);
 
-    // 나에게 할당된 업무 캘린더 동기화 (마감일 오전 08:30 알림 포함 ICS)
+    // 나에게 할당된 업무 캘린더 동기화 (구글 캘린더 바로 등록 & ICS 지원)
     const handleSyncAssignedTasksToCalendar = () => {
         const myEmail = profile?.email?.toLowerCase() || '';
         const myAssignedList = deptTasks.filter(t => t.targetEmails?.some(e => e.toLowerCase() === myEmail));
@@ -302,18 +307,34 @@ export default function InboxPage() {
         }
 
         try {
-            const ics = generateAssignedTasksIcs(tasksWithDeadline);
-            const userPrefix = myEmail ? myEmail.split('@')[0] : 'user';
-            downloadIcsFile(ics, `kis_assigned_tasks_${userPrefix}.ics`);
-            toast({
-                title: "할당 업무 캘린더 동기화 완료",
-                description: `마감 업무 ${tasksWithDeadline.length}건이 담긴 캘린더 파일이 다운로드되었습니다. 마감 당일 오전 08:30 알림이 제공됩니다.`
-            });
+            // 마감기한 오름차순(가장 가까운 마감일 순) 정렬 후 1순위 업무의 구글 캘린더 등록 창을 새 탭으로 바로 오픈
+            const sortedTasks = [...tasksWithDeadline].sort((a, b) => (a.deadline || '').localeCompare(b.deadline || ''));
+            const primaryTask = sortedTasks[0];
+            const gCalUrl = buildAssignedTaskGoogleCalendarUrl(primaryTask);
+
+            // 구글 캘린더 바로 등록 창 열기
+            window.open(gCalUrl, '_blank');
+
+            // 2건 이상인 경우 .ics 파일 다운로드도 함께 제공하여 일괄 동기화 지원
+            if (tasksWithDeadline.length > 1) {
+                const ics = generateAssignedTasksIcs(tasksWithDeadline);
+                const userPrefix = myEmail ? myEmail.split('@')[0] : 'user';
+                downloadIcsFile(ics, `kis_assigned_tasks_${userPrefix}.ics`);
+                toast({
+                    title: "구글 캘린더 등록 창 열림",
+                    description: `'${primaryTask.title}' 등록 창이 열렸으며, 전체 ${tasksWithDeadline.length}건이 담긴 캘린더 파일도 함께 저장되었습니다.`
+                });
+            } else {
+                toast({
+                    title: "구글 캘린더 등록 창 열림",
+                    description: `'${primaryTask.title}' 업무를 구글 캘린더에 바로 저장하세요.`
+                });
+            }
         } catch (e: any) {
             toast({
                 variant: "destructive",
                 title: "동기화 오류",
-                description: e?.message || "캘린더 파일 생성 중 오류가 발생했습니다."
+                description: e?.message || "캘린더 등록 중 오류가 발생했습니다."
             });
         }
     };
@@ -908,20 +929,38 @@ export default function InboxPage() {
                                                 </div>
                                             </div>
 
-                                            {/* 삭제 버튼 (부서 일정 작성자/관리자) */}
-                                            {item.canDelete && (
-                                                <button
-                                                    onClick={async () => {
-                                                        if (confirm(`'${item.title}' 일정을 삭제하시겠습니까?`)) {
-                                                            await deleteDepartmentWeeklySchedule(item.id);
-                                                        }
-                                                    }}
-                                                    className="text-slate-300 hover:text-rose-500 p-1 transition-colors shrink-0"
-                                                    title="일정 삭제"
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                {/* 구글 캘린더 바로 등록 버튼 */}
+                                                <a
+                                                    href={buildGoogleCalendarUrl({
+                                                        title: item.isAcademic ? `[학사] ${item.title}` : `[${item.deptName || '학교'}] ${item.title}`,
+                                                        startDateStr: item.date,
+                                                        endDateStr: item.endDate,
+                                                        description: item.content || (item.isAcademic ? '호치민시한국국제학교 공식 학사 일정입니다.' : '학교 주요 업무 일정입니다.')
+                                                    })}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-[9px] font-bold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-1.5 py-0.5 rounded transition-colors whitespace-nowrap"
+                                                    title="구글 캘린더에 바로 등록"
                                                 >
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
-                                            )}
+                                                    +캘린더
+                                                </a>
+
+                                                {/* 삭제 버튼 (부서 일정 작성자/관리자) */}
+                                                {item.canDelete && (
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (confirm(`'${item.title}' 일정을 삭제하시겠습니까?`)) {
+                                                                await deleteDepartmentWeeklySchedule(item.id);
+                                                            }
+                                                        }}
+                                                        className="text-slate-300 hover:text-rose-500 p-1 transition-colors shrink-0"
+                                                        title="일정 삭제"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                     );
                                 })
@@ -1413,19 +1452,34 @@ export default function InboxPage() {
                                                         <h4 className="font-bold text-slate-900 text-xs truncate">{task.title}</h4>
                                                     </div>
 
-                                                    <Button
-                                                        size="sm"
-                                                        onClick={() => setSubmittingTask(task)}
-                                                        className={cn(
-                                                            "h-6 px-2 text-[10px] font-extrabold rounded-lg shadow-xs flex items-center gap-1 shrink-0",
-                                                            isSubmitted 
-                                                                ? "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300" 
-                                                                : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        {task.deadline && (
+                                                            <a
+                                                                href={buildAssignedTaskGoogleCalendarUrl(task)}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="h-6 px-1.5 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg flex items-center gap-1 shrink-0 transition-colors whitespace-nowrap shadow-2xs"
+                                                                title="이 업무 구글 캘린더에 바로 등록"
+                                                            >
+                                                                <CalendarCheck className="w-2.5 h-2.5 text-indigo-600" />
+                                                                <span>+캘린더</span>
+                                                            </a>
                                                         )}
-                                                    >
-                                                        <FileUp className="w-2.5 h-2.5 text-amber-300" />
-                                                        <span>{isSubmitted ? '수정' : '제출'}</span>
-                                                    </Button>
+
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={() => setSubmittingTask(task)}
+                                                            className={cn(
+                                                                "h-6 px-2 text-[10px] font-extrabold rounded-lg shadow-xs flex items-center gap-1 shrink-0",
+                                                                isSubmitted 
+                                                                    ? "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300" 
+                                                                    : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                                                            )}
+                                                        >
+                                                            <FileUp className="w-2.5 h-2.5 text-amber-300" />
+                                                            <span>{isSubmitted ? '수정' : '제출'}</span>
+                                                        </Button>
+                                                    </div>
                                                 </div>
                                             );
                                         })}

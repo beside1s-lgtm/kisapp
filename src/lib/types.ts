@@ -472,11 +472,35 @@ export interface TaskAttachment {
   driveFileId?: string;
 }
 
+export interface GoogleDriveYearFolders {
+  yearFolderId: string;
+  yearFolderUrl: string;
+  approvalDoneId?: string;
+  approvalDoneUrl?: string;
+  taskWorkId?: string;
+  taskWorkUrl?: string;
+  absenceDoneId?: string;
+  absenceDoneUrl?: string;
+  fieldTripDoneId?: string;
+  fieldTripDoneUrl?: string;
+  /** 05_학년별 수업자료 공유 폴더 */
+  gradeMaterialsId?: string;
+  gradeMaterialsUrl?: string;
+  /** 학년별 하위 폴더: key = "1" ~ "6" */
+  gradeSubFolders?: Record<string, { id: string; url: string }>;
+  /** 06_체육 측정 결과 폴더 */
+  peResultsId?: string;
+  peResultsUrl?: string;
+}
+
 export interface GoogleDriveConfig {
   enabled: boolean;
   rootFolderId: string;
   rootFolderUrl: string;
   sharedDriveName?: string;
+  /** 학년도별 폴더 구조: key = "2025-2026" 형식 */
+  yearlyFolders?: Record<string, GoogleDriveYearFolders>;
+  /** (레거시) 학년도 없는 단일 하위 폴더 구조 — 하위 호환용 */
   subFolders?: {
     approvalDoneId?: string;
     approvalDoneUrl?: string;

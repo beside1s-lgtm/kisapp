@@ -20,6 +20,7 @@ let kisbusDb: any;
 try {
   kisbusDb = initializeFirestore(kisbusApp, {
     experimentalForceLongPolling: true,
+    experimentalAutoDetectLongPolling: true,
   });
 } catch {
   try {

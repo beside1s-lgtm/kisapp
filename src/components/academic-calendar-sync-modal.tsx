@@ -6,6 +6,7 @@ import { onDocConfigUpdate, getDocConfig } from '@/lib/services/settingsService'
 import { updateUserCalendarAck } from '@/lib/services/userService';
 import type { AcademicCalendarConfig, AcademicEvent } from '@/lib/types';
 import { generateAcademicIcsFile } from '@/lib/utils';
+import { buildGoogleCalendarUrl, buildAcademicEventGoogleCalendarUrl } from '@/lib/services/calendarExportService';
 import { onMorningGateDutyUpdate, extractTeacherDutySlots, type MultiSemesterMorningGateDutyConfig } from '@/lib/kisbus/morning-gate-duty';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -322,26 +323,46 @@ export function AcademicCalendarSyncModal() {
                     </div>
                   </div>
 
-                  {/* 배정된 근무일 미리보기 */}
+                      {/* 배정된 근무일 미리보기 */}
                   {myDutySlots.length > 0 ? (
-                    <div className="space-y-1">
-                      <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1.5 bg-white/90 rounded-lg border border-amber-100">
-                        {myDutySlots.map((slot, idx) => (
-                          <div 
-                            key={`${slot.dateStr}-${idx}`}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 rounded-md text-[10px] font-semibold text-amber-900"
-                          >
-                            <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                            <span>{slot.dateStr} ({slot.dayOfWeekName})</span>
-                            {slot.roundNumber && (
-                              <span className="text-amber-600 font-normal">[{slot.roundNumber}회차]</span>
-                            )}
-                          </div>
-                        ))}
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 bg-white/90 rounded-lg border border-amber-100">
+                        {myDutySlots.map((slot, idx) => {
+                          const dutyUrl = buildGoogleCalendarUrl({
+                            title: `[등교지도] ${selectedTeacherName || '선생님'} 교문 등교 지도 (07:40~08:20)`,
+                            startDateStr: slot.dateStr,
+                            startTime: slot.startTime || '07:40',
+                            endTime: slot.endTime || '08:20',
+                            description: `호치민시한국국제학교 오전 교문 등교지도 근무 시간입니다.\n· 담당 교사: ${selectedTeacherName} 선생님\n· 일자: ${slot.dateStr} (${slot.dayOfWeekName || ''}) ${slot.roundNumber ? `${slot.roundNumber}회차` : ''}\n· 근무 시간: 07:40 ~ 08:20\n· 위치: 정문 교문 및 중앙현관`,
+                            location: '호치민시한국국제학교 교문/중앙현관'
+                          });
+
+                          return (
+                            <div 
+                              key={`${slot.dateStr}-${idx}`}
+                              className="inline-flex items-center gap-1.5 px-2 py-1 bg-amber-50 border border-amber-200 rounded-md text-[10px] font-semibold text-amber-900 group"
+                            >
+                              <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                              <span>{slot.dateStr} ({slot.dayOfWeekName})</span>
+                              {slot.roundNumber && (
+                                <span className="text-amber-600 font-normal">[{slot.roundNumber}회차]</span>
+                              )}
+                              <a
+                                href={dutyUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="ml-1 text-[9px] font-bold bg-amber-200 hover:bg-amber-300 text-amber-900 px-1 py-0.5 rounded transition-colors"
+                                title="이 근무일 구글 캘린더에 바로 등록"
+                              >
+                                +캘린더
+                              </a>
+                            </div>
+                          );
+                        })}
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-amber-700/90 px-0.5">
                         <span>⏰ 근무: 07:40 ~ 08:20 (40분)</span>
-                        <span>🔔 알림: 1일 전 (24시간 전) & 30분 전</span>
+                        <span>🔔 [+캘린더] 클릭 시 구글 캘린더에 즉시 등록</span>
                       </div>
                     </div>
                   ) : (
@@ -402,33 +423,47 @@ export function AcademicCalendarSyncModal() {
               )}
             </div>
 
-            <div className="max-h-[130px] overflow-y-auto border rounded-xl divide-y divide-slate-100 bg-white">
+            <div className="max-h-[140px] overflow-y-auto border rounded-xl divide-y divide-slate-100 bg-white">
               {visibleEvents.length > 0 ? (
-                visibleEvents.map(ev => (
-                  <div key={ev.id} className="flex items-center justify-between px-3 py-1.5 text-xs hover:bg-slate-50 transition-colors">
-                    <div className="flex items-center gap-2 font-mono flex-wrap">
-                      <span className="font-bold text-slate-800">{ev.date}</span>
-                      <span className="font-semibold text-slate-700">{ev.title}</span>
-                      <Badge 
-                        variant="outline" 
-                        className={`text-[10px] font-semibold px-1.5 py-0 ${
-                          ev.type === 'PUBLIC_HOLIDAY' 
-                            ? 'bg-rose-50 text-rose-700 border-rose-200' 
-                            : ev.type === 'HOLIDAY' 
-                              ? 'bg-amber-50 text-amber-800 border-amber-200' 
-                              : 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                        }`}
-                      >
-                        {ev.type === 'PUBLIC_HOLIDAY' ? '공휴일' : ev.type === 'HOLIDAY' ? '휴업일' : '학교행사'}
-                      </Badge>
-                      {!isParent && ev.isParentPrivate && (
-                        <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-200 font-bold px-1.5 py-0 flex items-center gap-0.5">
-                          <Lock className="w-2.5 h-2.5" /> 교직원 전용
+                visibleEvents.map(ev => {
+                  const evUrl = buildAcademicEventGoogleCalendarUrl(ev);
+                  return (
+                    <div key={ev.id} className="flex items-center justify-between px-3 py-1.5 text-xs hover:bg-slate-50 transition-colors gap-2">
+                      <div className="flex items-center gap-2 font-mono flex-wrap min-w-0 flex-1">
+                        <span className="font-bold text-slate-800 shrink-0">{ev.date}</span>
+                        <span className="font-semibold text-slate-700 truncate">{ev.title}</span>
+                        <Badge 
+                          variant="outline" 
+                          className={`text-[10px] font-semibold px-1.5 py-0 shrink-0 ${
+                            ev.type === 'PUBLIC_HOLIDAY' 
+                              ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                              : ev.type === 'HOLIDAY' 
+                                ? 'bg-amber-50 text-amber-800 border-amber-200' 
+                                : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                          }`}
+                        >
+                          {ev.type === 'PUBLIC_HOLIDAY' ? '공휴일' : ev.type === 'HOLIDAY' ? '휴업일' : '학교행사'}
                         </Badge>
-                      )}
+                        {!isParent && ev.isParentPrivate && (
+                          <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-200 font-bold px-1.5 py-0 flex items-center gap-0.5 shrink-0">
+                            <Lock className="w-2.5 h-2.5" /> 교직원 전용
+                          </Badge>
+                        )}
+                      </div>
+
+                      <a
+                        href={evUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] font-extrabold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-md shrink-0 flex items-center gap-1 transition-colors"
+                        title="구글 캘린더에 바로 등록"
+                      >
+                        <Globe className="w-2.5 h-2.5" />
+                        <span>캘린더 등록</span>
+                      </a>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="py-3 text-center text-slate-400 text-xs">
                   등록된 학사 행사가 없습니다.
@@ -436,9 +471,9 @@ export function AcademicCalendarSyncModal() {
               )}
             </div>
 
-            {/* 중복 방지 기술 안내 */}
-            <div className="p-2.5 bg-emerald-50/70 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 font-medium leading-relaxed">
-              <strong>중복 방지 기술 적용됨</strong>: 구글/애플/아웃룩 캘린더는 고유 식별자(UID)를 사용하므로, 일정을 여러 번 추가해도 <strong>기존 일정 중복 생성 없이 최신 내용으로 깔끔하게 자동 덮어쓰기</strong>됩니다.
+            {/* 원클릭 등록 안내 */}
+            <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-xl text-[11px] text-blue-900 font-medium leading-relaxed">
+              <strong>구글 캘린더 바로 등록 지원</strong>: 각 일정 우측의 <strong>[캘린더 등록]</strong> 버튼을 누르면 다운로드 없이 구글 캘린더에 즉시 등록됩니다. 전체 일괄 저장을 원하실 경우 <strong>[.ics 다운로드]</strong>를 이용하실 수 있습니다.
             </div>
           </div>
         </div>
@@ -460,18 +495,23 @@ export function AcademicCalendarSyncModal() {
               type="button"
               variant="outline"
               onClick={handleDownloadIcs}
-              className="h-9 text-xs font-bold text-indigo-700 border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100 rounded-xl px-3"
+              className="h-9 text-xs font-bold text-slate-600 border-slate-300 hover:bg-slate-100 rounded-xl px-3"
+              title="파일 다운로드 후 캘린더 일괄 등록"
             >
-              .ics 다운로드
+              전체 .ics 다운로드
             </Button>
-            <Button
-              type="button"
-              onClick={handleGoogleCalendarSync}
-              className="h-9 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs px-4"
-            >
-              <Globe className="w-3.5 h-3.5 mr-1.5" />
-              구글 캘린더 연동
-            </Button>
+            {visibleEvents.length > 0 && (
+              <a
+                href={buildAcademicEventGoogleCalendarUrl(visibleEvents[0])}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={handleAcknowledge}
+                className="h-9 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs px-4 inline-flex items-center justify-center transition-colors"
+              >
+                <Globe className="w-3.5 h-3.5 mr-1.5" />
+                구글 캘린더에 바로 등록
+              </a>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>

@@ -29,7 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { FileDown, Calendar as CalendarIcon, BookOpen, Trash2, Loader2 } from 'lucide-react';
+import { FileDown, Calendar as CalendarIcon, BookOpen, Trash2, Loader2, CloudUpload, ExternalLink, HardDrive, CheckCircle2, Printer } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -38,6 +38,9 @@ import { format } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { exportPeToGoogleDrive, type PeArchiveExportResult } from '@/lib/services/peDriveArchiveService';
+import PapsReportPrintDialog from '@/components/pe/PapsReportPrintDialog';
 
 
 interface RecordBrowserProps {
@@ -106,6 +109,50 @@ export default function RecordBrowser({
   
   const [quizResults, setQuizResults] = useState<QuizResult[]>([]);
   const [quizAssignments, setQuizAssignments] = useState<QuizAssignment[]>([]);
+
+  // Google Drive 체육 결과 아카이빙 상태
+  const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
+  const [archiveMode, setArchiveMode] = useState<'grade6-graduation' | 'all-paps'>('grade6-graduation');
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [archiveResult, setArchiveResult] = useState<PeArchiveExportResult | null>(null);
+
+  // PAPS 결과 통지표 인쇄 다이얼로그 상태
+  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
+
+  const handleExportToDrive = async () => {
+    setIsArchiving(true);
+    setArchiveResult(null);
+    try {
+      const res = await exportPeToGoogleDrive({
+        mode: archiveMode,
+        allStudents,
+        allItems,
+        allRecords,
+        updaterEmail: user?.email || undefined
+      });
+      if (res.success) {
+        setArchiveResult(res);
+        toast({
+          title: 'Google Drive 아카이빙 완료',
+          description: `'06_체육 측정 결과' 폴더에 ${res.fileName}이(가) 성공적으로 저장되었습니다.`
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: '아카이빙 실패',
+          description: res.error || 'Google Drive 저장 중 오류가 발생했습니다.'
+        });
+      }
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: '오류 발생',
+        description: err.message
+      });
+    } finally {
+      setIsArchiving(false);
+    }
+  };
 
   // Filter for items that actually have at least one record — 이름 기준 중복 제거
   const itemsWithRecords = useMemo(() => {
@@ -671,10 +718,34 @@ export default function RecordBrowser({
                             </SelectContent>
                         </Select>
                         
-                        <Button onClick={handlePapsDownloadExcel} variant="outline" size="sm" className="ml-auto h-7 sm:h-8 px-2 text-xs" title="엑셀 다운로드">
-                            <FileDown className="h-3.5 w-3.5 sm:mr-1.5" />
-                            <span className="hidden sm:inline">엑셀 다운로드</span>
-                        </Button>
+                        <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                          <Button
+                            onClick={() => setIsPrintDialogOpen(true)}
+                            variant="outline"
+                            size="sm"
+                            className="h-7 sm:h-8 px-2.5 text-xs font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 shadow-2xs gap-1 cursor-pointer"
+                            title="PAPS 개인별/학급별 건강체력평가 결과 통지표 인쇄"
+                          >
+                            <Printer className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">통지표 인쇄</span>
+                          </Button>
+                          <Button onClick={handlePapsDownloadExcel} variant="outline" size="sm" className="h-7 sm:h-8 px-2 text-xs" title="PC로 엑셀 다운로드">
+                              <FileDown className="h-3.5 w-3.5 sm:mr-1.5" />
+                              <span className="hidden sm:inline">엑셀 다운로드</span>
+                          </Button>
+                          <Button
+                            onClick={() => {
+                              setArchiveResult(null);
+                              setIsArchiveDialogOpen(true);
+                            }}
+                            size="sm"
+                            className="h-7 sm:h-8 px-2.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs gap-1 cursor-pointer"
+                            title="Google Drive 06_체육 측정 결과 폴더로 자동 아카이빙"
+                          >
+                            <CloudUpload className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">Drive 아카이브</span>
+                          </Button>
+                        </div>
                     </div>
                      <div className="border rounded-md overflow-x-auto">
                         <Table>
@@ -893,6 +964,150 @@ export default function RecordBrowser({
                     </div>
                 </TabsContent>
             </Tabs>
+
+      {/* ─── 체육 측정 결과 Google Drive 아카이빙 다이얼로그 ─── */}
+      <Dialog open={isArchiveDialogOpen} onOpenChange={setIsArchiveDialogOpen}>
+        <DialogContent className="sm:max-w-[480px] w-[95vw] rounded-2xl p-5">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100">
+                <CloudUpload className="w-5 h-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-slate-900">
+                  체육 측정 결과 Google Drive 아카이빙
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500 mt-0.5">
+                  학교 Google Drive 중앙 저장소('06_체육 측정 결과' 폴더)로 자동 전송합니다.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3.5 py-2 text-xs">
+            {/* 옵션 1: 6학년 졸업 사정회용 */}
+            <div
+              onClick={() => setArchiveMode('grade6-graduation')}
+              className={cn(
+                "p-3.5 rounded-xl border transition-all cursor-pointer space-y-1",
+                archiveMode === 'grade6-graduation'
+                  ? "bg-indigo-50/70 border-indigo-400 ring-1 ring-indigo-400"
+                  : "bg-slate-50/80 border-slate-200 hover:bg-slate-100/70"
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-indigo-600 inline-block" />
+                  6학년 졸업 사정회용 체력 평가 결과표 (권장)
+                </span>
+                <Badge className="bg-indigo-600 text-white text-[10px] px-1.5 py-0">졸업 사정회</Badge>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed pl-3.5">
+                6학년 학생들의 5대 체력요인(심폐, 유연성, 근력, 순발력, BMI) 측정값과 각각의 PAPS 등급, 종합 점수 및 최종 체력등급을 정리하여 졸업 사정회 제출 규격으로 자동 구성합니다.
+              </p>
+            </div>
+
+            {/* 옵션 2: 전교생 PAPS 종합 결과 */}
+            <div
+              onClick={() => setArchiveMode('all-paps')}
+              className={cn(
+                "p-3.5 rounded-xl border transition-all cursor-pointer space-y-1",
+                archiveMode === 'all-paps'
+                  ? "bg-indigo-50/70 border-indigo-400 ring-1 ring-indigo-400"
+                  : "bg-slate-50/80 border-slate-200 hover:bg-slate-100/70"
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" />
+                  전교생 PAPS 종합 체육 측정 결과표
+                </span>
+                <Badge variant="outline" className="text-[10px] text-slate-600 px-1.5 py-0">전체 학년</Badge>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed pl-3.5">
+                4~6학년 대상 전교생의 종목별 등급 및 종합 체력등급 전체 데이터를 하나의 엑셀 시트로 아카이빙합니다.
+              </p>
+            </div>
+
+            {/* 성공 결과 카드 */}
+            {archiveResult && archiveResult.success && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
+                <div className="flex items-center gap-1.5 text-emerald-800 font-bold text-xs">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Google Drive 업로드 완료!</span>
+                </div>
+                <p className="text-[11px] text-emerald-700 font-mono">
+                  파일명: {archiveResult.fileName}
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  {archiveResult.webViewLink && (
+                    <Button
+                      size="sm"
+                      onClick={() => window.open(archiveResult.webViewLink, '_blank')}
+                      className="h-7 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                    >
+                      <span>Drive에서 파일 열기</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </Button>
+                  )}
+                  {archiveResult.folderUrl && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => window.open(archiveResult.folderUrl, '_blank')}
+                      className="h-7 text-xs font-bold border-emerald-300 text-emerald-800 hover:bg-emerald-100 gap-1"
+                    >
+                      <HardDrive className="w-3 h-3" />
+                      <span>06_체육 폴더 열기</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-slate-100 flex flex-row items-center justify-between sm:justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsArchiveDialogOpen(false)}
+              disabled={isArchiving}
+              className="text-xs font-bold text-slate-600"
+            >
+              닫기
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleExportToDrive}
+              disabled={isArchiving}
+              className="text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5 shadow-xs cursor-pointer"
+            >
+              {isArchiving ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Google Drive 업로드 중...</span>
+                </>
+              ) : (
+                <>
+                  <CloudUpload className="w-3.5 h-3.5" />
+                  <span>지금 바로 아카이브 내보내기</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PAPS 개인별/학급별 결과 통지표 인쇄 다이얼로그 */}
+      <PapsReportPrintDialog
+        open={isPrintDialogOpen}
+        onOpenChange={setIsPrintDialogOpen}
+        allStudents={allStudents}
+        allItems={allItems}
+        allRecords={allRecords}
+        initialGrade={gradeFilter}
+        initialClassNum={classNumFilter}
+      />
     </div>
   );
 }

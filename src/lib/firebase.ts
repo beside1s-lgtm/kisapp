@@ -22,6 +22,7 @@ let db: Firestore;
 try {
   db = initializeFirestore(app, {
     experimentalForceLongPolling: true,
+    experimentalAutoDetectLongPolling: true,
     ignoreUndefinedProperties: true,
   });
 } catch {

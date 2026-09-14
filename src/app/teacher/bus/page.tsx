@@ -82,12 +82,12 @@ const getGradeValue = (grade: string): number => {
   return isNaN(num) ? 999 : num;
 };
 
-const AllStudentsBoardingStatus = ({ relevantRoutes, students, buses, allAttendance, formatStudentName, t, afterschoolAbsentStudentIds, onSelectStudent }: { relevantRoutes: Route[]; students: Student[]; buses: Bus[]; allAttendance: Record<string, AttendanceRecord | null>; formatStudentName: (student: Student) => string; t: any; afterschoolAbsentStudentIds?: Set<string>; onSelectStudent?: (student: Student) => void; }) => {
+const AllStudentsBoardingStatus = ({ relevantRoutes, students, buses, allAttendance, selectedDate, formatStudentName, t, afterschoolAbsentStudentIds, onSelectStudent }: { relevantRoutes: Route[]; students: Student[]; buses: Bus[]; allAttendance: Record<string, AttendanceRecord | null>; selectedDate?: string; formatStudentName: (student: Student) => string; t: any; afterschoolAbsentStudentIds?: Set<string>; onSelectStudent?: (student: Student) => void; }) => {
     const { toast } = useToast();
     const { i18n } = useTranslation();
 
     const allStudentsOnDay = useMemo(() => {
-        const studentsList: (Student & { busName: string; status: 'boarded' | 'notRiding' | 'disembarked' | 'not_boarded' })[] = [];
+        const studentsList: (Student & { busName: string; routeId: string; status: 'boarded' | 'notRiding' | 'disembarked' | 'not_boarded' })[] = [];
         relevantRoutes.forEach(route => {
             const bus = buses.find(b => b.id === route.busId);
             if (!bus) return;
@@ -101,7 +101,7 @@ const AllStudentsBoardingStatus = ({ relevantRoutes, students, buses, allAttenda
                     if (record?.boarded?.includes(student.id)) status = 'boarded';
                     else if (record?.notBoarding?.includes(student.id) || isAfterschoolAbsent) status = 'notRiding';
                     else if (record?.disembarked?.includes(student.id)) status = 'disembarked';
-                    if (!studentsList.some(s => s.id === student.id)) studentsList.push({ ...student, busName: bus.name, status });
+                    if (!studentsList.some(s => s.id === student.id)) studentsList.push({ ...student, busName: bus.name, routeId: route.id, status });
                 }
             });
         });
@@ -121,6 +121,48 @@ const AllStudentsBoardingStatus = ({ relevantRoutes, students, buses, allAttenda
             return getStudentName(a, i18n.language).localeCompare(getStudentName(b, i18n.language), 'ko');
         });
     }, [relevantRoutes, students, buses, allAttendance, i18n.language, afterschoolAbsentStudentIds]);
+
+    const handleToggleAttendance = async (s: Student & { busName: string; routeId: string; status: 'boarded' | 'notRiding' | 'disembarked' | 'not_boarded' }) => {
+        if (!s.routeId || !selectedDate) return;
+        const currentRecord = allAttendance[s.routeId];
+        const isB = currentRecord?.boarded?.includes(s.id) || s.status === 'boarded';
+        const isD = currentRecord?.disembarked?.includes(s.id) || s.status === 'disembarked';
+        
+        const updates: any = {};
+        
+        if (isD) {
+            // 하차완료 -> 미탑승
+            updates.disembarked = arrayRemove(s.id);
+            updates.boarded = arrayRemove(s.id);
+        } else if (isB) {
+            // 탑승 -> 하차완료
+            updates.boarded = arrayRemove(s.id);
+            updates.disembarked = arrayUnion(s.id);
+        } else {
+            // 미탑승 또는 오늘 안 탐 -> 탑승
+            updates.boarded = arrayUnion(s.id);
+            updates.notBoarding = arrayRemove(s.id);
+            updates.disembarked = arrayRemove(s.id);
+        }
+        
+        try {
+            await updateAttendance(s.routeId, selectedDate, updates);
+        } catch (error) {
+            console.error("Failed to toggle attendance:", error);
+            toast({
+                title: t('error') || '오류',
+                description: '탑승 상태 변경에 실패했습니다.',
+                variant: 'destructive'
+            });
+        }
+    };
+
+    const getStatusLabel = (status: string) => {
+        if (status === 'boarded') return t('teacher_page.status_boarded') || '탑승';
+        if (status === 'disembarked') return t('teacher_page.status_disembarked') || '하차 완료';
+        if (status === 'notRiding') return t('teacher_page.status_not_riding_today') || t('teacher_page.status_notRiding') || '오늘 안 탐';
+        return t('teacher_page.status_not_boarded') || '미탑승';
+    };
 
     const handleCopyNotBoarded = () => {
         const notBoardedStudents = allStudentsOnDay.filter(s => s.status === 'not_boarded');
@@ -200,13 +242,43 @@ const AllStudentsBoardingStatus = ({ relevantRoutes, students, buses, allAttenda
                         {allStudentsOnDay.map(s => (
                             <TableRow 
                                 key={s.id}
-                                onClick={() => onSelectStudent?.(s)}
-                                className="cursor-pointer hover:bg-slate-100 transition-colors"
+                                className="hover:bg-slate-100/80 transition-colors group select-none"
                             >
-                                <TableCell className="whitespace-nowrap font-medium text-xs">{formatStudentName(s)}</TableCell>
-                                <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{s.busName}</TableCell>
-                                <TableCell className="whitespace-nowrap">
-                                    <Badge variant={s.status === 'boarded' ? 'default' : (s.status === 'notRiding' ? 'destructive' : (s.status === 'disembarked' ? 'outline' : 'secondary'))} className="text-[10px] sm:text-xs py-0 h-5 whitespace-nowrap">{t(`teacher_page.status_${s.status}`)}</Badge>
+                                <TableCell 
+                                    className="whitespace-nowrap font-medium text-xs sm:text-sm py-2 sm:py-2.5 cursor-pointer"
+                                    onClick={() => onSelectStudent?.(s)}
+                                >
+                                    <span className="group-hover:text-primary font-bold text-slate-900 transition-colors">{formatStudentName(s)}</span>
+                                </TableCell>
+                                <TableCell 
+                                    className="whitespace-nowrap text-xs text-muted-foreground py-2 sm:py-2.5 cursor-pointer"
+                                    onClick={() => onSelectStudent?.(s)}
+                                >
+                                    <span className="px-1.5 py-0.5 rounded bg-slate-100 font-medium text-slate-700">{s.busName}</span>
+                                </TableCell>
+                                <TableCell 
+                                    className="whitespace-nowrap text-right py-1.5 sm:py-2"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            handleToggleAttendance(s);
+                                        }}
+                                        className={cn(
+                                            "cursor-pointer select-none text-xs font-bold transition-all active:scale-95 shadow-2xs",
+                                            "h-7 sm:h-8 px-2.5 sm:px-3 py-1 rounded-lg inline-flex items-center justify-center whitespace-nowrap min-w-[62px] sm:min-w-[70px] border",
+                                            s.status === 'boarded' && "bg-slate-900 hover:bg-slate-800 text-white border-slate-900",
+                                            s.status === 'disembarked' && "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300",
+                                            s.status === 'notRiding' && "bg-rose-500 hover:bg-rose-600 text-white border-rose-500",
+                                            s.status === 'not_boarded' && "bg-white hover:bg-slate-50 text-slate-700 border-slate-300"
+                                        )}
+                                        title="클릭 시 탑승/하차완료/미탑승 순환 변경"
+                                    >
+                                        {getStatusLabel(s.status)}
+                                    </button>
                                 </TableCell>
                             </TableRow>
                         ))}
@@ -2938,7 +3010,7 @@ updates.disembarked = arrayUnion(student.id);
       <div onContextMenu={(e) => { e.preventDefault(); setSwapSourceSeat(null); }} className="min-h-full">
         {selectedBusId === 'all' ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start w-full">
-                <AllStudentsBoardingStatus relevantRoutes={relevantRoutesForDay} students={students} buses={filteredBuses} allAttendance={allAttendance} formatStudentName={formatStudentName} t={t} afterschoolAbsentStudentIds={afterschoolAbsentStudentIds} onSelectStudent={setSelectedStudent}/>
+                <AllStudentsBoardingStatus relevantRoutes={relevantRoutesForDay} students={students} buses={filteredBuses} allAttendance={allAttendance} selectedDate={selectedDate} formatStudentName={formatStudentName} t={t} afterschoolAbsentStudentIds={afterschoolAbsentStudentIds} onSelectStudent={setSelectedStudent}/>
                 <AllGroupLeadersStatus relevantRoutes={relevantRoutesForDay} students={students} buses={filteredBuses} formatStudentName={formatStudentName} t={t}/>
             </div>
         ) : (
@@ -3037,14 +3109,14 @@ updates.disembarked = arrayUnion(student.id);
                                                         </span>
                                                     </div>
                                                 </TableCell>
-                                            <TableCell className="px-2 py-3 text-right">
+                                            <TableCell className="px-2 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                                                 <Badge 
                                                     variant={boardedStudentIds.includes(s.id) ? 'default' : (notBoardingStudentIds.includes(s.id) ? 'destructive' : (disembarkedStudentIds.includes(s.id) ? 'outline' : 'secondary'))}
                                                     className={cn(
                                                         "cursor-pointer select-none text-xs font-bold transition-all active:scale-95 shadow-2xs",
                                                         "h-8 sm:h-8 px-3.5 sm:px-4 py-1 rounded-lg inline-flex items-center justify-center whitespace-nowrap min-w-[70px]"
                                                     )}
-                                                    onClick={(e) => { e.stopPropagation(); toggleStudentAttendance(s.id); }}
+                                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleStudentAttendance(s.id); }}
                                                 >
                                                     {t(`teacher_page.status_${boardedStudentIds.includes(s.id) ? 'boarded' : (notBoardingStudentIds.includes(s.id) ? 'not_riding_today' : (disembarkedStudentIds.includes(s.id) ? 'disembarked' : 'not_boarded'))}`)}
                                                 </Badge>

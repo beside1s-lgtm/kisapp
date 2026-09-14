@@ -5,7 +5,7 @@ import {
   Printer, Calendar, X, FileSpreadsheet,
   Send, FileText,
   Users, Package, AlertCircle, ChevronLeft, ChevronRight,
-  Phone, CheckCircle2, UserPlus, UserMinus, Edit3, Trash2, Share2, XCircle
+  Phone, CheckCircle2, CheckCheck, UserPlus, UserMinus, Edit3, Trash2, Share2, XCircle
 } from 'lucide-react';
 import { exportAttendanceToExcel } from '@/lib/afterschool/excel';
 import { getTeacherApplySettings, saveTeacherApplySettings, onTeacherApplySettingsUpdate, submitAfterschoolApprovalDoc, deleteAfterschoolApprovalDoc, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord, onDocConfigUpdate, getDocConfig } from '@/lib/services/settingsService';
@@ -665,7 +665,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
 
         const newRecords: AttendanceRecord[] = attendingStudents.flatMap((st) =>
           activeDay.sessionNos.map((sNo) => ({
-            id: `att_${st.studentId}_s${sNo}`,
+            id: `att_${currentCourse.id}_${st.studentId}_s${sNo}`,
             courseId: currentCourse.id,
             studentId: st.studentId,
             sessionNo: sNo,
@@ -842,7 +842,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
 
       // 해당 회차의 모든 차시에 동일한 출결 마크 생성
       const newRecords: AttendanceRecord[] = day.sessionNos.map((sNo) => ({
-        id: `att_${studentId}_s${sNo}`,
+        id: `att_${currentCourse.id}_${studentId}_s${sNo}`,
         courseId: currentCourse.id,
         studentId,
         sessionNo: sNo,
@@ -877,7 +877,7 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
           (r) => !(r.courseId === currentCourse.id && r.studentId === st.studentId && day.sessionNos.includes(r.sessionNo || 0))
         );
         const newRecords: AttendanceRecord[] = day.sessionNos.map((sNo) => ({
-          id: `att_${st.studentId}_s${sNo}`,
+          id: `att_${currentCourse.id}_${st.studentId}_s${sNo}`,
           courseId: currentCourse.id,
           studentId: st.studentId,
           sessionNo: sNo,
@@ -1221,6 +1221,15 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
               </span>
               <div className="flex items-center gap-1 shrink-0">
                 <button
+                  onClick={() => activeDay && handleBulkAttendDay(activeDay.dayIndex)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white p-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95"
+                  title={t('teacher_afterschool.all_present', '전원 출석')}
+                  aria-label={t('teacher_afterschool.all_present', '전원 출석')}
+                >
+                  <CheckCheck className="w-4 h-4 shrink-0" />
+                  <span className="text-[11px] font-bold whitespace-nowrap">{t('teacher_afterschool.all_present', '전원출석')}</span>
+                </button>
+                <button
                   onClick={handleCopyShareLink}
                   className="bg-sky-600 hover:bg-sky-700 text-white p-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center justify-center cursor-pointer active:scale-95"
                   title={t('teacher_afterschool.share_sheet', '출석부 공유')}
@@ -1243,6 +1252,14 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
             <div className="flex items-center gap-1.5 sm:gap-2 w-full min-w-0">
               {/* 데스크톱 전용 좌측 고정 액션 버튼 그룹 */}
               <div className="hidden sm:flex items-center gap-1.5 shrink-0 z-10 bg-white pr-1.5 border-r border-slate-200">
+                <button
+                  onClick={() => activeDay && handleBulkAttendDay(activeDay.dayIndex)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
+                  title="현재 회차의 수강 확정생 전원 출석(○) 처리"
+                >
+                  <CheckCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span>{t('teacher_afterschool.all_present', '전원출석')}</span>
+                </button>
                 <button
                   onClick={handleCopyShareLink}
                   className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"

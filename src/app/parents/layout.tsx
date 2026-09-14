@@ -144,8 +144,8 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
         </div>
       </header>
       
-      {/* Mobile nav */}
-      <div className="lg:hidden grid grid-cols-4 gap-1 border-b bg-muted/30 p-1.5 print:hidden w-full min-w-0">
+      {/* Mobile nav (스크롤 시 상단 고정) */}
+      <div className="lg:hidden sticky top-[41px] sm:top-[64px] z-40 bg-card/95 backdrop-blur-md grid grid-cols-4 gap-1 border-b p-1.5 print:hidden w-full min-w-0 shadow-2xs">
         <Button 
           variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
           size="sm"

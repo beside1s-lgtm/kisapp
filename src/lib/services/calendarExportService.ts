@@ -215,3 +215,122 @@ export function generateWeeklyMonthlyIcs(options: WeeklyMonthlyExportOptions): s
   lines.push('END:VCALENDAR');
   return lines.join('\r\n');
 }
+
+/**
+ * Google Calendar 원클릭 일정 등록 URL 생성 헬퍼
+ */
+export function buildGoogleCalendarUrl({
+  title,
+  startDateStr,
+  endDateStr,
+  startTime,
+  endTime,
+  description,
+  location,
+}: {
+  title: string;
+  startDateStr: string; // YYYY-MM-DD
+  endDateStr?: string;   // YYYY-MM-DD
+  startTime?: string;   // HH:mm (옵션, 없으면 종일 일정)
+  endTime?: string;     // HH:mm (옵션)
+  description?: string;
+  location?: string;
+}): string {
+  try {
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    let datesParam = '';
+
+    if (startTime && endTime) {
+      // 시간 지정 일정 (호치민/베트남 GMT+7 기준 또는 로컬 시간 기준 Date 변환)
+      const [sYear, sMonth, sDay] = startDateStr.split('-').map(Number);
+      const [sH, sM] = startTime.split(':').map(Number);
+      const startDate = new Date(sYear, sMonth - 1, sDay, sH, sM);
+
+      const endTargetStr = endDateStr || startDateStr;
+      const [eYear, eMonth, eDay] = endTargetStr.split('-').map(Number);
+      const [eH, eM] = endTime.split(':').map(Number);
+      const endDate = new Date(eYear, eMonth - 1, eDay, eH, eM);
+
+      const formatUtc = (d: Date) =>
+        `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+
+      datesParam = `${formatUtc(startDate)}/${formatUtc(endDate)}`;
+    } else {
+      // 종일(All-day) 일정: YYYYMMDD/YYYYMMDD (구글 캘린더 사양: 종료일은 익일이어야 당일 종일로 표시됨)
+      const startClean = startDateStr.replace(/-/g, '');
+      const endClean = endDateStr ? getNextDayIcsDateOnly(endDateStr) : getNextDayIcsDateOnly(startDateStr);
+      datesParam = `${startClean}/${endClean}`;
+    }
+
+    const params = new URLSearchParams({
+      action: 'TEMPLATE',
+      text: title,
+      dates: datesParam,
+      details: description || '',
+      location: location || '호치민시한국국제학교',
+    });
+
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  } catch (err) {
+    console.error('Failed to build Google Calendar URL:', err);
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}`;
+  }
+}
+
+/**
+ * 나에게 할당된 업무에 대한 구글 캘린더 원클릭 등록 URL
+ */
+export function buildAssignedTaskGoogleCalendarUrl(task: DepartmentTask): string {
+  const safeTitle = `[업무마감] ${task.title || '업무'}`;
+  const deadline = task.deadline || '';
+  const desc = [
+    `· 담당 부서: ${task.creatorDept || '부서'}`,
+    `· 요청자: ${task.creatorName || '교직원'}`,
+    `· 마감일: ${deadline}`,
+    task.description ? `· 업무 내용:\n${task.description}` : ''
+  ].filter(Boolean).join('\n');
+
+  // 마감일 오전 08:30 ~ 09:00 일정으로 등록
+  return buildGoogleCalendarUrl({
+    title: safeTitle,
+    startDateStr: deadline,
+    startTime: '08:30',
+    endTime: '09:00',
+    description: desc,
+  });
+}
+
+/**
+ * 주간 업무 일정에 대한 구글 캘린더 원클릭 등록 URL
+ */
+export function buildWeeklyScheduleGoogleCalendarUrl(item: DepartmentWeeklySchedule): string {
+  const safeTitle = `[주간] [${item.deptName || '학교'}] ${item.title || '일정'}`;
+  const desc = [
+    `· 부서: ${item.deptName || '학교'}`,
+    `· 기간: ${item.startDate} ~ ${item.endDate || item.startDate}`,
+    item.content ? `· 상세 내용:\n${item.content}` : ''
+  ].filter(Boolean).join('\n');
+
+  return buildGoogleCalendarUrl({
+    title: safeTitle,
+    startDateStr: item.startDate,
+    endDateStr: item.endDate || item.startDate,
+    description: desc,
+  });
+}
+
+/**
+ * 월간 학사 행사에 대한 구글 캘린더 원클릭 등록 URL
+ */
+export function buildAcademicEventGoogleCalendarUrl(ev: AcademicEvent): string {
+  const category = ev.type === 'PUBLIC_HOLIDAY' ? '공휴일' : ev.type === 'HOLIDAY' ? '휴업일' : '학사행사';
+  const safeTitle = `[${category}] ${ev.title}`;
+  const desc = `· 구분: ${category}\n· 일자: ${ev.date}\n· 수업일: ${ev.isSchoolDay ? '수업일 포함' : '수업일 제외'}`;
+
+  return buildGoogleCalendarUrl({
+    title: safeTitle,
+    startDateStr: ev.date,
+    description: desc,
+  });
+}

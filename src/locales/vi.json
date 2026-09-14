@@ -467,6 +467,7 @@
     "teacher_page.status_boarded": "Đã lên xe",
     "teacher_page.status_disembarked": "Đã xuống xe",
     "teacher_page.status_not_riding_today": "Hôm nay không đi",
+    "teacher_page.status_notRiding": "Hôm nay không đi",
     "teacher_page.status_not_boarded": "Chưa lên xe",
     "teacher_page.disembark_management.title": "Quản lý xuống xe",
     "teacher_page.disembark_management.description": "Chọn một điểm đến để xem danh sách học sinh cần xuống xe, và nhấp vào tên để xóa họ khỏi danh sách khi họ xuống xe.",

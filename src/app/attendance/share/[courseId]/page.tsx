@@ -388,7 +388,7 @@ export default function SharedAttendancePage() {
         );
         if (!nextMark) return filtered;
         const newRecords: AttendanceRecord[] = day.sessionNos.map((sNo) => ({
-          id: `att_${studentId}_s${sNo}`,
+          id: `att_${courseId}_${studentId}_s${sNo}`,
           courseId,
           studentId,
           sessionNo: sNo,
@@ -406,7 +406,7 @@ export default function SharedAttendancePage() {
       try {
         const toUpsert: AttendanceRecord[] = nextMark
           ? day.sessionNos.map((sNo) => ({
-              id: `att_${studentId}_s${sNo}`,
+              id: `att_${courseId}_${studentId}_s${sNo}`,
               courseId,
               studentId,
               sessionNo: sNo,
@@ -418,7 +418,7 @@ export default function SharedAttendancePage() {
           : [];
         const toDeleteIds: string[] = nextMark
           ? []
-          : day.sessionNos.map((sNo) => `att_${studentId}_s${sNo}`);
+          : day.sessionNos.map((sNo) => `att_${courseId}_${studentId}_s${sNo}`);
         await saveAttendanceRecordsBatch(toUpsert, toDeleteIds);
       } catch (err) {
         console.error('[SharedAttendance] Firestore 저장 오류:', err);
@@ -446,7 +446,7 @@ export default function SharedAttendancePage() {
       courseStudents.forEach((st) => {
         day.sessionNos.forEach((sNo) => {
           newRecords.push({
-            id: `att_${st.studentId}_s${sNo}`,
+            id: `att_${courseId}_${st.studentId}_s${sNo}`,
             courseId,
             studentId: st.studentId,
             sessionNo: sNo,
@@ -472,7 +472,7 @@ export default function SharedAttendancePage() {
       courseStudents.forEach((st) => {
         day.sessionNos.forEach((sNo) => {
           toUpsert.push({
-            id: `att_${st.studentId}_s${sNo}`,
+            id: `att_${courseId}_${st.studentId}_s${sNo}`,
             courseId,
             studentId: st.studentId,
             sessionNo: sNo,

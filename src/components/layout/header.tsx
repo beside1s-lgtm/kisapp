@@ -106,8 +106,9 @@ export function AppHeader() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 flex h-14 sm:h-16 items-center justify-between border-b bg-card px-2.5 sm:px-4 lg:px-8 max-w-full overflow-x-hidden min-w-0">
-        <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+      <header className="flex h-14 sm:h-16 items-center justify-between border-b bg-card px-2.5 sm:px-4 lg:px-6 w-full max-w-full overflow-hidden min-w-0">
+        {/* 좌측: 로고 및 사이드바 토글 버튼 (절대 찌그러지거나 우측 요소와 겹치지 않도록 shrink-0) */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <Link 
             href={profile?.role === '강사' ? "/teacher/afterschool" : "/inbox"} 
             className="hidden sm:flex items-center gap-2 sm:gap-4 cursor-pointer hover:opacity-80 transition-opacity shrink-0"
@@ -115,7 +116,7 @@ export function AppHeader() {
             <div className="bg-primary p-1.5 sm:p-2 rounded-lg text-primary-foreground">
               <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <h1 className="font-headline text-sm sm:text-lg font-bold tracking-tight text-foreground uppercase hidden sm:block">
+            <h1 className="font-headline text-sm sm:text-lg font-bold tracking-tight text-foreground uppercase hidden sm:block whitespace-nowrap">
               KSHCM ADMIN
             </h1>
           </Link>
@@ -132,20 +133,21 @@ export function AppHeader() {
           )}
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-6 shrink-0">
-          {/* 깔끔하게 오른쪽 정렬된 플랫 사용자 정보 텍스트 */}
+        {/* 중앙 및 우측: 사용자 정보 및 프로필/액션 영역 */}
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1 justify-end">
+          {/* 사용자 정보: 15.6인치 화면(1280px~1440px 등)에서 로고와 겹치지 않도록 xl 이상에서만 확장 표시하고 안전하게 축약 */}
           {!profileLoading && profile && (
-            <div className="hidden lg:flex items-center gap-4 text-[15.5px] text-slate-500 font-medium max-w-3xl truncate mr-4">
-              <div className="flex items-center gap-1.5 shrink-0">
+            <div className="hidden xl:flex items-center gap-3 text-xs sm:text-sm text-slate-500 font-medium min-w-0 max-w-xl truncate mr-2">
+              <div className="flex items-center gap-1 shrink-0">
                 <span className="text-slate-400">소속:</span>
                 <span className="text-slate-800 font-semibold">{info.belongs}</span>
               </div>
-              <span className="text-slate-300">|</span>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-slate-400">담당:</span>
-                <span className="text-blue-600 font-semibold">{info.managers}</span>
+              <span className="text-slate-300 shrink-0">|</span>
+              <div className="flex items-center gap-1 min-w-0 truncate">
+                <span className="text-slate-400 shrink-0">담당:</span>
+                <span className="text-blue-600 font-semibold truncate">{info.managers}</span>
               </div>
-              <span className="text-slate-300">|</span>
+              <span className="text-slate-300 shrink-0">|</span>
               <div className="flex items-center gap-1 shrink-0">
                 <span className="text-slate-400">직책:</span>
                 <span className="text-slate-800 font-semibold">{profile.role || '교직원'}</span>

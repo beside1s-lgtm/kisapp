@@ -931,6 +931,17 @@ export function SettingsModal() {
   const [googleDriveConfig, setGoogleDriveConfig] = useState<GoogleDriveConfig>(DEFAULT_GOOGLE_DRIVE_CONFIG);
   const [isSavingGoogleDrive, setIsSavingGoogleDrive] = useState(false);
   const [isSyncingFolders, setIsSyncingFolders] = useState(false);
+  // 학년도 선택: 단일 연도 기준 (예: 2026학년도 = 2026)
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth() + 1;
+  // 3월 이후면 현재 연도, 1~2월이면 전년도가 현재 학년도
+  const defaultAcademicYear = String(currentMonth >= 3 ? currentYear : currentYear - 1);
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState(defaultAcademicYear);
+  // 학년도 목록: 현재 학년도 기준 ±2년 (내림차순)
+  const academicYearOptions = Array.from({ length: 5 }, (_, i) => {
+    const base = currentMonth >= 3 ? currentYear + 1 - i : currentYear - i;
+    return String(base);
+  });
 
   useEffect(() => {
     getGoogleDriveConfig().then(cfg => {
@@ -965,16 +976,30 @@ export function SettingsModal() {
       const res = await fetch('/api/drive/sync-folders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rootFolderId: googleDriveConfig.rootFolderId })
+        body: JSON.stringify({
+          rootFolderId: googleDriveConfig.rootFolderId,
+          academicYear: selectedAcademicYear
+        })
       });
       const data = await res.json();
-      if (data.success && data.subFolders) {
-        const nextCfg = { ...googleDriveConfig, subFolders: data.subFolders };
+      if (data.success) {
+        let nextCfg: GoogleDriveConfig;
+        if (data.mode === 'yearly' && data.yearFolders) {
+          nextCfg = {
+            ...googleDriveConfig,
+            yearlyFolders: {
+              ...(googleDriveConfig.yearlyFolders || {}),
+              [data.academicYear]: data.yearFolders
+            }
+          };
+        } else {
+          nextCfg = { ...googleDriveConfig, subFolders: data.subFolders };
+        }
         setGoogleDriveConfig(nextCfg);
         await saveGoogleDriveConfig(nextCfg, profile?.email || '관리자');
         toast({
-          title: '하위 폴더 4종 동기화 완료',
-          description: '결재완료, 업무작업, 결석계, 체험학습 전용 폴더가 성공적으로 연동되었습니다.'
+          title: `${selectedAcademicYear}학년도 폴더 동기화 완료`,
+          description: `${selectedAcademicYear}학년도 폴더 및 결재완료, 업무작업, 결석계, 체험학습 전용 하위 폴더가 성공적으로 연동되었습니다.`
         });
       } else {
         toast({ variant: 'destructive', title: '동기화 실패', description: data.error });
@@ -2453,65 +2478,92 @@ export function SettingsModal() {
                         </p>
                       </div>
 
-                      {/* 📂 표준 하위 폴더 4종 자동 동기화 섹션 */}
+                      {/* 📂 학년도별 하위 폴더 동기화 섹션 */}
                       <div className="space-y-2.5 pt-2 border-t border-slate-100">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                           <div>
                             <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                               <Folder className="w-3.5 h-3.5 text-indigo-600" />
-                              중앙 저장소 표준 하위 폴더 4종 분류 체계
+                              학년도별 폴더 자동 구성
                             </h5>
                             <p className="text-[10.5px] text-slate-500">
-                              결재완료문서, 업무작업문서, 결석계, 체험학습 전용 폴더가 중앙 루트 폴더 내에 자동 구성됩니다.
+                              학년도 폴더 안에 결재완료문서, 업무작업문서, 결석계, 체험학습 전용 하위 폴더 4종이 자동 생성됩니다.
                             </p>
                           </div>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={handleSyncFolders}
-                            disabled={isSyncingFolders || !googleDriveConfig.rootFolderId}
-                            className="h-7 px-2.5 text-xs font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 shrink-0 cursor-pointer shadow-2xs"
-                          >
-                            {isSyncingFolders ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RotateCcw className="w-3 h-3 mr-1" />}
-                            표준 하위 폴더 4종 동기화
-                          </Button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <select
+                              value={selectedAcademicYear}
+                              onChange={e => setSelectedAcademicYear(e.target.value)}
+                              className="h-7 text-xs font-bold border border-indigo-200 rounded-lg px-2 bg-white text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-400 cursor-pointer"
+                            >
+                              {academicYearOptions.map(yr => (
+                                <option key={yr} value={yr}>{yr}학년도</option>
+                              ))}
+                            </select>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={handleSyncFolders}
+                              disabled={isSyncingFolders || !googleDriveConfig.rootFolderId}
+                              className="h-7 px-2.5 text-xs font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 shrink-0 cursor-pointer shadow-2xs"
+                            >
+                              {isSyncingFolders ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RotateCcw className="w-3 h-3 mr-1" />}
+                              폴더 동기화
+                            </Button>
+                          </div>
                         </div>
 
-                        {/* 하위 폴더 상태 카드 그리드 */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                          {[
-                            { name: '01_결재완료문서', desc: '승인 완료된 공문서 아카이브', id: googleDriveConfig.subFolders?.approvalDoneId, url: googleDriveConfig.subFolders?.approvalDoneUrl },
-                            { name: '02_업무작업문서(시트_첨부파일)', desc: '업무용 Google 시트 자동 생성 저장소', id: googleDriveConfig.subFolders?.taskWorkId, url: googleDriveConfig.subFolders?.taskWorkUrl },
-                            { name: '03_결석계(완료)', desc: '전결 완료된 결석계 서류 보관', id: googleDriveConfig.subFolders?.absenceDoneId, url: googleDriveConfig.subFolders?.absenceDoneUrl },
-                            { name: '04_체험학습신청서(완료)', desc: '전결 완료된 체험학습 서류 보관', id: googleDriveConfig.subFolders?.fieldTripDoneId, url: googleDriveConfig.subFolders?.fieldTripDoneUrl },
-                          ].map((f, i) => (
-                            <div key={i} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
-                              <div className="min-w-0 pr-2">
-                                <p className="font-bold text-slate-800 flex items-center gap-1.5 truncate">
-                                  <Folder className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                  <span className="truncate">{f.name}</span>
-                                </p>
-                                <p className="text-[10px] text-slate-400 truncate">{f.desc}</p>
+                        {/* 학년도별 폴더 현황 */}
+                        {googleDriveConfig.yearlyFolders && Object.keys(googleDriveConfig.yearlyFolders).length > 0 ? (
+                          <div className="space-y-2">
+                            {Object.entries(googleDriveConfig.yearlyFolders)
+                              .sort(([a], [b]) => b.localeCompare(a))
+                              .map(([year, yf]) => (
+                              <div key={year} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                                    <Folder className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                    {year}학년도
+                                  </span>
+                                  {yf.yearFolderUrl && (
+                                    <a href={yf.yearFolderUrl} target="_blank" rel="noreferrer"
+                                      className="px-2 py-0.5 text-[10.5px] bg-white border border-slate-300 text-indigo-600 hover:text-indigo-800 font-bold rounded flex items-center gap-1 shadow-2xs">
+                                      <span>폴더 열기</span>
+                                      <ExternalLink className="w-2.5 h-2.5" />
+                                    </a>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                                  {[
+                                    { name: '01_결재완료문서', url: yf.approvalDoneUrl },
+                                    { name: '02_업무작업문서', url: yf.taskWorkUrl },
+                                    { name: '03_결석계(완료)', url: yf.absenceDoneUrl },
+                                    { name: '04_체험학습신청서', url: yf.fieldTripDoneUrl },
+                                    { name: '05_학년별 수업자료', url: yf.gradeMaterialsUrl },
+                                    { name: '06_체육 측정 결과', url: yf.peResultsUrl },
+                                  ].map((f, i) => (
+                                    <div key={i} className="flex items-center justify-between bg-white border border-slate-100 rounded-lg px-2 py-1">
+                                      <span className="text-[10px] text-slate-600 truncate pr-1">{f.name}</span>
+                                      {f.url ? (
+                                        <a href={f.url} target="_blank" rel="noreferrer"
+                                          className="text-[9.5px] text-indigo-600 font-bold flex items-center gap-0.5 shrink-0">
+                                          열기 <ExternalLink className="w-2 h-2" />
+                                        </a>
+                                      ) : (
+                                        <span className="text-[9.5px] text-slate-300 shrink-0">미생성</span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
-                              {f.url ? (
-                                <a
-                                  href={f.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="px-2 py-0.5 text-[10.5px] bg-white border border-slate-300 text-indigo-600 hover:text-indigo-800 font-bold rounded flex items-center gap-1 shrink-0 shadow-2xs"
-                                >
-                                  <span>열기</span>
-                                  <ExternalLink className="w-2.5 h-2.5" />
-                                </a>
-                              ) : (
-                                <Badge variant="secondary" className="text-[9.5px] px-1.5 py-0 text-slate-400 font-medium shrink-0">
-                                  미생성
-                                </Badge>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="py-3 text-center text-[11px] text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                            학년도를 선택하고 '폴더 동기화'를 눌러 Drive 폴더를 자동 생성하세요.
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex justify-end pt-2 border-t border-slate-100">

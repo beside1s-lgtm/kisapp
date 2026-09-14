@@ -54,7 +54,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="print:hidden w-full max-w-full shrink-0 z-50 hidden sm:block">
           <AppHeader />
         </div>
-        <div className="flex-1 min-h-0 flex print:block pt-0 sm:pt-16 print:pt-0 min-w-0 w-full max-w-full overflow-hidden">
+        <div className="flex-1 min-h-0 flex print:block print:pt-0 min-w-0 w-full max-w-full overflow-hidden">
           <div className="print:hidden shrink-0 h-full">
             <AppSidebar />
           </div>

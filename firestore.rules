@@ -272,5 +272,10 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isSignedIn();
     }
+
+    // --- [담임 교실 관리 시스템 (칠판 알림 메모, 숙제, 행동관찰, 보호자상담)] ---
+    match /homeroom_classes/{document=**} {
+      allow read, write: if isSignedIn();
+    }
   }
 }

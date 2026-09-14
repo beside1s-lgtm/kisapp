@@ -472,6 +472,7 @@
     "teacher_page.status_boarded": "탑승",
     "teacher_page.status_disembarked": "하차 완료",
     "teacher_page.status_not_riding_today": "오늘 안 탐",
+    "teacher_page.status_notRiding": "오늘 안 탐",
     "teacher_page.status_not_boarded": "미탑승",
     "teacher_page.disembark_management.title": "하차 관리",
     "teacher_page.disembark_management.description": "목적지를 선택하여 하차할 학생 명단을 확인하고, 하차 시 이름을 클릭하여 명단에서 제거하세요.",

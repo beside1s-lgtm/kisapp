@@ -58,6 +58,9 @@ import {
 } from '@/lib/services/homeroomAttendanceSync';
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import type { OrgStructure, DocConfig } from '@/lib/types';
+import { ClassManagementTab } from '@/components/teacher/homeroom/ClassManagementTab';
+import { GradeMaterialsTab } from '@/components/teacher/homeroom/GradeMaterialsTab';
+import { ParentConsultationTab } from '@/components/teacher/homeroom/ParentConsultationTab';
 import { onRoutesUpdate } from '@/lib/kisbus/routes';
 import { onBusesUpdate } from '@/lib/kisbus/buses';
 import { unassignStudentFromAllRoutes } from '@/lib/kisbus/assignments';
@@ -189,8 +192,8 @@ export default function TeacherHomeroomApplyPage() {
   // 문서 유형 (체험학습 신청서 vs 결석계)
   const [docCategory, setDocCategory] = useState<'field-trip' | 'absence'>('field-trip');
 
-  // 상단 메인 탭: 'student-info' (학생 정보 확인, 기본 우선 선택) | 'proxy' (출결/체험학습 대리 작성)
-  const [activeMainTab, setActiveMainTab] = useState<'student-info' | 'proxy'>('student-info');
+  // 상단 메인 탭: 'student-info' (학생 정보 확인) | 'proxy' (출결/체험학습 대리 작성) | 'class-management' (학급 관리) | 'grade-materials' (학년 자료 공유) | 'consultation' (학부모 상담)
+  const [activeMainTab, setActiveMainTab] = useState<'student-info' | 'proxy' | 'class-management' | 'grade-materials' | 'consultation'>('student-info');
   const [isBatchPhotoOpen, setIsBatchPhotoOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editStudentForm, setEditStudentForm] = useState<Partial<MasterStudent>>({});
@@ -815,12 +818,21 @@ export default function TeacherHomeroomApplyPage() {
 
       {/* 상단 탭 네비게이션 */}
       <Tabs value={activeMainTab} onValueChange={(val: any) => setActiveMainTab(val)} className="w-full space-y-6">
-        <TabsList className="grid grid-cols-2 w-full max-w-md bg-slate-100 p-1 rounded-xl">
+        <TabsList className="grid grid-cols-2 sm:grid-cols-5 w-full max-w-3xl bg-slate-100 p-1 rounded-xl gap-1">
           <TabsTrigger value="student-info" className="text-xs font-bold py-2">
             학생 정보 확인 ({classStudents.length}명)
           </TabsTrigger>
           <TabsTrigger value="proxy" className="text-xs font-bold py-2">
             출결/체험학습 대리 작성
+          </TabsTrigger>
+          <TabsTrigger value="class-management" className="text-xs font-bold py-2">
+            학급 관리
+          </TabsTrigger>
+          <TabsTrigger value="grade-materials" className="text-xs font-bold py-2">
+            학년 자료 공유
+          </TabsTrigger>
+          <TabsTrigger value="consultation" className="text-xs font-bold py-2 text-indigo-900 data-[state=active]:bg-white data-[state=active]:text-indigo-700">
+            학부모 상담
           </TabsTrigger>
         </TabsList>
 
@@ -1450,6 +1462,61 @@ export default function TeacherHomeroomApplyPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+        {/* 탭 3: 학급 관리 (칠판 알림장, 숙제 체크/프레젠테이션, 행동 관찰, 상담 일지, 월별 매트릭스, 학년 자료 공유) */}
+        <TabsContent value="class-management" className="space-y-4">
+          <ClassManagementTab
+            classKey={selectedClassKey}
+            classLabel={selectedClassKey ? formatClassLabel(selectedClassKey) : '우리 반'}
+            students={classStudents}
+            userEmail={user?.email || undefined}
+          />
+        </TabsContent>
+
+        {/* 탭 4: 학년 자료 공유 (Google Drive 05_학년별 수업자료 공유 폴더) */}
+        <TabsContent value="grade-materials" className="space-y-4">
+          <GradeMaterialsTab
+            classKey={selectedClassKey}
+            classLabel={selectedClassKey ? formatClassLabel(selectedClassKey) : '우리 반'}
+            userEmail={user?.email || undefined}
+          />
+        </TabsContent>
+
+        {/* 탭 5: 학부모 상담 (상담 주간 신청 현황 및 교사/학부모 예약 관리) */}
+        <TabsContent value="consultation" className="space-y-4">
+          {/* 학급 선택 바 (전교 권한일 경우 다른 학급도 선택/조회 가능) */}
+          {availableClassKeys.length > 1 && (
+            <div className="flex items-center justify-between bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 font-bold text-xs">
+                  학급 선택
+                </Badge>
+                <span className="text-xs text-slate-500">상담 주간 시간표를 조회하거나 관리할 학급을 선택하세요.</span>
+              </div>
+              <div className="w-48">
+                <Select value={selectedClassKey} onValueChange={(val) => { setSelectedClassKey(val); setSelectedStudentId(''); }}>
+                  <SelectTrigger className="h-9 text-xs font-semibold bg-white">
+                    <SelectValue placeholder="학급 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableClassKeys.map(key => (
+                      <SelectItem key={key} value={key} className="text-xs font-medium">
+                        {formatClassLabel(key)} {myHomeroomKeys.includes(key) ? '(내 학급)' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          <ParentConsultationTab
+            classKey={selectedClassKey}
+            classLabel={selectedClassKey ? formatClassLabel(selectedClassKey) : '우리 반'}
+            students={classStudents}
+            userEmail={user?.email || undefined}
+            initialRole="TEACHER"
+          />
         </TabsContent>
       </Tabs>
 

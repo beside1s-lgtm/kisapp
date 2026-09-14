@@ -468,6 +468,7 @@
     "teacher_page.status_boarded": "Boarded",
     "teacher_page.status_disembarked": "Disembarked",
     "teacher_page.status_not_riding_today": "Today Not Riding",
+    "teacher_page.status_notRiding": "Today Not Riding",
     "teacher_page.status_not_boarded": "Not Boarded",
     "teacher_page.disembark_management.title": "Disembark Management",
     "teacher_page.disembark_management.description": "Select a destination to see the list of students to disembark, and click their name to remove them from the list as they get off.",

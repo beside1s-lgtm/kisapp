@@ -145,8 +145,8 @@ function AfterschoolConsole() {
   }, [user?.email]);
 
   // Firestore DB 실시간 연동 (강좌, 수강신청, 출석, 스쿨버스 노선/학생/버스)
-  // isSavingRef: 출석 저장 중에는 snapshot으로 인한 로컬 state 덮어쓰기 차단
-  const isSavingRef = useRef(false);
+  // isSavingCourseIdRef: 출석 저장 중에는 해당 강좌만 snapshot으로 인한 로컬 state 덮어쓰기 차단
+  const isSavingCourseIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -186,10 +186,20 @@ function AfterschoolConsole() {
       if (data && data.length > 0) setEnrollments(data);
     });
     const unsubAttendance = onAttendanceRecordsUpdate((data) => {
-      // 저장 중(isSavingRef.current === true)에는 snapshot이 와도 로컬 state를 덮어쓰지 않음.
-      // 저장이 완료된 뒤 Firestore에서 오는 최신 데이터만 반영하여 체크 풀림 방지.
-      if (!isSavingRef.current && data && data.length > 0) {
-        setAttendanceRecords(data);
+      // 저장 중인 특정 강좌(isSavingCourseIdRef.current)가 있다면 해당 강좌 데이터는 로컬 state를 보존하고,
+      // 다른 강좌(동시 체크 중인 타 교사 강좌)의 데이터는 즉각 반영하여 동시성 완벽 보장
+      if (data && data.length > 0) {
+        const savingCourseId = isSavingCourseIdRef.current;
+        if (!savingCourseId) {
+          setAttendanceRecords(data);
+        } else {
+          setAttendanceRecords(prev => {
+            // 현재 저장 중인 강좌의 로컬 레코드 보존 + 타 강좌의 최신 Firestore 레코드 병합
+            const currentCourseLocalRecords = prev.filter(r => r.courseId === savingCourseId);
+            const otherCoursesFirestoreRecords = data.filter(r => r.courseId !== savingCourseId);
+            return [...otherCoursesFirestoreRecords, ...currentCourseLocalRecords];
+          });
+        }
       }
     });
     const unsubClassrooms = onAfterschoolClassroomsUpdate((data) => {
@@ -228,6 +238,7 @@ function AfterschoolConsole() {
   const pendingSaveRef = useRef<{
     next: import('@/lib/afterschool/types').AttendanceRecord[];
     base: import('@/lib/afterschool/types').AttendanceRecord[];
+    courseId: string;
   } | null>(null);
 
   const handleSaveAttendance = (
@@ -239,6 +250,7 @@ function AfterschoolConsole() {
     pendingSaveRef.current = {
       next: nextRecords,
       base: pendingSaveRef.current?.base ?? prevRecords, // 최초 prev 기준 유지
+      courseId: selectedCourseId,
     };
 
     saveDebounceRef.current = setTimeout(async () => {
@@ -246,17 +258,18 @@ function AfterschoolConsole() {
       pendingSaveRef.current = null;
       if (!pending) return;
 
-      const { next, base } = pending;
+      const { next, base, courseId } = pending;
       const toUpsert = next.filter(r => {
         const orig = base.find(p => p.id === r.id);
         return !orig || JSON.stringify(orig) !== JSON.stringify(r);
       });
+      // 삭제 대상(toDeleteIds)은 현재 조작 중인 강좌(courseId)의 레코드 중에서만 선별하여 타 강좌 데이터 삭제 방지
       const toDeleteIds = base
-        .filter(p => !next.some(r => r.id === p.id))
+        .filter(p => (!courseId || p.courseId === courseId) && !next.some(r => r.id === p.id))
         .map(p => p.id);
 
       if (toUpsert.length > 0 || toDeleteIds.length > 0) {
-        isSavingRef.current = true;
+        isSavingCourseIdRef.current = courseId || null;
         try {
           await saveAttendanceRecordsBatch(toUpsert, toDeleteIds);
         } catch (err) {
@@ -264,7 +277,11 @@ function AfterschoolConsole() {
         } finally {
           // 저장 완료 후 500ms 뒤 잠금 해제 — Firestore snapshot echo가 먼저 오더라도 무시하고
           // 그 이후의 snapshot(외부 변경)은 정상 반영
-          setTimeout(() => { isSavingRef.current = false; }, 500);
+          setTimeout(() => {
+            if (isSavingCourseIdRef.current === (courseId || null)) {
+              isSavingCourseIdRef.current = null;
+            }
+          }, 500);
         }
       }
     }, 300); // 300ms 내 연속 체크는 묶어서 한 번만 저장
