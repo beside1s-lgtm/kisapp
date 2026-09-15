@@ -178,6 +178,20 @@ export const StudentGlobalSearchPanel = ({
             const afternoonRoute = routes.find(r => r.dayOfWeek === day && r.type === 'Afternoon' && r.seating.some(s => s.studentId === selectedGlobalStudent.id));
             const afterSchoolRoute = routes.find(r => r.dayOfWeek === day && r.type === 'AfterSchool' && r.seating.some(s => s.studentId === selectedGlobalStudent.id));
 
+            // 해당 요일 방과후 강좌 정보 추출
+            const dayCourseObj = selectedGlobalStudent.afterSchoolCoursesByDay?.[day];
+            let dayCourseTitle = dayCourseObj?.title || '';
+            let dayInstructors = (dayCourseObj as any)?.teachersText || (dayCourseObj as any)?.instructorName || (dayCourseObj as any)?.instructors || '';
+
+            if (!dayCourseTitle && selectedGlobalStudent.afterSchoolClassIds?.[day]) {
+                const cId = selectedGlobalStudent.afterSchoolClassIds[day];
+                const matchedClass = afterSchoolClasses.find(c => c.id === cId);
+                if (matchedClass) {
+                    dayCourseTitle = matchedClass.name || '';
+                    dayInstructors = matchedClass.teacherName || '';
+                }
+            }
+
             const getSlotInfo = (r?: Route, type?: 'morning' | 'afternoon' | 'afterSchool') => {
                 if (!r) return null;
                 const bus = buses.find(b => b.id === r.busId);
@@ -205,13 +219,16 @@ export const StudentGlobalSearchPanel = ({
 
             return {
                 day,
-                hasAny: !!(morning || afternoon || afterSchool),
+                hasAny: !!(morning || afternoon || afterSchool || dayCourseTitle),
+                hasAfterSchoolCourse: !!dayCourseTitle,
+                dayCourseTitle,
+                dayInstructors,
                 morning,
                 afternoon,
                 afterSchool
             };
         }).filter(item => item.day !== 'Saturday' || item.hasAny);
-    }, [selectedGlobalStudent, routes, buses, destinations, semesterMode, WEEKDAYS]);
+    }, [selectedGlobalStudent, routes, buses, destinations, afterSchoolClasses, semesterMode, WEEKDAYS]);
 
     // 학생에게 등록된 특정 요일 예비 목적지 추출 (평일 하교 기본 목적지와 다른 예외 목적지만)
     const registeredCustomDestinations = useMemo(() => {
@@ -950,7 +967,7 @@ export const StudentGlobalSearchPanel = ({
                                 </div>
                                 {selectedGlobalStudent && (
                                     <DialogDescription className="text-xs text-muted-foreground">
-                                        {selectedGlobalStudent.grade} {t('student.grade', '학년')} {selectedGlobalStudent.class} {t('student.class', '반')} · {selectedGlobalStudent.contact || t('none', '연락처 없음')}
+                                        {selectedGlobalStudent.grade} {t('student.grade', '학년')} {selectedGlobalStudent.class} {t('student.class', '반')}{(selectedGlobalStudent as any).number ? ` ${(selectedGlobalStudent as any).number}번` : ''} · {selectedGlobalStudent.contact || t('none', '연락처 없음')}
                                     </DialogDescription>
                                 )}
                             </div>
@@ -994,13 +1011,16 @@ export const StudentGlobalSearchPanel = ({
                                                 <img src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(selectedGlobalStudent?.id || '')}`} alt="QR" width={120} height={120} />
                                                 <div className="text-center">
                                                     <div className="font-bold text-sm text-slate-900">{selectedGlobalStudent && getStudentName(selectedGlobalStudent, i18n.language)}</div>
-                                                    <div className="text-xs text-muted-foreground">{selectedGlobalStudent?.grade} {selectedGlobalStudent?.class}</div>
+                                                    <div className="text-xs text-muted-foreground">
+                                                        {selectedGlobalStudent?.grade}학년 {selectedGlobalStudent?.class}반
+                                                        {(selectedGlobalStudent as any)?.number ? ` ${(selectedGlobalStudent as any).number}번` : ''}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                         <DialogFooter>
                                             <Button variant="outline" onClick={() => setIsIndividualQrOpen(false)}>{t('cancel', '닫기')}</Button>
-                                            <Button onClick={handleIndividualPrintQr} className="gap-2">
+                                            <Button onClick={() => selectedGlobalStudent && handlePrintQr(selectedGlobalStudent)} className="gap-2">
                                                 <Printer className="w-4 h-4" /> {t('print', '인쇄하기')}
                                             </Button>
                                         </DialogFooter>
@@ -1011,27 +1031,22 @@ export const StudentGlobalSearchPanel = ({
                     </DialogHeader>
 
                     {selectedGlobalStudent && (
-                        <div className="px-6 py-5 space-y-4">
-                            {/* 1. 성별 및 전화번호: 절반으로 줄여서 한 줄에 나란히 배치 */}
+                        <div className="p-6 space-y-4">
+                            {/* 1. 성별 및 전화번호: 2분할 한 줄 */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1">
-                                    <Label className="text-xs font-semibold">{t('student.gender', '성별')}</Label>
-                                    <Select value={selectedGlobalStudent.gender || ''} onValueChange={(val) => handleStudentInfoChange(selectedGlobalStudent.id, 'gender', val)}>
-                                        <SelectTrigger className="h-9 text-sm"><SelectValue placeholder={t('student.select_gender', '성별 선택')} /></SelectTrigger>
+                                    <Label className="text-xs font-semibold">{t('gender', '성별')}</Label>
+                                    <Select value={selectedGlobalStudent.gender || 'M'} onValueChange={(val) => handleStudentInfoChange(selectedGlobalStudent.id, 'gender', val)}>
+                                        <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="male">{t('student.male', '남자')}</SelectItem>
-                                            <SelectItem value="female">{t('student.female', '여자')}</SelectItem>
+                                            <SelectItem value="M">{t('male', '남')}</SelectItem>
+                                            <SelectItem value="F">{t('female', '여')}</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
                                 <div className="space-y-1">
-                                    <Label className="text-xs font-semibold">{t('student.contact', '전화번호')}</Label>
-                                    <Input
-                                        value={selectedGlobalStudent.contact || ''}
-                                        onChange={(e) => handleStudentInfoChange(selectedGlobalStudent.id, 'contact', e.target.value)}
-                                        className="h-9 text-sm"
-                                        placeholder={t('student.contact_placeholder', '0983315387')}
-                                    />
+                                    <Label className="text-xs font-semibold">{t('contact', '전화번호')}</Label>
+                                    <Input value={selectedGlobalStudent.contact || ''} onChange={(e) => handleStudentInfoChange(selectedGlobalStudent.id, 'contact', e.target.value)} className="h-9 text-sm" />
                                 </div>
                             </div>
 
@@ -1148,45 +1163,41 @@ export const StudentGlobalSearchPanel = ({
 
                                         <Select value={newCustomDestId || 'none'} onValueChange={setNewCustomDestId}>
                                             <SelectTrigger className="h-8 flex-1 text-xs bg-white">
-                                                <SelectValue placeholder={t('select_destination', '목적지 선택')} />
+                                                <SelectValue placeholder={t('student.select_destination', '목적지 선택')} />
                                             </SelectTrigger>
                                             <SelectContent className="max-h-52 overflow-y-auto">
-                                                <SelectItem value="none">{t('select_destination', '목적지 선택')}</SelectItem>
-                                                {destinations.map(d => (
-                                                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                                                ))}
+                                                <SelectItem value="none">{t('none', '없음')}</SelectItem>
+                                                {destinations.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
                                             </SelectContent>
                                         </Select>
 
                                         <Button
                                             type="button"
                                             size="sm"
-                                            className="h-8 px-2.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
-                                            disabled={!newCustomDestId || newCustomDestId === 'none'}
+                                            className="h-8 px-3 text-xs bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
                                             onClick={async () => {
-                                                if (!newCustomDestId || newCustomDestId === 'none') return;
+                                                if (!newCustomDestId || newCustomDestId === 'none') {
+                                                    toast({ title: t('warning', '경고'), description: t('student.select_destination_warn', '목적지를 선택하세요.'), variant: 'destructive' });
+                                                    return;
+                                                }
                                                 if (newCustomDestDay === 'Saturday') {
                                                     await handleDestinationChange(selectedGlobalStudent.id, newCustomDestId, 'satAfternoon');
                                                 } else {
                                                     await handleDestinationChange(selectedGlobalStudent.id, newCustomDestId, 'afterSchool', newCustomDestDay);
                                                 }
+                                                toast({ title: t('success', '성공'), description: t('student.custom_dest_saved', '예비 목적지가 설정되었습니다.') });
                                                 setIsAddingCustomDest(false);
                                                 setNewCustomDestId('');
-                                                toast({ title: t('success', '성공'), description: t('student.custom_dest_added', '예비 목적지가 등록되었습니다.') });
                                             }}
                                         >
-                                            {t('save', '등록')}
+                                            {t('save', '저장')}
                                         </Button>
-
                                         <Button
                                             type="button"
                                             variant="ghost"
                                             size="sm"
-                                            className="h-8 px-2 text-xs text-slate-500 shrink-0"
-                                            onClick={() => {
-                                                setIsAddingCustomDest(false);
-                                                setNewCustomDestId('');
-                                            }}
+                                            className="h-8 px-2 text-xs shrink-0"
+                                            onClick={() => { setIsAddingCustomDest(false); setNewCustomDestId(''); }}
                                         >
                                             {t('cancel', '취소')}
                                         </Button>
@@ -1217,16 +1228,19 @@ export const StudentGlobalSearchPanel = ({
                                             {weeklyAssignedRoutes.map(item => {
                                                 const dayLabel = t(`day_short.${item.day.toLowerCase()}`, item.day.slice(0, 3));
                                                 return (
-                                                    <div key={item.day} className="grid grid-cols-12 items-center py-1.5 px-3 hover:bg-slate-50 transition-colors text-center text-[11px]">
+                                                    <div key={item.day} className="grid grid-cols-12 items-center py-2 px-3 hover:bg-slate-50 transition-colors text-center text-[11px]">
                                                         {/* 요일명 */}
-                                                        <div className="col-span-2 text-left font-bold text-slate-800">
-                                                            {dayLabel}
+                                                        <div className="col-span-2 text-left font-bold text-slate-800 flex items-center gap-1">
+                                                            <span>{dayLabel}</span>
+                                                            {item.hasAfterSchoolCourse && (
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0" title="방과후 수강 요일" />
+                                                            )}
                                                         </div>
 
                                                         {/* 등교 */}
                                                         <div className="col-span-3 px-1">
                                                             {item.morning ? (
-                                                                <div className="inline-flex items-center justify-between w-full max-w-[130px] bg-sky-50 text-sky-800 border border-sky-200 rounded px-1.5 py-0.5 font-medium">
+                                                                <div className="inline-flex items-center justify-between w-full bg-sky-50 text-sky-800 border border-sky-200 rounded px-1.5 py-0.5 font-medium">
                                                                     <span className="truncate text-[10px]" title={`${item.morning.busName} (${item.morning.destName || t('none', '없음')})`}>
                                                                         {item.morning.busName}
                                                                     </span>
@@ -1248,19 +1262,26 @@ export const StudentGlobalSearchPanel = ({
                                                         {/* 하교 */}
                                                         <div className="col-span-3 px-1">
                                                             {item.afternoon ? (
-                                                                <div className="inline-flex items-center justify-between w-full max-w-[130px] bg-amber-50 text-amber-800 border border-amber-200 rounded px-1.5 py-0.5 font-medium">
-                                                                    <span className="truncate text-[10px]" title={`${item.afternoon.busName} (${item.afternoon.destName || t('none', '없음')})`}>
-                                                                        {item.afternoon.busName}
-                                                                    </span>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="icon"
-                                                                        className="h-4 w-4 ml-0.5 text-destructive/70 hover:text-destructive shrink-0"
-                                                                        onClick={() => handleUnassignStudentFromRoute(item.afternoon!.routeId, selectedGlobalStudent.id)}
-                                                                        title={t('unassign', '배정 해제')}
-                                                                    >
-                                                                        <UserX className="h-2.5 w-2.5" />
-                                                                    </Button>
+                                                                <div className="flex flex-col gap-0.5 items-center">
+                                                                    <div className="inline-flex items-center justify-between w-full bg-amber-50 text-amber-800 border border-amber-200 rounded px-1.5 py-0.5 font-medium">
+                                                                        <span className="truncate text-[10px]" title={`${item.afternoon.busName} (${item.afternoon.destName || t('none', '없음')})`}>
+                                                                            {item.afternoon.busName}
+                                                                        </span>
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="icon"
+                                                                            className="h-4 w-4 ml-0.5 text-destructive/70 hover:text-destructive shrink-0"
+                                                                            onClick={() => handleUnassignStudentFromRoute(item.afternoon!.routeId, selectedGlobalStudent.id)}
+                                                                            title={t('unassign', '배정 해제')}
+                                                                        >
+                                                                            <UserX className="h-2.5 w-2.5" />
+                                                                        </Button>
+                                                                    </div>
+                                                                    {item.hasAfterSchoolCourse && (
+                                                                        <span className="text-[9px] text-amber-700 bg-amber-100/80 px-1 rounded leading-tight font-medium" title="방과후 수강 요일에 정규 하교 버스에 배정되어 있습니다.">
+                                                                            방과후수강중
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                             ) : (
                                                                 <span className="text-slate-300 text-[10px]">{t('none', '없음')}</span>
@@ -1269,24 +1290,40 @@ export const StudentGlobalSearchPanel = ({
 
                                                         {/* 방과후 */}
                                                         <div className="col-span-4 px-1">
-                                                            {item.afterSchool ? (
-                                                                <div className="inline-flex items-center justify-between w-full max-w-[140px] bg-emerald-50 text-emerald-800 border border-emerald-200 rounded px-1.5 py-0.5 font-medium">
-                                                                    <span className="truncate text-[10px]" title={`${item.afterSchool.busName} (${item.afterSchool.destName || t('none', '없음')})`}>
-                                                                        {item.afterSchool.busName}
-                                                                    </span>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="icon"
-                                                                        className="h-4 w-4 ml-0.5 text-destructive/70 hover:text-destructive shrink-0"
-                                                                        onClick={() => handleUnassignStudentFromRoute(item.afterSchool!.routeId, selectedGlobalStudent.id)}
-                                                                        title={t('unassign', '배정 해제')}
+                                                            <div className="flex flex-col gap-1 items-center">
+                                                                {item.afterSchool ? (
+                                                                    <div className="inline-flex items-center justify-between w-full bg-emerald-50 text-emerald-800 border border-emerald-200 rounded px-1.5 py-0.5 font-medium">
+                                                                        <span className="truncate text-[10px] font-bold" title={`${item.afterSchool.busName} (${item.afterSchool.destName || t('none', '없음')})`}>
+                                                                            {item.afterSchool.busName}
+                                                                        </span>
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="icon"
+                                                                            className="h-4 w-4 ml-0.5 text-destructive/70 hover:text-destructive shrink-0"
+                                                                            onClick={() => handleUnassignStudentFromRoute(item.afterSchool!.routeId, selectedGlobalStudent.id)}
+                                                                            title={t('unassign', '배정 해제')}
+                                                                        >
+                                                                            <UserX className="h-2.5 w-2.5" />
+                                                                        </Button>
+                                                                    </div>
+                                                                ) : item.hasAfterSchoolCourse ? (
+                                                                    <div className="inline-flex items-center justify-center w-full bg-rose-50 text-rose-700 border border-rose-200 rounded px-1 py-0.5 text-[10px] font-semibold">
+                                                                        버스 미배정
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-slate-300 text-[10px]">{t('none', '없음')}</span>
+                                                                )}
+
+                                                                {/* 해당 요일 방과후 강좌명 뱃지 */}
+                                                                {item.dayCourseTitle && (
+                                                                    <div
+                                                                        className="w-full truncate text-[9.5px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 font-medium text-left"
+                                                                        title={`${item.dayCourseTitle}${item.dayInstructors ? ` (${item.dayInstructors})` : ''}`}
                                                                     >
-                                                                        <UserX className="h-2.5 w-2.5" />
-                                                                    </Button>
-                                                                </div>
-                                                            ) : (
-                                                                <span className="text-slate-300 text-[10px]">{t('none', '없음')}</span>
-                                                            )}
+                                                                        <span className="font-semibold">수업:</span> {item.dayCourseTitle}
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 );

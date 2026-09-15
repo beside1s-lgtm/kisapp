@@ -172,7 +172,8 @@ const AttendMarkCell: React.FC<{
 };
 
 // =========================================================
-// MobileMarkButton: 모바일 단일 차시 출결 버튼
+// MobileMarkButton: 모바일 단일 차시 출결 버튼 (1터치 즉시 순환 토글)
+// 미체크(·) -> 출석(○) -> 지각/개별(△) -> 결석(×) -> 미체크 순환
 // =========================================================
 const MobileMarkButton: React.FC<{
   studentId: string;
@@ -182,33 +183,12 @@ const MobileMarkButton: React.FC<{
   dropUp?: boolean;
 }> = ({ mark, onSelect, dropUp = false }) => {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const [shouldDropUp, setShouldDropUp] = useState(dropUp);
-  const ref = useRef<HTMLDivElement>(null);
-
-  const handleToggle = () => {
-    if (!open && ref.current) {
-      const rect = ref.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      // 드롭다운 높이가 약 180px이고 하단 네비바(약 60px) 고려 시 아래 공간이 220px 미만이면 위로 띄움
-      setShouldDropUp(dropUp || spaceBelow < 220);
-    }
-    setOpen((v) => !v);
-  };
-
-  useEffect(() => {
-    const handleOut = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    if (open) document.addEventListener('mousedown', handleOut);
-    return () => document.removeEventListener('mousedown', handleOut);
-  }, [open]);
 
   // 해당 요일 미수강 학생인 경우 비활성화 버튼 렌더링
   if (mark === '―') {
     return (
       <div
-        className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs bg-slate-100 text-slate-400 min-w-[80px] justify-center select-none border border-slate-200"
+        className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs bg-slate-100 text-slate-400 min-w-[78px] justify-center select-none border border-slate-200"
         title="수강 요일이 아닙니다 (주 1회 수강생)"
       >
         <span>{t('teacher_afterschool.mark_not_enrolled', '미수강 (―)')}</span>
@@ -216,50 +196,46 @@ const MobileMarkButton: React.FC<{
     );
   }
 
+  // 1터치 순환 토글 핸들러: 미체크('') -> 출석('O') -> 지각('V') -> 결석('X') -> 미체크('')
+  const handleCycleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!mark || mark === '' || mark === '―') {
+      onSelect('O');
+    } else if (mark === 'O' || mark === '○') {
+      onSelect('V');
+    } else if (mark === 'V' || mark === '△') {
+      onSelect('X');
+    } else {
+      onSelect('');
+    }
+  };
+
   const getDisplay = () => {
-    if (mark === 'O' || mark === '○') return { symbol: '○', bg: 'bg-emerald-500', text: 'text-white', label: t('teacher_afterschool.mark_attend', '출석') };
-    if (mark === 'V' || mark === '△') return { symbol: '△', bg: 'bg-purple-500', text: 'text-white', label: t('teacher_afterschool.mark_late', '지각') };
-    if (mark === 'X' || mark === '×') return { symbol: '×', bg: 'bg-rose-500', text: 'text-white', label: t('teacher_afterschool.mark_absent', '결석') };
-    return { symbol: '·', bg: 'bg-slate-100', text: 'text-slate-400', label: t('teacher_afterschool.mark_none', '미체크') };
+    if (mark === 'O' || mark === '○') {
+      return { symbol: '○', bg: 'bg-emerald-500 hover:bg-emerald-600', text: 'text-white border-emerald-600', label: t('teacher_afterschool.mark_attend', '출석') };
+    }
+    if (mark === 'V' || mark === '△') {
+      return { symbol: '△', bg: 'bg-purple-600 hover:bg-purple-700', text: 'text-white border-purple-700', label: t('teacher_afterschool.mark_late', '지각/개별') };
+    }
+    if (mark === 'X' || mark === '×') {
+      return { symbol: '×', bg: 'bg-rose-500 hover:bg-rose-600', text: 'text-white border-rose-600', label: t('teacher_afterschool.mark_absent', '결석') };
+    }
+    return { symbol: '·', bg: 'bg-slate-100 hover:bg-slate-200', text: 'text-slate-500 border-slate-300', label: t('teacher_afterschool.mark_none', '미체크') };
   };
 
   const { symbol, bg, text, label } = getDisplay();
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={handleToggle}
-        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-sm transition ${bg} ${text} shadow-sm min-w-[80px] justify-center`}
-      >
-        <span className="text-base leading-none">{symbol}</span>
-        <span className="text-xs">{label}</span>
-      </button>
-
-      {open && (
-        <div className={`absolute z-50 right-0 ${
-          shouldDropUp ? 'bottom-full mb-1' : 'top-full mt-1'
-        } bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden min-w-[140px]`}>
-          {[
-            { val: 'O' as MarkSymbol, label: `○ ${t('teacher_afterschool.mark_attend', '출석')}`, cls: 'text-emerald-700 hover:bg-emerald-50' },
-            { val: 'V' as MarkSymbol, label: `△ ${t('teacher_afterschool.mark_late', '지각/개별하교')}`, cls: 'text-purple-700 hover:bg-purple-50' },
-            { val: 'X' as MarkSymbol, label: `× ${t('teacher_afterschool.mark_absent', '결석')}`, cls: 'text-rose-700 hover:bg-rose-50' },
-            { val: '' as MarkSymbol, label: `― ${t('teacher_afterschool.mark_none', '미체크')}`, cls: 'text-slate-500 hover:bg-slate-50' },
-          ].map((opt) => (
-            <button
-              key={opt.val}
-              className={`w-full text-left px-4 py-2.5 text-sm font-bold ${opt.cls} transition border-b border-slate-100 last:border-0`}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                onSelect(opt.val);
-                setOpen(false);
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <button
+      type="button"
+      onClick={handleCycleClick}
+      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-sm transition-all active:scale-95 shadow-2xs border min-w-[78px] justify-center cursor-pointer select-none ${bg} ${text}`}
+      title="탭하여 출석(○) -> 지각/개별(△) -> 결석(×) -> 미체크 순환 변경"
+    >
+      <span className="text-base leading-none font-black">{symbol}</span>
+      <span className="text-xs font-extrabold">{label}</span>
+    </button>
   );
 };
 

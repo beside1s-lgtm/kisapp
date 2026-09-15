@@ -1376,7 +1376,7 @@ export default function AdminPage() {
                 });
             });
 
-            // 통합 마스터 학생의 형제·자매 그룹 연동 (MasterStudent의 siblingGroupId 우선)
+            // 통합 마스터 학생의 형제·자매 그룹 및 출석번호 연동 (MasterStudent의 siblingGroupId, studentNum 우선)
             const matchedMaster = masterStudents.find(ms => {
                 if (studentEmail && ms.studentEmail && ms.studentEmail.toLowerCase().trim() === studentEmail) return true;
                 if (student.id && (ms.studentId === student.id || ms.id === student.id)) return true;
@@ -1385,9 +1385,11 @@ export default function AdminPage() {
             });
 
             const effectiveSiblingGroupId = matchedMaster?.siblingGroupId || student.siblingGroupId || null;
+            const effectiveNumber = matchedMaster?.studentNum ? String(matchedMaster.studentNum) : (student.number ? String(student.number) : ((student as any).studentNum ? String((student as any).studentNum) : ''));
 
             return {
                 ...student,
+                number: effectiveNumber,
                 siblingGroupId: effectiveSiblingGroupId,
                 afterSchoolCourseTitle: enrolledCourseTitles.join(', '),
                 afterSchoolCourseTitles: enrolledCourseTitles,
