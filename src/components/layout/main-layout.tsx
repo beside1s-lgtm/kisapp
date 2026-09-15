@@ -24,6 +24,7 @@ interface MainLayoutProps {
   title?: ReactNode;
   contentClassName?: string;
   hideMobileBottomNav?: boolean;
+  isFixedScreen?: boolean;
 }
 
 export const MainLayout: FC<MainLayoutProps> = ({ 
@@ -37,6 +38,7 @@ export const MainLayout: FC<MainLayoutProps> = ({
   title,
   contentClassName,
   hideMobileBottomNav = false,
+  isFixedScreen = false,
 }) => {
   const pathname = usePathname();
   const router = useRouter();
@@ -141,7 +143,7 @@ export const MainLayout: FC<MainLayoutProps> = ({
 
   const showHomeButton = pathname.startsWith('/admin') || pathname.startsWith('/teacher') || pathname === '/inbox';
   const homeHref = isInstructor ? '/teacher/afterschool' : '/';
-  const headerStickyClass = 'sticky top-0 z-30';
+  const headerStickyClass = 'sticky top-0 z-30 shrink-0';
   const headerRef = React.useRef<HTMLElement>(null);
 
   React.useEffect(() => {
@@ -163,7 +165,7 @@ export const MainLayout: FC<MainLayoutProps> = ({
   }, []);
 
   return (
-    <div className="flex flex-col min-h-screen bg-background w-full max-w-full min-w-0">
+    <div className="flex flex-col bg-background w-full max-w-full min-w-0 h-full max-h-full min-h-0 overflow-hidden overscroll-none">
        <header ref={headerRef} className={`${headerStickyClass} flex flex-col gap-1 border-b bg-card/95 px-2.5 sm:px-4 md:px-6 py-1.5 sm:py-2 backdrop-blur-md shadow-xs w-full max-w-full`}>
           {/* 모바일 뷰 (sm:hidden): 2줄 레이아웃 */}
           <div className="flex sm:hidden flex-col gap-1.5 w-full min-w-0">
@@ -304,7 +306,14 @@ export const MainLayout: FC<MainLayoutProps> = ({
             </div>
           )}
       </header>
-      <main className={cn("flex-1 w-full max-w-full min-w-0", (!hideMobileBottomNav && user) ? "pb-20 lg:pb-0" : "", contentClassName || "p-2 sm:p-4 md:p-6 lg:p-8")}>
+      <main className={cn(
+        "flex-1 w-full max-w-full min-w-0 min-h-0",
+        isFixedScreen
+          ? "flex flex-col overflow-hidden"
+          : "flex flex-col overflow-y-auto overscroll-contain",
+        contentClassName || "p-2 sm:p-4 md:p-6 lg:p-8",
+        !hideMobileBottomNav && (isFixedScreen ? "pb-16 lg:pb-0" : "pb-20 lg:pb-0")
+      )}>
         {children}
       </main>
       {!hideMobileBottomNav && <MobileBottomNav />}

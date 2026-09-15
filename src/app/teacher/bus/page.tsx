@@ -216,18 +216,32 @@ const AllStudentsBoardingStatus = ({ relevantRoutes, students, buses, allAttenda
     };
 
     return (
-        <Card className="border-none shadow-none lg:border lg:shadow-sm w-full h-full">
+        <Card id="all-students-boarding-section" className="border-none shadow-none lg:border lg:shadow-sm w-full h-full scroll-mt-20">
             <CardHeader className="px-2 py-3 sm:px-4 flex flex-row items-center justify-between space-y-0">
                 <CardTitle className="text-base sm:text-lg">{t('teacher_page.all_buses_view.title')}</CardTitle>
-                <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="h-8 text-xs flex items-center gap-1.5 shrink-0"
-                    onClick={handleCopyNotBoarded}
-                >
-                    <Copy className="h-3.5 w-3.5" />
-                    <span>{t('teacher_page.all_buses_view.copy_button') || '미탑승자 복사'}</span>
-                </Button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-8 px-2 sm:px-3 text-xs flex items-center gap-1.5 shrink-0"
+                        onClick={handleCopyNotBoarded}
+                        title={t('teacher_page.all_buses_view.copy_button') || '미탑승자 복사'}
+                    >
+                        <Copy className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">{t('teacher_page.all_buses_view.copy_button') || '미탑승자 복사'}</span>
+                    </Button>
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="lg:hidden h-8 w-8 p-0 text-amber-700 bg-amber-50/70 border-amber-200 hover:bg-amber-100 flex items-center justify-center shrink-0"
+                        onClick={() => {
+                            document.getElementById('all-group-leaders-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }}
+                        title={t('teacher_page.all_buses_view.goto_group_leaders') || '조장 현황 바로가기'}
+                    >
+                        <Crown className="h-4 w-4 text-amber-600 shrink-0" />
+                    </Button>
+                </div>
             </CardHeader>
             <CardContent className="px-1 sm:px-2 max-h-[70vh] overflow-y-auto">
                 <Table className="w-full">
@@ -631,10 +645,26 @@ const AllGroupLeadersStatus = ({ relevantRoutes, students, buses, formatStudentN
     };
 
     return (
-        <Card className="border-none shadow-none lg:border lg:shadow-sm w-full h-full">
+        <Card id="all-group-leaders-section" className="border-none shadow-none lg:border lg:shadow-sm w-full h-full scroll-mt-20">
             <CardHeader className="px-2 py-3 sm:px-4">
-                <div className="flex justify-between items-center">
-                    <CardTitle className="text-base sm:text-lg">{t('teacher_page.all_group_leaders_view.title')}</CardTitle>
+                <div className="flex justify-between items-center gap-2">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <CardTitle className="text-base sm:text-lg">
+                            <span className="sm:hidden">조장 현황</span>
+                            <span className="hidden sm:inline">{t('teacher_page.all_group_leaders_view.title')}</span>
+                        </CardTitle>
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="lg:hidden h-8 w-8 p-0 border-slate-200 hover:bg-slate-100 flex items-center justify-center shrink-0"
+                            onClick={() => {
+                                document.getElementById('all-students-boarding-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }}
+                            title={t('teacher_page.all_group_leaders_view.goto_boarding_list') || '명단 상단 ↑'}
+                        >
+                            <ArrowUp className="h-4 w-4 text-slate-700" />
+                        </Button>
+                    </div>
                     <div className="flex gap-1.5 sm:gap-2">
                         {selectedBusIds.size > 0 && (
                             <Button variant="destructive" size="sm" onClick={handleBulkDemote} className="h-8 px-2 animate-in fade-in slide-in-from-right-2">
@@ -1911,11 +1941,13 @@ export default function TeacherPage() {
   }, [rawNotBoardingStudentIds, homeroomAbsentStudentIds, selectedRouteType, afterschoolAbsentStudentIds]);
 
   useEffect(() => {
-    if (lastClickedStudentId) {
-        const s = students.find(x => x.id === lastClickedStudentId);
-        if (s) setSelectedStudent({ ...s, isGroupLeader: groupLeaderRecords.some(r => r.studentId === s.id && r.endDate === null) });
-    } else setSelectedStudent(null);
-  }, [lastClickedStudentId, students, groupLeaderRecords]);
+    if (selectedStudent) {
+      const s = students.find(x => x.id === selectedStudent.id);
+      if (s) {
+        setSelectedStudent(prev => prev ? ({ ...s, isGroupLeader: groupLeaderRecords.some(r => r.studentId === s.id && r.endDate === null) }) : null);
+      }
+    }
+  }, [students, groupLeaderRecords]);
 
   useEffect(() => {
     if (currentRoute) {
@@ -1965,18 +1997,26 @@ export default function TeacherPage() {
     const updates: any = {};
     
     if (isD) {
+      // 하차완료 -> 미탑승
       updates.disembarked = arrayRemove(sid);
+      updates.boarded = arrayRemove(sid);
     } else if (isB) {
+      // 탑승 -> 하차완료
       updates.boarded = arrayRemove(sid);
       updates.disembarked = arrayUnion(sid);
     } else {
+      // 미탑승 또는 오늘 안 탐 -> 탑승
       updates.boarded = arrayUnion(sid);
       updates.notBoarding = arrayRemove(sid);
+      updates.disembarked = arrayRemove(sid);
     }
     
-    await updateAttendance(currentRoute.id, selectedDate, updates)
-      .then(() => setLastClickedStudentId(sid))
-      .catch(() => toast({ title: t("error"), variant: "destructive" }));
+    try {
+      await updateAttendance(currentRoute.id, selectedDate, updates);
+    } catch (error) {
+      console.error("Failed to toggle attendance:", error);
+      toast({ title: t("error"), variant: "destructive" });
+    }
   }, [currentRoute, boardedStudentIds, disembarkedStudentIds, selectedDate, t, toast]);
 
   const handleMarkNotBoarding = useCallback(async () => {
@@ -3092,11 +3132,14 @@ updates.disembarked = arrayUnion(student.id);
                                             : (dayCourseInfo?.title ? `[${dayCourseInfo.title.slice(0, 3)}]${dayCourseInfo.teachersText || ''}` : '');
 
                                         return (
-                                            <TableRow key={s.id} onClick={() => handleStudentRowClick(s.id)} className={cn("cursor-pointer hover:bg-accent/50 transition-colors", lastClickedStudentId === s.id && "bg-accent/70")}>
-                                                <TableCell className="px-2 py-3 whitespace-nowrap font-medium text-sm">
+                                            <TableRow key={s.id} className={cn("hover:bg-accent/50 transition-colors group select-none", (selectedStudent?.id === s.id || lastClickedStudentId === s.id) && "bg-accent/70")}>
+                                                <TableCell 
+                                                    className="px-2 py-3 whitespace-nowrap font-medium text-sm cursor-pointer"
+                                                    onClick={() => handleStudentRowClick(s.id)}
+                                                >
                                                     <div className="flex flex-col">
                                                         <span className="flex items-center gap-1.5 flex-wrap">
-                                                            <span className="font-bold text-slate-900">{formatStudentName(s)}</span>
+                                                            <span className="font-bold text-slate-900 group-hover:text-primary transition-colors">{formatStudentName(s)}</span>
                                                             {groupLeaderRecords.some(r => r.studentId === s.id && r.endDate === null) && <Crown className="inline-block w-3.5 h-3.5 text-yellow-500" />}
                                                             {asBadgeText && (
                                                                 <span className="text-[10px] bg-slate-100 text-slate-600 px-1 py-0.5 rounded font-normal">
@@ -3109,19 +3152,29 @@ updates.disembarked = arrayUnion(student.id);
                                                         </span>
                                                     </div>
                                                 </TableCell>
-                                            <TableCell className="px-2 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                                                <Badge 
-                                                    variant={boardedStudentIds.includes(s.id) ? 'default' : (notBoardingStudentIds.includes(s.id) ? 'destructive' : (disembarkedStudentIds.includes(s.id) ? 'outline' : 'secondary'))}
-                                                    className={cn(
-                                                        "cursor-pointer select-none text-xs font-bold transition-all active:scale-95 shadow-2xs",
-                                                        "h-8 sm:h-8 px-3.5 sm:px-4 py-1 rounded-lg inline-flex items-center justify-center whitespace-nowrap min-w-[70px]"
-                                                    )}
-                                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleStudentAttendance(s.id); }}
+                                                <TableCell 
+                                                    className="px-2 py-3 text-right" 
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                    }}
                                                 >
-                                                    {t(`teacher_page.status_${boardedStudentIds.includes(s.id) ? 'boarded' : (notBoardingStudentIds.includes(s.id) ? 'not_riding_today' : (disembarkedStudentIds.includes(s.id) ? 'disembarked' : 'not_boarded'))}`)}
-                                                </Badge>
-                                            </TableCell>
-                                        </TableRow>
+                                                    <Badge 
+                                                        variant={boardedStudentIds.includes(s.id) ? 'default' : (notBoardingStudentIds.includes(s.id) ? 'destructive' : (disembarkedStudentIds.includes(s.id) ? 'outline' : 'secondary'))}
+                                                        className={cn(
+                                                            "cursor-pointer select-none text-xs font-bold transition-all active:scale-95 shadow-2xs",
+                                                            "h-8 sm:h-8 px-3.5 sm:px-4 py-1 rounded-lg inline-flex items-center justify-center whitespace-nowrap min-w-[70px]"
+                                                        )}
+                                                        onClick={(e) => { 
+                                                            e.preventDefault(); 
+                                                            e.stopPropagation(); 
+                                                            toggleStudentAttendance(s.id); 
+                                                        }}
+                                                    >
+                                                        {t(`teacher_page.status_${boardedStudentIds.includes(s.id) ? 'boarded' : (notBoardingStudentIds.includes(s.id) ? 'not_riding_today' : (disembarkedStudentIds.includes(s.id) ? 'disembarked' : 'not_boarded'))}`)}
+                                                    </Badge>
+                                                </TableCell>
+                                            </TableRow>
                                         );
                                     })}
                                 </TableBody>
@@ -3180,7 +3233,7 @@ updates.disembarked = arrayUnion(student.id);
                         </CardHeader>
                         <CardContent>
                             {selectedBus && currentRoute ? (
-                                <BusSeatMap bus={selectedBus} seating={currentRoute.seating} students={students} destinations={destinations} onSeatClick={handleSeatClick} onSeatContextMenu={handleSeatContextMenu} highlightedSeatNumber={swapSourceSeat || (lastClickedStudentId ? currentRoute.seating.find(s => s.studentId === lastClickedStudentId)?.seatNumber : null)} boardedStudentIds={boardedStudentIds} notBoardingStudentIds={notBoardingStudentIds} routeType={selectedRouteType} dayOfWeek={selectedDay} groupLeaderRecords={groupLeaderRecords}/>
+                                <BusSeatMap bus={selectedBus} seating={currentRoute.seating} students={students} destinations={destinations} onSeatClick={handleSeatClick} onSeatContextMenu={handleSeatContextMenu} highlightedSeatNumber={swapSourceSeat || (selectedStudent ? currentRoute.seating.find(s => s.studentId === selectedStudent.id)?.seatNumber : (lastClickedStudentId ? currentRoute.seating.find(s => s.studentId === lastClickedStudentId)?.seatNumber : null))} boardedStudentIds={boardedStudentIds} notBoardingStudentIds={notBoardingStudentIds} routeType={selectedRouteType} dayOfWeek={selectedDay} groupLeaderRecords={groupLeaderRecords}/>
                             ) : (
                                 <div className="text-center py-10 text-muted-foreground">{t('teacher_page.no_route_info')}</div>
                             )}

@@ -173,10 +173,20 @@ export default function ClassAnalytics({
     if (selectedGrade) {
       let students = allStudents.filter((s) => s.grade === selectedGrade);
       if (selectedClassNum !== "all") students = students.filter((s) => s.classNum === selectedClassNum);
+      if (searchTerm.trim()) {
+        students = students.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase().trim()));
+      }
       return students.sort((a, b) => parseInt(a.studentNum) - parseInt(b.studentNum));
     }
+    if (searchTerm.trim()) {
+      return allStudents.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase().trim())).sort((a, b) => {
+        if (a.grade !== b.grade) return parseInt(a.grade) - parseInt(b.grade);
+        if (a.classNum !== b.classNum) return parseInt(a.classNum) - parseInt(b.classNum);
+        return parseInt(a.studentNum) - parseInt(b.studentNum);
+      });
+    }
     return [];
-  }, [allStudents, selectedGrade, selectedClassNum, selectedClubId, sportsClubs]);
+  }, [allStudents, selectedGrade, selectedClassNum, selectedClubId, sportsClubs, searchTerm]);
 
   const handleSelectStudent = (student: Student) => {
     setSelectedStudent(student);
@@ -396,36 +406,50 @@ export default function ClassAnalytics({
   }, [growthData]);
 
   return (
-    <div className="w-full space-y-3">
-      {/* 슬림 검색 및 필터 컨트롤 바 */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5 bg-white p-2 sm:p-2.5 rounded-xl border border-slate-200/90 shadow-xs">
-        <div className="flex flex-wrap items-center gap-1.5 grow">
-          <div className="flex items-center gap-1">
-            <Input placeholder="학생 이름 검색..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} className="w-32 sm:w-44 h-8 text-xs bg-slate-50" />
-            <Button size="sm" onClick={handleSearch} className="h-8 text-xs px-2.5 font-bold"><Search className="mr-1 h-3.5 w-3.5" /> 검색</Button>
-          </div>
-          <span className="text-slate-400 text-xs hidden sm:inline">|</span>
+    <div className="w-full h-full flex flex-col flex-1 min-h-0 space-y-1 sm:space-y-1.5 overflow-hidden">
+      {/* 슬림 검색 및 필터 컨트롤 바 (물리적 shrink-0 고정) */}
+      <div className="shrink-0 z-20 pt-0 pb-1 px-0.5">
+        <div className="flex items-center gap-1 sm:gap-1.5 bg-white p-1.5 sm:p-2.5 rounded-xl border border-slate-200/90 shadow-xs w-full flex-nowrap overflow-x-auto no-scrollbar">
+          <Input 
+            placeholder="학생 이름" 
+            value={searchTerm} 
+            onChange={e => setSearchTerm(e.target.value)} 
+            onKeyDown={e => e.key === 'Enter' && handleSearch()} 
+            className="w-[78px] sm:w-44 h-8 text-xs bg-slate-50 px-2 shrink-0" 
+          />
+          <Button size="sm" onClick={handleSearch} className="h-8 w-8 p-0 sm:w-auto sm:px-2.5 text-xs font-bold shrink-0">
+            <Search className="h-3.5 w-3.5 sm:mr-1" />
+            <span className="hidden sm:inline">검색</span>
+          </Button>
+          <span className="text-slate-400 text-xs hidden sm:inline shrink-0">|</span>
           <Select value={selectedGrade} onValueChange={v => { setSelectedGrade(v); setSelectedClubId(""); setSelectedClassNum("all"); setSelectedStudent(null); }}>
-            <SelectTrigger className="w-[72px] h-8 text-xs bg-slate-50"><SelectValue placeholder="학년" /></SelectTrigger>
+            <SelectTrigger className="w-[48px] sm:w-[72px] h-8 text-xs bg-slate-50 [&_svg]:hidden sm:[&_svg]:block px-1 sm:px-2 shrink-0">
+              <SelectValue placeholder="학년" />
+            </SelectTrigger>
             <SelectContent>{grades.map(g=><SelectItem key={g} value={g}>{g}학년</SelectItem>)}</SelectContent>
           </Select>
           <Select value={selectedClassNum} onValueChange={v => { setSelectedClassNum(v); setSelectedStudent(null); }} disabled={!selectedGrade}>
-            <SelectTrigger className="w-[62px] h-8 text-xs bg-slate-50"><SelectValue placeholder="반" /></SelectTrigger>
+            <SelectTrigger className="w-[40px] sm:w-[62px] h-8 text-xs bg-slate-50 [&_svg]:hidden sm:[&_svg]:block px-1 sm:px-2 shrink-0">
+              <SelectValue placeholder="반" />
+            </SelectTrigger>
             <SelectContent><SelectItem value="all">전체</SelectItem>{classNumsByGrade[selectedGrade]?.map(c=><SelectItem key={c} value={c}>{c}반</SelectItem>)}</SelectContent>
           </Select>
           <Select value={selectedClubId} onValueChange={v => { setSelectedClubId(v); setSelectedGrade(""); setSelectedStudent(null); }}>
-            <SelectTrigger className="w-[120px] h-8 text-xs bg-slate-50"><SelectValue placeholder="클럽 선택" /></SelectTrigger>
+            <SelectTrigger className="w-[56px] sm:w-[120px] h-8 text-xs bg-slate-50 [&_svg]:hidden sm:[&_svg]:block px-1 sm:px-2 shrink-0">
+              <SelectValue placeholder="클럽" />
+            </SelectTrigger>
             <SelectContent>{sportsClubs.map(c=><SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
           </Select>
-          {(selectedGrade || selectedClubId || selectedStudent) && (
-            <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-slate-500" onClick={() => { setSelectedGrade(""); setSelectedClubId(""); setSelectedStudent(null); setSearchTerm(""); }}>
-              <XIcon className="h-3.5 w-3.5 mr-1" /> 초기화
+          {(selectedGrade || selectedClubId || selectedStudent || searchTerm) && (
+            <Button variant="ghost" size="sm" className="h-8 px-1.5 sm:px-2 text-xs text-slate-500 shrink-0" onClick={() => { setSelectedGrade(""); setSelectedClubId(""); setSelectedStudent(null); setSearchTerm(""); }}>
+              <XIcon className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">초기화</span>
             </Button>
           )}
         </div>
       </div>
 
-      <CardContent className="space-y-8">
+      <div className="flex-1 min-h-0 flex flex-col space-y-3 p-0 px-0.5 sm:px-0 overflow-y-auto overscroll-contain scrollbar-thin">
         {(selectedGrade || selectedClubId || selectedStudent) && (
           <div className="space-y-8">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -637,40 +661,40 @@ export default function ClassAnalytics({
           </div>
         )}
 
-        <div className="border rounded-md shadow-sm">
-          <Table>
-            <TableHeader className="bg-muted/30">
-              <TableRow>
-                <TableHead>번호</TableHead>
-                <TableHead>이름</TableHead>
-                <TableHead>성별</TableHead>
-                <TableHead className="text-right">작업</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+        <div className="border rounded-md shadow-sm bg-white shrink-0">
+          <table className="w-full text-xs text-left border-collapse">
+            <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700 font-bold border-b border-slate-200 shadow-xs">
+              <tr className="h-9">
+                <th className="w-[52px] text-center p-1 font-bold">번호</th>
+                <th className="p-1 pl-2 font-bold">이름</th>
+                <th className="w-[60px] text-center p-1 font-bold">성별</th>
+                <th className="w-[95px] text-right p-1 pr-3 font-bold">작업</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
               {filteredStudents.length > 0 ? (
                 filteredStudents.map(s => (
-                  <TableRow key={s.id} className={cn(selectedStudent?.id === s.id && "bg-primary/5 font-bold")}>
-                    <TableCell>{s.studentNum}</TableCell>
-                    <TableCell>
-                        <div className="flex flex-col">
-                            <span className="font-bold">{s.name}</span>
-                            <span className="text-[10px] text-muted-foreground">{s.grade}학년 {s.classNum}반</span>
-                        </div>
-                    </TableCell>
-                    <TableCell>{s.gender}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="link" size="sm" onClick={() => handleSelectStudent(s)} className="font-bold">분석 & 관리</Button>
-                    </TableCell>
-                  </TableRow>
+                  <tr key={s.id} className={cn("hover:bg-slate-50/80 transition-colors h-11", selectedStudent?.id === s.id && "bg-primary/5 font-bold")}>
+                    <td className="text-center font-medium py-1 px-1 text-xs">{s.studentNum}</td>
+                    <td className="py-1 px-2">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-xs text-slate-900">{s.name}</span>
+                        <span className="text-[10px] text-muted-foreground">{s.grade}학년 {s.classNum}반</span>
+                      </div>
+                    </td>
+                    <td className="text-center py-1 px-1 text-xs">{s.gender}</td>
+                    <td className="text-right py-1 pr-3">
+                      <Button variant="link" size="sm" onClick={() => handleSelectStudent(s)} className="font-bold text-xs h-7 px-1">분석 & 관리</Button>
+                    </td>
+                  </tr>
                 ))
               ) : (
-                <TableRow><TableCell colSpan={4} className="h-24 text-center text-muted-foreground">대상을 선택하거나 이름을 검색해주세요.</TableCell></TableRow>
+                <tr><td colSpan={4} className="h-24 text-center text-muted-foreground">대상을 선택하거나 이름을 검색해주세요.</td></tr>
               )}
-            </TableBody>
-          </Table>
+            </tbody>
+          </table>
         </div>
-      </CardContent>
+      </div>
     </div>
   );
 }

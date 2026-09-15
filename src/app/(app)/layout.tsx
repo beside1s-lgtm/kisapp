@@ -50,7 +50,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider>
-      <div className="h-screen max-h-screen overflow-hidden flex flex-col bg-background text-foreground font-body w-full max-w-full">
+      <div className="h-screen max-h-screen overflow-hidden flex flex-col bg-background text-foreground font-body w-full max-w-full overscroll-none">
         <div className="print:hidden w-full max-w-full shrink-0 z-50 hidden sm:block">
           <AppHeader />
         </div>
@@ -58,8 +58,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="print:hidden shrink-0 h-full">
             <AppSidebar />
           </div>
-          <main className="flex-1 min-w-0 w-full max-w-full h-full pb-20 lg:pb-0 overflow-y-auto lg:overflow-hidden print:p-0 print:m-0 print:block flex flex-col justify-between">
-            <div className="flex-1 min-w-0 w-full lg:min-h-0 lg:flex lg:flex-col lg:overflow-y-auto">
+          <main className="flex-1 min-w-0 w-full max-w-full h-full print:p-0 print:m-0 print:block flex flex-col justify-between overflow-hidden pb-0 overscroll-none">
+            <div className="flex-1 min-w-0 w-full h-full min-h-0 flex flex-col overflow-hidden">
               {children}
             </div>
             {/* 개인정보처리방침 푸터는 넓은 화면(데스크톱)에서만 바닥에 고정 노출되고, 모바일에서는 하단 네비게이션이 대신하므로 숨김 */}

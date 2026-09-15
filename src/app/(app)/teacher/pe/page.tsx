@@ -297,15 +297,67 @@ export default function TeacherPePage() {
     });
   }, [school]);
 
-  const [mainCategory, setMainCategory] = useState<'measurement' | 'competition' | 'theory' | 'data'>('measurement');
-  const [subCategory, setSubCategory] = useState<string>('input');
+  const [mainCategory, setMainCategory] = useState<'measurement' | 'competition' | 'theory' | 'data'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const qCat = params.get('cat');
+        if (qCat && ['measurement', 'competition', 'theory', 'data'].includes(qCat)) return qCat as any;
+        const saved = sessionStorage.getItem('kis_pe_last_main_cat');
+        if (saved && ['measurement', 'competition', 'theory', 'data'].includes(saved)) return saved as any;
+      } catch (e) {}
+    }
+    return 'measurement';
+  });
+
+  const [subCategory, setSubCategory] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const qSub = params.get('sub');
+        if (qSub) return qSub;
+        const saved = sessionStorage.getItem('kis_pe_last_sub_cat');
+        if (saved) return saved;
+      } catch (e) {}
+    }
+    return 'input';
+  });
 
   const handleMainCategoryChange = (val: 'measurement' | 'competition' | 'theory' | 'data') => {
     setMainCategory(val);
-    if (val === 'measurement') setSubCategory('input');
-    else if (val === 'competition') setSubCategory(pePerms.isHomeroomOnly ? 'balancer' : 'events');
-    else if (val === 'theory') setSubCategory('theory');
-    else if (val === 'data') setSubCategory('data');
+    try {
+      sessionStorage.setItem('kis_pe_last_main_cat', val);
+    } catch (e) {}
+
+    let nextSub = 'input';
+    if (val === 'measurement') nextSub = 'input';
+    else if (val === 'competition') nextSub = pePerms.isHomeroomOnly ? 'balancer' : 'events';
+    else if (val === 'theory') nextSub = 'theory';
+    else if (val === 'data') nextSub = 'data';
+
+    setSubCategory(nextSub);
+    try {
+      sessionStorage.setItem('kis_pe_last_sub_cat', nextSub);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('cat', val);
+        url.searchParams.set('sub', nextSub);
+        window.history.replaceState({}, '', url.toString());
+      }
+    } catch (e) {}
+  };
+
+  const handleSubCategoryChange = (val: string) => {
+    setSubCategory(val);
+    try {
+      sessionStorage.setItem('kis_pe_last_sub_cat', val);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('cat', mainCategory);
+        url.searchParams.set('sub', val);
+        window.history.replaceState({}, '', url.toString());
+      }
+    } catch (e) {}
   };
 
   const subOptions = useMemo(() => {
@@ -415,13 +467,14 @@ export default function TeacherPePage() {
   return (
     <MainLayout
       title="학교 체육 성장 기록"
-      contentClassName="p-2 sm:p-4"
+      isFixedScreen={true}
+      contentClassName="p-1 sm:p-3 flex flex-col flex-1 min-h-0 overflow-hidden"
     >
-      <div className="w-full max-w-7xl mx-auto space-y-2 pb-1">
+      <div className="w-full h-full max-w-7xl mx-auto flex flex-col flex-1 min-h-0 space-y-1.5 sm:space-y-2 overflow-hidden">
         {/* 1. 컴팩트 헤더: 제목 + 단계별 드롭다운 메뉴 + 설정/AI 액션 버튼 (직선 접기 지원) */}
       {isHeaderCollapsed ? (
         /* 접힘 상태: 얇은 직선 구분선 + 우측 아래 살짝 돌출된 수직 4mm 역세모(▼) 탭 */
-        <div className="relative w-full pt-1 pb-2 group">
+        <div className="relative w-full pt-1 pb-1.5 group shrink-0 z-20 bg-background/80 backdrop-blur-xs">
           <div className="h-[1.5px] w-full bg-slate-200 group-hover:bg-indigo-300 transition-colors rounded-full" />
           <button
             type="button"
@@ -433,19 +486,19 @@ export default function TeacherPePage() {
           </button>
         </div>
       ) : (
-        /* 펼침 상태: 전체 컨트롤 바 */
-        <div className="bg-white px-3.5 py-2.5 rounded-2xl border border-slate-200/90 shadow-xs transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5">
+        /* 펼침 상태: 전체 컨트롤 바 (모바일 1줄 컴팩트 + 물리적 shrink-0 고정) */
+        <div className="bg-white px-2 py-1.5 sm:px-3.5 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-200/90 shadow-xs transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-1.5 sm:gap-2.5 shrink-0 z-20">
             {/* 좌측: 타이틀 & 담당 학생수 요약 배지 */}
-            <div className="flex items-center gap-2 shrink-0">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-600 to-indigo-800 flex items-center justify-center text-white shadow-xs">
-                <Activity className="w-4 h-4" />
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-gradient-to-br from-indigo-600 to-indigo-800 flex items-center justify-center text-white shadow-xs shrink-0">
+                <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
                 <h1 className="hidden sm:inline-block text-sm sm:text-base font-black text-slate-900 whitespace-nowrap">학교 체육 성장 기록</h1>
                 {pePerms.isHomeroomOnly && pePerms.homeroom ? (
                   <Badge
                     variant="outline"
-                    className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border-emerald-300 px-2 py-0.5 flex items-center gap-1 shadow-2xs"
+                    className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border-emerald-300 px-1.5 sm:px-2 py-0.5 flex items-center gap-1 shadow-2xs"
                   >
                     <GraduationCap className="w-3 h-3 text-emerald-600" />
                     {pePerms.homeroom.grade}학년 {pePerms.homeroom.classNum}반 담임 ({filteredStudents.length}명)
@@ -454,7 +507,7 @@ export default function TeacherPePage() {
                   <Badge
                     variant="outline"
                     onClick={() => setIsSettingsOpen(true)}
-                    className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200 px-2 py-0.5 cursor-pointer hover:bg-indigo-100 transition-colors"
+                    className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200 px-1.5 sm:px-2 py-0.5 cursor-pointer hover:bg-indigo-100 transition-colors truncate max-w-[280px] sm:max-w-none"
                     title="클릭하여 담당 학년 설정"
                   >
                     {assignedGrades.length > 0 ? (
@@ -467,13 +520,13 @@ export default function TeacherPePage() {
               </div>
             </div>
 
-            {/* 우측/중앙: 1단계 대메뉴 + 2단계 세부기능 드롭다운 + 설정/AI/새로고침/접기 버튼 */}
-            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap justify-start md:justify-end w-full md:w-auto">
+            {/* 우측/중앙: 1단계 대메뉴 + 2단계 세부기능 드롭다운 + 설정/AI/새로고침/접기 버튼 - 모바일 1줄 배치 */}
+            <div className="flex items-center gap-1 sm:gap-2 flex-nowrap justify-between md:justify-end w-full md:w-auto overflow-hidden">
               {/* 1단계 대메뉴 선택 */}
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 shrink-0">
                 <span className="text-[11px] font-bold text-slate-500 whitespace-nowrap hidden sm:inline">구분:</span>
                 <Select value={mainCategory} onValueChange={(v) => handleMainCategoryChange(v as any)}>
-                  <SelectTrigger className="w-[120px] sm:w-[130px] h-8 px-2.5 text-xs font-bold bg-slate-50 border-slate-300 focus:ring-1 shrink-0">
+                  <SelectTrigger className="w-[78px] sm:w-[130px] h-7 sm:h-8 px-1.5 sm:px-2.5 text-[11px] sm:text-xs font-bold bg-slate-50 border-slate-300 focus:ring-1 shrink-0 [&_svg]:hidden sm:[&_svg]:block">
                     <SelectValue placeholder="메뉴 선택" />
                   </SelectTrigger>
                   <SelectContent>
@@ -488,10 +541,10 @@ export default function TeacherPePage() {
               </div>
 
               {/* 2단계 세부기능 선택 */}
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 shrink-0">
                 <span className="text-[11px] font-bold text-slate-500 whitespace-nowrap hidden sm:inline">기능:</span>
-                <Select value={subCategory} onValueChange={setSubCategory}>
-                  <SelectTrigger className="w-[125px] sm:w-[145px] h-8 px-2.5 text-xs font-bold bg-indigo-50/70 border-indigo-200 text-indigo-900 focus:ring-1 shrink-0">
+                <Select value={subCategory} onValueChange={handleSubCategoryChange}>
+                  <SelectTrigger className="w-[84px] sm:w-[145px] h-7 sm:h-8 px-1.5 sm:px-2.5 text-[11px] sm:text-xs font-bold bg-indigo-50/70 border-indigo-200 text-indigo-900 focus:ring-1 shrink-0 [&_svg]:hidden sm:[&_svg]:block">
                     <SelectValue placeholder="세부 기능" />
                   </SelectTrigger>
                   <SelectContent>
@@ -510,7 +563,7 @@ export default function TeacherPePage() {
                   variant="outline"
                   size="sm"
                   onClick={() => setIsSettingsOpen(true)}
-                  className="h-8 px-2.5 text-xs font-bold text-indigo-700 bg-indigo-50/60 border-indigo-200 hover:bg-indigo-100 shrink-0 flex items-center gap-1"
+                  className="h-7 w-7 sm:h-8 sm:w-auto sm:px-2.5 p-0 sm:py-2 text-xs font-bold text-indigo-700 bg-indigo-50/60 border-indigo-200 hover:bg-indigo-100 shrink-0 flex items-center justify-center gap-1"
                   title="체육 교과 담당 학년 설정"
                 >
                   <Settings2 className="w-3.5 h-3.5" />
@@ -523,20 +576,20 @@ export default function TeacherPePage() {
                 variant="default"
                 size="sm"
                 onClick={() => setIsAiCenterOpen(true)}
-                className="h-8 px-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold rounded-lg shadow-xs text-xs flex items-center gap-1 shrink-0 ml-auto md:ml-0"
+                className="h-7 px-1.5 sm:h-8 sm:px-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold rounded-lg shadow-xs text-[11px] sm:text-xs flex items-center gap-0.5 sm:gap-1 shrink-0"
               >
-                <Bot className="w-3.5 h-3.5 text-amber-300" />
+                <Bot className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-300" />
                 <span className="hidden lg:inline">AI 인텔리전스</span>
-                <span className="lg:hidden">AI</span>
+                <span className="lg:hidden text-[11px]">AI</span>
               </Button>
 
-              {/* 새로고침 */}
+              {/* 새로고침 / 동기화 */}
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => loadData(true)}
                 disabled={isRefreshing}
-                className="h-8 px-2 text-xs text-slate-700 border-slate-200 shrink-0"
+                className="h-7 w-7 sm:h-8 sm:w-auto sm:px-2 p-0 text-xs text-slate-700 border-slate-200 shrink-0 flex items-center justify-center"
                 title="데이터 새로고침"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -547,17 +600,17 @@ export default function TeacherPePage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setIsHeaderCollapsed(true)}
-                className="h-8 px-2 text-xs text-slate-500 hover:text-slate-900 hover:bg-slate-100 shrink-0"
+                className="h-7 w-6 sm:h-8 sm:w-auto sm:px-2 p-0 text-xs text-slate-500 hover:text-slate-900 hover:bg-slate-100 shrink-0 flex items-center justify-center"
                 title="상단 메뉴 접기 (화면 세로 공간 확보)"
               >
-                <ChevronUp className="w-4 h-4" />
+                <ChevronUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </Button>
             </div>
           </div>
         )}
 
       {/* 2. 메인 작업 영역 (담당 학년 필터링된 학생 데이터 전달) */}
-      <div className="w-full">
+      <div className="w-full flex-1 min-h-0 flex flex-col overflow-hidden">
         {mainCategory === 'measurement' && subCategory === 'input' && (
           <RecordInput
             allStudents={filteredStudents}

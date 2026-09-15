@@ -70,7 +70,7 @@ const papsFactors: Record<string, string> = {
     '체질량지수(BMI)': '체질량지수(BMI)',
 };
 
-const factorOrder = ['학년', '반', '번호', '이름', '성별', '심폐지구력', '유연성', '근력/근지구력', '순발력', '체질량지수(BMI)', '종합'];
+const factorOrder = ['번호', '이름', '성별', '심폐지구력', '유연성', '근력/근지구력', '순발력', '체질량지수(BMI)', '종합'];
 
 
 export default function RecordBrowser({
@@ -82,6 +82,7 @@ export default function RecordBrowser({
   const { toast } = useToast();
   const { user } = useAuth(); const school = 'KISH';
 
+  const [activeTab, setActiveTab] = useState<'paps' | 'item'>('paps');
   const [gradeFilter, setGradeFilter] = useState('all');
   const [classNumFilter, setClassNumFilter] = useState('all');
   const [selectedClubId, setSelectedClubId] = useState('all');
@@ -89,8 +90,6 @@ export default function RecordBrowser({
   const [viewType, setViewType] = useState<ViewType>('grade');
   
   const [papsSort, setPapsSort] = useState<SortDescriptor[]>([
-    { column: '학년', direction: 'ascending'},
-    { column: '반', direction: 'ascending'},
     { column: '번호', direction: 'ascending'}
   ]);
 
@@ -102,8 +101,6 @@ export default function RecordBrowser({
   const [isDeleting, setIsDeleting] = useState(false);
   
   const [itemSort, setItemSort] = useState<SortDescriptor[]>([
-    { column: 'grade', direction: 'ascending' },
-    { column: 'classNum', direction: 'ascending' },
     { column: 'studentNum', direction: 'ascending' }
   ]);
   
@@ -612,357 +609,414 @@ export default function RecordBrowser({
     
     const sort = sortState[sortIndex];
     return (
-        <span className="ml-1 text-xs font-normal">
-            {sortState.length > 1 && <span className="text-muted-foreground mr-1">{sortIndex + 1}</span>}
+        <span className="hidden sm:inline-block ml-0.5 text-[10px] font-normal">
+            {sortState.length > 1 && <span className="text-muted-foreground mr-0.5">{sortIndex + 1}</span>}
             {sort.direction === 'ascending' ? '▲' : '▼'}
         </span>
     );
-};
+  };
 
+
+  const getDisplayHeader = (key: string) => {
+    const cleanKey = key.replace(/점수|등급/g, '');
+    if (cleanKey === '심폐지구력') return '심폐';
+    if (cleanKey === '근력/근지구력') return '근력';
+    if (cleanKey === '체질량지수(BMI)') return 'BMI';
+    if (cleanKey === '종합') return viewType === 'score' ? '종합' : '등급';
+    return cleanKey.slice(0, 4);
+  };
+
+  const getDisplayCellValue = (val: any) => {
+    if (val === null || val === undefined || val === '') return '-';
+    const str = String(val);
+    return str.length > 4 ? str.slice(0, 4) : str;
+  };
 
   return (
-    <div className="w-full space-y-2">
-      <Tabs defaultValue="paps" className="w-full">
-        {/* 슬림 컨트롤 상단 바 */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-slate-200/90 shadow-xs mb-2">
-          <TabsList className="h-7 sm:h-8 p-0.5 bg-slate-100 border border-slate-200">
-            <TabsTrigger value="paps" className="text-xs font-bold px-3 py-1">PAPS 종합</TabsTrigger>
-            <TabsTrigger value="item" className="text-xs font-bold px-3 py-1">종목별 기록</TabsTrigger>
+    <div className="w-full space-y-1.5">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'paps' | 'item')} className="w-full">
+        {/* 슬림 컨트롤 상단 바: 탭 버튼 + 우측 액션 버튼 3종(인쇄, 내려받기, 클라우드 저장) */}
+        <div className="flex items-center justify-between gap-1.5 bg-white p-1.5 sm:p-2 rounded-xl border border-slate-200/90 shadow-xs mb-1.5">
+          <TabsList className="h-7 sm:h-8 p-0.5 bg-slate-100 border border-slate-200 shrink-0">
+            <TabsTrigger value="paps" className="text-xs font-bold px-2.5 sm:px-3 py-1">PAPS 종합</TabsTrigger>
+            <TabsTrigger value="item" className="text-xs font-bold px-2.5 sm:px-3 py-1">종목별 기록</TabsTrigger>
           </TabsList>
+
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+            <Button
+              onClick={() => setIsPrintDialogOpen(true)}
+              variant="outline"
+              size="sm"
+              className="h-7 sm:h-8 px-2 sm:px-2.5 text-xs font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 shadow-2xs gap-1 cursor-pointer"
+              title="PAPS 개인별/학급별 건강체력평가 결과 통지표 인쇄"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">통지표 인쇄</span>
+            </Button>
+            <Button 
+              onClick={activeTab === 'paps' ? handlePapsDownloadExcel : handleItemDownloadExcel} 
+              variant="outline" 
+              size="sm" 
+              className="h-7 sm:h-8 px-2 text-xs" 
+              disabled={activeTab === 'item' && !selectedItem}
+              title="PC로 엑셀 다운로드"
+            >
+              <FileDown className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">엑셀 다운로드</span>
+            </Button>
+            <Button
+              onClick={() => {
+                setArchiveResult(null);
+                setIsArchiveDialogOpen(true);
+              }}
+              size="sm"
+              className="h-7 sm:h-8 px-2 sm:px-2.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs gap-1 cursor-pointer"
+              title="Google Drive 06_체육 측정 결과 폴더로 자동 아카이빙"
+            >
+              <CloudUpload className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Drive 아카이브</span>
+            </Button>
+          </div>
         </div>
 
-        <TabsContent value="paps" className="space-y-2">
-          <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 bg-white p-2 rounded-xl border border-slate-200/80 shadow-xs">
+        <TabsContent value="paps" className="space-y-1.5">
+          {/* PAPS 종합 필터: 1줄 컴팩트 배치 */}
+          <div className="flex items-center gap-1 sm:gap-1.5 bg-white p-1.5 sm:p-2 rounded-xl border border-slate-200/80 shadow-xs w-full overflow-hidden">
+            {/* 1. 클럽 */}
             <Select value={selectedClubId} onValueChange={(v) => { setSelectedClubId(v); if(v !== 'all') { setGradeFilter('all'); setClassNumFilter('all'); } }}>
-              <SelectTrigger className="w-[95px] sm:w-[130px] h-7 sm:h-8 text-[11px] sm:text-xs font-bold bg-slate-50">
-                            <SelectValue placeholder="클럽 필터" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">전체 클럽</SelectItem>
-                            {sportsClubs.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+              <SelectTrigger className="w-[54px] sm:w-[120px] h-7 sm:h-8 text-[11px] sm:text-xs font-bold px-1 sm:px-2 bg-slate-50 shrink-0 [&>svg]:hidden sm:[&>svg]:block">
+                <span className="truncate">
+                  {selectedClubId === 'all' ? '클럽' : (sportsClubs.find(c => c.id === selectedClubId)?.name.slice(0, 4) || '클럽')}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 클럽</SelectItem>
+                {sportsClubs.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
 
-                        <Select
-                            value={gradeFilter}
-                            onValueChange={(value) => {
-                                setGradeFilter(value);
-                                setClassNumFilter('all');
-                                if(value !== 'all') setSelectedClubId('all');
-                            }}
-                        >
-                            <SelectTrigger className="w-[68px] sm:w-[90px] h-7 sm:h-8 text-[11px] sm:text-xs">
-                            <SelectValue placeholder="학년" />
-                            </SelectTrigger>
-                            <SelectContent>
-                            <SelectItem value="all">전체 학년</SelectItem>
-                            {grades.map((grade) => (
-                                <SelectItem key={grade} value={grade}>
-                                {grade}학년
-                                </SelectItem>
-                            ))}
-                            </SelectContent>
-                        </Select>
+            {/* 2. 학년 */}
+            <Select
+              value={gradeFilter}
+              onValueChange={(value) => {
+                setGradeFilter(value);
+                setClassNumFilter('all');
+                if(value !== 'all') setSelectedClubId('all');
+              }}
+            >
+              <SelectTrigger className="w-[46px] sm:w-[85px] h-7 sm:h-8 text-[11px] sm:text-xs font-bold px-1 sm:px-2 shrink-0 [&>svg]:hidden sm:[&>svg]:block">
+                <span className="truncate">
+                  {gradeFilter === 'all' ? '학년' : `${gradeFilter}학년`}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 학년</SelectItem>
+                {grades.map((grade) => (
+                  <SelectItem key={grade} value={grade}>{grade}학년</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-                        <Select
-                            value={classNumFilter}
-                            onValueChange={setClassNumFilter}
-                            disabled={gradeFilter === 'all'}
-                        >
-                            <SelectTrigger className="w-[58px] sm:w-[80px] h-7 sm:h-8 text-[11px] sm:text-xs">
-                            <SelectValue placeholder="반" />
-                            </SelectTrigger>
-                            <SelectContent>
-                            <SelectItem value="all">전체 반</SelectItem>
-                            {classNumsByGrade[gradeFilter]?.map((classNum) => (
-                                <SelectItem key={classNum} value={classNum}>
-                                {classNum}반
-                                </SelectItem>
-                            ))}
-                            </SelectContent>
-                        </Select>
-                        
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button variant={"outline"} className={cn("w-[100px] sm:w-[150px] h-7 sm:h-8 px-2 text-[11px] sm:text-xs justify-start text-left font-normal", !dateFilter && "text-muted-foreground")}>
-                                    <CalendarIcon className="mr-1 h-3.5 w-3.5 flex-shrink-0" />
-                                    <span className="truncate">{dateFilter === 'latest' ? '최근' : dateFilter ? format(dateFilter, "MM/dd") : '날짜'}</span>
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="flex w-auto flex-col space-y-2 p-2">
-                                <Select onValueChange={(value) => value === 'latest' ? setDateFilter('latest') : setDateFilter(new Date(value))}>
-                                    <SelectTrigger className="h-8 text-xs">
-                                        <SelectValue placeholder="측정일 선택" />
-                                    </SelectTrigger>
-                                    <SelectContent position="popper">
-                                        <SelectItem value="latest">최근 측정일 기준</SelectItem>
-                                        {availableDates.map(date => (
-                                            <SelectItem key={date} value={date}>{date}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <div className="rounded-md border">
-                                    <Calendar mode="single" selected={dateFilter === 'latest' ? undefined : dateFilter} onSelect={(d) => setDateFilter(d)} />
-                                </div>
-                            </PopoverContent>
-                        </Popover>
+            {/* 3. 반 */}
+            <Select
+              value={classNumFilter}
+              onValueChange={setClassNumFilter}
+              disabled={gradeFilter === 'all'}
+            >
+              <SelectTrigger className="w-[38px] sm:w-[75px] h-7 sm:h-8 text-[11px] sm:text-xs font-bold px-1 sm:px-2 shrink-0 [&>svg]:hidden sm:[&>svg]:block">
+                <span className="truncate">
+                  {classNumFilter === 'all' ? '반' : `${classNumFilter}반`}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 반</SelectItem>
+                {classNumsByGrade[gradeFilter]?.map((classNum) => (
+                  <SelectItem key={classNum} value={classNum}>{classNum}반</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            {/* 4. 최근 (날짜): 모바일은 아이콘만 */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-7 sm:w-auto h-7 sm:h-8 p-0 sm:px-2 text-[11px] sm:text-xs justify-center sm:justify-start font-normal shrink-0" title="측정일 필터">
+                  <CalendarIcon className="h-3.5 w-3.5 shrink-0 sm:mr-1" />
+                  <span className="hidden sm:inline truncate">{dateFilter === 'latest' ? '최근' : dateFilter ? format(dateFilter, "MM/dd") : '날짜'}</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="flex w-auto flex-col space-y-2 p-2">
+                <Select onValueChange={(value) => value === 'latest' ? setDateFilter('latest') : setDateFilter(new Date(value))}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="측정일 선택" />
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    <SelectItem value="latest">최근 측정일 기준</SelectItem>
+                    {availableDates.map(date => (
+                      <SelectItem key={date} value={date}>{date}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="rounded-md border">
+                  <Calendar mode="single" selected={dateFilter === 'latest' ? undefined : dateFilter} onSelect={(d) => setDateFilter(d)} />
+                </div>
+              </PopoverContent>
+            </Popover>
 
-                        <Select value={viewType} onValueChange={(v) => setViewType(v as ViewType)}>
-                            <SelectTrigger className="w-[75px] sm:w-[110px] h-7 sm:h-8 text-[11px] sm:text-xs">
-                                <SelectValue placeholder="형식" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="grade">등급</SelectItem>
-                                <SelectItem value="score">점수</SelectItem>
-                                <SelectItem value="record">실제 기록</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        
-                        <div className="ml-auto flex items-center gap-1.5 shrink-0">
-                          <Button
-                            onClick={() => setIsPrintDialogOpen(true)}
-                            variant="outline"
-                            size="sm"
-                            className="h-7 sm:h-8 px-2.5 text-xs font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 shadow-2xs gap-1 cursor-pointer"
-                            title="PAPS 개인별/학급별 건강체력평가 결과 통지표 인쇄"
-                          >
-                            <Printer className="h-3.5 w-3.5" />
-                            <span className="hidden sm:inline">통지표 인쇄</span>
-                          </Button>
-                          <Button onClick={handlePapsDownloadExcel} variant="outline" size="sm" className="h-7 sm:h-8 px-2 text-xs" title="PC로 엑셀 다운로드">
-                              <FileDown className="h-3.5 w-3.5 sm:mr-1.5" />
-                              <span className="hidden sm:inline">엑셀 다운로드</span>
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              setArchiveResult(null);
-                              setIsArchiveDialogOpen(true);
-                            }}
-                            size="sm"
-                            className="h-7 sm:h-8 px-2.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs gap-1 cursor-pointer"
-                            title="Google Drive 06_체육 측정 결과 폴더로 자동 아카이빙"
-                          >
-                            <CloudUpload className="h-3.5 w-3.5" />
-                            <span className="hidden sm:inline">Drive 아카이브</span>
-                          </Button>
-                        </div>
-                    </div>
-                     <div className="border rounded-md overflow-x-auto">
-                        <Table>
-                            <TableHeader>
-                            <TableRow className="h-8">
-                                {finalFactorOrder.map(key => {
-                                    const columnKey = key.replace(/점수|등급/g, '');
-                                    const isNarrow = ['학년', '반', '번호', '성별'].includes(columnKey);
-                                    return (
-                                        <TableHead 
-                                            key={key} 
-                                            onClick={createSortHandler(columnKey, papsSort, setPapsSort)} 
-                                            className={cn(
-                                                "cursor-pointer hover:bg-muted whitespace-nowrap p-1 text-[11px] sm:text-xs font-bold",
-                                                isNarrow ? "w-8 sm:w-10 text-center" : columnKey === '이름' ? "min-w-[50px] text-left" : "text-center min-w-[55px] sm:min-w-[70px]"
-                                            )}
-                                        >
-                                            {key}
-                                            {getSortIndicator(columnKey, papsSort)}
-                                        </TableHead>
-                                    )
-                                })}
-                            </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                            {sortedPapsData.length > 0 ? (
-                                sortedPapsData.map((row, index) => (
-                                <TableRow key={index} className="h-9 sm:h-10">
-                                    {finalFactorOrder.map((key, cellIndex) => {
-                                    const displayKey = key.replace(/점수|등급/g, '');
-                                    const isNarrow = ['학년', '반', '번호', '성별'].includes(displayKey);
-                                    const isName = displayKey === '이름';
-                                    return (
-                                        <TableCell 
-                                            key={cellIndex} 
-                                            className={cn(
-                                                "whitespace-nowrap p-1 text-[11px] sm:text-xs",
-                                                isNarrow ? "text-center" : isName ? "font-bold text-left" : "text-center font-medium"
-                                            )}
-                                        >
-                                            {row[displayKey]}
-                                        </TableCell>
-                                    )
-                                    })}
-                                </TableRow>
-                                ))
-                            ) : (
-                                <TableRow>
-                                <TableCell colSpan={finalFactorOrder.length} className="h-20 text-center text-xs text-muted-foreground">
-                                    선택된 조건에 해당하는 기록이 없습니다.
-                                </TableCell>
-                                </TableRow>
-                            )}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </TabsContent>
-                <TabsContent value="item" className="space-y-2 sm:space-y-4">
-                    <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 pt-2">
-                       <Select value={selectedItem} onValueChange={(v) => { setSelectedItem(v); setItemDateFilter('latest'); }}>
-                          <SelectTrigger className="w-[120px] sm:w-[160px] h-7 sm:h-8 text-[11px] sm:text-xs font-semibold">
-                            <SelectValue placeholder="종목 선택" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="theory-exam" className="font-bold text-primary flex items-center">
-                                <BookOpen className="h-3.5 w-3.5 mr-1.5" /> 이론 평가
-                            </SelectItem>
-                            {itemsWithRecords.map((item) => (
-                              <SelectItem key={item.id} value={item.name}>{item.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                       </Select>
-                        <Select value={selectedClubId} onValueChange={(v) => { setSelectedClubId(v); if(v !== 'all') { setItemGradeFilter('all'); setItemClassNumFilter('all'); } }}>
-                          <SelectTrigger className="w-[95px] sm:w-[130px] h-7 sm:h-8 text-[11px] sm:text-xs font-bold">
-                            <SelectValue placeholder="클럽 필터" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">전체 클럽</SelectItem>
-                            {sportsClubs.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+            {/* 5. 등급 (형식) */}
+            <Select value={viewType} onValueChange={(v) => setViewType(v as ViewType)}>
+              <SelectTrigger className="w-[50px] sm:w-[90px] h-7 sm:h-8 text-[11px] sm:text-xs font-bold px-1 sm:px-2 shrink-0 [&>svg]:hidden sm:[&>svg]:block">
+                <span className="truncate">
+                  {viewType === 'grade' ? '등급' : viewType === 'score' ? '점수' : '기록'}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="grade">등급</SelectItem>
+                <SelectItem value="score">점수</SelectItem>
+                <SelectItem value="record">실제 기록</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-                        <Select value={itemGradeFilter} onValueChange={(value) => {setItemGradeFilter(value); setItemClassNumFilter('all'); if(value !== 'all') setSelectedClubId('all');}}>
-                            <SelectTrigger className="w-[68px] sm:w-[90px] h-7 sm:h-8 text-[11px] sm:text-xs">
-                                <SelectValue placeholder="학년" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">전체 학년</SelectItem>
-                                {grades.map((grade) => (
-                                <SelectItem key={grade} value={grade}>{grade}학년</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <Select
-                            value={itemClassNumFilter}
-                            onValueChange={setItemClassNumFilter}
-                            disabled={itemGradeFilter === 'all'}
-                        >
-                            <SelectTrigger className="w-[58px] sm:w-[80px] h-7 sm:h-8 text-[11px] sm:text-xs">
-                            <SelectValue placeholder="반" />
-                            </SelectTrigger>
-                            <SelectContent>
-                            <SelectItem value="all">전체 반</SelectItem>
-                            {classNumsByGrade[itemGradeFilter]?.map((classNum) => (
-                                <SelectItem key={classNum} value={classNum}>
-                                {classNum}반
-                                </SelectItem>
-                            ))}
-                            </SelectContent>
-                        </Select>
-                        {/* 날짜 선택 드롭다운 */}
-                        {selectedItem && selectedItem !== 'theory-exam' && itemDatesForSelected.length > 0 && (
-                          <Select value={itemDateFilter} onValueChange={setItemDateFilter}>
-                            <SelectTrigger className="w-[110px] sm:w-[140px] h-7 sm:h-8 text-[11px] sm:text-xs font-semibold">
-                              <CalendarIcon className="h-3 w-3 mr-1 shrink-0" />
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="latest">최신 기록</SelectItem>
-                              {itemDatesForSelected.map(date => (
-                                <SelectItem key={date} value={date}>{date}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+          {/* PAPS 종합 테이블: 번호부터 표시, 4글자 제한, 좌우 슬라이드 방지 */}
+          <div className="border rounded-xl bg-white overflow-hidden shadow-2xs">
+            <Table className="w-full table-fixed">
+              <TableHeader>
+                <TableRow className="h-8 bg-slate-50/80">
+                  {finalFactorOrder.map(key => {
+                    const columnKey = key.replace(/점수|등급/g, '');
+                    const isNum = columnKey === '번호';
+                    const isGender = columnKey === '성별';
+                    const isName = columnKey === '이름';
+                    return (
+                      <TableHead 
+                        key={key} 
+                        onClick={createSortHandler(columnKey, papsSort, setPapsSort)} 
+                        className={cn(
+                          "cursor-pointer hover:bg-muted p-0 sm:p-0.5 text-[10px] sm:text-xs font-bold select-none text-center",
+                          isNum ? "w-[26px]" : isGender ? "w-[22px]" : isName ? "w-[44px]" : ""
                         )}
-                        <Button onClick={handleItemDownloadExcel} variant="outline" size="sm" className="ml-auto h-7 sm:h-8 px-2 text-xs" disabled={!selectedItem} title="엑셀 다운로드">
-                            <FileDown className="h-3.5 w-3.5 sm:mr-1.5" />
-                            <span className="hidden sm:inline">엑셀 다운로드</span>
-                        </Button>
-                    </div>
-                    <div className="border rounded-md overflow-x-auto">
-                        <Table>
-                            <TableHeader>
-                                <TableRow className="h-8">
-                                    {[
-                                      { key: 'grade', label: '학년', isNarrow: true },
-                                      { key: 'classNum', label: '반', isNarrow: true },
-                                      { key: 'studentNum', label: '번호', isNarrow: true },
-                                      { key: 'name', label: '이름', isName: true },
-                                      ...(selectedItem === 'theory-exam' ? [
-                                        { key: 'quizTitle', label: '평가 제목' },
-                                        { key: 'score', label: '점수' },
-                                        { key: 'latestDate', label: '응시일' },
-                                        { key: 'passed', label: '통과' }
-                                      ] : [
-                                        { key: 'latestDate', label: '측정일' },
-                                        ...(selectedItemInfo?.isCompound ? [
-                                          { key: 'height', label: '키' },
-                                          { key: 'weight', label: '몸무게' }
-                                        ] : []),
-                                        { key: 'value', label: '기록' },
-                                        { key: 'recordGrade', label: '등급' },
-                                        { key: 'rank', label: '순위' },
-                                      ])
-                                    ].map((header) => (
-                                       <TableHead 
-                                          key={header.key} 
-                                          onClick={createSortHandler(header.key, itemSort, setItemSort)} 
-                                          className={cn(
-                                              "cursor-pointer hover:bg-muted whitespace-nowrap p-1 text-[11px] sm:text-xs font-bold",
-                                              header.isNarrow ? "w-8 sm:w-10 text-center" : header.isName ? "min-w-[50px] text-left" : "text-center min-w-[50px] sm:min-w-[70px]"
-                                          )}
-                                       >
-                                          {header.label}
-                                          {getSortIndicator(header.key, itemSort)}
-                                       </TableHead>
-                                    ))}
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {sortedItemData.length > 0 ? (
-                                    sortedItemData.map((s, idx) => (
-                                        <TableRow key={`${s.id}-${idx}`} className="h-9 sm:h-10">
-                                            <TableCell className="p-1 text-center text-[11px] sm:text-xs">{s.grade}</TableCell>
-                                            <TableCell className="p-1 text-center text-[11px] sm:text-xs">{s.classNum}</TableCell>
-                                            <TableCell className="p-1 text-center text-[11px] sm:text-xs">{s.studentNum}</TableCell>
-                                            <TableCell className="p-1 text-left font-bold whitespace-nowrap text-[11px] sm:text-xs">{s.name}</TableCell>
-                                            {selectedItem === 'theory-exam' ? (
-                                                <>
-                                                    <TableCell className="p-1 max-w-[150px] truncate text-[11px] sm:text-xs">{(s as any).quizTitle}</TableCell>
-                                                    <TableCell className="p-1 text-center font-semibold text-[11px] sm:text-xs">{(s as any).score}</TableCell>
-                                                    <TableCell className="p-1 text-center whitespace-nowrap text-[11px] sm:text-xs">{(s as any).latestDate || '-'}</TableCell>
-                                                    <TableCell className="p-1 text-center">
-                                                        {(s as any).passed !== undefined ? (
-                                                            (s as any).passed ? 
-                                                                <Badge className="bg-green-100 text-green-700 text-[10px] px-1 py-0">통과</Badge> : 
-                                                                <Badge variant="destructive" className="text-[10px] px-1 py-0">미통과</Badge>
-                                                        ) : '-'}
-                                                    </TableCell>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <TableCell className="p-1 text-center whitespace-nowrap text-[11px] sm:text-xs">{(s as any).latestDate || '-'}</TableCell>
-                                                    {allItems.find(i => i.name === selectedItem)?.isCompound && (
-                                                      <>
-                                                        <TableCell className="p-1 text-center text-[11px] sm:text-xs">{(s as any).height || '-'}</TableCell>
-                                                        <TableCell className="p-1 text-center text-[11px] sm:text-xs">{(s as any).weight || '-'}</TableCell>
-                                                      </>
-                                                    )}
-                                                    <TableCell className="p-1 text-center font-bold whitespace-nowrap text-[11px] sm:text-xs">{(s as any).value !== undefined && (s as any).value !== null ? `${(s as any).value}${allItems.find(i => i.name === selectedItem)?.unit || ''}`: '-'}</TableCell>
-                                                    <TableCell className="p-1 text-center whitespace-nowrap text-[11px] sm:text-xs">{(s as any).recordGrade ? `${(s as any).recordGrade}등급` : '-'}</TableCell>
-                                                    <TableCell className="p-1 text-center whitespace-nowrap text-[11px] sm:text-xs">{(s as any).rank ? `${(s as any).rank}/${(s as any).totalRanked}` : '-'}</TableCell>
-                                                </>
-                                            )}
-                                        </TableRow>
-                                    ))
-                                ) : (
-                                    <TableRow>
-                                        <TableCell colSpan={8} className="h-20 text-center text-xs text-muted-foreground">
-                                            조회할 종목을 선택해주세요.
-                                        </TableCell>
-                                    </TableRow>
-                                )}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </TabsContent>
+                        title={key}
+                      >
+                        <span className="inline-block">{getDisplayHeader(key)}</span>
+                        {getSortIndicator(columnKey, papsSort)}
+                      </TableHead>
+                    );
+                  })}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedPapsData.length > 0 ? (
+                  sortedPapsData.map((row, index) => (
+                    <TableRow key={index} className="h-8 sm:h-9 hover:bg-slate-50/50">
+                      {finalFactorOrder.map((key, cellIndex) => {
+                        const displayKey = key.replace(/점수|등급/g, '');
+                        const isNum = displayKey === '번호';
+                        const isGender = displayKey === '성별';
+                        const isName = displayKey === '이름';
+                        return (
+                          <TableCell 
+                            key={cellIndex} 
+                            className={cn(
+                              "p-0 sm:p-0.5 text-[10px] sm:text-xs truncate text-center",
+                              isName ? "font-bold" : "font-medium"
+                            )}
+                            title={String(row[displayKey] || '')}
+                          >
+                            {getDisplayCellValue(row[displayKey])}
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={finalFactorOrder.length} className="h-20 text-center text-xs text-muted-foreground">
+                      선택된 조건에 해당하는 기록이 없습니다.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="item" className="space-y-1.5">
+          {/* 종목별 기록 필터: 1줄 컴팩트 배치 */}
+          <div className="flex items-center gap-1 sm:gap-1.5 bg-white p-1.5 sm:p-2 rounded-xl border border-slate-200/80 shadow-xs w-full overflow-hidden">
+            {/* 1. 종목 선택 */}
+            <Select value={selectedItem} onValueChange={(v) => { setSelectedItem(v); setItemDateFilter('latest'); }}>
+              <SelectTrigger className="w-[78px] sm:w-[140px] h-7 sm:h-8 text-[11px] sm:text-xs font-semibold px-1 sm:px-2 shrink-0 [&>svg]:hidden sm:[&>svg]:block">
+                <span className="truncate">
+                  {selectedItem === 'theory-exam' ? '이론평가' : (selectedItem ? selectedItem.slice(0, 4) : '종목')}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="theory-exam" className="font-bold text-primary flex items-center">
+                  <BookOpen className="h-3.5 w-3.5 mr-1.5" /> 이론 평가
+                </SelectItem>
+                {itemsWithRecords.map((item) => (
+                  <SelectItem key={item.id} value={item.name}>{item.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* 2. 클럽 */}
+            <Select value={selectedClubId} onValueChange={(v) => { setSelectedClubId(v); if(v !== 'all') { setItemGradeFilter('all'); setItemClassNumFilter('all'); } }}>
+              <SelectTrigger className="w-[50px] sm:w-[110px] h-7 sm:h-8 text-[11px] sm:text-xs font-bold px-1 sm:px-2 shrink-0 [&>svg]:hidden sm:[&>svg]:block">
+                <span className="truncate">
+                  {selectedClubId === 'all' ? '클럽' : (sportsClubs.find(c => c.id === selectedClubId)?.name.slice(0, 4) || '클럽')}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 클럽</SelectItem>
+                {sportsClubs.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+
+            {/* 3. 학년 */}
+            <Select value={itemGradeFilter} onValueChange={(value) => {setItemGradeFilter(value); setItemClassNumFilter('all'); if(value !== 'all') setSelectedClubId('all');}}>
+              <SelectTrigger className="w-[44px] sm:w-[80px] h-7 sm:h-8 text-[11px] sm:text-xs font-bold px-1 sm:px-2 shrink-0 [&>svg]:hidden sm:[&>svg]:block">
+                <span className="truncate">
+                  {itemGradeFilter === 'all' ? '학년' : `${itemGradeFilter}학년`}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 학년</SelectItem>
+                {grades.map((grade) => (
+                  <SelectItem key={grade} value={grade}>{grade}학년</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* 4. 반 */}
+            <Select
+              value={itemClassNumFilter}
+              onValueChange={setItemClassNumFilter}
+              disabled={itemGradeFilter === 'all'}
+            >
+              <SelectTrigger className="w-[36px] sm:w-[70px] h-7 sm:h-8 text-[11px] sm:text-xs font-bold px-1 sm:px-2 shrink-0 [&>svg]:hidden sm:[&>svg]:block">
+                <span className="truncate">
+                  {itemClassNumFilter === 'all' ? '반' : `${itemClassNumFilter}반`}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 반</SelectItem>
+                {classNumsByGrade[itemGradeFilter]?.map((classNum) => (
+                  <SelectItem key={classNum} value={classNum}>{classNum}반</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* 5. 날짜: 모바일은 아이콘만 */}
+            {selectedItem && selectedItem !== 'theory-exam' && itemDatesForSelected.length > 0 && (
+              <Select value={itemDateFilter} onValueChange={setItemDateFilter}>
+                <SelectTrigger className="w-7 sm:w-auto h-7 sm:h-8 p-0 sm:px-2 text-[11px] sm:text-xs font-semibold shrink-0 justify-center sm:justify-start [&>svg]:hidden sm:[&>svg]:block" title="기록일 필터">
+                  <CalendarIcon className="h-3.5 w-3.5 shrink-0 sm:mr-1" />
+                  <span className="hidden sm:inline truncate">
+                    {itemDateFilter === 'latest' ? '최신' : itemDateFilter}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="latest">최신 기록</SelectItem>
+                  {itemDatesForSelected.map(date => (
+                    <SelectItem key={date} value={date}>{date}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          {/* 종목별 기록 테이블: 번호부터 표시, 4글자 제한, 좌우 슬라이드 방지 */}
+          <div className="border rounded-xl bg-white overflow-hidden shadow-2xs">
+            <Table className="w-full table-fixed">
+              <TableHeader>
+                <TableRow className="h-8 bg-slate-50/80">
+                  {[
+                    { key: 'studentNum', label: '번호', isNarrow: true },
+                    { key: 'name', label: '이름', isName: true },
+                    ...(selectedItem === 'theory-exam' ? [
+                      { key: 'quizTitle', label: '평가제목' },
+                      { key: 'score', label: '점수' },
+                      { key: 'latestDate', label: '응시일' },
+                      { key: 'passed', label: '통과' }
+                    ] : [
+                      { key: 'latestDate', label: '측정일' },
+                      ...(selectedItemInfo?.isCompound ? [
+                        { key: 'height', label: '키' },
+                        { key: 'weight', label: '몸무게' }
+                      ] : []),
+                      { key: 'value', label: '기록' },
+                      { key: 'recordGrade', label: '등급' },
+                      { key: 'rank', label: '순위' },
+                    ])
+                  ].map((header) => (
+                    <TableHead 
+                      key={header.key} 
+                      onClick={createSortHandler(header.key, itemSort, setItemSort)} 
+                      className={cn(
+                        "cursor-pointer hover:bg-muted p-0.5 text-[11px] sm:text-xs font-bold truncate select-none",
+                        header.isNarrow ? "w-[28px] text-center" : header.isName ? "w-[46px] text-center" : "text-center"
+                      )}
+                      title={header.label}
+                    >
+                      <span className="truncate">{getDisplayHeader(header.label)}</span>
+                      {getSortIndicator(header.key, itemSort)}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedItemData.length > 0 ? (
+                  sortedItemData.map((s, idx) => (
+                    <TableRow key={`${s.id}-${idx}`} className="h-8 sm:h-9 hover:bg-slate-50/50">
+                      <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{s.studentNum}</TableCell>
+                      <TableCell className="p-0.5 text-center font-bold text-[11px] sm:text-xs truncate">{s.name.slice(0, 4)}</TableCell>
+                      {selectedItem === 'theory-exam' ? (
+                        <>
+                          <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).quizTitle)}</TableCell>
+                          <TableCell className="p-0.5 text-center font-semibold text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).score)}</TableCell>
+                          <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).latestDate)}</TableCell>
+                          <TableCell className="p-0.5 text-center">
+                            {(s as any).passed !== undefined ? (
+                              (s as any).passed ? 
+                                <Badge className="bg-green-100 text-green-700 text-[10px] px-1 py-0">통과</Badge> : 
+                                <Badge variant="destructive" className="text-[10px] px-1 py-0">미통과</Badge>
+                            ) : '-'}
+                          </TableCell>
+                        </>
+                      ) : (
+                        <>
+                          <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).latestDate)}</TableCell>
+                          {allItems.find(i => i.name === selectedItem)?.isCompound && (
+                            <>
+                              <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).height)}</TableCell>
+                              <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).weight)}</TableCell>
+                            </>
+                          )}
+                          <TableCell className="p-0.5 text-center font-bold text-[11px] sm:text-xs truncate">
+                            {(s as any).value !== undefined && (s as any).value !== null ? getDisplayCellValue(`${(s as any).value}${allItems.find(i => i.name === selectedItem)?.unit || ''}`) : '-'}
+                          </TableCell>
+                          <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">
+                            {(s as any).recordGrade ? `${(s as any).recordGrade}등급` : '-'}
+                          </TableCell>
+                          <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">
+                            {(s as any).rank ? `${(s as any).rank}/${(s as any).totalRanked}` : '-'}
+                          </TableCell>
+                        </>
+                      )}
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={8} className="h-20 text-center text-xs text-muted-foreground">
+                      조회할 종목을 선택해주세요.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </TabsContent>
             </Tabs>
 
       {/* ─── 체육 측정 결과 Google Drive 아카이빙 다이얼로그 ─── */}

@@ -438,7 +438,7 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
               재적 {students.length}명
             </Badge>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="hidden sm:block text-xs text-slate-500 mt-0.5">
             칠판 알림 메모, 과제 원터치 체크 및 전자칠판 프레젠테이션, 관찰 기록과 상담 메모를 총괄합니다.
           </p>
         </div>
@@ -449,7 +449,7 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
             variant={subTab === 'memo' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setSubTab('memo')}
-            className={`h-8 text-xs font-bold gap-1 rounded-lg ${subTab === 'memo' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
+            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 ${subTab === 'memo' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
           >
             <BookOpen className="w-3.5 h-3.5" />
             <span>칠판 알림</span>
@@ -459,12 +459,12 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
             variant={subTab === 'homework' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setSubTab('homework')}
-            className={`h-8 text-xs font-bold gap-1 rounded-lg ${subTab === 'homework' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
+            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 ${subTab === 'homework' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
             <span>숙제 확인</span>
             {homeworks.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] rounded-full">
+              <span className="ml-0.5 px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] rounded-full">
                 {homeworks.length}
               </span>
             )}
@@ -474,12 +474,12 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
             variant={subTab === 'behavior' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setSubTab('behavior')}
-            className={`h-8 text-xs font-bold gap-1 rounded-lg ${subTab === 'behavior' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
+            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 ${subTab === 'behavior' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
           >
             <Edit2 className="w-3.5 h-3.5" />
             <span>행동 관찰</span>
             {behaviors.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 bg-indigo-100 text-indigo-800 text-[10px] rounded-full">
+              <span className="ml-0.5 px-1.5 py-0.2 bg-indigo-100 text-indigo-800 text-[10px] rounded-full">
                 {behaviors.length}
               </span>
             )}
@@ -489,17 +489,17 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
             variant={subTab === 'review' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setSubTab('review')}
-            className={`h-8 text-xs font-bold gap-1 rounded-lg ${subTab === 'review' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
+            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 ${subTab === 'review' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            <span>기록 조회/상담</span>
+            <span>기록·상담</span>
           </Button>
 
           <Button
             variant={subTab === 'matrix' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setSubTab('matrix')}
-            className={`h-8 text-xs font-bold gap-1 rounded-lg ${subTab === 'matrix' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
+            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 ${subTab === 'matrix' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
           >
             <BarChart3 className="w-3.5 h-3.5" />
             <span>월별 현황</span>
@@ -509,25 +509,25 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
             variant={subTab === 'materials' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setSubTab('materials')}
-            className={`h-8 text-xs font-bold gap-1 rounded-lg ${subTab === 'materials' ? 'bg-white text-indigo-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
+            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 ${subTab === 'materials' ? 'bg-white text-indigo-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
           >
             <FolderOpen className="w-3.5 h-3.5 text-indigo-600" />
-            <span>학년 자료 공유</span>
+            <span>자료 공유</span>
           </Button>
         </div>
       </div>
 
       {/* ────────────────── 1. 칠판 알림 메모 탭 ────────────────── */}
       {subTab === 'memo' && (
-        <Card className="rounded-2xl border-slate-200/80 shadow-xs">
-          <CardHeader className="pb-3 border-b border-slate-100">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <Card className="rounded-xl border-slate-200/80 shadow-xs">
+          <CardHeader className="p-3 sm:p-5 pb-2.5 border-b border-slate-100">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-emerald-600" />
+                <CardTitle className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" />
                   <span>{todayDisplay} 오늘의 알림장</span>
                 </CardTitle>
-                <CardDescription className="text-xs text-slate-500">
+                <CardDescription className="hidden sm:block text-xs text-slate-500">
                   교실 빔프로젝터나 전자칠판에 띄워두는 일일 학급 공지사항입니다.
                 </CardDescription>
               </div>

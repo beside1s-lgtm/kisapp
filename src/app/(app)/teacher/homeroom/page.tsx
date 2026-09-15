@@ -27,7 +27,8 @@ import {
   X,
   Clock,
   LogOut,
-  ChevronDown
+  ChevronDown,
+  FolderOpen
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -561,13 +562,20 @@ export default function TeacherHomeroomApplyPage() {
     }
   };
 
+  // 모바일 원터치 출결 순환 변경 (출석 -> 결석 -> 조퇴 -> 개별하교 -> 출석)
+  const cycleAttendanceStatus = (student: MasterStudent, currentStatus: HomeroomAttendanceStatus) => {
+    const order: HomeroomAttendanceStatus[] = ['ATTEND', 'ABSENT', 'EARLY_LEAVE', 'INDIVIDUAL_DISMISSAL'];
+    const nextIdx = (order.indexOf(currentStatus) + 1) % order.length;
+    handleAttendanceChange(student, order[nextIdx]);
+  };
+
   // 학생 검색 및 해당 행으로 자동 스크롤 이동
   const handleSearchSelectStudent = (targetStudentId: string) => {
     setHighlightedStudentId(targetStudentId);
     setStudentSearchQuery('');
 
     setTimeout(() => {
-      const rowElem = document.getElementById(`student-row-${targetStudentId}`);
+      const rowElem = document.getElementById(`student-row-mobile-${targetStudentId}`) || document.getElementById(`student-row-${targetStudentId}`);
       if (rowElem) {
         rowElem.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
@@ -582,7 +590,7 @@ export default function TeacherHomeroomApplyPage() {
   // 학생 선택 시 자동 입력 처리
   const handleSelectStudent = (studentId: string) => {
     setSelectedStudentId(studentId);
-    const s = classStudents.find(item => item.id === studentId);
+    const s = classStudents.find(item => (item.studentId || item.id || item.studentEmail) === studentId);
     if (s) {
       setStudentName(s.name || '');
       const gcn = `${s.grade}-${s.classNum}-${s.studentNum || 1}`;
@@ -785,386 +793,74 @@ export default function TeacherHomeroomApplyPage() {
   }
 
   return (
-    <MainLayout title="담임 교사 업무 관리소" contentClassName="p-4 md:p-6 font-body">
-      <div className="w-full space-y-6">
-      {/* 헤더 */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-primary/10 text-primary rounded-xl">
-              <Users2 className="w-6 h-6" />
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground font-headline">
-              담임 교사 업무 관리소
-            </h1>
-            {canAccessAllClasses && (
-              <Badge variant="secondary" className="bg-amber-100 text-amber-900 border-amber-200 text-xs font-bold px-2 py-0.5">
-                {homeroomPermissions.isSystemManager ? '시스템 설정 담당 (전교 권한)' : '학생출결 담당 (전교 권한)'}
-              </Badge>
-            )}
-            {!canAccessAllClasses && homeroomPermissions.isHomeroomTeacher && (
-              <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 text-xs font-semibold px-2 py-0.5">
-                학급 담임
-              </Badge>
-            )}
-          </div>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            {canAccessAllClasses 
-              ? '전교 모든 학급의 학생 정보 확인, 출결 관리 및 결석/체험학습 대리 작성을 총괄합니다.'
-              : '담당 학급 학생들의 계정 정보를 확인하고 사진을 관리하며, 출결 및 체험학습 신청을 대리 작성합니다.'}
-          </p>
+    <MainLayout 
+      isFixedScreen={true}
+      title={
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="font-bold text-slate-800 dark:text-slate-100 truncate">담임 업무</span>
+          {canAccessAllClasses ? (
+            <Badge variant="secondary" className="bg-amber-100 text-amber-900 border-amber-200 text-[10px] font-bold px-1.5 py-0.2 shrink-0">
+              전교 권한
+            </Badge>
+          ) : homeroomPermissions.isHomeroomTeacher ? (
+            <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 text-[10px] font-semibold px-1.5 py-0.2 shrink-0">
+              학급 담임
+            </Badge>
+          ) : null}
         </div>
-      </div>
+      } 
+      contentClassName="p-1.5 sm:p-3 font-body flex flex-col flex-1 min-h-0 overflow-hidden"
+    >
+      <div className="w-full h-full flex flex-col flex-1 min-h-0 space-y-1.5 sm:space-y-2 overflow-hidden">
+      {/* 상단 탭 네비게이션 및 고정 헤더 섹션 */}
+      <Tabs value={activeMainTab} onValueChange={(val: any) => setActiveMainTab(val)} className="w-full h-full flex flex-col flex-1 min-h-0 space-y-1.5 sm:space-y-2 overflow-hidden">
+        {/* 상단 고정 영역: 5대 탭 + (출석부 탭일 때) 출석부 카드 헤더 */}
+        <div className="shrink-0 z-20 bg-background/95 backdrop-blur-md pt-0.5 pb-1 sm:pb-2 space-y-1.5 sm:space-y-2">
+          {/* 5대 탭 네비게이션 */}
+          <TabsList className="grid grid-cols-5 w-full bg-slate-100 p-1 rounded-xl gap-0.5 sm:gap-1 h-auto shadow-2xs">
+            <TabsTrigger value="student-info" className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2 px-0.5 sm:px-2 text-[10px] sm:text-xs font-bold data-[state=active]:shadow-xs">
+              <Users className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">출석부</span>
+              <span className="hidden sm:inline text-[11px] opacity-75">({classStudents.length})</span>
+            </TabsTrigger>
+            <TabsTrigger value="proxy" className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2 px-0.5 sm:px-2 text-[10px] sm:text-xs font-bold data-[state=active]:shadow-xs">
+              <FileText className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">대리작성</span>
+            </TabsTrigger>
+            <TabsTrigger value="class-management" className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2 px-0.5 sm:px-2 text-[10px] sm:text-xs font-bold data-[state=active]:shadow-xs">
+              <Edit3 className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">학급관리</span>
+            </TabsTrigger>
+            <TabsTrigger value="grade-materials" className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2 px-0.5 sm:px-2 text-[10px] sm:text-xs font-bold data-[state=active]:shadow-xs">
+              <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">학년자료</span>
+            </TabsTrigger>
+            <TabsTrigger value="consultation" className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2 px-0.5 sm:px-2 text-[10px] sm:text-xs font-bold text-indigo-900 data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:shadow-xs">
+              <Phone className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">학부모상담</span>
+            </TabsTrigger>
+          </TabsList>
 
-      {/* 상단 탭 네비게이션 */}
-      <Tabs value={activeMainTab} onValueChange={(val: any) => setActiveMainTab(val)} className="w-full space-y-6">
-        <TabsList className="grid grid-cols-2 sm:grid-cols-5 w-full max-w-3xl bg-slate-100 p-1 rounded-xl gap-1">
-          <TabsTrigger value="student-info" className="text-xs font-bold py-2">
-            학생 정보 확인 ({classStudents.length}명)
-          </TabsTrigger>
-          <TabsTrigger value="proxy" className="text-xs font-bold py-2">
-            출결/체험학습 대리 작성
-          </TabsTrigger>
-          <TabsTrigger value="class-management" className="text-xs font-bold py-2">
-            학급 관리
-          </TabsTrigger>
-          <TabsTrigger value="grade-materials" className="text-xs font-bold py-2">
-            학년 자료 공유
-          </TabsTrigger>
-          <TabsTrigger value="consultation" className="text-xs font-bold py-2 text-indigo-900 data-[state=active]:bg-white data-[state=active]:text-indigo-700">
-            학부모 상담
-          </TabsTrigger>
-        </TabsList>
-
-        {/* 탭 1: 출결/체험학습 대리 작성 */}
-        <TabsContent value="proxy" className="space-y-6">
-          {/* 1. 학급 및 학생 선택 카드 */}
-          <Card className="border-border/80 shadow-xs">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-bold flex items-center gap-2">
-            <User className="w-4 h-4 text-primary" />
-            <span>1. 대상 학생 선택</span>
-          </CardTitle>
-          <CardDescription className="text-xs">
-            담당 학급을 선택하고 문서를 작성할 학생을 선택해 주세요.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* 학급 선택 */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold">담당 학급</Label>
-              <Select value={selectedClassKey} onValueChange={(val) => { setSelectedClassKey(val); setSelectedStudentId(''); }}>
-                <SelectTrigger className="h-10 text-xs font-semibold bg-white">
-                  <SelectValue placeholder="학급 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableClassKeys.map(key => (
-                    <SelectItem key={key} value={key} className="text-xs font-medium">
-                      {formatClassLabel(key)} {myHomeroomKeys.includes(key) ? '(내 학급)' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* 학생 선택 */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold">학생 선택</Label>
-              <Select value={selectedStudentId} onValueChange={handleSelectStudent}>
-                <SelectTrigger className="h-10 text-xs font-semibold bg-white">
-                  <SelectValue placeholder={classStudents.length === 0 ? "학급 학생 없음" : "학생을 선택하세요"} />
-                </SelectTrigger>
-                <SelectContent className="max-h-56">
-                  {classStudents.map(st => {
-                    const valKey = st.studentId || st.id || st.studentEmail;
-                    return (
-                      <SelectItem key={valKey} value={valKey} className="text-xs">
-                        {st.studentNum ? `${st.studentNum}번 ` : ''}{st.name}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* 선택 학생 상세 요약 */}
-          {selectedStudentId && (
-            <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2">
-                <Badge className="bg-indigo-600 text-white font-bold text-[11px] px-2 py-0.5">
-                  선택됨
-                </Badge>
-                <span className="font-bold text-indigo-950 text-sm">{studentName}</span>
-                <span className="text-indigo-800">({gradeClassNumber})</span>
-                {parentPhone && <span className="text-slate-600 text-xs">· 연락처: {parentPhone}</span>}
-              </div>
-
-              {enableCumulative && (
-                <div className="flex items-center gap-3 text-xs font-semibold text-slate-700">
-                  <span>체험학습 누적: <strong className="text-indigo-700 font-bold">{accumulatedFtDays}일</strong></span>
-                  <span>결석 누적: <strong className="text-rose-600 font-bold">{accumulatedAbsDays}일</strong></span>
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 2. 결재일자/신청일자 지정 카드 */}
-      <Card className="border-border/80 shadow-xs">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-bold flex items-center gap-2">
-            <CalendarIcon className="w-4 h-4 text-primary" />
-            <span>2. 결재일자 및 신청일자 지정</span>
-          </CardTitle>
-          <CardDescription className="text-xs">
-            종이 신청서 접수일이나 사전 전화 통보일 등 원하시는 일자로 소급하여 결재일자를 지정할 수 있습니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="max-w-xs space-y-1.5">
-            <Label className="text-xs font-bold text-slate-800">결재일 (신청서 제출일자)</Label>
-            <Input 
-              type="date" 
-              value={applyDate} 
-              onChange={(e) => setApplyDate(e.target.value)}
-              className="h-10 text-xs font-semibold bg-white"
-            />
-            <span className="text-[11px] text-muted-foreground block">
-              * 지정된 날짜가 신청서 하단 제출일과 담임 승인일자로 기록됩니다.
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 3. 문서 서식 작성 카드 (탭) */}
-      <Card className="border-border/80 shadow-xs">
-        <CardHeader className="pb-2">
-          <Tabs value={docCategory} onValueChange={(val) => setDocCategory(val as any)} className="w-full">
-            <TabsList className="grid grid-cols-2 w-full bg-slate-100 p-1 rounded-xl">
-              <TabsTrigger value="field-trip" className="text-xs font-bold py-2 gap-2 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-xs">
-                <Backpack className="w-4 h-4" />
-                <span>교외체험학습 신청서</span>
-              </TabsTrigger>
-              <TabsTrigger value="absence" className="text-xs font-bold py-2 gap-2 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-xs">
-                <CalendarOff className="w-4 h-4" />
-                <span>결석계</span>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </CardHeader>
-
-        <CardContent className="pt-4 space-y-4">
-          {/* 3-A. 체험학습 신청서 폼 */}
-          {docCategory === 'field-trip' && (
-            <div className="space-y-4 animate-in fade-in">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold">시작일 <span className="text-red-500">*</span></Label>
-                  <Input type="date" value={ftStartDate} onChange={(e) => setFtStartDate(e.target.value)} className="text-xs bg-white" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold">종료일 <span className="text-red-500">*</span></Label>
-                  <Input type="date" value={ftEndDate} onChange={(e) => setFtEndDate(e.target.value)} className="text-xs bg-white" />
-                </div>
-              </div>
-
-              <div className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-700">신청 수업일수 (공휴일/주말 자동 제외)</span>
-                <span className="font-bold text-indigo-700 text-sm">{ftTotalDays} 일간</span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold">학습 형태</Label>
-                  <Select value={ftType} onValueChange={setFtType}>
-                    <SelectTrigger className="text-xs bg-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="가족동반여행" className="text-xs">가족동반여행</SelectItem>
-                      <SelectItem value="친인척 방문" className="text-xs">친인척 방문</SelectItem>
-                      <SelectItem value="답사·견학 활동" className="text-xs">답사·견학 활동</SelectItem>
-                      <SelectItem value="체험활동" className="text-xs">체험활동</SelectItem>
-                      <SelectItem value="기타" className="text-xs">기타</SelectItem>
-                    </SelectContent>
-                  </Select>
+          {/* 출석부 탭일 때 함께 고정되는 출석부 헤더 (학급 출석부 타이틀, 날짜, 학급선택, 사진등록, 검색창) */}
+          {activeMainTab === 'student-info' && (
+            <div className="rounded-xl border border-slate-200/80 shadow-xs bg-white p-2.5 sm:p-3.5 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Users className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="text-sm sm:text-base font-bold text-slate-800 truncate">
+                    {selectedClassKey ? `${formatClassLabel(selectedClassKey)} 출석부` : '출석부'} ({classStudents.length}명)
+                  </span>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold">방문 장소 (국가/도시) <span className="text-red-500">*</span></Label>
-                  <Input 
-                    placeholder="예: 베트남 다낭, 한국 서울" 
-                    value={ftDestination} 
-                    onChange={(e) => setFtDestination(e.target.value)} 
-                    className="text-xs bg-white"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold">동행 보호자</Label>
-                  <Input 
-                    placeholder="보호자 성명" 
-                    value={ftCompanionName} 
-                    onChange={(e) => setFtCompanionName(e.target.value)} 
-                    className="text-xs bg-white"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold">학생과의 관계</Label>
-                  <Input 
-                    placeholder="예: 부, 모" 
-                    value={ftCompanionRelation} 
-                    onChange={(e) => setFtCompanionRelation(e.target.value)} 
-                    className="text-xs bg-white"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold">체험학습 목적</Label>
-                <Input 
-                  placeholder="예: 현지 문화 탐방 및 가족 유대 강화" 
-                  value={ftPurpose} 
-                  onChange={(e) => setFtPurpose(e.target.value)} 
-                  className="text-xs bg-white"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold">구체적 계획</Label>
-                <Textarea 
-                  placeholder="예: 1일차 유적지 탐방, 2일차 자연 생태 체험 등" 
-                  value={ftDetailedPlan} 
-                  onChange={(e) => setFtDetailedPlan(e.target.value)} 
-                  rows={3}
-                  className="text-xs bg-white resize-none"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* 3-B. 결석계 폼 */}
-          {docCategory === 'absence' && (
-            <div className="space-y-4 animate-in fade-in">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold">결석 시작일 <span className="text-red-500">*</span></Label>
-                  <Input type="date" value={absStartDate} onChange={(e) => setAbsStartDate(e.target.value)} className="text-xs bg-white" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold">결석 종료일 <span className="text-red-500">*</span></Label>
-                  <Input type="date" value={absEndDate} onChange={(e) => setAbsEndDate(e.target.value)} className="text-xs bg-white" />
-                </div>
-              </div>
-
-              <div className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-700">결석 수업일수 (공휴일/주말 자동 제외)</span>
-                <span className="font-bold text-rose-600 text-sm">{absTotalDays} 일간</span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold">결석 종류</Label>
-                  <Select value={absType} onValueChange={(val) => setAbsType(val as any)}>
-                    <SelectTrigger className="text-xs bg-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="병결" className="text-xs">병결</SelectItem>
-                      <SelectItem value="미인정" className="text-xs">미인정</SelectItem>
-                      <SelectItem value="기타" className="text-xs">기타</SelectItem>
-                      <SelectItem value="출석인정" className="text-xs">출석인정</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold">담임 확인 방법</Label>
-                  <Select value={teacherConfirmMethod} onValueChange={(val) => setTeacherConfirmMethod(val as any)}>
-                    <SelectTrigger className="text-xs bg-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="전화/문자" className="text-xs">전화/문자</SelectItem>
-                      <SelectItem value="학부모 내교" className="text-xs">학부모 내교</SelectItem>
-                      <SelectItem value="가정방문" className="text-xs">가정방문</SelectItem>
-                      <SelectItem value="기타" className="text-xs">기타</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold">결석 사유 <span className="text-red-500">*</span></Label>
-                <Textarea 
-                  placeholder="예: 감기 몸살 및 발열로 인한 가료 요양" 
-                  value={absReason} 
-                  onChange={(e) => setAbsReason(e.target.value)} 
-                  rows={3}
-                  className="text-xs bg-white resize-none"
-                />
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 제출 액션 버튼 */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-        <p className="text-xs text-muted-foreground">
-          * '작성 및 담임 결재 완료'를 누르면 문서가 생성되고 담임 서명이 즉시 완료되어 다음 결재자에게 상신됩니다.
-        </p>
-        <Button 
-          size="lg" 
-          onClick={handleSubmitAndApprove} 
-          disabled={isSubmitting || !selectedStudentId}
-          className="w-full sm:w-auto font-bold px-6 h-11 gap-2 bg-primary shadow-md hover:shadow-lg transition-all"
-        >
-          {isSubmitting ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              처리 중...
-            </>
-          ) : (
-            <>
-              <CheckCircle2 className="w-4 h-4" />
-              작성 및 담임 결재 완료
-              <ArrowRight className="w-4 h-4" />
-            </>
-          )}
-        </Button>
-      </div>
-        </TabsContent>
-
-        {/* 탭 2: 학생 정보 확인 (학급 학생 전용 뷰 및 일일 출석부) */}
-        <TabsContent value="student-info" className="space-y-4">
-          <Card className="rounded-2xl border-slate-200/80 shadow-xs">
-            <CardHeader className="pb-3 border-b border-slate-100">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div>
-                  <CardTitle className="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <Users className="w-4 h-4 text-indigo-600" />
-                    <span>{selectedClassKey ? `${formatClassLabel(selectedClassKey)}` : ''} 학생 계정 및 오늘 출석부 ({classStudents.length}명)</span>
-                  </CardTitle>
-                  <CardDescription className="text-xs text-slate-500">
-                    학생 출결 상태(출석·결석·조퇴·개별하교)를 체크하면 스쿨버스 및 방과후 출석부로 실시간 단독 연동됩니다.
-                  </CardDescription>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {/* 날짜 선택 (출석 기준일) */}
-                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
-                    <CalendarIcon className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5">
+                    <CalendarIcon className="w-3 h-3 text-slate-500 shrink-0" />
                     <Input
                       type="date"
                       value={attendanceDate}
                       onChange={(e) => setAttendanceDate(e.target.value)}
-                      className="h-7 w-[125px] text-xs font-bold border-none bg-transparent p-0 shadow-none focus-visible:ring-0"
+                      className="h-6 w-[115px] text-xs font-bold border-none bg-transparent p-0 shadow-none focus-visible:ring-0"
                     />
                   </div>
 
@@ -1172,7 +868,7 @@ export default function TeacherHomeroomApplyPage() {
                   {availableClassKeys.length > 1 && (
                     <div className="flex items-center gap-1">
                       <Select value={selectedClassKey} onValueChange={setSelectedClassKey}>
-                        <SelectTrigger className="h-8 text-xs min-w-[110px] w-auto font-semibold bg-white">
+                        <SelectTrigger className="h-7 text-xs min-w-[95px] w-auto font-semibold bg-white px-2">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="max-h-64">
@@ -1191,23 +887,24 @@ export default function TeacherHomeroomApplyPage() {
                     type="button"
                     size="sm" 
                     onClick={() => setIsBatchPhotoOpen(true)}
-                    className="h-8 text-xs px-2.5 font-bold whitespace-nowrap bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer"
+                    className="h-7 text-xs px-2 font-bold whitespace-nowrap bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs cursor-pointer"
                   >
-                    <Camera className="w-3.5 h-3.5 mr-1" /> 사진 일괄 등록
+                    <Camera className="w-3 h-3 mr-1" />
+                    <span>사진 등록</span>
                   </Button>
                 </div>
               </div>
 
               {/* 반 내부 학생 검색창 */}
-              <div className="relative pt-2">
+              <div className="relative">
                 <div className="relative max-w-sm">
-                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                  <Search className="w-3 h-3 absolute left-2.5 top-2 text-slate-400" />
                   <Input
                     type="search"
                     placeholder="우리 반 학생 검색 (이름, 번호)..."
                     value={studentSearchQuery}
                     onChange={(e) => setStudentSearchQuery(e.target.value)}
-                    className="h-8 pl-8 text-xs bg-slate-50/70 border-slate-200 rounded-lg focus-visible:bg-white"
+                    className="h-7 pl-7 text-xs bg-slate-50/70 border-slate-200 rounded-lg focus-visible:bg-white"
                   />
                 </div>
                 {/* 검색 결과 드롭다운 */}
@@ -1232,10 +929,412 @@ export default function TeacherHomeroomApplyPage() {
                   </div>
                 )}
               </div>
-            </CardHeader>
-            <CardContent className="pt-3">
-              {/* 테이블 컨테이너 (고정 헤더 & 명단 영역 독립 스크롤) */}
-              <div className="rounded-xl border border-slate-200 shadow-2xs max-h-[calc(100vh-320px)] overflow-y-auto overscroll-contain relative">
+            </div>
+          )}
+
+          {/* 대리작성 탭일 때 함께 고정되는 상단 컨트롤 (학급/학생/날짜 3개 버튼 + 서식 탭) */}
+          {activeMainTab === 'proxy' && (
+            <div className="space-y-1.5">
+              {/* 1. 대상 학생 및 결재일자 지정 (학급, 학생, 날짜 한 줄 배치) */}
+              <div className="rounded-xl border border-slate-200/80 shadow-xs bg-white p-2 sm:p-2.5 space-y-1.5">
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                  {/* 학급 선택 */}
+                  <Select value={selectedClassKey} onValueChange={(val) => { setSelectedClassKey(val); setSelectedStudentId(''); }}>
+                    <SelectTrigger className="h-8 sm:h-9 text-xs font-bold bg-white px-2 truncate">
+                      <SelectValue placeholder="학급 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableClassKeys.map(key => (
+                        <SelectItem key={key} value={key} className="text-xs font-medium">
+                          {formatClassLabel(key)} {myHomeroomKeys.includes(key) ? '(내 학급)' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {/* 학생 선택 */}
+                  <Select value={selectedStudentId} onValueChange={handleSelectStudent}>
+                    <SelectTrigger className="h-8 sm:h-9 text-xs font-bold bg-white px-2 truncate">
+                      <SelectValue placeholder={classStudents.length === 0 ? "학생 없음" : "학생 선택"} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      {classStudents.map(st => {
+                        const valKey = st.studentId || st.id || st.studentEmail;
+                        return (
+                          <SelectItem key={valKey} value={valKey} className="text-xs">
+                            {st.studentNum ? `${st.studentNum}번 ` : ''}{st.name}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+
+                  {/* 결재일자 / 신청일자 */}
+                  <Input 
+                    type="date" 
+                    value={applyDate} 
+                    onChange={(e) => setApplyDate(e.target.value)}
+                    className="h-8 sm:h-9 text-xs font-bold bg-white px-1.5 text-center"
+                    title="결재일자 (신청일자)"
+                  />
+                </div>
+
+                {/* 선택 학생 상세 요약 */}
+                {selectedStudentId && (
+                  <div className="p-1.5 sm:p-2 bg-indigo-50/70 border border-indigo-200 rounded-lg flex flex-wrap items-center justify-between gap-1 text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <Badge className="bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0">
+                        선택됨
+                      </Badge>
+                      <span className="font-bold text-indigo-950 text-xs">{studentName}</span>
+                      <span className="text-indigo-800 text-[11px]">({gradeClassNumber})</span>
+                      {parentPhone && <span className="text-slate-600 text-[11px]">· {parentPhone}</span>}
+                    </div>
+
+                    {enableCumulative && (
+                      <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-700">
+                        <span>체험: <strong className="text-indigo-700 font-bold">{accumulatedFtDays}일</strong></span>
+                        <span>결석: <strong className="text-rose-600 font-bold">{accumulatedAbsDays}일</strong></span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* 2. 교외체험학습 신청서 / 결석계 서식 탭 */}
+              <Tabs value={docCategory} onValueChange={(val) => setDocCategory(val as any)} className="w-full">
+                <TabsList className="grid grid-cols-2 w-full bg-slate-100 p-1 rounded-xl h-auto shadow-2xs">
+                  <TabsTrigger value="field-trip" className="text-xs font-bold py-1.5 gap-1.5 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-xs">
+                    <Backpack className="w-3.5 h-3.5" />
+                    <span>교외체험학습 신청서</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="absence" className="text-xs font-bold py-1.5 gap-1.5 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-xs">
+                    <CalendarOff className="w-3.5 h-3.5" />
+                    <span>결석계</span>
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+          )}
+        </div>
+
+        {/* 탭 1: 출결/체험학습 대리 작성 */}
+        <TabsContent value="proxy" className="data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:min-h-0 data-[state=active]:flex-col data-[state=inactive]:hidden m-0 space-y-0 overflow-hidden">
+          <Card className="flex-1 min-h-0 flex flex-col rounded-xl border border-slate-200/80 shadow-xs overflow-hidden bg-white">
+            <CardContent className="flex-1 min-h-0 p-2.5 sm:p-3.5 overflow-y-auto overscroll-contain flex flex-col justify-between gap-2">
+              {/* 2-A. 체험학습 신청서 폼 */}
+              {docCategory === 'field-trip' && (
+                <div className="space-y-2 animate-in fade-in flex-1 flex flex-col justify-between min-h-0">
+                  {/* 시작일, 종료일 & 수업일수 뱃지 인라인 헤더 */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] sm:text-xs font-bold text-slate-700">신청 기간 및 수업일수 <span className="text-red-500">*</span></Label>
+                      <Badge variant="outline" className="bg-indigo-50/80 border-indigo-200 text-indigo-700 text-[10px] font-bold px-1.5 py-0">
+                        수업 {ftTotalDays}일간 (공휴일/주말 제외)
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+                      <Input type="date" value={ftStartDate} onChange={(e) => setFtStartDate(e.target.value)} className="h-8 text-xs bg-white px-2" />
+                      <Input type="date" value={ftEndDate} onChange={(e) => setFtEndDate(e.target.value)} className="h-8 text-xs bg-white px-2" />
+                    </div>
+                  </div>
+
+                  {/* 학습 형태, 장소, 보호자, 관계 4개 입력칸 1줄 배치 */}
+                  <div className="grid grid-cols-4 gap-1 sm:gap-2">
+                    <div className="space-y-0.5 min-w-0">
+                      <Label className="text-[10px] sm:text-[11px] font-bold truncate block text-slate-600">학습 형태</Label>
+                      <Select value={ftType} onValueChange={setFtType}>
+                        <SelectTrigger className="h-7 sm:h-8 text-[11px] sm:text-xs bg-white px-1 sm:px-2 truncate">
+                          <SelectValue placeholder="형태" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="가족동반여행" className="text-xs">가족동반여행</SelectItem>
+                          <SelectItem value="친인척 방문" className="text-xs">친인척 방문</SelectItem>
+                          <SelectItem value="답사·견학 활동" className="text-xs">답사·견학 활동</SelectItem>
+                          <SelectItem value="체험활동" className="text-xs">체험활동</SelectItem>
+                          <SelectItem value="기타" className="text-xs">기타</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-0.5 min-w-0">
+                      <Label className="text-[10px] sm:text-[11px] font-bold truncate block text-slate-600">장소 <span className="text-red-500">*</span></Label>
+                      <Input 
+                        placeholder="다낭, 서울 등" 
+                        value={ftDestination} 
+                        onChange={(e) => setFtDestination(e.target.value)} 
+                        className="h-7 sm:h-8 text-[11px] sm:text-xs bg-white px-1.5"
+                      />
+                    </div>
+
+                    <div className="space-y-0.5 min-w-0">
+                      <Label className="text-[10px] sm:text-[11px] font-bold truncate block text-slate-600">보호자</Label>
+                      <Input 
+                        placeholder="성명" 
+                        value={ftCompanionName} 
+                        onChange={(e) => setFtCompanionName(e.target.value)} 
+                        className="h-7 sm:h-8 text-[11px] sm:text-xs bg-white px-1.5"
+                      />
+                    </div>
+
+                    <div className="space-y-0.5 min-w-0">
+                      <Label className="text-[10px] sm:text-[11px] font-bold truncate block text-slate-600">관계</Label>
+                      <Input 
+                        placeholder="부, 모" 
+                        value={ftCompanionRelation} 
+                        onChange={(e) => setFtCompanionRelation(e.target.value)} 
+                        className="h-7 sm:h-8 text-[11px] sm:text-xs bg-white px-1.5"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 목적 */}
+                  <div className="space-y-0.5">
+                    <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">체험학습 목적</Label>
+                    <Input 
+                      placeholder="예: 현지 문화 탐방 및 가족 유대 강화" 
+                      value={ftPurpose} 
+                      onChange={(e) => setFtPurpose(e.target.value)} 
+                      className="h-7 sm:h-8 text-xs bg-white px-2"
+                    />
+                  </div>
+
+                  {/* 구체적 계획 */}
+                  <div className="space-y-0.5 flex-1 flex flex-col min-h-0">
+                    <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">구체적 계획</Label>
+                    <Textarea 
+                      placeholder="예: 1일차 유적지 탐방, 2일차 자연 생태 체험 등" 
+                      value={ftDetailedPlan} 
+                      onChange={(e) => setFtDetailedPlan(e.target.value)} 
+                      rows={2}
+                      className="text-xs bg-white resize-none flex-1 min-h-[56px]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 2-B. 결석계 폼 */}
+              {docCategory === 'absence' && (
+                <div className="space-y-2 animate-in fade-in flex-1 flex flex-col justify-between min-h-0">
+                  {/* 시작일, 종료일 & 결석일수 뱃지 인라인 헤더 */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] sm:text-xs font-bold text-slate-700">결석 기간 및 일수 <span className="text-red-500">*</span></Label>
+                      <Badge variant="outline" className="bg-rose-50/80 border-rose-200 text-rose-600 text-[10px] font-bold px-1.5 py-0">
+                        결석 {absTotalDays}일간 (공휴일/주말 제외)
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+                      <Input type="date" value={absStartDate} onChange={(e) => setAbsStartDate(e.target.value)} className="h-8 text-xs bg-white px-2" />
+                      <Input type="date" value={absEndDate} onChange={(e) => setAbsEndDate(e.target.value)} className="h-8 text-xs bg-white px-2" />
+                    </div>
+                  </div>
+
+                  {/* 결석 종류, 담임 확인 방법 한 줄 나란히 배치 */}
+                  <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+                    <div className="space-y-0.5 min-w-0">
+                      <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">결석 종류</Label>
+                      <Select value={absType} onValueChange={(val) => setAbsType(val as any)}>
+                        <SelectTrigger className="h-7 sm:h-8 text-xs bg-white px-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="병결" className="text-xs">병결</SelectItem>
+                          <SelectItem value="미인정" className="text-xs">미인정</SelectItem>
+                          <SelectItem value="기타" className="text-xs">기타</SelectItem>
+                          <SelectItem value="출석인정" className="text-xs">출석인정</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-0.5 min-w-0">
+                      <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">담임 확인 방법</Label>
+                      <Select value={teacherConfirmMethod} onValueChange={(val) => setTeacherConfirmMethod(val as any)}>
+                        <SelectTrigger className="h-7 sm:h-8 text-xs bg-white px-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="전화/문자" className="text-xs">전화/문자</SelectItem>
+                          <SelectItem value="학부모 내교" className="text-xs">학부모 내교</SelectItem>
+                          <SelectItem value="가정방문" className="text-xs">가정방문</SelectItem>
+                          <SelectItem value="기타" className="text-xs">기타</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* 결석 사유 */}
+                  <div className="space-y-0.5 flex-1 flex flex-col min-h-0">
+                    <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">결석 사유 <span className="text-red-500">*</span></Label>
+                    <Textarea 
+                      placeholder="예: 감기 몸살 및 발열로 인한 가료 요양" 
+                      value={absReason} 
+                      onChange={(e) => setAbsReason(e.target.value)} 
+                      rows={3}
+                      className="text-xs bg-white resize-none flex-1 min-h-[60px]"
+                    />
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 제출 액션 버튼 */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 pt-1.5 shrink-0">
+            <p className="text-[10px] text-muted-foreground hidden sm:block">
+              * '작성 및 담임 결재 완료' 시 문서가 즉시 승인되어 상신됩니다.
+            </p>
+            <Button 
+              size="default" 
+              onClick={handleSubmitAndApprove} 
+              disabled={isSubmitting || !selectedStudentId}
+              className="w-full sm:w-auto font-bold px-4 h-9 gap-1.5 bg-primary shadow-sm hover:shadow-md transition-all text-xs"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  처리 중...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  작성 및 담임 결재 완료
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
+            </Button>
+          </div>
+        </TabsContent>
+
+        {/* 탭 2: 학생 정보 확인 (학급 학생 전용 뷰 및 일일 출석부) */}
+        <TabsContent value="student-info" className="data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:min-h-0 data-[state=active]:flex-col data-[state=inactive]:hidden m-0 space-y-0 overflow-hidden">
+          <Card className="flex-1 min-h-0 flex flex-col rounded-xl border border-slate-200/80 shadow-xs overflow-hidden bg-white">
+            <CardContent className="flex-1 min-h-0 p-0 overflow-y-auto overscroll-contain relative">
+              {/* 모바일 전용 출석부 뷰 (sm:hidden) */}
+              <div className="sm:hidden divide-y divide-slate-100">
+                {classStudents.length > 0 ? (
+                  classStudents.map(student => {
+                    const sId = student.studentId || student.id || '';
+                    const att = effectiveAttendanceMap.get(sId);
+                    const currentStatus = att?.status || 'ATTEND';
+                    const isAuto = att?.source === 'auto_field_trip' || att?.source === 'auto_absence';
+                    const isHighlighted = highlightedStudentId === sId;
+
+                    return (
+                      <div
+                        key={sId}
+                        id={`student-row-mobile-${sId}`}
+                        className={cn(
+                          "p-2.5 flex items-center justify-between gap-2 transition-all select-none",
+                          isHighlighted ? "bg-amber-100/90 ring-1 ring-amber-400" : "hover:bg-slate-50/80"
+                        )}
+                      >
+                        {/* 좌측: 번호, 아바타, 이름, 연락처 */}
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span className="w-5 text-center text-xs font-bold text-slate-500 shrink-0">
+                            {student.studentNum || '-'}
+                          </span>
+                          <Avatar className="w-8 h-8 rounded-lg border border-slate-200 shrink-0 bg-white shadow-2xs">
+                            {student.photoUrl ? (
+                              <AvatarImage src={student.photoUrl} alt={student.name} className="object-cover rounded-lg" />
+                            ) : (
+                              <AvatarFallback className="bg-indigo-50 text-indigo-700 font-extrabold text-[11px] rounded-lg">
+                                {(student.name || '학생').slice(0, 2)}
+                              </AvatarFallback>
+                            )}
+                          </Avatar>
+                          <div className="flex flex-col min-w-0 leading-tight">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-extrabold text-slate-900 text-xs truncate">
+                                {student.name}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-normal">
+                                {student.gender === 'Female' ? '여' : '남'}
+                              </span>
+                              {isAuto && (
+                                <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 text-[9px] px-1 py-0 h-4 font-bold shrink-0">
+                                  {att?.source === 'auto_field_trip' ? '체험' : '결석'}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5 flex-wrap">
+                              {student.contact && (
+                                <a href={`tel:${student.contact.replace(/\D/g, '')}`} className="text-slate-600 font-medium hover:text-indigo-600 flex items-center gap-0.5">
+                                  <Phone className="w-2.5 h-2.5" />
+                                  <span>{student.contact}</span>
+                                </a>
+                              )}
+                              {/* 하교 버스 간단 표시 */}
+                              {(() => {
+                                const bSum = student.busSummary;
+                                const sid = (student.studentId || student.id || '') as string;
+                                const afternoonByDay = studentAfternoonBusMap.get(sid);
+                                const DAY_LABELS: Record<string, string> = { Monday: '월', Tuesday: '화', Wednesday: '수', Thursday: '목', Friday: '금' };
+                                const todayDayEn = format(new Date(), 'EEEE') as DayOfWeek;
+                                const todayBus = afternoonByDay?.[todayDayEn] || (afternoonByDay ? Object.values(afternoonByDay)[0] : null);
+                                if (todayBus) {
+                                  return (
+                                    <span className="bg-blue-50 text-blue-800 border border-blue-200 rounded px-1 text-[9px] font-semibold">
+                                      버스: {todayBus.busNo}
+                                    </span>
+                                  );
+                                }
+                                if (bSum?.regularBusName) {
+                                  return (
+                                    <span className="bg-sky-50 text-sky-800 border border-sky-200 rounded px-1 text-[9px] font-semibold">
+                                      등교: {bSum.regularBusName}
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 우측: 모바일 원터치 출결 버튼 & 정보수정 */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => cycleAttendanceStatus(student, currentStatus)}
+                            className={cn(
+                              "h-7 px-2.5 rounded-lg text-xs font-extrabold border transition-all active:scale-95 shadow-2xs select-none cursor-pointer flex items-center justify-center min-w-[58px]",
+                              currentStatus === 'ATTEND' && "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600",
+                              currentStatus === 'ABSENT' && "bg-rose-500 hover:bg-rose-600 text-white border-rose-600",
+                              currentStatus === 'EARLY_LEAVE' && "bg-amber-500 hover:bg-amber-600 text-white border-amber-600",
+                              currentStatus === 'INDIVIDUAL_DISMISSAL' && "bg-purple-600 hover:bg-purple-700 text-white border-purple-700"
+                            )}
+                            title="탭하여 출석/결석/조퇴/개별하교 순환 변경"
+                          >
+                            {currentStatus === 'ATTEND' && '출석'}
+                            {currentStatus === 'ABSENT' && '결석'}
+                            {currentStatus === 'EARLY_LEAVE' && '조퇴'}
+                            {currentStatus === 'INDIVIDUAL_DISMISSAL' && '개별하교'}
+                          </button>
+
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg shrink-0"
+                            onClick={() => handleStartEditStudent(student)}
+                            title="정보 수정"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="p-8 text-center text-xs text-slate-500">
+                    담당 학급에 등록된 학생이 없습니다.
+                  </div>
+                )}
+              </div>
+
+              {/* 데스크톱 전용 출석부 테이블 뷰 (hidden sm:block) */}
+              <div className="hidden sm:block">
                 <Table>
                   <TableHeader className="bg-slate-100 sticky top-0 z-20 shadow-xs">
                     <TableRow>
@@ -1464,7 +1563,7 @@ export default function TeacherHomeroomApplyPage() {
           </Card>
         </TabsContent>
         {/* 탭 3: 학급 관리 (칠판 알림장, 숙제 체크/프레젠테이션, 행동 관찰, 상담 일지, 월별 매트릭스, 학년 자료 공유) */}
-        <TabsContent value="class-management" className="space-y-4">
+        <TabsContent value="class-management" className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 p-0.5">
           <ClassManagementTab
             classKey={selectedClassKey}
             classLabel={selectedClassKey ? formatClassLabel(selectedClassKey) : '우리 반'}
@@ -1474,7 +1573,7 @@ export default function TeacherHomeroomApplyPage() {
         </TabsContent>
 
         {/* 탭 4: 학년 자료 공유 (Google Drive 05_학년별 수업자료 공유 폴더) */}
-        <TabsContent value="grade-materials" className="space-y-4">
+        <TabsContent value="grade-materials" className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 p-0.5">
           <GradeMaterialsTab
             classKey={selectedClassKey}
             classLabel={selectedClassKey ? formatClassLabel(selectedClassKey) : '우리 반'}
@@ -1483,19 +1582,19 @@ export default function TeacherHomeroomApplyPage() {
         </TabsContent>
 
         {/* 탭 5: 학부모 상담 (상담 주간 신청 현황 및 교사/학부모 예약 관리) */}
-        <TabsContent value="consultation" className="space-y-4">
+        <TabsContent value="consultation" className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 p-0.5">
           {/* 학급 선택 바 (전교 권한일 경우 다른 학급도 선택/조회 가능) */}
           {availableClassKeys.length > 1 && (
-            <div className="flex items-center justify-between bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 font-bold text-xs">
+            <div className="flex items-center justify-between gap-2 bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-xs">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 font-bold text-[10px] sm:text-xs shrink-0">
                   학급 선택
                 </Badge>
-                <span className="text-xs text-slate-500">상담 주간 시간표를 조회하거나 관리할 학급을 선택하세요.</span>
+                <span className="hidden sm:inline text-xs text-slate-500">상담 관리할 학급을 선택하세요.</span>
               </div>
-              <div className="w-48">
+              <div className="w-36 sm:w-48 shrink-0">
                 <Select value={selectedClassKey} onValueChange={(val) => { setSelectedClassKey(val); setSelectedStudentId(''); }}>
-                  <SelectTrigger className="h-9 text-xs font-semibold bg-white">
+                  <SelectTrigger className="h-8 text-xs font-semibold bg-white">
                     <SelectValue placeholder="학급 선택" />
                   </SelectTrigger>
                   <SelectContent>
