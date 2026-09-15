@@ -1255,7 +1255,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
               </div>
 
               {/* 날짜(회차) 중심 버튼 스크롤 */}
-              <div ref={sessionScrollRef} className="flex-1 min-w-0 flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 scroll-smooth">
+              <div ref={sessionScrollRef} className="flex-1 min-w-0 flex items-center gap-1.5 sm:gap-2 overflow-x-auto overscroll-x-contain pb-0.5 scroll-smooth">
                 {scheduleDays.map((day) => {
                   const isSelected = day.dayIndex === activeSessionNo;
                   const now = new Date();
@@ -1292,7 +1292,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
           </div>
 
           {/* ===== MOBILE VIEW: Today-session-only list ===== */}
-          <div className="block md:hidden divide-y divide-slate-100">
+          <div className="block md:hidden divide-y divide-slate-100 overflow-x-hidden">
             {courseStudents.length === 0 ? (
               <div className="py-12 text-center text-slate-400 text-sm">{t('teacher_afterschool.no_students', '수강 등록된 학생이 없습니다.')}</div>
             ) : (
@@ -1302,11 +1302,11 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                 const isLastTwo = index >= courseStudents.length - 2;
 
                 return (
-                  <div key={enrollment.id} className="px-3.5 py-3 flex items-center justify-between gap-3 bg-white hover:bg-slate-50 transition">
+                  <div key={enrollment.id} className="w-full px-3.5 py-3 flex items-center justify-between gap-3 bg-white hover:bg-slate-50 transition overflow-x-hidden">
                     <button
                       type="button"
                       onClick={() => setModalStudent(sInfo)}
-                      className="flex items-center gap-2.5 flex-1 min-w-0 text-left cursor-pointer group"
+                      className="flex items-center gap-2.5 flex-1 min-w-0 text-left cursor-pointer group overflow-hidden"
                     >
                       <Avatar className="w-10 h-10 rounded-xl border border-slate-200 shrink-0 shadow-2xs">
                         {sInfo.photoUrl ? (
@@ -1351,17 +1351,20 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                         )}
                       </div>
                     </button>
-                    <MobileMarkButton
-                      studentId={enrollment.studentId}
-                      sessionNo={activeSessionNo}
-                      mark={mark}
-                      onSelect={(val) => handleSetDayMark(enrollment.studentId, activeSessionNo, val)}
-                      dropUp={isLastTwo}
-                    />
+                    <div className="shrink-0">
+                      <MobileMarkButton
+                        studentId={enrollment.studentId}
+                        sessionNo={activeSessionNo}
+                        mark={mark}
+                        onSelect={(val) => handleSetDayMark(enrollment.studentId, activeSessionNo, val)}
+                        dropUp={isLastTwo}
+                      />
+                    </div>
                   </div>
                 );
               })
             )}
+
 
             {/* Summary footer */}
             {courseStudents.length > 0 && (

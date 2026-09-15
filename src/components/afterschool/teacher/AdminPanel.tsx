@@ -999,9 +999,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   ];
 
   return (
-    <div className="w-full max-w-full bg-white flex flex-col rounded-xl overflow-hidden border border-slate-200 min-w-0">
+    <div className="w-full h-full max-h-full bg-white flex flex-col rounded-xl overflow-hidden border border-slate-200 min-w-0 min-h-0 flex-1">
         {/* Tabs */}
-        <div className="flex border-b border-slate-200 bg-white shrink-0 w-full min-w-0">
+        <div className="flex border-b border-slate-200 bg-white shrink-0 w-full min-w-0 overflow-x-auto no-scrollbar">
           {tabs.map((tItem) => (
             <button
               key={tItem.key}
@@ -1023,7 +1023,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
 
         {/* Panel Content */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-1.5 sm:p-2.5 space-y-1.5 sm:space-y-2 min-w-0 w-full">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain overflow-x-hidden p-1.5 sm:p-2.5 space-y-1.5 sm:space-y-2 min-w-0 w-full">
 
           {/* ===== 방과후학교 운영 단계 마스터 설정 카드 (접기/펼치기 기능 지원) ===== */}
           <div className="bg-white p-2 sm:p-3 rounded-xl border border-blue-200 shadow-2xs space-y-1.5 sm:space-y-2 transition-all min-w-0">
@@ -1083,19 +1083,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
             {/* 5단계 상태 전환 버튼 그룹 (접힘 상태가 아닐 때 표출) */}
             {!isStageControlFolded && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-1.5 sm:gap-2 animate-in fade-in duration-200">
+              <div className="grid grid-cols-5 gap-1 sm:gap-2 animate-in fade-in duration-200">
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('RECRUITING')}
-                  className={`p-1.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
+                  className={`p-1 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl border text-center sm:text-left transition flex flex-col justify-center sm:justify-between min-w-0 ${
                     ((teacherApplySettings as any)?.afterschoolStageStatus || 'RECRUITING') === 'RECRUITING'
-                      ? 'bg-blue-50 border-2 border-blue-600 ring-2 ring-blue-100 text-blue-900 font-bold'
+                      ? 'bg-blue-50 border-2 border-blue-600 ring-1 sm:ring-2 ring-blue-100 text-blue-900 font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-0 sm:mb-1 min-w-0">
-                    <span className="truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_recruiting') || '강사 모집 중'}</span>
-                    {((teacherApplySettings as any)?.afterschoolStageStatus || 'RECRUITING') === 'RECRUITING' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600 shrink-0 ml-0.5" />}
+                  <div className="flex items-center justify-center sm:justify-between text-xs mb-0 sm:mb-1 min-w-0">
+                    <span className="sm:hidden text-[10px] font-bold truncate">강사모집</span>
+                    <span className="hidden sm:inline truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_recruiting') || '강사 모집 중'}</span>
+                    {((teacherApplySettings as any)?.afterschoolStageStatus || 'RECRUITING') === 'RECRUITING' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600 shrink-0 ml-0.5 hidden sm:block" />}
                   </div>
                   <p className="text-[9px] sm:text-[10px] text-slate-500 truncate hidden sm:block">프로그램 개설 및 접수</p>
                 </button>
@@ -1103,15 +1104,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('APPLYING')}
-                  className={`p-1.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
+                  className={`p-1 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl border text-center sm:text-left transition flex flex-col justify-center sm:justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING'
-                      ? 'bg-amber-50 border-2 border-amber-600 ring-2 ring-amber-100 text-amber-900 font-bold'
+                      ? 'bg-amber-50 border-2 border-amber-600 ring-1 sm:ring-2 ring-amber-100 text-amber-900 font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-0 sm:mb-1 min-w-0">
-                    <span className="truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_applying') || '수강 신청 중'}</span>
-                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-amber-600 shrink-0 ml-0.5" />}
+                  <div className="flex items-center justify-center sm:justify-between text-xs mb-0 sm:mb-1 min-w-0">
+                    <span className="sm:hidden text-[10px] font-bold truncate">수강신청</span>
+                    <span className="hidden sm:inline truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_applying') || '수강 신청 중'}</span>
+                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-amber-600 shrink-0 ml-0.5 hidden sm:block" />}
                   </div>
                   <p className="text-[9px] sm:text-[10px] text-slate-500 truncate hidden sm:block">선착순 수강신청</p>
                 </button>
@@ -1119,15 +1121,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('CONFIRMED')}
-                  className={`p-1.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
+                  className={`p-1 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl border text-center sm:text-left transition flex flex-col justify-center sm:justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'CONFIRMED'
-                      ? 'bg-violet-50 border-2 border-violet-600 ring-2 ring-violet-100 text-violet-900 font-bold'
+                      ? 'bg-violet-50 border-2 border-violet-600 ring-1 sm:ring-2 ring-violet-100 text-violet-900 font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-0 sm:mb-1 min-w-0">
-                    <span className="text-violet-800 font-extrabold truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_confirmed') || '수강신청 완료'}</span>
-                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'CONFIRMED' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-violet-600 shrink-0 ml-0.5" />}
+                  <div className="flex items-center justify-center sm:justify-between text-xs mb-0 sm:mb-1 min-w-0">
+                    <span className="sm:hidden text-[10px] text-violet-800 font-bold truncate">신청완료</span>
+                    <span className="hidden sm:inline text-violet-800 font-extrabold truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_confirmed') || '수강신청 완료'}</span>
+                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'CONFIRMED' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-violet-600 shrink-0 ml-0.5 hidden sm:block" />}
                   </div>
                   <p className="text-[9px] sm:text-[10px] text-violet-600 font-medium truncate hidden sm:block">결과 확정 통보</p>
                 </button>
@@ -1135,15 +1138,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('OPERATING')}
-                  className={`p-1.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 ${
+                  className={`p-1 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl border text-center sm:text-left transition flex flex-col justify-center sm:justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING'
-                      ? 'bg-emerald-50 border-2 border-emerald-600 ring-2 ring-emerald-100 text-emerald-900 shadow-sm font-bold'
+                      ? 'bg-emerald-50 border-2 border-emerald-600 ring-1 sm:ring-2 ring-emerald-100 text-emerald-900 shadow-sm font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-0 sm:mb-1 min-w-0">
-                    <span className="text-emerald-700 font-extrabold truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_operating') || '방과후 운영 중'}</span>
-                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-600 shrink-0 ml-0.5" />}
+                  <div className="flex items-center justify-center sm:justify-between text-xs mb-0 sm:mb-1 min-w-0">
+                    <span className="sm:hidden text-[10px] text-emerald-700 font-bold truncate">운영중</span>
+                    <span className="hidden sm:inline text-emerald-700 font-extrabold truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_operating') || '방과후 운영 중'}</span>
+                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-600 shrink-0 ml-0.5 hidden sm:block" />}
                   </div>
                   <p className="text-[9px] sm:text-[10px] text-emerald-600 font-medium truncate hidden sm:block">출석부 및 수업</p>
                 </button>
@@ -1151,15 +1155,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('CLOSED')}
-                  className={`p-1.5 sm:p-3 rounded-xl border text-left transition flex flex-col justify-between min-w-0 col-span-2 sm:col-span-1 xl:col-span-1 ${
+                  className={`p-1 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl border text-center sm:text-left transition flex flex-col justify-center sm:justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED'
-                      ? 'bg-slate-200 border-2 border-slate-600 ring-2 ring-slate-200 text-slate-900 font-bold'
+                      ? 'bg-slate-200 border-2 border-slate-600 ring-1 sm:ring-2 ring-slate-200 text-slate-900 font-bold'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-0 sm:mb-1 min-w-0">
-                    <span className="truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_closed') || '운영 종료'}</span>
-                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-slate-600 shrink-0 ml-0.5" />}
+                  <div className="flex items-center justify-center sm:justify-between text-xs mb-0 sm:mb-1 min-w-0">
+                    <span className="sm:hidden text-[10px] font-bold truncate">종료</span>
+                    <span className="hidden sm:inline truncate text-[11px] sm:text-xs">{t('afterschool.admin.stage_closed') || '운영 종료'}</span>
+                    {(teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED' && <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-slate-600 shrink-0 ml-0.5 hidden sm:block" />}
                   </div>
                   <p className="text-[9px] sm:text-[10px] text-slate-500 truncate hidden sm:block">학기 운영 마감</p>
                 </button>

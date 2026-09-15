@@ -1315,21 +1315,22 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   };
 
   return (
-    <div className="space-y-1.5 sm:space-y-2 min-w-0 w-full overflow-hidden">
+    <div className="space-y-1.5 sm:space-y-2 min-w-0 w-full">
       {/* Course Selector Header & Action Buttons Toolbar */}
-      <div className="bg-white p-2 sm:p-2.5 rounded-xl border border-slate-200/80 shadow-2xs space-y-1.5 min-w-0 w-full overflow-hidden">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 min-w-0 w-full">
-          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
-            <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 shrink-0" />
-            <label className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight shrink-0 whitespace-nowrap">
+      <div className="bg-white p-1.5 sm:p-2.5 rounded-xl border border-slate-200/80 shadow-2xs min-w-0 w-full">
+        <div className="flex items-center justify-between gap-1 sm:gap-2 min-w-0 w-full">
+          {/* 개체 1: 강좌 선택 드롭다운 (모바일에서는 '강좌 선택' 라벨과 아이콘 숨김, 약 6자 너비 컴팩트) */}
+          <div className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1">
+            <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 shrink-0 hidden md:block" />
+            <label className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight shrink-0 whitespace-nowrap hidden md:block">
               강좌 선택
             </label>
             <select
               value={selectedCourseId}
               onChange={(e) => setSelectedCourseId(e.target.value)}
-              className="flex-1 min-w-0 text-xs sm:text-sm font-bold text-slate-800 border-2 border-blue-500 rounded-lg sm:rounded-xl px-2 py-1.5 sm:px-2.5 sm:py-1.5 bg-blue-50/50 focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer transition truncate"
+              className="w-[105px] sm:w-[130px] md:w-auto md:flex-1 min-w-0 text-xs sm:text-sm font-bold text-slate-800 border-2 border-blue-500 rounded-lg sm:rounded-xl px-1.5 py-1 sm:px-2.5 sm:py-1.5 bg-blue-50/50 focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer transition truncate shrink-0 md:shrink"
             >
-              <option value="">{t('afterschool.teacher.select_course_placeholder') || '-- 강좌를 선택하세요 --'}</option>
+              <option value="">{t('afterschool.teacher.select_course_placeholder') || '-- 선택 --'}</option>
               <option value="all">{t('afterschool.teacher.all_courses_select')}</option>
               {sortedCourses.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -1339,61 +1340,66 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
             </select>
           </div>
 
-          {/* 주요 수강생 일괄 등록 & 명단/양식 다운로드 액션 버튼 바 */}
-          <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 shrink-0">
-            {/* 수강료 알림 관리 버튼 (아이콘 제거, 간결한 라벨) */}
+          {/* 주요 수강생 액션 버튼 바: 모바일에서는 '버스 연동', '개별 등록' 2개만 남겨 드롭다운과 함께 총 3개 개체 1줄 배치 */}
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+            {/* 수강료 알림 관리 버튼 (모바일 숨김) */}
             <button
               type="button"
               onClick={() => setIsAfterschoolBillingModalOpen(true)}
               disabled={enrollments.length === 0}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center shadow-sm whitespace-nowrap disabled:opacity-50 cursor-pointer"
+              className="hidden md:inline-flex bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition items-center justify-center shadow-sm whitespace-nowrap disabled:opacity-50 cursor-pointer"
               title="수강 확정생들의 수강료/버스비를 확인하고 학부모 서비스로 수강 확정 알림을 발송합니다."
             >
               <span>수강료 알림</span>
             </button>
 
+            {/* 개체 2: 버스 연동 버튼 (모바일 노출) */}
             <button
               type="button"
               onClick={handleSyncBusAndPhoneInfo}
               disabled={isSyncingBusInfo || enrollments.length === 0}
-              className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-300 px-2 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs whitespace-nowrap disabled:opacity-50"
+              className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-300 px-2 py-1 sm:px-2 sm:py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs whitespace-nowrap disabled:opacity-50"
               title="스쿨버스 명단과 대조하여 비어있는 스쿨버스 번호와 학부모 연락처를 일괄 자동 동기화합니다."
             >
               <RefreshCw className={`w-3 h-3 text-blue-600 shrink-0 ${isSyncingBusInfo ? 'animate-spin' : ''}`} />
-              <span className="whitespace-nowrap">{isSyncingBusInfo ? '동기화 중...' : '스쿨버스 연동'}</span>
+              <span className="md:hidden whitespace-nowrap">{isSyncingBusInfo ? '연동중' : '버스 연동'}</span>
+              <span className="hidden md:inline whitespace-nowrap">{isSyncingBusInfo ? '동기화 중...' : '스쿨버스 연동'}</span>
             </button>
 
-            {/* 수강생 명단 엑셀 다운로드 버튼 */}
+            {/* 수강생 명단 엑셀 다운로드 버튼 (모바일 숨김) */}
             <button
               type="button"
               onClick={handleDownloadStudentRoster}
               disabled={enrollments.length === 0}
-              className="bg-teal-600 hover:bg-teal-700 text-white px-2 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs whitespace-nowrap disabled:opacity-50"
+              className="hidden md:inline-flex bg-teal-600 hover:bg-teal-700 text-white px-2 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition items-center justify-center gap-1 shadow-xs whitespace-nowrap disabled:opacity-50"
               title="현재 선택된 강좌(또는 전체)의 수강생 명단을 엑셀 파일로 다운로드합니다."
             >
               <Download className="w-3 h-3 shrink-0" />
               <span className="whitespace-nowrap">명단 다운</span>
             </button>
 
+            {/* 일괄등록 양식 다운로드 (모바일 숨김) */}
             <button
               type="button"
               onClick={downloadSampleExcel}
-              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs whitespace-nowrap"
+              className="hidden md:inline-flex bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition items-center justify-center gap-1 shadow-2xs whitespace-nowrap"
               title="일괄등록 양식 다운로드 (필수 항목: 학년, 반, 번호, 이름, 강좌명)"
             >
               <Download className="w-3 h-3 text-emerald-600 shrink-0" />
               <span className="whitespace-nowrap">양식 다운</span>
             </button>
 
+            {/* 일괄 등록 (모바일 숨김) */}
             <button
               type="button"
               onClick={() => setIsBulkImportModalOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs whitespace-nowrap"
+              className="hidden md:inline-flex bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition items-center justify-center gap-1 shadow-xs whitespace-nowrap"
             >
               <FileSpreadsheet className="w-3 h-3 shrink-0" />
               <span className="whitespace-nowrap">일괄 등록</span>
             </button>
 
+            {/* 개체 3: 개별 등록 버튼 (모바일 노출) */}
             <button
               type="button"
               onClick={() => {
@@ -1409,7 +1415,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                 setRegNeedsBus(false);
                 setIsRegisterModalOpen(true);
               }}
-              className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-2 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap"
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-2 py-1 sm:px-2 sm:py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap"
               title="개별 등록"
             >
               <UserPlus className="w-3 h-3 text-slate-600 shrink-0" />

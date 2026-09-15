@@ -166,6 +166,8 @@ function AfterschoolAdmin() {
   return (
     <MainLayout
       title={t('afterschool.admin.title') || "방과후학교 관리자"}
+      isFixedScreen={true}
+      contentClassName="p-1 sm:p-2 md:p-4 flex-1 min-h-0 overflow-hidden flex flex-col"
       titleActions={
         <div className="flex items-center gap-1 bg-slate-100/90 p-0.5 sm:p-1 rounded-xl border border-slate-200 shadow-2xs">
           <button
@@ -196,7 +198,7 @@ function AfterschoolAdmin() {
         </div>
       }
     >
-      <div className="max-w-7xl mx-auto px-1.5 py-1 sm:px-3 md:px-5 md:py-2 min-w-0 w-full overflow-hidden">
+      <div className="max-w-7xl mx-auto w-full h-full min-h-0 flex-1 flex flex-col overflow-hidden px-0.5 sm:px-1 md:px-2">
         {activeTab === 'control' ? (
           <AdminControlRoom
             timerConfig={timerConfig}
