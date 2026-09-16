@@ -275,8 +275,8 @@ const AdminPageContent: React.FC<{
     return (
         <div className="w-full min-w-0">
             <Tabs value={activeTab} onValueChange={setActiveTab} defaultValue="student-management" id="admin-tabs-root" className="w-full">
-                {/* 스크롤 시 탭 및 필터 고정 - MainLayout header sticky top-0 z-30 기준 아래에 top-[--site-header-height]로 밀착 */}
-                <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-md px-2.5 sm:px-4 md:px-6 py-2 space-y-2 border-b border-slate-200/50 shadow-xs" style={{ top: 'var(--site-header-height, 56px)' }}>
+                {/* 스크롤 시 탭 및 필터 고정 - MainLayout의 <main> 스크롤 컨테이너 기준 top-0에 밀착하여 헤더 바로 아래 유격 원천 차단 */}
+                <div className="sticky top-0 z-20 bg-background px-2.5 sm:px-4 md:px-6 py-2 space-y-2 border-b border-slate-200/50 shadow-xs">
                     <TabsList className="grid grid-cols-3 sm:grid-cols-6 h-auto w-full bg-slate-100 p-1 sm:p-1.5 rounded-2xl gap-1 border border-slate-200/80">
                         <TabsTrigger value="bus-registration" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_registration')}</TabsTrigger>
                         <TabsTrigger value="teacher-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.teacher_management')}</TabsTrigger>
@@ -2926,18 +2926,17 @@ ${leaderRowsHtml}
                 )}
             </Button>
 
-            {/* 0. 푸시 알림 관리 팝업 버튼 */}
+            {/* 0. 푸시 알림 관리 팝업 버튼 (모바일 숨김) */}
             <Dialog open={isNotificationsModalOpen} onOpenChange={setIsNotificationsModalOpen}>
                 <DialogTrigger asChild>
                     <Button
                         type="button"
                         variant="ghost"
-                        className="h-8 px-2 sm:px-2.5 bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200/90 text-slate-700 font-bold text-xs rounded-lg shadow-none flex items-center gap-1 cursor-pointer transition whitespace-nowrap"
+                        className="h-8 px-2 sm:px-2.5 bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200/90 text-slate-700 font-bold text-xs rounded-lg shadow-none hidden sm:inline-flex items-center gap-1 cursor-pointer transition whitespace-nowrap"
                         title="푸시 알림 관리 및 템플릿 설정"
                     >
                         <Bell className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                        <span className="hidden sm:inline">알림 관리</span>
-                        <span className="inline sm:hidden text-[11px]">알림</span>
+                        <span>알림 관리</span>
                     </Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
@@ -2956,26 +2955,24 @@ ${leaderRowsHtml}
                 </DialogContent>
             </Dialog>
 
-            {/* 1. 스쿨버스 관련 공문서 작성 버튼 */}
+            {/* 1. 스쿨버스 관련 공문서 작성 버튼 (모바일 숨김) */}
             <Button
                 type="button"
                 variant="ghost"
                 onClick={() => setIsBusDocModalOpen(true)}
-                className="h-8 px-2 sm:px-2.5 bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200/90 text-slate-700 font-bold text-xs rounded-lg shadow-none flex items-center gap-1 cursor-pointer transition whitespace-nowrap"
+                className="h-8 px-2 sm:px-2.5 bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200/90 text-slate-700 font-bold text-xs rounded-lg shadow-none hidden sm:inline-flex items-center gap-1 cursor-pointer transition whitespace-nowrap"
                 title="스쿨버스 관련 공문서 작성"
             >
                 <FileText className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                <span className="hidden sm:inline">스쿨버스 공문서</span>
-                <span className="inline sm:hidden text-[11px]">공문서</span>
+                <span>스쿨버스 공문서</span>
                 <Badge variant="outline" className="bg-white text-slate-600 border-slate-200/90 text-[10px] px-1 py-0 font-bold whitespace-nowrap hidden md:inline-flex">
                     3종
                 </Badge>
             </Button>
 
-            {/* 2. 학부모 탑승 신청 제어 카드 */}
-            <div className="bg-slate-100/90 border border-slate-200/90 rounded-lg px-2 sm:px-2.5 py-1 flex items-center gap-1.5 sm:gap-2 h-8 shadow-none shrink-0" title="학부모 탑승 신청 열림/마감">
-                <span className="text-[11px] sm:text-xs font-bold text-slate-700 whitespace-nowrap hidden sm:inline">학부모 신청</span>
-                <span className="text-[11px] font-bold text-slate-700 whitespace-nowrap inline sm:hidden">신청</span>
+            {/* 2. 학부모 탑승 신청 제어 카드 (모바일 숨김) */}
+            <div className="bg-slate-100/90 border border-slate-200/90 rounded-lg px-2 sm:px-2.5 py-1 hidden sm:flex items-center gap-1.5 sm:gap-2 h-8 shadow-none shrink-0" title="학부모 탑승 신청 열림/마감">
+                <span className="text-[11px] sm:text-xs font-bold text-slate-700 whitespace-nowrap">학부모 신청</span>
                 <Badge 
                     variant="outline"
                     className={cn(
