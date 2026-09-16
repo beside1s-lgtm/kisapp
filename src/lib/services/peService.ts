@@ -15,6 +15,13 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
+
+// Firestore는 undefined 및 NaN 값을 허용하지 않으므로 저장 전 해당 키를 모두 제거
+function stripUndefined<T extends Record<string, any>>(obj: T): T {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined && !(typeof v === 'number' && isNaN(v)))
+  ) as T;
+}
 import * as XLSX from 'xlsx';
 import type {
   Student,
@@ -103,11 +110,11 @@ export async function addOrUpdatePeRecord(
 ): Promise<MeasurementRecord> {
   const recordId = record.id || uuidv4();
   const recordRef = doc(db, 'pe_schools', school, 'records', recordId);
-  const dataToSave: MeasurementRecord = {
+  const dataToSave: MeasurementRecord = stripUndefined({
     ...record,
     id: recordId,
     school,
-  };
+  });
   await setDoc(recordRef, dataToSave, { merge: true });
   return dataToSave;
 }
@@ -121,7 +128,7 @@ export async function addBulkPeRecords(
   records.forEach(r => {
     const recId = r.id || uuidv4();
     const recRef = doc(db, 'pe_schools', school, 'records', recId);
-    const dataToSave: MeasurementRecord = { ...r, id: recId, school };
+    const dataToSave: MeasurementRecord = stripUndefined({ ...r, id: recId, school });
     batch.set(recRef, dataToSave, { merge: true });
     savedList.push(dataToSave);
   });

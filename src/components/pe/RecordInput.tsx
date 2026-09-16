@@ -277,8 +277,10 @@ export default function RecordInput({
       let weightVal: number | undefined;
 
       if (selectedItemForBatch?.isCompound) {
-        heightVal = parseFloat(current?.height || '');
-        weightVal = parseFloat(current?.weight || '');
+        const hv = parseFloat(current?.height || '');
+        const wv = parseFloat(current?.weight || '');
+        heightVal = isNaN(hv) ? undefined : hv;
+        weightVal = isNaN(wv) ? undefined : wv;
         const bmi = calculateBmi(current?.height, current?.weight);
         val = parseFloat(bmi);
       } else {
@@ -589,15 +591,12 @@ export default function RecordInput({
 
       {/* 2. 대화면 그리드 레이아웃: 좌측 컴팩트 테이블 (약 42%) vs 우측 대형 패널 (약 58%) */}
       {activeTab === 'batch' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-start">
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3.5 overflow-hidden">
           {/* =========================================================================
               좌측 패널: 학생 정보 옆 빈 공간 절반 축소 + 상단 헤더 고정 (lg:col-span-5)
              ========================================================================= */}
-          <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-            <div className={cn(
-              "overflow-y-auto overscroll-contain scrollbar-thin transition-all",
-              isToolbarCollapsed ? "max-h-[calc(100dvh-200px)] sm:max-h-[calc(100vh-200px)]" : "max-h-[calc(100dvh-265px)] sm:max-h-[calc(100vh-245px)]"
-            )}>
+          <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden flex flex-col min-h-0">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain scrollbar-thin transition-all">
               <table className="w-full text-xs text-left border-collapse">
                 {/* 상단 테이블 헤더 고정 (sticky top-0) */}
                 <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
@@ -747,9 +746,9 @@ export default function RecordInput({
           </div>
 
           {/* =========================================================================
-              우측 패널: 화면 상단 고정 (sticky top-4) + 기준표 + 영상 (lg:col-span-7)
+              우측 패널: 기준표 + 영상 (lg:col-span-7)
              ========================================================================= */}
-          <div className="lg:col-span-7 space-y-2 sticky top-4 self-start">
+          <div className="lg:col-span-7 flex flex-col min-h-0 overflow-y-auto overscroll-contain scrollbar-thin space-y-2 pb-2">
             {/* 상단 뷰 스위처 바 */}
             <div className="flex items-center justify-between bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
               <div className="flex items-center gap-2">
@@ -1011,8 +1010,8 @@ export default function RecordInput({
                         item: selectedItemName,
                         date: format(recordDate, 'yyyy-MM-dd'),
                         value: val,
-                        height: selectedItemForSingle?.isCompound ? parseFloat(batchRecords[selectedStudent.id]?.height || '') : undefined,
-                        weight: selectedItemForSingle?.isCompound ? parseFloat(batchRecords[selectedStudent.id]?.weight || '') : undefined
+                        height: selectedItemForSingle?.isCompound ? (parseFloat(batchRecords[selectedStudent.id]?.height || '') || undefined) : undefined,
+                        weight: selectedItemForSingle?.isCompound ? (parseFloat(batchRecords[selectedStudent.id]?.weight || '') || undefined) : undefined
                       });
                       onRecordUpdate([rec], 'update');
                       toast({ title: "기록 저장 완료" });
