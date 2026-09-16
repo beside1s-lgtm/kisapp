@@ -634,10 +634,10 @@ export default function RecordBrowser({
   };
 
   return (
-    <div className="w-full space-y-1.5">
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'paps' | 'item')} className="w-full">
+    <div className="w-full h-full flex-1 min-h-0 flex flex-col space-y-1.5 overflow-hidden">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'paps' | 'item')} className="w-full flex-1 min-h-0 flex flex-col overflow-hidden">
         {/* 슬림 컨트롤 상단 바: 탭 버튼 + 우측 액션 버튼 3종(인쇄, 내려받기, 클라우드 저장) */}
-        <div className="flex items-center justify-between gap-1.5 bg-white p-1.5 sm:p-2 rounded-xl border border-slate-200/90 shadow-xs mb-1.5">
+        <div className="flex items-center justify-between gap-1.5 bg-white p-1.5 sm:p-2 rounded-xl border border-slate-200/90 shadow-xs mb-1.5 shrink-0">
           <TabsList className="h-7 sm:h-8 p-0.5 bg-slate-100 border border-slate-200 shrink-0">
             <TabsTrigger value="paps" className="text-xs font-bold px-2.5 sm:px-3 py-1">PAPS 종합</TabsTrigger>
             <TabsTrigger value="item" className="text-xs font-bold px-2.5 sm:px-3 py-1">종목별 기록</TabsTrigger>
@@ -680,9 +680,9 @@ export default function RecordBrowser({
           </div>
         </div>
 
-        <TabsContent value="paps" className="space-y-1.5">
+        <TabsContent value="paps" className="flex-1 min-h-0 flex flex-col space-y-1.5 overflow-hidden mt-0 data-[state=inactive]:hidden">
           {/* PAPS 종합 필터: 1줄 컴팩트 배치 */}
-          <div className="flex items-center gap-1 sm:gap-1.5 bg-white p-1.5 sm:p-2 rounded-xl border border-slate-200/80 shadow-xs w-full overflow-hidden">
+          <div className="flex items-center gap-1 sm:gap-1.5 bg-white p-1.5 sm:p-2 rounded-xl border border-slate-200/80 shadow-xs w-full overflow-hidden shrink-0">
             {/* 1. 클럽 */}
             <Select value={selectedClubId} onValueChange={(v) => { setSelectedClubId(v); if(v !== 'all') { setGradeFilter('all'); setClassNumFilter('all'); } }}>
               <SelectTrigger className="w-[54px] sm:w-[120px] h-7 sm:h-8 text-[11px] sm:text-xs font-bold px-1 sm:px-2 bg-slate-50 shrink-0 [&>svg]:hidden sm:[&>svg]:block">
@@ -778,11 +778,11 @@ export default function RecordBrowser({
             </Select>
           </div>
 
-          {/* PAPS 종합 테이블: 번호부터 표시, 4글자 제한, 좌우 슬라이드 방지 */}
-          <div className="border rounded-xl bg-white overflow-hidden shadow-2xs">
+          {/* PAPS 종합 테이블: 내부 스크롤 (flex-1 min-h-0 overflow-y-auto) 및 상단 헤더 고정 */}
+          <div className="flex-1 min-h-0 border rounded-xl bg-white overflow-y-auto overscroll-contain scrollbar-thin shadow-2xs">
             <Table className="w-full table-fixed">
-              <TableHeader>
-                <TableRow className="h-8 bg-slate-50/80">
+              <TableHeader className="sticky top-0 z-10 bg-slate-100 shadow-2xs">
+                <TableRow className="h-8 bg-slate-100/90">
                   {finalFactorOrder.map(key => {
                     const columnKey = key.replace(/점수|등급/g, '');
                     const isNum = columnKey === '번호';
@@ -841,9 +841,9 @@ export default function RecordBrowser({
           </div>
         </TabsContent>
 
-        <TabsContent value="item" className="space-y-1.5">
+        <TabsContent value="item" className="flex-1 min-h-0 flex flex-col space-y-1.5 overflow-hidden mt-0 data-[state=inactive]:hidden">
           {/* 종목별 기록 필터: 1줄 컴팩트 배치 */}
-          <div className="flex items-center gap-1 sm:gap-1.5 bg-white p-1.5 sm:p-2 rounded-xl border border-slate-200/80 shadow-xs w-full overflow-hidden">
+          <div className="flex items-center gap-1 sm:gap-1.5 bg-white p-1.5 sm:p-2 rounded-xl border border-slate-200/80 shadow-xs w-full overflow-hidden shrink-0">
             {/* 1. 종목 선택 */}
             <Select value={selectedItem} onValueChange={(v) => { setSelectedItem(v); setItemDateFilter('latest'); }}>
               <SelectTrigger className="w-[78px] sm:w-[140px] h-7 sm:h-8 text-[11px] sm:text-xs font-semibold px-1 sm:px-2 shrink-0 [&>svg]:hidden sm:[&>svg]:block">
@@ -927,11 +927,11 @@ export default function RecordBrowser({
             )}
           </div>
 
-          {/* 종목별 기록 테이블: 번호부터 표시, 4글자 제한, 좌우 슬라이드 방지 */}
-          <div className="border rounded-xl bg-white overflow-hidden shadow-2xs">
+          {/* 종목별 기록 테이블: 내부 스크롤 (flex-1 min-h-0 overflow-y-auto) 및 상단 헤더 고정 */}
+          <div className="flex-1 min-h-0 border rounded-xl bg-white overflow-y-auto overscroll-contain scrollbar-thin shadow-2xs">
             <Table className="w-full table-fixed">
-              <TableHeader>
-                <TableRow className="h-8 bg-slate-50/80">
+              <TableHeader className="sticky top-0 z-10 bg-slate-100 shadow-2xs">
+                <TableRow className="h-8 bg-slate-100/90">
                   {[
                     { key: 'studentNum', label: '번호', isNarrow: true },
                     { key: 'name', label: '이름', isName: true },

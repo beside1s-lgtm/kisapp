@@ -364,7 +364,7 @@ function SingleStudentPapsSheet({ report, isLast }: { report: PapsStudentReportD
                 종합 체력 점수
               </th>
               <td className="border border-slate-900 text-center font-bold text-indigo-700">
-                {totalScore}점 / 20점
+                {totalScore}점 / 100점
               </td>
               <th className="border border-slate-900 text-center font-bold text-slate-700 bg-slate-100">
                 종합 체력 등급

@@ -249,14 +249,14 @@ export function buildPapsStudentReport(
     }
   });
 
-  // 최종 등급 산출
-  let finalGradeNum = 3;
+  // 최종 등급 산출 (100점 만점 기준: 1등급 80점↑, 2등급 60점↑, 3등급 40점↑, 4등급 20점↑, 5등급 20점↓)
+  let finalGradeNum = 5;
   let finalGradeText = '-';
-  if (evaluatedCount >= 4) {
-    if (totalScore >= 17) { finalGradeNum = 1; finalGradeText = '1등급'; }
-    else if (totalScore >= 13) { finalGradeNum = 2; finalGradeText = '2등급'; }
-    else if (totalScore >= 9) { finalGradeNum = 3; finalGradeText = '3등급'; }
-    else if (totalScore >= 5) { finalGradeNum = 4; finalGradeText = '4등급'; }
+  if (evaluatedCount > 0) {
+    if (totalScore >= 80) { finalGradeNum = 1; finalGradeText = '1등급'; }
+    else if (totalScore >= 60) { finalGradeNum = 2; finalGradeText = '2등급'; }
+    else if (totalScore >= 40) { finalGradeNum = 3; finalGradeText = '3등급'; }
+    else if (totalScore >= 20) { finalGradeNum = 4; finalGradeText = '4등급'; }
     else { finalGradeNum = 5; finalGradeText = '5등급'; }
   }
 
