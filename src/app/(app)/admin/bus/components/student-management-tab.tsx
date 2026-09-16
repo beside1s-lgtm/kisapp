@@ -1388,8 +1388,8 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                         <CardContent className="p-3 sm:p-6 pt-0 sm:pt-0 space-y-2.5 sm:space-y-4">
                             {/* 🌟 모바일 전용: 축소 검색창 + 7개 액션 아이콘 1줄 통합 툴바 */}
                             <div className="sm:hidden flex items-center gap-1 w-full bg-slate-50/90 p-1.5 rounded-xl border border-slate-200/80 mb-1 overflow-x-auto no-scrollbar">
-                                {/* 1. 이름 검색창 (축소) */}
-                                <div className="relative w-24 shrink-0">
+                                {/* 1. 이름 검색창 (가변 flex-1 min-w-0: 기기 크기에 맞춰 좌우 여백 없이 꽉 채움) */}
+                                <div className="relative flex-1 min-w-0">
                                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
                                     <Input
                                         type="search"
