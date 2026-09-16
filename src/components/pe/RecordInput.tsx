@@ -450,56 +450,199 @@ export default function RecordInput({
           </button>
         </div>
       ) : (
-        /* 펼침 상태: 전체 컨트롤 바 (모바일 2줄 컴팩트 + 물리적 shrink-0 상단 고정) */
-        <div className="bg-white p-1.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-200 shadow-2xs transition-all flex flex-col gap-1.5 shrink-0 z-20">
-            {/* 1행: 모드 스위치 탭 + 진행률 요약 (모바일 1줄 고정) */}
+        /* 펼침 상태: 전체 컨트롤 바 (데스크톱 1줄 통합, 모바일 2줄 컴팩트 격리) */
+        <div className="bg-white p-1.5 sm:px-3 sm:py-2 rounded-xl sm:rounded-2xl border border-slate-200 shadow-2xs transition-all shrink-0 z-20">
+          {/* =========================================================================
+              [데스크톱 뷰 (sm:flex)]: 탭 + 필터 컨트롤 + 진행률 요약 + 접기 1줄 완전 통합
+             ========================================================================= */}
+          <div className="hidden sm:flex items-center justify-between gap-1.5 lg:gap-2 w-full flex-nowrap">
+            {/* 좌측: 모드 스위치 탭 + 배치 필터 컨트롤들 (인라인 1줄) */}
+            <div className="flex items-center gap-1.5 lg:gap-2 flex-1 min-w-0">
+              {/* 모드 탭 스위처 */}
+              <div className="inline-flex rounded-lg bg-slate-100 p-0.5 border border-slate-200 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('batch')}
+                  className={cn(
+                    "px-2.5 py-1 text-xs font-bold rounded-md transition-all shrink-0",
+                    activeTab === 'batch' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  학급/팀별 기록
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('individual')}
+                  className={cn(
+                    "px-2.5 py-1 text-xs font-bold rounded-md transition-all shrink-0",
+                    activeTab === 'individual' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  개별 기록
+                </button>
+              </div>
+
+              {/* 학급/팀별 모드일 때 인라인 필터 컨트롤 (탭 옆 빈 공간 100% 활용) */}
+              {activeTab === 'batch' && (
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                  {/* 학년 선택 */}
+                  <Select value={selectedGrade} onValueChange={v => { setSelectedGrade(v); setSelectedClassNum('all'); setSelectedGroupId(''); }}>
+                    <SelectTrigger className="w-[78px] lg:w-[88px] h-8 px-2 text-xs bg-slate-50 font-bold border-slate-300 shrink-0 [&_svg]:hidden">
+                      <span className="truncate block w-full text-center font-bold">{selectedGrade ? `${selectedGrade}학년` : "학년"}</span>
+                    </SelectTrigger>
+                    <SelectContent>{grades.map(g => <SelectItem key={g} value={g} className="text-xs font-bold">{g}학년</SelectItem>)}</SelectContent>
+                  </Select>
+
+                  {/* 반 선택 */}
+                  <Select value={selectedClassNum} onValueChange={setSelectedClassNum} disabled={!selectedGrade}>
+                    <SelectTrigger className="w-[68px] lg:w-[76px] h-8 px-2 text-xs bg-slate-50 font-bold border-slate-300 shrink-0 [&_svg]:hidden">
+                      <span className="truncate block w-full text-center font-bold">{selectedClassNum === 'all' ? "전체" : (selectedClassNum ? `${selectedClassNum}반` : "반")}</span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs font-bold">전체</SelectItem>
+                      {classNumsByGrade[selectedGrade]?.map(c => <SelectItem key={c} value={c} className="text-xs font-bold">{c}반</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+
+                  {/* 그룹 선택 */}
+                  <Select value={selectedGroupId} onValueChange={v => { setSelectedGroupId(v); setSelectedGrade(''); }}>
+                    <SelectTrigger className="w-[82px] lg:w-[105px] h-8 px-2 text-xs bg-slate-50 font-medium border-slate-300 shrink-0 [&_svg]:hidden truncate">
+                      <span className="truncate block w-full text-center">
+                        {selectedGroupId 
+                          ? (((allTeamGroups as any[]).concat(sportsClubs as any[]).find(g => g.id === selectedGroupId)?.description || (allTeamGroups as any[]).concat(sportsClubs as any[]).find(g => g.id === selectedGroupId)?.name)?.slice(0, 5) || "그룹")
+                          : "그룹"}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allTeamGroups.concat(sportsClubs as any).map((g: any) => (
+                        <SelectItem key={g.id} value={g.id} className="text-xs">{g.description || g.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {/* 날짜 선택 */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="h-8 px-2 text-xs font-medium bg-slate-50 border-slate-300 shrink-0 inline-flex items-center justify-center w-[78px] lg:w-[88px]"
+                      >
+                        <span className="tabular-nums whitespace-nowrap text-slate-700">
+                          {batchRecordDate ? format(batchRecordDate, "MM/dd") : "날짜"}
+                        </span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                      <Calendar mode="single" selected={batchRecordDate} onSelect={setBatchRecordDate} initialFocus />
+                    </PopoverContent>
+                  </Popover>
+
+                  {/* 종목 선택 (가변 너비로 여백 최소화) */}
+                  <Select value={batchRecordItem} onValueChange={setBatchRecordItem}>
+                    <SelectTrigger className="flex-1 min-w-[120px] max-w-[220px] h-8 px-2.5 text-xs font-bold text-indigo-950 bg-indigo-50/60 border-indigo-200 shrink-0 [&_svg]:hidden truncate">
+                      <span className="truncate block w-full text-center font-bold">
+                        {batchRecordItem || "종목 선택"}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeItems.map(i => <SelectItem key={i.id} value={i.name} className="text-xs font-bold">{i.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+
+                  {/* 엑셀 템플릿 다운로드 */}
+                  <Button variant="outline" size="sm" onClick={handleDownloadTemplate} disabled={studentsForBatch.length === 0} title="엑셀 템플릿 다운로드" className="h-8 w-8 lg:w-auto lg:px-2.5 p-0 border-slate-300 shrink-0 flex items-center justify-center">
+                    <Download className="h-3.5 w-3.5 text-slate-600 lg:mr-1" />
+                    <span className="hidden lg:inline text-xs">서식</span>
+                  </Button>
+
+                  {/* 전체 저장 */}
+                  <Button
+                    size="sm"
+                    onClick={handleSaveBatchRecords}
+                    disabled={isBatchSubmitting || studentsForBatch.length === 0}
+                    title="전체 저장"
+                    className="h-8 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold shrink-0 flex items-center justify-center shadow-2xs"
+                  >
+                    {isBatchSubmitting ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Save className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    <span className="text-xs whitespace-nowrap">전체 저장</span>
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* 우측: 진행률 요약 + 접기 버튼 */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg text-xs shrink-0 whitespace-nowrap">
+                <span className="text-slate-500 font-medium">진행:</span>
+                <span className="text-indigo-600 font-extrabold">{measuredCount} / {totalStudentsCount}명</span>
+                <span className="font-bold text-slate-700">({progressPercent}%)</span>
+              </div>
+
+              {/* 툴바 접기 버튼 */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsToolbarCollapsed(true)}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100 shrink-0 flex items-center justify-center"
+                title="필터 툴바 접기 (화면 세로 공간 확보)"
+              >
+                <ChevronUp className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* =========================================================================
+              [모바일 뷰 (sm:hidden)]: 2행 컴팩트 구조 (1행 탭+진행률, 2행 가로 스크롤)
+             ========================================================================= */}
+          <div className="sm:hidden flex flex-col gap-1.5">
+            {/* 1행: 모드 스위치 탭 + 진행률 요약 */}
             <div className="flex items-center justify-between w-full gap-1.5 flex-nowrap">
               <div className="inline-flex rounded-lg bg-slate-100 p-0.5 border border-slate-200 shrink-0">
                 <button
                   type="button"
                   onClick={() => setActiveTab('batch')}
                   className={cn(
-                    "px-2 py-0.5 sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-bold rounded-md transition-all shrink-0",
+                    "px-2 py-0.5 text-[11px] font-bold rounded-md transition-all shrink-0",
                     activeTab === 'batch' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
                   )}
                 >
-                  <span className="sm:hidden">학급/팀별</span>
-                  <span className="hidden sm:inline">학급/팀별 기록</span>
+                  학급/팀별
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab('individual')}
                   className={cn(
-                    "px-2 py-0.5 sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-bold rounded-md transition-all shrink-0",
+                    "px-2 py-0.5 text-[11px] font-bold rounded-md transition-all shrink-0",
                     activeTab === 'individual' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
                   )}
                 >
-                  <span className="sm:hidden">개별</span>
-                  <span className="hidden sm:inline">개별 기록</span>
+                  개별
                 </button>
               </div>
 
-              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[11px] sm:text-xs shrink-0 whitespace-nowrap">
+              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-lg text-[11px] shrink-0 whitespace-nowrap">
                 <span className="text-slate-500 font-medium">진행:</span>
                 <span className="text-indigo-600 font-extrabold">{measuredCount} / {totalStudentsCount}명</span>
                 <span className="font-bold text-slate-700">({progressPercent}%)</span>
               </div>
             </div>
 
-            {/* 2행: 학년 / 반 / 그룹 / 날짜 / 종목 / 다운로드 / 전체저장(디스켓) / 접기 (모바일 1줄 고정) */}
+            {/* 2행: 학년 / 반 / 그룹 / 날짜 / 종목 / 다운로드 / 전체저장 / 접기 */}
             {activeTab === 'batch' ? (
               <div className="flex items-center gap-1 w-full justify-between flex-nowrap overflow-x-auto no-scrollbar py-0.5">
-                {/* 학년 (아래 꺾쇠 없음) */}
                 <Select value={selectedGrade} onValueChange={v => { setSelectedGrade(v); setSelectedClassNum('all'); setSelectedGroupId(''); }}>
-                  <SelectTrigger className="w-[44px] sm:w-[90px] h-7 sm:h-8 px-1 sm:px-2 text-[11px] sm:text-xs bg-slate-50 font-bold border-slate-300 shrink-0 [&_svg]:hidden">
+                  <SelectTrigger className="w-[44px] h-7 px-1 text-[11px] bg-slate-50 font-bold border-slate-300 shrink-0 [&_svg]:hidden">
                     <span className="truncate block w-full text-center font-bold">{selectedGrade ? `${selectedGrade}학년` : "학년"}</span>
                   </SelectTrigger>
                   <SelectContent>{grades.map(g => <SelectItem key={g} value={g} className="text-xs font-bold">{g}학년</SelectItem>)}</SelectContent>
                 </Select>
 
-                {/* 반 (아래 꺾쇠 없음) */}
                 <Select value={selectedClassNum} onValueChange={setSelectedClassNum} disabled={!selectedGrade}>
-                  <SelectTrigger className="w-[36px] sm:w-[80px] h-7 sm:h-8 px-1 sm:px-2 text-[11px] sm:text-xs bg-slate-50 font-bold border-slate-300 shrink-0 [&_svg]:hidden">
+                  <SelectTrigger className="w-[36px] h-7 px-1 text-[11px] bg-slate-50 font-bold border-slate-300 shrink-0 [&_svg]:hidden">
                     <span className="truncate block w-full text-center font-bold">{selectedClassNum === 'all' ? "전체" : (selectedClassNum ? `${selectedClassNum}반` : "반")}</span>
                   </SelectTrigger>
                   <SelectContent>
@@ -508,9 +651,8 @@ export default function RecordInput({
                   </SelectContent>
                 </Select>
 
-                {/* 그룹 선택 (아래 꺾쇠 없음, 축약) */}
                 <Select value={selectedGroupId} onValueChange={v => { setSelectedGroupId(v); setSelectedGrade(''); }}>
-                  <SelectTrigger className="w-[48px] sm:w-[120px] h-7 sm:h-8 px-1 sm:px-2 text-[11px] sm:text-xs bg-slate-50 font-medium border-slate-300 shrink-0 [&_svg]:hidden truncate">
+                  <SelectTrigger className="w-[48px] h-7 px-1 text-[11px] bg-slate-50 font-medium border-slate-300 shrink-0 [&_svg]:hidden truncate">
                     <span className="truncate block w-full text-center">
                       {selectedGroupId 
                         ? (((allTeamGroups as any[]).concat(sportsClubs as any[]).find(g => g.id === selectedGroupId)?.description || (allTeamGroups as any[]).concat(sportsClubs as any[]).find(g => g.id === selectedGroupId)?.name)?.slice(0, 4) || "그룹")
@@ -524,12 +666,11 @@ export default function RecordInput({
                   </SelectContent>
                 </Select>
 
-                {/* 날짜 선택 (달력 아이콘 없음) */}
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
-                      className="h-7 sm:h-8 px-1 sm:px-2 text-[11px] sm:text-xs font-medium bg-slate-50 border-slate-300 shrink-0 inline-flex items-center justify-center w-[46px] sm:w-[94px]"
+                      className="h-7 px-1 text-[11px] font-medium bg-slate-50 border-slate-300 shrink-0 inline-flex items-center justify-center w-[46px]"
                     >
                       <span className="tabular-nums whitespace-nowrap text-slate-700">
                         {batchRecordDate ? format(batchRecordDate, "MM/dd") : "날짜"}
@@ -541,9 +682,8 @@ export default function RecordInput({
                   </PopoverContent>
                 </Popover>
 
-                {/* 종목 선택 (아래 꺾쇠 없음, 5자까지만 표출) */}
                 <Select value={batchRecordItem} onValueChange={setBatchRecordItem}>
-                  <SelectTrigger className="w-[74px] sm:w-[170px] h-7 sm:h-8 px-1 sm:px-2 text-[11px] sm:text-xs font-bold text-indigo-950 bg-indigo-50/60 border-indigo-200 shrink-0 [&_svg]:hidden truncate">
+                  <SelectTrigger className="w-[74px] h-7 px-1 text-[11px] font-bold text-indigo-950 bg-indigo-50/60 border-indigo-200 shrink-0 [&_svg]:hidden truncate">
                     <span className="truncate block w-full text-center font-bold">
                       {batchRecordItem ? (batchRecordItem.length > 5 ? batchRecordItem.slice(0, 5) : batchRecordItem) : "종목"}
                     </span>
@@ -553,41 +693,38 @@ export default function RecordInput({
                   </SelectContent>
                 </Select>
 
-                {/* 엑셀 템플릿 다운로드 */}
-                <Button variant="outline" size="sm" onClick={handleDownloadTemplate} disabled={studentsForBatch.length === 0} title="엑셀 템플릿 다운로드" className="h-7 w-7 sm:h-8 sm:w-auto sm:px-2 p-0 border-slate-300 shrink-0 flex items-center justify-center">
+                <Button variant="outline" size="sm" onClick={handleDownloadTemplate} disabled={studentsForBatch.length === 0} title="엑셀 템플릿 다운로드" className="h-7 w-7 p-0 border-slate-300 shrink-0 flex items-center justify-center">
                   <Download className="h-3.5 w-3.5 text-slate-600" />
                 </Button>
 
-                {/* 전체 저장 (디스켓 모양 아이콘화) */}
                 <Button
                   size="sm"
                   onClick={handleSaveBatchRecords}
                   disabled={isBatchSubmitting || studentsForBatch.length === 0}
                   title="전체 저장"
-                  className="h-7 w-7 sm:h-8 sm:w-auto sm:px-3 p-0 sm:py-0 bg-indigo-600 hover:bg-indigo-700 text-white font-bold shrink-0 flex items-center justify-center shadow-2xs"
+                  className="h-7 w-7 p-0 bg-indigo-600 hover:bg-indigo-700 text-white font-bold shrink-0 flex items-center justify-center shadow-2xs"
                 >
                   {isBatchSubmitting ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <Save className="h-3.5 w-3.5 sm:mr-1" />
+                    <Save className="h-3.5 w-3.5" />
                   )}
-                  <span className="hidden sm:inline">전체 저장</span>
                 </Button>
 
-                {/* 툴바 숨기기 (접기) 버튼 */}
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setIsToolbarCollapsed(true)}
-                  className="h-7 w-6 sm:h-8 sm:w-auto sm:px-2 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100 shrink-0 flex items-center justify-center"
+                  className="h-7 w-6 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100 shrink-0 flex items-center justify-center"
                   title="필터 툴바 접기 (화면 세로 공간 확보)"
                 >
-                  <ChevronUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <ChevronUp className="w-3.5 h-3.5" />
                 </Button>
               </div>
             ) : null}
           </div>
-        )}
+        </div>
+      )}
 
       {/* 2. 대화면 그리드 레이아웃: 좌측 컴팩트 테이블 (약 42%) vs 우측 대형 패널 (약 58%) */}
       {activeTab === 'batch' ? (
