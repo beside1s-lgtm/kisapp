@@ -649,10 +649,10 @@ export default function RecordBrowser({
               variant="outline"
               size="sm"
               className="h-7 sm:h-8 px-2 sm:px-2.5 text-xs font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 shadow-2xs gap-1 cursor-pointer"
-              title="PAPS 개인별/학급별 건강체력평가 결과 통지표 인쇄"
+              title="PAPS 맞춤형 체력평가 보고서 인쇄"
             >
               <Printer className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">통지표 인쇄</span>
+              <span className="hidden sm:inline">보고서 인쇄</span>
             </Button>
             <Button 
               onClick={activeTab === 'paps' ? handlePapsDownloadExcel : handleItemDownloadExcel} 

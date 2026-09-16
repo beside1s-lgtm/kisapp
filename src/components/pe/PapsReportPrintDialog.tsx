@@ -77,25 +77,134 @@ export default function PapsReportPrintDialog({
     setSelectedStudentId('all');
   };
 
+  // 선택된 그룹/학생 기준 PDF 저장 파일명 (document.title) 생성
+  const getPrintTitle = () => {
+    if (selectedStudentId !== 'all') {
+      const student = filteredStudents.find(s => s.id === selectedStudentId);
+      if (student) {
+        return `${student.grade}학년_${student.classNum}반_${student.name}_맞춤형체력평가보고서`;
+      }
+    }
+    if (selectedGrade !== 'all' && selectedClassNum !== 'all') {
+      return `${selectedGrade}학년_${selectedClassNum}반_맞춤형체력평가보고서`;
+    }
+    if (selectedGrade !== 'all') {
+      return `${selectedGrade}학년_맞춤형체력평가보고서`;
+    }
+    return '맞춤형체력평가보고서';
+  };
+
+  const printContainerRef = useRef<HTMLDivElement>(null);
+
+  // 부모 페이지 간섭 및 백지 여러 장 출력을 원천 차단하는 독립 팝업 인쇄
   const handlePrint = () => {
-    window.print();
+    const printContainer = printContainerRef.current;
+    if (!printContainer || reportsData.length === 0) return;
+
+    const printTitle = getPrintTitle();
+
+    // 현재 문서의 Tailwind 및 전역 스타일시트 태그 수집
+    const styleTags = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map(el => el.outerHTML)
+      .join('\n');
+
+    const printHtml = printContainer.innerHTML;
+
+    // 독립 팝업 창 생성 (부모 페이지 레이아웃 및 14페이지 테이블 간섭 0% 차단)
+    const printWin = window.open('', '_blank', 'width=900,height=1000');
+    if (printWin) {
+      printWin.document.open();
+      printWin.document.write(`
+        <!DOCTYPE html>
+        <html lang="ko">
+        <head>
+          <meta charset="UTF-8">
+          <title>${printTitle}</title>
+          ${styleTags}
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 0;
+            }
+            html, body {
+              margin: 0;
+              padding: 0;
+              background: #ffffff !important;
+              font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", Roboto, sans-serif;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            .paps-sheet-page {
+              width: 210mm !important;
+              height: 297mm !important;
+              max-height: 297mm !important;
+              margin: 0 auto !important;
+              padding: 10mm 13mm !important;
+              box-sizing: border-box !important;
+              page-break-after: always !important;
+              break-after: page !important;
+              display: flex !important;
+              flex-direction: column !important;
+              justify-content: space-between !important;
+              overflow: hidden !important;
+              background: #ffffff !important;
+            }
+            .paps-sheet-page:last-child {
+              page-break-after: auto !important;
+              break-after: auto !important;
+            }
+            @media screen {
+              body {
+                background: #f1f5f9 !important;
+                padding: 16px 0;
+              }
+              .paps-sheet-page {
+                box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+                margin-bottom: 20px !important;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          ${printHtml}
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.focus();
+                window.print();
+              }, 400);
+            };
+          </script>
+        </body>
+        </html>
+      `);
+      printWin.document.close();
+    } else {
+      // 팝업 차단 환경 Fallback
+      const prevTitle = document.title;
+      document.title = printTitle;
+      window.print();
+      setTimeout(() => {
+        document.title = prevTitle;
+      }, 1000);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl w-[95vw] h-[92vh] p-0 flex flex-col overflow-hidden bg-slate-100 print:bg-white print:max-w-none print:w-full print:h-auto print:static print:overflow-visible print:border-none print:shadow-none">
+      <DialogContent className="max-w-5xl w-[95vw] h-[92vh] p-0 flex flex-col overflow-hidden bg-slate-100">
         {/* 상단 컨트롤러 (인쇄 시 숨김 - 우측 닫기(X) 버튼과 겹치지 않도록 pr-14 안전 여백 부여) */}
-        <div className="flex flex-wrap items-center justify-between gap-2 p-3.5 pr-14 bg-white border-b border-slate-200 shrink-0 print:hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-3.5 pr-14 bg-white border-b border-slate-200 shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600">
               <Award className="w-5 h-5" />
             </div>
             <div>
               <DialogTitle className="text-sm sm:text-base font-bold text-slate-900">
-                PAPS 학생 건강체력평가 결과 통지표
+                PAPS 학생 맞춤형 체력평가 보고서
               </DialogTitle>
               <DialogDescription className="text-xs text-slate-500">
-                총 {reportsData.length}명의 학생 통지표가 A4 1인 1장 규격으로 준비되었습니다.
+                총 {reportsData.length}명의 학생 맞춤형 체력평가 보고서가 A4 1인 1장 규격으로 준비되었습니다.
               </DialogDescription>
             </div>
           </div>
@@ -153,16 +262,17 @@ export default function PapsReportPrintDialog({
             {/* 인쇄 버튼 */}
             <Button
               onClick={handlePrint}
+              disabled={reportsData.length === 0}
               className="h-8 px-4 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs gap-1.5 cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
-              인쇄하기 ({reportsData.length}장)
+              보고서 인쇄 ({reportsData.length}장)
             </Button>
           </div>
         </div>
 
         {/* 인쇄 미리보기 컨테이너 */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-8 print:p-0 print:m-0 print:overflow-visible print:space-y-0">
+        <div ref={printContainerRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-8">
           {reportsData.length === 0 ? (
             <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-500">
               <User className="w-12 h-12 mx-auto text-slate-300 mb-2" />
@@ -185,31 +295,34 @@ export default function PapsReportPrintDialog({
 }
 
 /**
- * 개별 학생 PAPS 결과 통지표 A4 1페이지 서식
+ * 개별 학생 PAPS 맞춤형 체력평가 보고서 A4 1페이지 서식
  */
 function SingleStudentPapsSheet({ report, isLast }: { report: PapsStudentReportData; isLast: boolean }) {
   const { student, academicYear, evaluations, totalScore, finalGrade, measuredDate } = report;
 
   return (
     <div
-      className={`bg-white text-slate-900 mx-auto w-full max-w-[210mm] border border-slate-300 shadow-lg p-[12mm] sm:p-[15mm] flex flex-col justify-between print:border-none print:shadow-none print:p-[8mm] print:m-0 print:w-[210mm] print:h-[296mm] print:max-w-none ${
-        !isLast ? 'print:break-after-page' : ''
+      className={`paps-sheet-page bg-white text-slate-900 mx-auto w-full max-w-[210mm] border border-slate-300 shadow-lg p-[10mm] sm:p-[12mm] flex flex-col justify-between overflow-hidden ${
+        !isLast ? 'break-after-page' : ''
       }`}
       style={{
+        width: '210mm',
+        minHeight: '297mm',
+        maxHeight: '297mm',
         pageBreakAfter: isLast ? 'auto' : 'always',
         boxSizing: 'border-box',
       }}
     >
       {/* 1. 상단 타이틀 및 학교 정보 */}
       <div>
-        <div className="text-center border-b-2 border-slate-900 pb-3 mb-4">
+        <div className="text-center border-b-2 border-slate-900 pb-2.5 mb-3.5">
           <p className="text-xs font-bold text-slate-500 tracking-wider">
             {academicYear}학년도 학생 건강체력평가(PAPS)
           </p>
           <h1 className="text-2xl sm:text-3xl font-black tracking-widest text-slate-900 mt-1">
-            개 인 별  체 력  평 가  결 과  통 지 표
+            맞 춤 형  체 력  평 가  보 고 서
           </h1>
-          <p className="text-[11px] text-slate-500 mt-1 font-medium">
+          <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
             호치민시한국국제학교 (KOREAN INTERNATIONAL SCHOOL HCMC)
           </p>
         </div>
@@ -397,7 +510,7 @@ function SingleStudentPapsSheet({ report, isLast }: { report: PapsStudentReportD
       {/* 5. 하단 날짜, 안내 및 학교장 직인란 */}
       <div className="pt-2 border-t border-slate-300 mt-2">
         <p className="text-[10px] text-slate-500 text-center leading-normal mb-3">
-          본 통지표는 교육부 학생건강체력평가(PAPS) 기준에 따라 학생의 신체 능력과 체형 발달 상태를 진단한 결과입니다.<br />
+          본 보고서는 교육부 학생건강체력평가(PAPS) 기준에 따라 학생의 신체 능력과 체형 발달 상태를 진단한 결과입니다.<br />
           가정에서도 학생이 규칙적인 운동과 올바른 식습관을 형성할 수 있도록 따뜻한 관심과 격려를 부탁드립니다.
         </p>
 
