@@ -131,6 +131,15 @@ const AdminPageContent: React.FC<{
         return () => unsub();
     }, []);
 
+    useEffect(() => {
+        if (selectedGlobalStudent) {
+            const updated = students.find(s => s.id === selectedGlobalStudent.id);
+            if (updated && (updated.number !== selectedGlobalStudent.number || updated.siblingGroupId !== selectedGlobalStudent.siblingGroupId)) {
+                setSelectedGlobalStudent(updated);
+            }
+        }
+    }, [students]);
+
     const filteredBuses = useMemo(() => {
         return buses.filter(b => (b.semesterMode || 'regular') === semesterMode);
     }, [buses, semesterMode]);
@@ -1280,8 +1289,21 @@ export default function AdminPage() {
             });
 
             if (studentEnrollments.length === 0) {
+                // 수강신청 없어도 마스터 학생 연동(출석번호, 형제자매 그룹) 적용
+                const matchedMasterEarly = masterStudents.find(ms => {
+                    if (studentEmail && ms.studentEmail && ms.studentEmail.toLowerCase().trim() === studentEmail) return true;
+                    if (student.id && (ms.studentId === student.id || ms.id === student.id)) return true;
+                    const mName = clean(ms.name || ms.nameKo || ms.nameEn);
+                    return mName === studentName && Number(ms.grade) === studentGrade && Number(ms.classNum) === studentClass;
+                });
+                const earlyNumber = matchedMasterEarly?.studentNum
+                    ? String(matchedMasterEarly.studentNum)
+                    : (student.number ? String(student.number) : ((student as any).studentNum ? String((student as any).studentNum) : ''));
+                const earlySiblingGroupId = matchedMasterEarly?.siblingGroupId || student.siblingGroupId || null;
                 return {
                     ...student,
+                    number: earlyNumber,
+                    siblingGroupId: earlySiblingGroupId,
                     afterSchoolCourseTitle: '',
                     afterSchoolCourseTitles: [],
                     enrolledCourseTitles: [],
@@ -1404,6 +1426,57 @@ export default function AdminPage() {
 
         setStudents(merged);
         setPendingStudents(merged.filter(s => s.applicationStatus === 'pending'));
+
+        // 스쿨버스 DB(kisbusDb.students)에 출석번호(number) 및 학생 이메일(studentEmail) 누락 자동 백필 (Self-Healing Sync)
+        if (masterStudents.length > 0 && rawStudents.length > 0) {
+            const needBackfill = rawStudents.filter(rs => {
+                if (rs.number && rs.studentEmail) return false;
+                const rName = clean(rs.nameKo || rs.name || rs.nameEn);
+                const rGrade = Number(rs.grade);
+                const rClass = Number(rs.class || rs.classNum);
+                const rEmail = (rs.studentEmail || '').toLowerCase().trim();
+                const matched = masterStudents.find(ms => {
+                    if (rEmail && ms.studentEmail && ms.studentEmail.toLowerCase().trim() === rEmail) return true;
+                    if (rs.id && (ms.studentId === rs.id || ms.id === rs.id)) return true;
+                    const mName = clean(ms.name || ms.nameKo || ms.nameEn);
+                    return mName === rName && Number(ms.grade) === rGrade && Number(ms.classNum) === rClass;
+                });
+                return Boolean(matched && (matched.studentNum || matched.studentEmail));
+            });
+
+            if (needBackfill.length > 0) {
+                const chunk = needBackfill.slice(0, 50);
+                import('@/lib/kisbus/students').then(({ updateStudentsInBatch }) => {
+                    const updates = chunk.map(rs => {
+                        const rName = clean(rs.nameKo || rs.name || rs.nameEn);
+                        const rGrade = Number(rs.grade);
+                        const rClass = Number(rs.class || rs.classNum);
+                        const rEmail = (rs.studentEmail || '').toLowerCase().trim();
+                        const matched = masterStudents.find(ms => {
+                            if (rEmail && ms.studentEmail && ms.studentEmail.toLowerCase().trim() === rEmail) return true;
+                            if (rs.id && (ms.studentId === rs.id || ms.id === rs.id)) return true;
+                            const mName = clean(ms.name || ms.nameKo || ms.nameEn);
+                            return mName === rName && Number(ms.grade) === rGrade && Number(ms.classNum) === rClass;
+                        });
+                        const updateData: any = {};
+                        if (!rs.number && matched?.studentNum) {
+                            updateData.number = String(matched.studentNum);
+                            updateData.studentNum = String(matched.studentNum);
+                        }
+                        if (!rs.studentEmail && matched?.studentEmail) {
+                            updateData.studentEmail = matched.studentEmail;
+                        }
+                        return { id: rs.id, data: updateData };
+                    }).filter(u => Object.keys(u.data).length > 0);
+
+                    if (updates.length > 0) {
+                        updateStudentsInBatch(updates).catch(err => {
+                            console.warn('Auto backfill student numbers to kisbus failed:', err);
+                        });
+                    }
+                });
+            }
+        }
     }, [rawStudents, masterStudents, afterschoolCourses, afterschoolEnrollments, adminViewMode]);
 
     const getOperatingPeriodString = (yearStr: string, semStr: string, calConfig?: AcademicCalendarConfig) => {

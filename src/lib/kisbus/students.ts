@@ -11,8 +11,8 @@ import { getDb } from '@/lib/firebase';
 export const getStudents = () => fetchCollection<Student>('students');
 export const onStudentsUpdate = (callback: (students: Student[]) => void) => onCollectionUpdate<Student>('students', callback);
 
-// 스쿨버스 목적지 변경 시 통합 마스터 학생(master_students & users)의 address로 양방향 실시간 동기화
-const syncKisbusDestinationToMasterAddress = async (studentId: string, updatedData: Partial<Student>) => {
+// 스쿨버스 학생 정보 변경 시 통합 마스터 학생(master_students & users)으로 양방향 실시간 동기화
+export const syncKisbusStudentToMaster = async (studentId: string, updatedData: Partial<Student>) => {
     try {
         const busDb = db();
         const mainDb = getDb();
@@ -23,44 +23,96 @@ const syncKisbusDestinationToMasterAddress = async (studentId: string, updatedDa
         const student = { id: sSnap.id, ...sSnap.data(), ...updatedData } as Student;
         
         const destId = updatedData.morningDestinationId || updatedData.afternoonDestinationId || updatedData.suggestedMorningDestination || student.morningDestinationId || student.afternoonDestinationId;
-        if (!destId) return;
+        
+        let destName: string | null = null;
+        if (destId) {
+            const destSnap = await getDocs(collection(busDb, 'destinations'));
+            const destinations = destSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            const matched = destinations.find((d: any) => d.id === destId || (d as any).name === destId) as any;
+            destName = matched ? (matched.name || destId) : destId;
+        }
 
-        // 2. 목적지명 조회
-        const destSnap = await getDocs(collection(busDb, 'destinations'));
-        const destinations = destSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const matched = destinations.find((d: any) => d.id === destId || (d as any).name === destId) as any;
-        const destName = matched ? (matched.name || destId) : destId;
+        const studentNumber = (updatedData as any).number || (updatedData as any).studentNum || student.number || (student as any).studentNum || null;
+        const studentEmail = (student.studentEmail || '').toLowerCase().trim();
+        const studentName = (student.nameKo || student.name || '').trim();
+        const studentGrade = String(student.grade || '').trim();
+        const studentClass = String(student.class || student.classNum || '').trim();
 
-        // 3. master_students 컬렉션 동기화
+        // 2. master_students 컬렉션 동기화
         const masterSnap = await getDocs(collection(mainDb, 'master_students'));
         masterSnap.forEach(async (mDoc) => {
             const mData = mDoc.data();
-            const nameMatches = mData.name === student.name || mData.name === student.nameKo || (student.name && student.name.includes(mData.name));
-            const gradeMatches = String(mData.grade) === String(student.grade);
-            if (nameMatches && gradeMatches) {
-                await updateDoc(doc(mainDb, 'master_students', mDoc.id), {
-                    address: destName,
+            const mEmail = (mData.studentEmail || '').toLowerCase().trim();
+            const mName = (mData.name || mData.nameKo || '').trim();
+            const mGrade = String(mData.grade || '').trim();
+            const mClass = String(mData.classNum || '').trim();
+
+            const emailMatches = Boolean(studentEmail && mEmail && studentEmail === mEmail);
+            const nameGradeClassMatches = Boolean(studentName && mName === studentName && studentGrade === mGrade && (!studentClass || studentClass === mClass));
+            const nameGradeMatches = Boolean(studentName && mName === studentName && studentGrade === mGrade);
+
+            if (emailMatches || nameGradeClassMatches || nameGradeMatches) {
+                const masterUpdates: any = {
                     updatedAt: new Date().toISOString()
-                }).catch(() => {});
+                };
+                if (destName) masterUpdates.address = destName;
+                if (studentNumber) masterUpdates.studentNum = String(studentNumber);
+                if (student.contact) masterUpdates.contact = student.contact;
+                if (student.gender) masterUpdates.gender = student.gender;
+                if (student.grade) masterUpdates.grade = String(student.grade);
+                if (student.class || student.classNum) masterUpdates.classNum = String(student.class || student.classNum);
+
+                await updateDoc(doc(mainDb, 'master_students', mDoc.id), masterUpdates).catch(() => {});
             }
         });
 
-        // 4. users 컬렉션 동기화
+        // 3. users 컬렉션 동기화
         const userSnap = await getDocs(collection(mainDb, 'users'));
         userSnap.forEach(async (uDoc) => {
             const uData = uDoc.data();
-            const nameMatches = uData.studentName === student.name || uData.name === student.name || (student.name && student.name.includes(uData.name || ''));
-            const gradeMatches = String(uData.grade || uData.studentGrade) === String(student.grade);
-            if (nameMatches && gradeMatches) {
-                await updateDoc(doc(mainDb, 'users', uDoc.id), {
-                    address: destName
-                }).catch(() => {});
+            const uEmail = (uData.email || uDoc.id || '').toLowerCase().trim();
+            const uName = (uData.studentName || uData.name || '').trim();
+            const uGrade = String(uData.grade || uData.studentGrade || '').trim();
+            const uClass = String(uData.class || uData.classNum || uData.studentClass || '').trim();
+
+            const emailMatches = Boolean(studentEmail && uEmail && studentEmail === uEmail);
+            const nameGradeClassMatches = Boolean(studentName && uName === studentName && studentGrade === uGrade && (!studentClass || studentClass === uClass));
+            const nameGradeMatches = Boolean(studentName && uName === studentName && studentGrade === uGrade);
+
+            if (emailMatches || nameGradeClassMatches || nameGradeMatches) {
+                const userUpdates: any = {};
+                if (destName) userUpdates.address = destName;
+                if (studentNumber) {
+                    userUpdates.number = String(studentNumber);
+                    userUpdates.studentNumber = String(studentNumber);
+                }
+                if (student.contact) {
+                    userUpdates.phone = student.contact;
+                    userUpdates.parentPhone = student.contact;
+                }
+                if (student.gender) userUpdates.gender = student.gender;
+                if (student.grade) {
+                    userUpdates.grade = String(student.grade);
+                    userUpdates.studentGrade = String(student.grade);
+                }
+                if (student.class || student.classNum) {
+                    userUpdates.class = String(student.class || student.classNum);
+                    userUpdates.studentClass = String(student.class || student.classNum);
+                }
+
+                if (Object.keys(userUpdates).length > 0) {
+                    await updateDoc(doc(mainDb, 'users', uDoc.id), userUpdates).catch(() => {});
+                }
             }
         });
     } catch (err) {
-        console.error("Error syncing kisbus destination to master address:", err);
+        console.error("Error syncing kisbus student to master:", err);
     }
 };
+
+// 하위 호환성 유지 별칭
+const syncKisbusDestinationToMasterAddress = syncKisbusStudentToMaster;
+
 
 export const addStudent = async (student: NewStudent) => {
     const docRef = doc(collection(db(), 'students'));

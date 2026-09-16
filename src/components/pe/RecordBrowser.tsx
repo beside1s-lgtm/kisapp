@@ -623,13 +623,14 @@ export default function RecordBrowser({
     if (cleanKey === '근력/근지구력') return '근력';
     if (cleanKey === '체질량지수(BMI)') return 'BMI';
     if (cleanKey === '종합') return viewType === 'score' ? '종합' : '등급';
-    return cleanKey.slice(0, 4);
+    return cleanKey;
   };
 
-  const getDisplayCellValue = (val: any) => {
+  const getDisplayCellValue = (val: any, isName = false) => {
     if (val === null || val === undefined || val === '') return '-';
     const str = String(val);
-    return str.length > 4 ? str.slice(0, 4) : str;
+    if (isName) return str;
+    return str.length > 5 ? str.slice(0, 5) : str;
   };
 
   return (
@@ -792,12 +793,12 @@ export default function RecordBrowser({
                         key={key} 
                         onClick={createSortHandler(columnKey, papsSort, setPapsSort)} 
                         className={cn(
-                          "cursor-pointer hover:bg-muted p-0 sm:p-0.5 text-[10px] sm:text-xs font-bold select-none text-center",
-                          isNum ? "w-[26px]" : isGender ? "w-[22px]" : isName ? "w-[44px]" : ""
+                          "cursor-pointer hover:bg-muted p-0.5 sm:px-1 text-[10px] sm:text-xs font-bold select-none text-center whitespace-nowrap",
+                          isNum ? "w-[30px] sm:w-[50px] md:w-[60px]" : isGender ? "w-[26px] sm:w-[44px] md:w-[52px]" : isName ? "w-[52px] sm:w-[90px] md:w-[105px]" : ""
                         )}
                         title={key}
                       >
-                        <span className="inline-block">{getDisplayHeader(key)}</span>
+                        <span className="inline-block whitespace-nowrap">{getDisplayHeader(key)}</span>
                         {getSortIndicator(columnKey, papsSort)}
                       </TableHead>
                     );
@@ -817,12 +818,12 @@ export default function RecordBrowser({
                           <TableCell 
                             key={cellIndex} 
                             className={cn(
-                              "p-0 sm:p-0.5 text-[10px] sm:text-xs truncate text-center",
-                              isName ? "font-bold" : "font-medium"
+                              "p-0.5 sm:px-1 text-[10px] sm:text-xs text-center whitespace-nowrap",
+                              isName ? "font-bold truncate" : "font-medium truncate"
                             )}
                             title={String(row[displayKey] || '')}
                           >
-                            {getDisplayCellValue(row[displayKey])}
+                            {getDisplayCellValue(row[displayKey], isName)}
                           </TableCell>
                         );
                       })}
@@ -934,6 +935,7 @@ export default function RecordBrowser({
                   {[
                     { key: 'studentNum', label: '번호', isNarrow: true },
                     { key: 'name', label: '이름', isName: true },
+                    { key: 'gender', label: '성별', isGender: true },
                     ...(selectedItem === 'theory-exam' ? [
                       { key: 'quizTitle', label: '평가제목' },
                       { key: 'score', label: '점수' },
@@ -954,12 +956,15 @@ export default function RecordBrowser({
                       key={header.key} 
                       onClick={createSortHandler(header.key, itemSort, setItemSort)} 
                       className={cn(
-                        "cursor-pointer hover:bg-muted p-0.5 text-[11px] sm:text-xs font-bold truncate select-none",
-                        header.isNarrow ? "w-[28px] text-center" : header.isName ? "w-[46px] text-center" : "text-center"
+                        "cursor-pointer hover:bg-muted p-0.5 sm:px-1 text-[11px] sm:text-xs font-bold select-none whitespace-nowrap text-center",
+                        header.isNarrow ? "w-[30px] sm:w-[50px] md:w-[60px]" : 
+                        header.isName ? "w-[52px] sm:w-[90px] md:w-[105px]" : 
+                        header.isGender ? "w-[26px] sm:w-[44px] md:w-[52px]" : 
+                        ""
                       )}
                       title={header.label}
                     >
-                      <span className="truncate">{getDisplayHeader(header.label)}</span>
+                      <span className="truncate inline-block whitespace-nowrap">{getDisplayHeader(header.label)}</span>
                       {getSortIndicator(header.key, itemSort)}
                     </TableHead>
                   ))}
@@ -969,8 +974,9 @@ export default function RecordBrowser({
                 {sortedItemData.length > 0 ? (
                   sortedItemData.map((s, idx) => (
                     <TableRow key={`${s.id}-${idx}`} className="h-8 sm:h-9 hover:bg-slate-50/50">
-                      <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{s.studentNum}</TableCell>
-                      <TableCell className="p-0.5 text-center font-bold text-[11px] sm:text-xs truncate">{s.name.slice(0, 4)}</TableCell>
+                      <TableCell className="p-0.5 sm:px-1 text-center text-[11px] sm:text-xs whitespace-nowrap">{s.studentNum}</TableCell>
+                      <TableCell className="p-0.5 sm:px-1 text-center font-bold text-[11px] sm:text-xs whitespace-nowrap truncate">{s.name}</TableCell>
+                      <TableCell className="p-0.5 sm:px-1 text-center text-[11px] sm:text-xs whitespace-nowrap">{s.gender || '-'}</TableCell>
                       {selectedItem === 'theory-exam' ? (
                         <>
                           <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).quizTitle)}</TableCell>
@@ -1008,7 +1014,7 @@ export default function RecordBrowser({
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-20 text-center text-xs text-muted-foreground">
+                    <TableCell colSpan={10} className="h-20 text-center text-xs text-muted-foreground">
                       조회할 종목을 선택해주세요.
                     </TableCell>
                   </TableRow>

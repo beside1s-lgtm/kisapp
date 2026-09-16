@@ -84,8 +84,8 @@ export default function PapsReportPrintDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl w-[95vw] h-[92vh] p-0 flex flex-col overflow-hidden bg-slate-100 print:bg-white print:max-w-none print:w-full print:h-auto print:static print:overflow-visible print:border-none print:shadow-none">
-        {/* 상단 컨트롤러 (인쇄 시 숨김) */}
-        <div className="flex flex-wrap items-center justify-between gap-2 p-3.5 bg-white border-b border-slate-200 shrink-0 print:hidden">
+        {/* 상단 컨트롤러 (인쇄 시 숨김 - 우측 닫기(X) 버튼과 겹치지 않도록 pr-14 안전 여백 부여) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 p-3.5 pr-14 bg-white border-b border-slate-200 shrink-0 print:hidden">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600">
               <Award className="w-5 h-5" />
@@ -406,13 +406,10 @@ function SingleStudentPapsSheet({ report, isLast }: { report: PapsStudentReportD
             발행일자: {measuredDate}
           </div>
 
-          <div className="flex items-center gap-3 text-right">
+          <div className="text-right">
             <span className="text-sm font-black tracking-widest text-slate-900">
-              호치민시한국국제학교장
+              호치민시한국국제학교
             </span>
-            <div className="w-10 h-10 border-2 border-red-600 rounded-md flex items-center justify-center text-red-600 font-bold text-[10px] leading-tight select-none rotate-[-6deg]">
-              직인<br />생략
-            </div>
           </div>
         </div>
       </div>

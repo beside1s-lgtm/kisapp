@@ -625,12 +625,15 @@ function AddPapsItemDialog({ onAddItem, currentItems, onRefresh }: { onAddItem: 
         setIsSubmitting(true);
         try {
             for (const name of checkedNames) {
-                const existing = currentItems.find(i => i.name === name && i.isPaps);
-                if (existing) {
-                    // 이미 DB에 존재: isDeactivated=false로 복원
-                    await reactivateItem('KISH', existing.id);
+                // isDeactivated 여부와 무관하게 이름+isPaps로 모든 문서를 검색하여 중복 생성 원천 차단
+                const allMatches = currentItems.filter(i => i.name === name && i.isPaps);
+                if (allMatches.length > 0) {
+                    // 비활성 버전 우선 복원 (deactivated 문서가 있으면 그것을 재활성화)
+                    const deactivatedOne = allMatches.find(i => i.isDeactivated);
+                    const target = deactivatedOne ?? allMatches[0];
+                    await reactivateItem('KISH', target.id);
                 } else {
-                    // DB 미존재: 신규 생성
+                    // 동일 이름의 PAPS 문서 자체가 없을 때만 신규 생성
                     const standard = papsStandards[name as keyof typeof papsStandards];
                     await onAddItem({
                         name,
