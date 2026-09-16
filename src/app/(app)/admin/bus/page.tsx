@@ -277,7 +277,8 @@ const AdminPageContent: React.FC<{
             <Tabs value={activeTab} onValueChange={setActiveTab} defaultValue="student-management" id="admin-tabs-root" className="w-full">
                 {/* 스크롤 시 탭 및 필터 고정 - MainLayout의 <main> 스크롤 컨테이너 기준 top-0에 밀착하여 헤더 바로 아래 유격 원천 차단 */}
                 <div className="sticky top-0 z-20 bg-background px-2.5 sm:px-4 md:px-6 py-2 space-y-2 border-b border-slate-200/50 shadow-xs">
-                    <TabsList className="grid grid-cols-3 sm:grid-cols-6 h-auto w-full bg-slate-100 p-1 sm:p-1.5 rounded-2xl gap-1 border border-slate-200/80">
+                    {/* 데스크톱 전용 탭바 (모바일에서는 AdminPageFilter 내 기능 선택 드롭다운으로 대체) */}
+                    <TabsList className="hidden sm:grid grid-cols-6 h-auto w-full bg-slate-100 p-1 sm:p-1.5 rounded-2xl gap-1 border border-slate-200/80">
                         <TabsTrigger value="bus-registration" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_registration')}</TabsTrigger>
                         <TabsTrigger value="teacher-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.teacher_management')}</TabsTrigger>
                         <TabsTrigger value="bus-configuration" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_configuration')}</TabsTrigger>
@@ -293,7 +294,7 @@ const AdminPageContent: React.FC<{
                     </TabsList>
 
                     {/* 버스 설정 및 탑승 학생 관리 탭일 때 버스 요일 경로 필터가 함께 sticky로 고정됨 */}
-                    {(activeTab === 'bus-configuration' || activeTab === 'student-management') && (
+                    {(activeTab === 'bus-configuration' || activeTab === 'student-management') ? (
                         <div className="animate-in fade-in duration-150">
                             <AdminPageFilter
                                 buses={filteredBuses}
@@ -309,6 +310,8 @@ const AdminPageContent: React.FC<{
                                 showRouteStops={activeTab === 'student-management'}
                                 destinations={destinations}
                                 semesterMode={semesterMode}
+                                activeTab={activeTab}
+                                onTabChange={setActiveTab}
                                 rightContent={activeTab === 'student-management' ? (
                                     <div className="flex items-center gap-2 w-full sm:w-auto">
                                         {/* 전체 학생 검색창 */}
@@ -353,11 +356,28 @@ const AdminPageContent: React.FC<{
                                 ) : undefined}
                             />
                         </div>
+                    ) : (
+                        /* 모바일 전용: 필터가 없는 탭(버스 등록, 교사 관리, 방과후 조회, 요금)에서도 다른 기능으로 즉시 이동할 수 있도록 기능 선택 드롭다운 제공 */
+                        <div className="sm:hidden w-full">
+                            <Select value={activeTab} onValueChange={setActiveTab}>
+                                <SelectTrigger className="w-full h-9 px-3 text-xs font-semibold bg-slate-50 border-slate-200">
+                                    <SelectValue placeholder="기능 선택" />
+                                </SelectTrigger>
+                                <SelectContent position="popper" side="bottom" sideOffset={4}>
+                                    <SelectItem value="bus-registration">버스 등록</SelectItem>
+                                    <SelectItem value="teacher-management">교사 관리</SelectItem>
+                                    <SelectItem value="bus-configuration">버스 설정</SelectItem>
+                                    <SelectItem value="student-management">학생 관리</SelectItem>
+                                    <SelectItem value="after-school-management">방과후 조회</SelectItem>
+                                    <SelectItem value="fare-management">요금 관리</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
                     )}
                 </div>
 
                 {/* 🌟 본문 영역 패딩 */}
-                <div className="px-2.5 sm:px-4 md:px-6 pt-3 pb-8">
+                <div className="px-2.5 sm:px-4 md:px-6 pt-2 sm:pt-3 pb-8">
                     {pendingStudents.length > 0 && (
                         <Collapsible defaultOpen={true} className="mb-6">
                             <Alert>

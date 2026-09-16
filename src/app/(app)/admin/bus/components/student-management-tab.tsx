@@ -1377,17 +1377,17 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                         </Alert>
                     )}
                     <Card>
-                        <CardHeader>
-                            <CardTitle className="whitespace-nowrap text-lg font-bold text-slate-800">
-                                {t('admin.student_management.seat.title')} {currentRoute && <span className="text-sm font-normal text-indigo-600 ml-1.5 font-sans">({assignedStudentsCount}명 배정됨)</span>}
+                        <CardHeader className="p-3 sm:p-6 pb-1 sm:pb-2">
+                            <CardTitle className="whitespace-nowrap text-base sm:text-lg font-bold text-slate-800">
+                                {t('admin.student_management.seat.title')} {currentRoute && <span className="text-xs sm:text-sm font-normal text-indigo-600 ml-1.5 font-sans">({assignedStudentsCount}명 배정됨)</span>}
                             </CardTitle>
-                            <CardDescription>
+                            <CardDescription className="hidden sm:block text-xs sm:text-sm">
                                 버스 좌석표를 확인하고 좌석을 클릭하여 학생 배치 및 변경 작업을 진행하세요.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-4">
+                        <CardContent className="p-3 sm:p-6 pt-0 sm:pt-0 space-y-2.5 sm:space-y-4">
                             {/* 버튼 하단 통합 툴바 */}
-                            <div className="flex flex-wrap gap-2 items-center justify-start bg-slate-50/90 p-2.5 rounded-xl border border-slate-200/80">
+                            <div className="flex flex-wrap gap-1.5 sm:gap-2 items-center justify-start bg-slate-50/90 p-2 sm:p-2.5 rounded-xl border border-slate-200/80">
                                 <Dialog open={isAddStudentDialogOpen} onOpenChange={(open) => {
                                     setIsAddStudentDialogOpen(open);
                                     if (!open) {
