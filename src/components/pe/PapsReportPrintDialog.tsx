@@ -486,7 +486,9 @@ function SingleStudentPapsSheet({ report, isLast }: { report: PapsStudentReportD
             <div className="border border-slate-800 rounded p-2.5 bg-amber-50/30 flex flex-col">
               <div className="flex items-center gap-1.5 text-xs font-bold text-amber-950 mb-1">
                 <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span className="truncate">[취약 요인 놀이·게임형 처방]</span>
+                <span className="truncate">
+                  {Number(student.grade) >= 4 ? '[취약 요인 맞춤 스포츠 처방]' : '[취약 요인 놀이·게임형 처방]'}
+                </span>
               </div>
               <p className="text-[10.5px] leading-relaxed text-slate-700 text-justify pl-5 flex-1">
                 {report.playfulImprovementGuide}
