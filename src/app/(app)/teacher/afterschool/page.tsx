@@ -710,7 +710,7 @@ function AfterschoolConsole() {
       }
       contentClassName="p-2 sm:p-3 pt-1.5 sm:pt-2"
     >
-      <div className="max-w-7xl mx-auto space-y-2.5">
+      <div className="max-w-7xl mx-auto space-y-2.5 w-full overflow-x-hidden">
         {isLoadingCourses ? (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 flex flex-col items-center justify-center min-h-[360px] gap-3 text-slate-500">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />

@@ -736,6 +736,12 @@
    - AI 문제 생성 완료 시 또는 보관함에서 퀴즈를 불러올 때는 즉시 `mobileTab = 'quiz'`(문제지 확인 탭)로 자동 전환하여 작업 흐름의 단절을 방지한다.
    - 데스크톱 환경(`hidden lg:flex`)에서는 좌측 설정/보관함 패널(380px)과 우측 문제지 뷰어 2패널 고정 레이아웃을 제공한다.
 
+8. **방과후학교 관리자(`AdminPanel`) 모바일 고정 헤더/내부 스크롤 분리 및 툴바 3개체 표준**:
+   - `page.tsx`에서 `MainLayout`에 반드시 `isFixedScreen={true}` 및 `contentClassName="... flex-1 min-h-0 overflow-hidden flex flex-col"`을 부여하고, 부모 래퍼와 `AdminPanel` 루트 div를 `h-full min-h-0 flex-1 flex flex-col overflow-hidden`으로 고정하여 상단 탭 바가 화면 상단에 고정되도록 한다.
+   - 본문 영역(`Panel Content`)은 `flex-1 min-h-0 overflow-y-auto overscroll-contain`을 적용하여 내부 목록(수강생, 강좌, 교실, 전자결재 등)이 부모 창의 덜컹거림 없이 단독으로 매끄럽게 스크롤되도록 분리한다.
+   - 방과후 운영 단계 버튼은 모바일에서 `grid-cols-5 gap-1`로 축약하여 `[강사모집]`, `[수강신청]`, `[신청완료]`, `[운영중]`, `[종료]` 5개 버튼을 단 1줄에 균등 배치한다.
+   - 수강생 관리 툴바는 모바일에서 '강좌 선택' 라벨과 아이콘을 숨기고, 강좌 드롭다운(약 6자 너비 `w-[105px]`), `[버스 연동]`, `[개별 등록]` 3개 개체만 단 1줄에 나란히 배치하며 나머지 다운로드/일괄 버튼은 모바일에서 숨김 처리한다.
+
 ## 모바일 뷰포트 부모 컨테이너 덜컹거림(Jittering/Bounce) 원천 차단 전역 표준
 
 1. **전역 레벨 오버스크롤 바운스 차단 (`globals.css`)**:
