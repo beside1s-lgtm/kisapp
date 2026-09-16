@@ -162,8 +162,8 @@ export const AdminPageFilter = ({
                         </Tabs>
                     </div>
 
-                    {/* 모바일 3번째 줄: 검색창 및 학생명단 관리 버튼 */}
-                    {rightContent && (
+                    {/* 모바일 3번째 줄: 학생 관리 탭이 아닐 때만 rightContent 표출 (학생 관리 탭은 student-management-tab에서 1줄 통합 바 제공) */}
+                    {rightContent && activeTab !== 'student-management' && (
                         <div className="w-full">
                             {rightContent}
                         </div>

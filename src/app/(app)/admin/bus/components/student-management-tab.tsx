@@ -12,7 +12,7 @@ import type { MasterStudent } from '@/lib/types/masterStudent';
 import { BusSeatMap, getLayoutInfo } from '@/components/bus/bus-seat-map';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
-import { Shuffle, RotateCcw, Copy, AlertCircle, UserPlus, PlusCircle, Download, Upload, Search, Trash2, Clock, Sparkles, Trash, ChevronDown, ChevronUp } from 'lucide-react';
+import { Shuffle, RotateCcw, Copy, AlertCircle, UserPlus, PlusCircle, Download, Upload, Search, Trash2, Clock, Sparkles, Trash, ChevronDown, ChevronUp, Users2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
@@ -1386,8 +1386,131 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="p-3 sm:p-6 pt-0 sm:pt-0 space-y-2.5 sm:space-y-4">
-                            {/* 버튼 하단 통합 툴바 */}
-                            <div className="flex flex-wrap gap-1.5 sm:gap-2 items-center justify-start bg-slate-50/90 p-2 sm:p-2.5 rounded-xl border border-slate-200/80">
+                            {/* 🌟 모바일 전용: 축소 검색창 + 7개 액션 아이콘 1줄 통합 툴바 */}
+                            <div className="sm:hidden flex items-center gap-1 w-full bg-slate-50/90 p-1.5 rounded-xl border border-slate-200/80 mb-1 overflow-x-auto no-scrollbar">
+                                {/* 1. 이름 검색창 (축소) */}
+                                <div className="relative w-24 shrink-0">
+                                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                                    <Input
+                                        type="search"
+                                        placeholder="이름 검색..."
+                                        className="pl-6 pr-1 h-7 text-[11px] w-full bg-white border-slate-200 rounded-lg"
+                                        value={globalSearchQuery}
+                                        onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                                    />
+                                    {globalSearchResults.length > 0 && globalSearchQuery && (
+                                        <div className="absolute z-50 left-0 top-full mt-1 bg-card border rounded-xl shadow-lg w-48 max-h-60 overflow-y-auto overscroll-contain">
+                                            {globalSearchResults.map(student => (
+                                                <div
+                                                    key={student.id}
+                                                    className="px-2.5 py-1.5 text-xs hover:bg-accent rounded-lg cursor-pointer flex justify-between items-center gap-1"
+                                                    onClick={() => {
+                                                        setSelectedGlobalStudent(student);
+                                                        setGlobalSearchQuery('');
+                                                    }}
+                                                >
+                                                    <span className="font-medium truncate">{student.nameKo || student.nameEn || student.name}</span>
+                                                    <span className="text-[10px] text-muted-foreground shrink-0">{student.grade} {student.class}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 2. 학생 추가 버튼 */}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 shrink-0 rounded-lg"
+                                    title={t('admin.student_management.add_student.button')}
+                                    onClick={() => setIsAddStudentDialogOpen(true)}
+                                >
+                                    <UserPlus className="h-3.5 w-3.5" />
+                                </Button>
+
+                                {/* 3. 랜덤 배정 버튼 */}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 shrink-0 rounded-lg"
+                                    onClick={handleRandomAssign}
+                                    disabled={!currentRoute}
+                                    title={t('admin.student_management.seat.random_assign_button')}
+                                >
+                                    <Shuffle className="h-3.5 w-3.5" />
+                                </Button>
+
+                                {/* 4. 좌석 복사 버튼 */}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 shrink-0 rounded-lg"
+                                    disabled={!currentRoute}
+                                    title={t('admin.student_management.seat.copy.button')}
+                                    onClick={() => setIsCopySeatingDialogOpen(true)}
+                                >
+                                    <Copy className="h-3.5 w-3.5" />
+                                </Button>
+
+                                {/* 5. Undo 버튼 */}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleUndo}
+                                    disabled={seatingHistory.length === 0}
+                                    className="h-7 w-7 p-0 shrink-0 rounded-lg border-orange-200 text-orange-600 hover:bg-orange-50 disabled:opacity-40"
+                                    title="마지막 좌석 변경 취소"
+                                >
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                </Button>
+
+                                {/* 6. 좌석 초기화 버튼 */}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 shrink-0 rounded-lg"
+                                    onClick={async () => { if (currentRoute && selectedBus) await handleSeatUpdate(generateInitialSeating(selectedBus.capacity)); }}
+                                    title="좌석 초기화"
+                                >
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                </Button>
+
+                                {/* 7. 일괄 도구 드롭다운 */}
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 w-7 p-0 shrink-0 rounded-lg bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
+                                            title="일괄 도구"
+                                        >
+                                            <Sparkles className="h-3.5 w-3.5" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="w-56">
+                                        <DropdownMenuItem onClick={handleGlobalRandomAssign}>
+                                            <Shuffle className="mr-2 h-4 w-4" /> 미배정 학생 일괄 전체 배정
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={handleOpenGlobalClearDialog} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                                            <Trash className="mr-2 h-4 w-4" /> 버스/경로/요일 선택 초기화
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+
+                                {/* 8. 학생명단 관리 버튼 */}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 shrink-0 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200"
+                                    onClick={() => setIsStudentRosterOpen(true)}
+                                    title="학생명단 관리"
+                                >
+                                    <Users2 className="h-3.5 w-3.5" />
+                                </Button>
+                            </div>
+
+                            {/* 데스크톱 전용 통합 툴바 */}
+                            <div className="hidden sm:flex flex-wrap gap-1.5 sm:gap-2 items-center justify-start bg-slate-50/90 p-2 sm:p-2.5 rounded-xl border border-slate-200/80">
                                 <Dialog open={isAddStudentDialogOpen} onOpenChange={(open) => {
                                     setIsAddStudentDialogOpen(open);
                                     if (!open) {
@@ -1398,8 +1521,9 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                                     }
                                 }}>
                                     <DialogTrigger asChild>
-                                        <Button variant="outline" size="sm">
-                                            <UserPlus className="mr-2 h-4 w-4" /> {t('admin.student_management.add_student.button')}
+                                        <Button variant="outline" size="sm" className="h-8 px-2 sm:px-3 text-xs" title={t('admin.student_management.add_student.button')}>
+                                            <UserPlus className="h-4 w-4 sm:mr-1.5" />
+                                            <span className="hidden sm:inline">{t('admin.student_management.add_student.button')}</span>
                                         </Button>
                                     </DialogTrigger>
                                     <DialogContent className="sm:max-w-[520px]">
@@ -1479,10 +1603,14 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                                         </DialogFooter>
                                     </DialogContent>
                                 </Dialog>
-                                <Button variant="outline" size="sm" onClick={handleRandomAssign} disabled={!currentRoute} title={t('admin.student_management.seat.random_assign_button')}><Shuffle className="h-4 w-4" /></Button>
+                                <Button variant="outline" size="sm" className="h-8 px-2 sm:px-2.5" onClick={handleRandomAssign} disabled={!currentRoute} title={t('admin.student_management.seat.random_assign_button')}>
+                                    <Shuffle className="h-4 w-4" />
+                                </Button>
                                 <Dialog open={isCopySeatingDialogOpen} onOpenChange={setIsCopySeatingDialogOpen}>
                                     <DialogTrigger asChild>
-                                        <Button variant="outline" size="sm" disabled={!currentRoute} title={t('admin.student_management.seat.copy.button')}><Copy className="h-4 w-4" /></Button>
+                                        <Button variant="outline" size="sm" className="h-8 px-2 sm:px-2.5" disabled={!currentRoute} title={t('admin.student_management.seat.copy.button')}>
+                                            <Copy className="h-4 w-4" />
+                                        </Button>
                                     </DialogTrigger>
                                     <DialogContent>
                                         <DialogHeader><DialogTitle>{t('admin.student_management.seat.copy.title')}</DialogTitle></DialogHeader>
@@ -1520,16 +1648,20 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                                     size="sm" 
                                     onClick={handleUndo} 
                                     disabled={seatingHistory.length === 0}
-                                    className="border-orange-200 text-orange-600 hover:bg-orange-50"
+                                    className="h-8 px-2 sm:px-3 text-xs border-orange-200 text-orange-600 hover:bg-orange-50"
                                     title="마지막 좌석 변경 취소"
                                 >
-                                    <RotateCcw className="h-4 w-4 mr-1"/> Undo
+                                    <RotateCcw className="h-4 w-4 sm:mr-1"/>
+                                    <span className="hidden sm:inline">Undo</span>
                                 </Button>
-                                <Button variant="outline" size="sm" onClick={async () => { if (currentRoute && selectedBus) await handleSeatUpdate(generateInitialSeating(selectedBus.capacity)); }} title="좌석 초기화"><RotateCcw className="h-4 w-4"/></Button>
+                                <Button variant="outline" size="sm" className="h-8 px-2 sm:px-2.5" onClick={async () => { if (currentRoute && selectedBus) await handleSeatUpdate(generateInitialSeating(selectedBus.capacity)); }} title="좌석 초기화">
+                                    <RotateCcw className="h-4 w-4"/>
+                                </Button>
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" size="sm" className="bg-primary/10 text-primary border-primary/20 hover:bg-primary/20">
-                                            <Sparkles className="h-4 w-4 mr-1" /> 일괄 도구
+                                        <Button variant="outline" size="sm" className="h-8 px-2 sm:px-3 text-xs bg-primary/10 text-primary border-primary/20 hover:bg-primary/20" title="일괄 도구">
+                                            <Sparkles className="h-4 w-4 sm:mr-1" />
+                                            <span className="hidden sm:inline">일괄 도구</span>
                                         </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end" className="w-64">
