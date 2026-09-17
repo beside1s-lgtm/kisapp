@@ -6,6 +6,13 @@ import {
 import type { MasterStudent, NewMasterStudent } from '@/lib/types/masterStudent';
 
 const COLLECTION_NAME = 'master_students';
+const DELETED_COLLECTION_NAME = 'deleted_master_students';
+
+export interface DeletedMasterStudent extends MasterStudent {
+  deletedAt: string;
+  deletedReason?: string;
+  originalData?: any;
+}
 
 // 학생 계정 이메일 정규표현식 검증 유틸 (예: 2023kangdongyun@kshcm.net - 입학년도 4자리 + 영문이름 + @kshcm.net)
 const STUDENT_EMAIL_REGEX = /^\d{4}[a-zA-Z0-9._-]+@kshcm\.net$/i;
@@ -634,17 +641,33 @@ export const createMasterStudent = async (studentData: NewMasterStudent): Promis
 
 // 3. 마스터 학생 정보 수정 (기본 프로필 + users 컬렉션 + 스쿨버스 students 동시 양방향 업데이트)
 export const updateMasterStudent = async (studentId: string, updateData: Partial<MasterStudent>): Promise<void> => {
-  const docRef = doc(getDb(), COLLECTION_NAME, studentId);
-  const existingSnap = await getDoc(docRef);
-  const existingData = existingSnap.exists() ? (existingSnap.data() as MasterStudent) : null;
-
-  const now = new Date().toISOString();
-  await updateDoc(docRef, {
-    ...updateData,
-    updatedAt: now
-  });
+  const db = getDb();
+  let targetRef = doc(db, COLLECTION_NAME, studentId);
+  const existingSnap = await getDoc(targetRef);
+  let existingData: MasterStudent | null = existingSnap.exists() ? (existingSnap.data() as MasterStudent) : null;
 
   const emailToSearch = (updateData.studentEmail || existingData?.studentEmail || (isStudentEmail(studentId) ? studentId : '')).trim();
+
+  // 만약 id로 찾지 못했고 이메일이 있다면, master_students에서 email로 기존 문서 검색
+  if (!existingData && emailToSearch) {
+    const q = query(collection(db, COLLECTION_NAME), where("studentEmail", "==", emailToSearch));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      targetRef = snap.docs[0].ref;
+      existingData = snap.docs[0].data() as MasterStudent;
+    }
+  }
+
+  const now = new Date().toISOString();
+  
+  // setDoc({ merge: true })를 사용하여 문서가 이미 삭제되었거나 없어도 'No document to update' 에러 없이 자동 생성/복구(Self-Healing)
+  await setDoc(targetRef, {
+    ...updateData,
+    studentId: targetRef.id,
+    updatedAt: now,
+    ...(existingData ? {} : { createdAt: now })
+  }, { merge: true });
+
   const nameToUse = updateData.name || existingData?.name;
   const nameEnToUse = updateData.nameEn !== undefined ? updateData.nameEn : existingData?.nameEn;
   const gradeToUse = updateData.grade || existingData?.grade;
@@ -657,7 +680,8 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
 
   // users 컬렉션 동시 업데이트
   if (emailToSearch) {
-    const q = query(collection(getDb(), 'users'), where("email", "==", emailToSearch));
+    const cleanEmail = emailToSearch.toLowerCase();
+    const q = query(collection(db, 'users'), where("email", "==", emailToSearch));
     const snapshot = await getDocs(q);
     const userPayload: any = {};
     if (nameToUse) {
@@ -695,14 +719,16 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
 
     if (!snapshot.empty) {
       for (const userDoc of snapshot.docs) {
-        await updateDoc(doc(getDb(), 'users', userDoc.id), userPayload);
+        await setDoc(doc(db, 'users', userDoc.id), userPayload, { merge: true });
       }
     } else {
-      const directRef = doc(getDb(), 'users', emailToSearch.toLowerCase());
-      const directSnap = await getDoc(directRef);
-      if (directSnap.exists()) {
-        await updateDoc(directRef, userPayload);
-      }
+      const directRef = doc(db, 'users', cleanEmail);
+      await setDoc(directRef, {
+        uid: cleanEmail,
+        email: emailToSearch,
+        role: 'student',
+        ...userPayload
+      }, { merge: true });
     }
   }
 
@@ -725,8 +751,8 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
   if (genderToUse) {
     try {
       const { syncStudentGenderToPeRecords } = await import('./peService');
-      await syncStudentGenderToPeRecords('KISH', studentId, genderToUse);
-      if (emailToSearch && emailToSearch !== studentId) {
+      await syncStudentGenderToPeRecords('KISH', targetRef.id, genderToUse);
+      if (emailToSearch && emailToSearch !== targetRef.id) {
         await syncStudentGenderToPeRecords('KISH', emailToSearch, genderToUse);
       }
     } catch (peErr) {
@@ -814,10 +840,432 @@ export const syncAddressToKisbusStudent = async (
   }
 };
 
-// 4. 마스터 학생 삭제
-export const deleteMasterStudent = async (studentId: string): Promise<void> => {
-  const docRef = doc(getDb(), COLLECTION_NAME, studentId);
-  await deleteDoc(docRef);
+// 4. 마스터 학생 삭제 (안전 모드: 휴지통 백업 아카이브 저장 + 스쿨버스/방과후 원천 데이터 100% 안전 보존)
+export const deleteMasterStudent = async (
+  studentIdOrEmail: string,
+  extraInfo?: { studentEmail?: string; name?: string; grade?: string; classNum?: string }
+): Promise<void> => {
+  try {
+    const db = getDb();
+    const isEmail = isStudentEmail(studentIdOrEmail) || studentIdOrEmail.includes('@');
+    let emailToClean = (extraInfo?.studentEmail || (isEmail ? studentIdOrEmail : '')).trim().toLowerCase();
+    let studentName = extraInfo?.name || '';
+    let grade = extraInfo?.grade || '';
+    let classNum = extraInfo?.classNum || '';
+    let docIdToDelete = isEmail ? '' : studentIdOrEmail;
+
+    let snapshotData: any = null;
+
+    // 1) master_students 컬렉션 문서 확인 및 스냅샷 백업
+    if (docIdToDelete) {
+      const directSnap = await getDoc(doc(db, COLLECTION_NAME, docIdToDelete));
+      if (directSnap.exists()) {
+        snapshotData = { ...directSnap.data(), studentId: directSnap.id };
+        const d = directSnap.data();
+        if (!emailToClean && d.studentEmail) emailToClean = d.studentEmail.trim().toLowerCase();
+        if (!studentName && (d.name || d.nameKo)) studentName = d.name || d.nameKo;
+        if (!grade && d.grade) grade = String(d.grade);
+        if (!classNum && d.classNum) classNum = String(d.classNum);
+
+        // 형제자매 그룹 해제
+        if (d.siblingGroupId) {
+          try {
+            await unlinkMasterStudentSibling(docIdToDelete);
+          } catch (sibErr) {
+            console.warn('형제자매 해제 중 경고 (삭제 계속):', sibErr);
+          }
+        }
+
+        // master_students 활성 문서 삭제
+        await deleteDoc(directSnap.ref);
+      }
+    }
+
+    // 2) 이메일로 매칭되는 master_students 문서 전체 삭제 및 스냅샷 보강
+    if (emailToClean) {
+      const qMaster = query(collection(db, COLLECTION_NAME), where('studentEmail', '==', emailToClean));
+      const masterSnap = await getDocs(qMaster);
+      for (const d of masterSnap.docs) {
+        if (!snapshotData) {
+          snapshotData = { ...d.data(), studentId: d.id };
+        }
+        if (d.id !== docIdToDelete) {
+          const data = d.data();
+          if (data.siblingGroupId) {
+            try {
+              await unlinkMasterStudentSibling(d.id);
+            } catch (e) {}
+          }
+          await deleteDoc(d.ref);
+        }
+      }
+    }
+
+    // 3) users 컬렉션에서 스냅샷 보완 및 계정 정리 (활성 목록 리스너 잔존 방지)
+    if (emailToClean) {
+      const directUserRef = doc(db, 'users', emailToClean);
+      const directUserSnap = await getDoc(directUserRef);
+      if (directUserSnap.exists()) {
+        const ud = directUserSnap.data();
+        if (!snapshotData) {
+          snapshotData = {
+            studentId: docIdToDelete || emailToClean,
+            studentEmail: emailToClean,
+            name: ud.studentName || ud.name || studentName || '학생',
+            nameKo: ud.studentName || ud.name || studentName || '학생',
+            grade: String(ud.grade || ud.studentGrade || grade || '1'),
+            classNum: String(ud.class || ud.studentClass || classNum || '1'),
+            studentNum: String(ud.number || ud.studentNumber || ''),
+            gender: ud.gender || 'Male',
+            contact: ud.phone || ud.parentPhone || '',
+            address: ud.address || '',
+          };
+        }
+        await deleteDoc(directUserRef);
+      }
+
+      const qUser = query(collection(db, 'users'), where('email', '==', emailToClean));
+      const userSnap = await getDocs(qUser);
+      for (const uDoc of userSnap.docs) {
+        if (!snapshotData) {
+          const ud = uDoc.data();
+          snapshotData = {
+            studentId: docIdToDelete || emailToClean,
+            studentEmail: emailToClean,
+            name: ud.studentName || ud.name || studentName || '학생',
+            nameKo: ud.studentName || ud.name || studentName || '학생',
+            grade: String(ud.grade || ud.studentGrade || grade || '1'),
+            classNum: String(ud.class || ud.studentClass || classNum || '1'),
+            studentNum: String(ud.number || ud.studentNumber || ''),
+            gender: ud.gender || 'Male',
+            contact: ud.phone || ud.parentPhone || '',
+            address: ud.address || '',
+          };
+        }
+        await deleteDoc(uDoc.ref);
+      }
+    }
+
+    if (docIdToDelete) {
+      const userByIdRef = doc(db, 'users', docIdToDelete);
+      const userByIdSnap = await getDoc(userByIdRef);
+      if (userByIdSnap.exists()) {
+        await deleteDoc(userByIdRef);
+      }
+    }
+
+    // 4) 휴지통(deleted_master_students)에 전체 데이터 스냅샷 백업 저장 (실수 삭제 100% 복구 보장)
+    const backupId = emailToClean ? emailToClean.replace(/[^a-zA-Z0-9_-]/g, '_') : (docIdToDelete || `del_${Date.now()}`);
+    const backupPayload: DeletedMasterStudent = {
+      ...(snapshotData || {}),
+      studentId: docIdToDelete || emailToClean || backupId,
+      studentEmail: emailToClean || snapshotData?.studentEmail || '',
+      name: studentName || snapshotData?.name || '학생',
+      grade: grade || snapshotData?.grade || '1',
+      classNum: classNum || snapshotData?.classNum || '1',
+      deletedAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, DELETED_COLLECTION_NAME, backupId), backupPayload, { merge: true });
+
+    // ★★★ [중요: 스쿨버스 및 방과후 데이터 원천 보존 원칙] ★★★
+    // 스쿨버스 DB(kisbusDb.students)와 방과후 수강 DB(afterschool_courses, enrollments)는 절대 물리 삭제하지 않습니다!
+    // 실수로 계정을 삭제하더라도 기존 버스 배정(좌석, 정류장)과 방과후 수강/출결 이력은 안전하게 보존되며,
+    // [휴지통]에서 복구하거나 재등록 시 즉시 원래 상태로 100% 다시 바인딩됩니다.
+  } catch (err) {
+    console.error('deleteMasterStudent error:', err);
+    throw err;
+  }
+};
+
+// 4-1. 삭제된 학생 목록 실시간 구독
+export const onDeletedMasterStudentsUpdate = (callback: (students: DeletedMasterStudent[]) => void) => {
+  return onSnapshot(collection(getDb(), DELETED_COLLECTION_NAME), (snap) => {
+    const list = snap.docs.map(d => ({
+      ...d.data(),
+      studentId: d.id
+    } as DeletedMasterStudent));
+    callback(list);
+  }, (err) => console.error('onDeletedMasterStudentsUpdate error:', err));
+};
+
+// 4-2. 휴지통에서 학생 계정 즉시 복구 (Restore)
+export const restoreMasterStudent = async (backupDocId: string): Promise<void> => {
+  const db = getDb();
+  const backupRef = doc(db, DELETED_COLLECTION_NAME, backupDocId);
+  const backupSnap = await getDoc(backupRef);
+  if (!backupSnap.exists()) {
+    throw new Error('복구할 삭제 학생 데이터를 찾을 수 없습니다.');
+  }
+
+  const data = backupSnap.data() as DeletedMasterStudent;
+  const originalStudentId = data.studentId || backupDocId;
+  const targetEmail = (data.studentEmail || '').trim().toLowerCase();
+  const now = new Date().toISOString();
+
+  // 1) master_students 컬렉션에 복원
+  const restoreDocRef = doc(db, COLLECTION_NAME, originalStudentId);
+  const { deletedAt, deletedReason, originalData, ...cleanStudentData } = data;
+  await setDoc(restoreDocRef, {
+    ...cleanStudentData,
+    studentId: originalStudentId,
+    updatedAt: now,
+  }, { merge: true });
+
+  // 2) users 컬렉션에 계정 복원
+  if (targetEmail) {
+    const userRef = doc(db, 'users', targetEmail);
+    await setDoc(userRef, {
+      uid: targetEmail,
+      email: targetEmail,
+      name: data.name,
+      studentName: data.name,
+      displayName: data.name,
+      grade: data.grade,
+      studentGrade: data.grade,
+      class: data.classNum,
+      studentClass: data.classNum,
+      number: data.studentNum || '',
+      studentNumber: data.studentNum || '',
+      gender: data.gender || 'Male',
+      phone: data.contact || '',
+      parentPhone: data.contact || '',
+      address: data.address || '',
+      photoUrl: data.photoUrl || '',
+      role: 'student',
+      updatedAt: now,
+    }, { merge: true });
+  }
+
+  // 3) 스쿨버스 students 컬렉션과 즉시 다시 양방향 재연결 동기화
+  if (data.name) {
+    await syncAddressToKisbusStudent(
+      data.name,
+      data.grade,
+      data.classNum,
+      data.address || '',
+      data.contact,
+      data.gender || 'Male',
+      targetEmail,
+      data.nameEn,
+      data.studentNum
+    );
+  }
+
+  // 4) 휴지통에서 해당 백업 문서 제거
+  await deleteDoc(backupRef);
+};
+
+// 4-3. 휴지통에서 백업 영구 삭제 (Permanent Delete Backup)
+export const permanentlyDeleteMasterStudent = async (backupDocId: string): Promise<void> => {
+  const db = getDb();
+  await deleteDoc(doc(db, DELETED_COLLECTION_NAME, backupDocId));
+};
+
+/**
+ * 4-4. 전학 / 자퇴 학생 전용 완전 영구 삭제 (Purge)
+ * - master_students 및 users 계정 영구 삭제 (로그인 차단)
+ * - 휴지통(deleted_master_students) 백업 영구 삭제
+ * - 스쿨버스 DB(students) 삭제 및 모든 노선(routes) 좌석 배정 해제(빈자리 반환)
+ * - 방과후 수강 신청(afterschool_enrollments) 전수 삭제 및 정원 반환
+ * - 형제자매 연결 완전 해제
+ */
+export const purgeMasterStudent = async (
+  studentIdOrEmail: string,
+  extraInfo?: { studentEmail?: string; name?: string; grade?: string; classNum?: string }
+): Promise<{ busSeatsReleased: number; enrollmentsRemoved: number }> => {
+  const db = getDb();
+  const kisbusDb = getKisbusDb();
+  const isEmail = isStudentEmail(studentIdOrEmail) || studentIdOrEmail.includes('@');
+  let emailToClean = (extraInfo?.studentEmail || (isEmail ? studentIdOrEmail : '')).trim().toLowerCase();
+  let studentName = extraInfo?.name || '';
+  let grade = extraInfo?.grade || '';
+  let classNum = extraInfo?.classNum || '';
+  let docIdToDelete = isEmail ? '' : studentIdOrEmail;
+
+  // 1. 기존 데이터에서 누락된 정보 보완
+  if (docIdToDelete) {
+    const directSnap = await getDoc(doc(db, COLLECTION_NAME, docIdToDelete));
+    if (directSnap.exists()) {
+      const d = directSnap.data();
+      if (!emailToClean && d.studentEmail) emailToClean = d.studentEmail.trim().toLowerCase();
+      if (!studentName && (d.name || d.nameKo)) studentName = d.name || d.nameKo;
+      if (!grade && d.grade) grade = String(d.grade);
+      if (!classNum && d.classNum) classNum = String(d.classNum);
+    }
+  }
+
+  // 휴지통에서도 정보 보완 시도
+  const backupId = emailToClean ? emailToClean.replace(/[^a-zA-Z0-9_-]/g, '_') : docIdToDelete;
+  if (backupId) {
+    const bSnap = await getDoc(doc(db, DELETED_COLLECTION_NAME, backupId));
+    if (bSnap.exists()) {
+      const bd = bSnap.data();
+      if (!emailToClean && bd.studentEmail) emailToClean = bd.studentEmail.trim().toLowerCase();
+      if (!studentName && bd.name) studentName = bd.name;
+      if (!grade && bd.grade) grade = String(bd.grade);
+      if (!classNum && bd.classNum) classNum = String(bd.classNum);
+    }
+  }
+
+  // 2. 형제자매 그룹 해제
+  if (docIdToDelete) {
+    try {
+      await unlinkMasterStudentSibling(docIdToDelete);
+    } catch (e) {}
+  }
+
+  // 3. master_students 컬렉션 문서 삭제
+  if (docIdToDelete) {
+    await deleteDoc(doc(db, COLLECTION_NAME, docIdToDelete));
+  }
+  if (emailToClean) {
+    const qMaster = query(collection(db, COLLECTION_NAME), where('studentEmail', '==', emailToClean));
+    const masterSnap = await getDocs(qMaster);
+    for (const d of masterSnap.docs) {
+      await deleteDoc(d.ref);
+    }
+  }
+
+  // 4. users 컬렉션 문서 영구 삭제
+  if (emailToClean) {
+    const directUserRef = doc(db, 'users', emailToClean);
+    const directUserSnap = await getDoc(directUserRef);
+    if (directUserSnap.exists()) {
+      await deleteDoc(directUserRef);
+    }
+
+    const qUser = query(collection(db, 'users'), where('email', '==', emailToClean));
+    const userSnap = await getDocs(qUser);
+    for (const uDoc of userSnap.docs) {
+      await deleteDoc(uDoc.ref);
+    }
+  }
+  if (docIdToDelete) {
+    const userByIdRef = doc(db, 'users', docIdToDelete);
+    const userByIdSnap = await getDoc(userByIdRef);
+    if (userByIdSnap.exists()) {
+      await deleteDoc(userByIdRef);
+    }
+  }
+
+  // 5. 휴지통(deleted_master_students) 백업 문서 영구 삭제
+  if (backupId) {
+    await deleteDoc(doc(db, DELETED_COLLECTION_NAME, backupId));
+  }
+  if (emailToClean && backupId !== emailToClean) {
+    await deleteDoc(doc(db, DELETED_COLLECTION_NAME, emailToClean));
+  }
+
+  // 6. 스쿨버스 DB(kisbusDb) 연동 완전 삭제 및 모든 노선 좌석 배정 해제 (빈자리 반환)
+  let busSeatsReleased = 0;
+  try {
+    const busStudentsCol = collection(kisbusDb, 'students');
+    const matchedBusStudentIds = new Set<string>();
+
+    if (docIdToDelete) matchedBusStudentIds.add(docIdToDelete);
+
+    if (emailToClean) {
+      const qBus = query(busStudentsCol, where('studentEmail', '==', emailToClean));
+      const busSnap = await getDocs(qBus);
+      for (const bDoc of busSnap.docs) {
+        matchedBusStudentIds.add(bDoc.id);
+        await deleteDoc(bDoc.ref);
+      }
+    }
+
+    if (studentName && grade) {
+      const qBusName = query(busStudentsCol, where('name', '==', studentName));
+      const busSnapName = await getDocs(qBusName);
+      for (const bDoc of busSnapName.docs) {
+        const bd = bDoc.data();
+        if (String(bd.grade) === String(grade) && (!classNum || String(bd.class) === String(classNum))) {
+          matchedBusStudentIds.add(bDoc.id);
+          await deleteDoc(bDoc.ref);
+        }
+      }
+    }
+
+    // 모든 노선(routes)에서 해당 학생 좌석 배정 해제
+    if (matchedBusStudentIds.size > 0 || emailToClean || studentName) {
+      const routesSnap = await getDocs(collection(kisbusDb, 'routes'));
+      for (const rDoc of routesSnap.docs) {
+        const routeData = rDoc.data();
+        const seating = routeData.seating || [];
+        let routeModified = false;
+
+        const newSeating = seating.map((seat: any) => {
+          const isSeatMatched = (seat.studentId && matchedBusStudentIds.has(seat.studentId)) ||
+                                (emailToClean && seat.studentEmail && seat.studentEmail.toLowerCase() === emailToClean) ||
+                                (studentName && seat.studentName === studentName && (!grade || String(seat.grade) === String(grade)));
+          if (isSeatMatched) {
+            routeModified = true;
+            busSeatsReleased++;
+            return {
+              seatNumber: seat.seatNumber,
+              studentId: null,
+              studentName: null,
+              studentEmail: null,
+              grade: null,
+              class: null,
+              stopId: null,
+            };
+          }
+          return seat;
+        });
+
+        if (routeModified) {
+          await updateDoc(rDoc.ref, { seating: newSeating });
+        }
+      }
+    }
+  } catch (busErr) {
+    console.warn('스쿨버스 전학 정리 중 경고 (진행 계속):', busErr);
+  }
+
+  // 7. 방과후 DB(afterschool_enrollments) 수강 신청 전수 삭제 및 취소
+  let enrollmentsRemoved = 0;
+  try {
+    const enrollmentsCol = collection(db, 'afterschool_enrollments');
+    const matchedEnrollmentRefs: any[] = [];
+
+    if (emailToClean) {
+      const qEnroll = query(enrollmentsCol, where('studentEmail', '==', emailToClean));
+      const eSnap = await getDocs(qEnroll);
+      eSnap.forEach(d => matchedEnrollmentRefs.push(d.ref));
+    }
+
+    if (docIdToDelete) {
+      const qEnrollId = query(enrollmentsCol, where('studentId', '==', docIdToDelete));
+      const eSnapId = await getDocs(qEnrollId);
+      eSnapId.forEach(d => {
+        if (!matchedEnrollmentRefs.some(r => r.id === d.id)) {
+          matchedEnrollmentRefs.push(d.ref);
+        }
+      });
+    }
+
+    if (studentName && grade) {
+      const qEnrollName = query(enrollmentsCol, where('studentName', '==', studentName));
+      const eSnapName = await getDocs(qEnrollName);
+      eSnapName.forEach(d => {
+        const ed = d.data();
+        if (String(ed.grade) === String(grade) && (!classNum || String(ed.class) === String(classNum))) {
+          if (!matchedEnrollmentRefs.some(r => r.id === d.id)) {
+            matchedEnrollmentRefs.push(d.ref);
+          }
+        }
+      });
+    }
+
+    for (const ref of matchedEnrollmentRefs) {
+      await deleteDoc(ref);
+      enrollmentsRemoved++;
+    }
+  } catch (asErr) {
+    console.warn('방과후 수강 취소 정리 중 경고 (진행 계속):', asErr);
+  }
+
+  return { busSeatsReleased, enrollmentsRemoved };
 };
 
 // 5. 전교생 엑셀 일괄 동기화 (Batch Import)

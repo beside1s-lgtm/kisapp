@@ -284,6 +284,8 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     busNo: string;
     contact: string;
     busesByDay?: Record<string, string>;
+    targetDayKo?: string;
+    targetDayEn?: string;
   } | null>(null);
 
   const [stageStatus, setStageStatus] = useState<string>('RECRUITING');
@@ -982,7 +984,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
     // [방과후 버스 번호 요일별 매핑 로직]
     // 1. routes에서 해당 학생의 요일별 AfterSchool 버스 노선 조회 (단, 수강명단에서 버스를 신청한 학생만 적용)
     const targetId = s?.id || m?.studentId || studentId;
-    const busesByDay: Record<string, string> = {}; // { 'Monday': '39A호차', 'Wednesday': '37호차' }
+    const busesByDay: Record<string, string> = {}; // { 'Monday': '1호차', 'Wednesday': '37호차' }
 
     if (!isExplicitlyNoBus && hasBusApplication && routes && routes.length > 0) {
       const assignedRoutes = routes.filter((r) =>
@@ -990,71 +992,74 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
         (r.seating || []).some((seat: any) => 
           seat.studentId === targetId || 
           (s?.id && seat.studentId === s.id) || 
-          (studentId && seat.studentId === studentId)
+          (studentId && seat.studentId === studentId) ||
+          (m?.studentId && seat.studentId === m.studentId)
         )
       );
       assignedRoutes.forEach((r) => {
         const foundBus = (buses || []).find((b: any) => b.id === r.busId);
         const bName = foundBus?.name || formatBusNo(r.busId);
         if (bName && r.dayOfWeek) {
-          busesByDay[r.dayOfWeek] = formatStandardBusNo(bName);
+          const rawDay = String(r.dayOfWeek).replace('요일', '').trim();
+          const normDayEn = DAY_KO_TO_EN[rawDay] || r.dayOfWeek;
+          busesByDay[normDayEn] = formatStandardBusNo(bName);
         }
       });
     }
 
-    // targetDay를 영문 요일명으로 정규화
+    // targetDay를 영문/한글 요일명으로 정규화
     let targetDayEn = '';
+    let targetDayKo = '';
     if (targetDay) {
-      if (typeof targetDay === 'object' && targetDay.dateStr) {
-        const match = targetDay.dateStr.match(/\(([월화수목금토일])\)/);
-        if (match && DAY_KO_TO_EN[match[1]]) targetDayEn = DAY_KO_TO_EN[match[1]];
-        else if (targetDay.fullDate) {
+      if (typeof targetDay === 'object') {
+        if (targetDay.dateStr) {
+          const match = targetDay.dateStr.match(/\(([월화수목금토일])\)/);
+          if (match) {
+            targetDayKo = match[1];
+            targetDayEn = DAY_KO_TO_EN[match[1]] || '';
+          }
+        }
+        if (!targetDayEn && targetDay.fullDate) {
           const dayIdx = new Date(targetDay.fullDate + 'T12:00:00').getDay();
-          targetDayEn = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayIdx];
+          const enList = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          const koList = ['일', '월', '화', '수', '목', '금', '토'];
+          targetDayEn = enList[dayIdx];
+          targetDayKo = koList[dayIdx];
         }
       } else if (typeof targetDay === 'string') {
-        targetDayEn = DAY_KO_TO_EN[targetDay] || targetDay;
-      }
-    }
-
-    // 2. 현재 요청된 요일의 버스 번호 결정
-    let afterSchoolBus = '';
-    if (targetDayEn && busesByDay[targetDayEn]) {
-      afterSchoolBus = busesByDay[targetDayEn];
-    } else if (Object.keys(busesByDay).length > 0) {
-      // 요일 미지정 시 첫 번째 배정 버스
-      afterSchoolBus = Object.values(busesByDay)[0];
-    }
-
-    // 3. routes에 없는 경우 enrollment 객체 또는 students/masterStudents fallback (단, 명시적 미신청이 아닌 경우만)
-    if (!isExplicitlyNoBus && hasBusApplication) {
-      if (!afterSchoolBus) {
-        const rawEnroll = (enrollment as any)?.afterSchoolBusNo || (s as any)?.afterSchoolBusNo || '';
-        afterSchoolBus = typeof rawEnroll === 'string' ? rawEnroll : '';
-      }
-      if (!afterSchoolBus && m?.busSummary) {
-        const rawSummary = (m.busSummary as any).afterSchoolBusNo || (m.busSummary as any).afterSchoolBuses || '';
-        afterSchoolBus = typeof rawSummary === 'string' ? rawSummary : '';
-      }
-    }
-
-    let busNo = '';
-    // afterSchoolBus가 문자열인지 반드시 재검증 (배열/객체 오입력 방지)
-    const safeBus = typeof afterSchoolBus === 'string' ? afterSchoolBus.trim() : '';
-    if (safeBus && safeBus !== '-' && safeBus !== '미신청' && safeBus !== '미배정') {
-      busNo = formatStandardBusNo(safeBus);
-    } else {
-      // 수강명단에서 버스를 신청하지 않았거나 명시적 미신청이면 무조건 '미탑승'
-      if (isExplicitlyNoBus || !hasBusApplication) {
-        busNo = '미탑승';
-      } else {
-        const hasAnyRoute = Object.keys(busesByDay).length > 0;
-        if (hasAnyRoute) {
-          // routes에 배정이 있지만 오늘 요일 버스가 없는 경우 (타 요일 배정)
-          busNo = '미탑승';
+        const cleanDay = targetDay.replace('요일', '').trim();
+        if (DAY_KO_TO_EN[cleanDay]) {
+          targetDayKo = cleanDay;
+          targetDayEn = DAY_KO_TO_EN[cleanDay];
         } else {
-          busNo = '미배정';
+          targetDayEn = targetDay;
         }
+      }
+    }
+
+    // 2. 현재 요청된 요일의 버스 번호 엄격 결정
+    // [규칙 1] 수강 신청 시 버스 미신청(needsBus === false, kisbusNo === '-') 학생은 무조건 '미탑승'
+    // [규칙 2] 특정 회차(targetDayEn)가 지정된 경우:
+    //         - 해당 요일의 routes 배정(busesByDay[targetDayEn])이 있으면 해당 버스 번호 표출
+    //         - 해당 요일의 routes 배정이 없으면 무조건 '미배정' 표출! (타 요일 배정 버스 fallback 100% 차단)
+    // [규칙 3] 요일이 특정되지 않은 경우에만 단일 요일 버스 또는 '요일별' 표출
+    let busNo = '';
+    if (isExplicitlyNoBus || !hasBusApplication) {
+      busNo = '미탑승';
+    } else if (targetDayEn) {
+      if (busesByDay[targetDayEn]) {
+        busNo = formatStandardBusNo(busesByDay[targetDayEn]);
+      } else {
+        busNo = '미배정';
+      }
+    } else {
+      const assignedBusList = Object.values(busesByDay);
+      if (assignedBusList.length === 1) {
+        busNo = formatStandardBusNo(assignedBusList[0]);
+      } else if (assignedBusList.length > 1) {
+        busNo = '요일별';
+      } else {
+        busNo = '미배정';
       }
     }
 
@@ -1073,6 +1078,8 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
       photoUrl,
       busNo,
       busesByDay, // 요일별 배정 정보 맵 제공
+      targetDayKo,
+      targetDayEn,
       contact: contact ? contact.trim() : '',
       grade: String(m?.grade || grade || '1'),
       classNum: String(m?.classNum || classNum || '1'),
@@ -1335,7 +1342,13 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                           <span className="text-[11px] text-slate-500 font-semibold">
                             {sInfo.grade}-{sInfo.classNum}
                           </span>
-                          <span className="text-[10px] bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                            sInfo.busNo === '미배정'
+                              ? 'bg-rose-100 text-rose-800 border border-rose-300 font-extrabold'
+                              : sInfo.busNo === '미탑승'
+                              ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                              : 'bg-sky-100 text-sky-800 border border-sky-200 font-extrabold'
+                          }`}>
                             {sInfo.busNo}
                           </span>
                         </div>
@@ -1473,23 +1486,30 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                                   </span>
                                 )}
                               </div>
-                              {hasDifferentBuses ? (
-                                <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                                  {dayKeys.map(dEn => {
-                                    const dKo = { 'Monday': '월', 'Tuesday': '화', 'Wednesday': '수', 'Thursday': '목', 'Friday': '금', 'Saturday': '토' }[dEn] || dEn;
-                                    const bNo = sInfo.busesByDay[dEn];
-                                    return (
-                                      <span key={dEn} className="text-[9px] bg-sky-100 text-sky-800 font-bold px-1 py-0.2 rounded border border-sky-200">
-                                        {dKo}:{bNo}
-                                      </span>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <span className="text-[10px] bg-sky-100 text-sky-800 font-extrabold px-1.5 py-0.2 rounded-md mt-0.5 border border-sky-200">
+                              <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                <span className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-md border ${
+                                  sInfo.busNo === '미배정'
+                                    ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                    : sInfo.busNo === '미탑승'
+                                    ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                    : 'bg-sky-100 text-sky-800 border-sky-200'
+                                }`}>
                                   {sInfo.busNo}
                                 </span>
-                              )}
+                                {hasDifferentBuses && (
+                                  <div className="flex items-center gap-0.5 flex-wrap">
+                                    {dayKeys.map(dEn => {
+                                      const dKo = { 'Monday': '월', 'Tuesday': '화', 'Wednesday': '수', 'Thursday': '목', 'Friday': '금', 'Saturday': '토' }[dEn] || dEn;
+                                      const bNo = sInfo.busesByDay[dEn];
+                                      return (
+                                        <span key={dEn} className="text-[8.5px] bg-slate-100 text-slate-600 font-medium px-1 py-0.2 rounded border border-slate-200" title={`${dKo}요일 배정 버스`}>
+                                          {dKo}:{bNo}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </button>
                         </td>
@@ -1501,29 +1521,31 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                             isActiveSession={activeSessionNo === day.dayIndex}
                           />
                         ))}
-                        <td className="p-2 border-r font-bold text-[11px] text-sky-800">
-                          {hasDifferentBuses ? (
-                            <div className="flex flex-col gap-0.5 items-center">
-                              <span className="bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200 inline-block font-extrabold text-sky-900">
-                                {sInfo.busNo}
-                              </span>
-                              <div className="flex items-center gap-0.5">
+                        <td className="p-2 border-r font-bold text-[11px]">
+                          <div className="flex flex-col gap-0.5 items-center justify-center">
+                            <span className={`px-2 py-0.5 rounded border inline-block font-extrabold ${
+                              sInfo.busNo === '미배정'
+                                ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                : sInfo.busNo === '미탑승'
+                                ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                : 'bg-sky-50 text-sky-900 border-sky-200'
+                            }`}>
+                              {sInfo.busNo}
+                            </span>
+                            {hasDifferentBuses && (
+                              <div className="flex items-center gap-0.5 flex-wrap justify-center">
                                 {dayKeys.map(dEn => {
                                   const dKo = { 'Monday': '월', 'Tuesday': '화', 'Wednesday': '수', 'Thursday': '목', 'Friday': '금', 'Saturday': '토' }[dEn] || dEn;
                                   const bNo = sInfo.busesByDay[dEn];
                                   return (
-                                    <span key={dEn} className="text-[9px] bg-slate-100 text-slate-600 px-1 rounded">
+                                    <span key={dEn} className="text-[8.5px] bg-slate-100 text-slate-600 px-1 rounded border border-slate-200" title={`${dKo}요일 배정 버스`}>
                                       {dKo}:{bNo}
                                     </span>
                                   );
                                 })}
                               </div>
-                            </div>
-                          ) : (
-                            <span className="bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200 inline-block">
-                              {sInfo.busNo}
-                            </span>
-                          )}
+                            )}
+                          </div>
                         </td>
                         <td className="p-2 text-[11px]">
                           {sInfo.contact ? (
@@ -1712,16 +1734,27 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-sky-900 flex items-center gap-1.5">
                     {t('teacher_afterschool.student_card_bus', '스쿨버스')}
+                    {modalStudent.targetDayKo && (
+                      <span className="text-[10.5px] text-sky-700 font-bold">({modalStudent.targetDayKo}요일 회차)</span>
+                    )}
                   </span>
-                  <span className="text-xs font-extrabold text-sky-800 bg-white px-2.5 py-1 rounded-xl border border-sky-200 shadow-2xs">
+                  <span className={`text-xs font-extrabold px-2.5 py-1 rounded-xl border shadow-2xs ${
+                    modalStudent.busNo === '미배정'
+                      ? 'bg-rose-100 text-rose-800 border-rose-300'
+                      : modalStudent.busNo === '미탑승'
+                      ? 'bg-slate-100 text-slate-600 border-slate-200'
+                      : 'bg-white text-sky-800 border-sky-200'
+                  }`}>
                     {modalStudent.busNo}
                   </span>
                 </div>
-                {modalStudent.busesByDay && Object.keys(modalStudent.busesByDay).length >= 2 && (
+                {modalStudent.busesByDay && Object.keys(modalStudent.busesByDay).length > 0 && (
                   <div className="pt-1.5 border-t border-sky-200/60 flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10px] text-sky-700 font-bold">요일별 버스:</span>
-                    {Object.entries(modalStudent.busesByDay).map(([dEn, bNo]) => {
-                      const dKo = { 'Monday': '월', 'Tuesday': '화', 'Wednesday': '수', 'Thursday': '목', 'Friday': '금', 'Saturday': '토' }[dEn] || dEn;
+                    <span className="text-[10px] text-sky-700 font-bold">요일별 배정 현황:</span>
+                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map((dEn) => {
+                      const dKo = { 'Monday': '월', 'Tuesday': '화', 'Wednesday': '수', 'Thursday': '목', 'Friday': '금' }[dEn];
+                      const bNo = modalStudent.busesByDay?.[dEn];
+                      if (!bNo) return null;
                       return (
                         <span key={dEn} className="text-[11px] bg-white text-sky-900 font-extrabold px-2 py-0.5 rounded-lg border border-sky-300 shadow-2xs">
                           {dKo}요일: {String(bNo)}

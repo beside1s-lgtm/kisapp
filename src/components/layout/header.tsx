@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/use-auth';
 import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { Button } from '../ui/button';
+import { Badge } from '../ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,9 +15,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { FileText, LifeBuoy, LogOut, Loader2, Settings, User as UserIcon, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { FileText, LifeBuoy, LogOut, Loader2, Settings, User as UserIcon, PanelLeftClose, PanelLeftOpen, Bell, BellRing } from 'lucide-react';
 import { SettingsModal } from '../settings-modal';
 import { ProfileModal } from '../profile-modal';
+import { NotificationSettingsModal } from '../notification-settings-modal';
+import { subscribePendingApprovals, checkAndScheduleDutyNotification } from '@/lib/services/notificationService';
 import { DropdownMenuTriggerItem } from '../ui/dropdown-menu-trigger-item';
 import { useSidebar } from './sidebar-context';
 import { LanguageSwitcher } from './language-switcher';
@@ -26,6 +29,29 @@ export function AppHeader() {
   const [orgData, setOrgData] = useState<any>(null);
   const [isSystemManager, setIsSystemManager] = useState(false);
   const { isSidebarOpen, toggleSidebar } = useSidebar();
+  const [pendingApprovalCount, setPendingApprovalCount] = useState<number>(0);
+  const [isNotifModalOpen, setIsNotifModalOpen] = useState(false);
+
+  // 미확인/대기 결재문서 실시간 구독 및 작업표시줄 배지/알림 연동
+  useEffect(() => {
+    if (!profile?.email) return;
+    const unsub = subscribePendingApprovals(profile.email, profile.name, (count) => {
+      setPendingApprovalCount(count);
+    });
+    return () => unsub();
+  }, [profile?.email, profile?.name]);
+
+  // 등교지도 근무일 전일 오전 11:40 사전 알림 스케줄링
+  useEffect(() => {
+    if (!profile?.email || !profile?.name) return;
+    let cleanup: (() => void) | undefined;
+    checkAndScheduleDutyNotification(profile.email, profile.name).then((fn) => {
+      cleanup = fn;
+    });
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [profile?.email, profile?.name]);
 
   useEffect(() => {
     if (!profile?.email) return;
@@ -157,6 +183,24 @@ export function AppHeader() {
 
           {(profile?.isAdmin || isSystemManager) && <SettingsModal />}
 
+          {/* 알림 종 아이콘 및 미결재 배지 */}
+          {user && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsNotifModalOpen(true)}
+              className="relative h-9 w-9 text-slate-600 hover:bg-muted shrink-0"
+              title="알림 및 작업표시줄 배지 설정"
+            >
+              <Bell className="h-5 w-5" />
+              {pendingApprovalCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-rose-600 text-[10px] font-extrabold text-white animate-pulse shadow-xs">
+                  {pendingApprovalCount > 99 ? '99+' : pendingApprovalCount}
+                </span>
+              )}
+            </Button>
+          )}
+
           {profileLoading ? (
              <Loader2 className="h-5 w-5 animate-spin" />
           ) : (
@@ -193,6 +237,16 @@ export function AppHeader() {
                   </DropdownMenuTriggerItem>
                 </ProfileModal>
 
+                <DropdownMenuItem onSelect={() => setIsNotifModalOpen(true)}>
+                  <BellRing className="mr-2 h-4 w-4 text-indigo-600" />
+                  <span>알림 & 배지 설정</span>
+                  {pendingApprovalCount > 0 && (
+                    <Badge className="ml-auto bg-rose-500 text-white text-[10px] h-4 px-1.5 font-bold">
+                      {pendingApprovalCount}
+                    </Badge>
+                  )}
+                </DropdownMenuItem>
+
                 <DropdownMenuItem disabled>
                   <LifeBuoy className="mr-2 h-4 w-4" />
                   <span>지원</span>
@@ -224,6 +278,9 @@ export function AppHeader() {
           </div>
         </div>
       </header>
+
+      {/* 개인 알림 & 작업표시줄 배지 설정 모달 */}
+      <NotificationSettingsModal open={isNotifModalOpen} onOpenChange={setIsNotifModalOpen} />
     </>
   );
 }
