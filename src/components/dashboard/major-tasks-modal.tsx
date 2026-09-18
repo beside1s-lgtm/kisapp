@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { SlidersHorizontal, CheckCircle2, RotateCcw, AlertCircle } from 'lucide-react';
 import type { OrgStructure, UserProfile } from '@/lib/types';
 import { checkPeAccessPermission, checkHealthAccessPermission, checkHomeroomAccessPermission } from '@/lib/services/permissionService';
+import { updateUserCustomMajorTasks } from '@/lib/services/userService';
 
 export interface TaskAssignmentContext {
   email: string;
@@ -261,37 +262,64 @@ export const ALL_MAJOR_TASKS: MajorTaskDefinition[] = [
 
 const STORAGE_KEY_PREFIX = 'kis_dashboard_major_tasks_v2_';
 
-export function getSavedMajorTaskIds(userEmail?: string, availableIds?: string[]): string[] {
-  if (typeof window === 'undefined') {
-    return availableIds && availableIds.length > 0 ? availableIds.slice(0, 3) : [];
+export function getSavedMajorTaskIds(
+  userEmail?: string, 
+  availableIds?: string[], 
+  profileCustomIds?: string[] | null
+): string[] {
+  // 1순위: Firestore 계정 프로필에 영구 저장된 customMajorTaskIds 확인
+  if (Array.isArray(profileCustomIds) && profileCustomIds.length > 0) {
+    if (availableIds && availableIds.length > 0) {
+      const filtered = profileCustomIds.filter((id) => availableIds.includes(id));
+      if (filtered.length > 0) return filtered;
+    } else {
+      return profileCustomIds;
+    }
   }
-  const key = `${STORAGE_KEY_PREFIX}${userEmail?.toLowerCase() || 'default'}`;
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        if (availableIds && availableIds.length > 0) {
-          const filtered = parsed.filter((id) => availableIds.includes(id));
-          if (filtered.length > 0) return filtered;
-        } else {
-          return parsed;
+
+  // 2순위: 로컬 스토리지 캐시 확인 (오프라인/빠른 초기 렌더링용)
+  if (typeof window !== 'undefined') {
+    const key = `${STORAGE_KEY_PREFIX}${userEmail?.toLowerCase() || 'default'}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (availableIds && availableIds.length > 0) {
+            const filtered = parsed.filter((id) => availableIds.includes(id));
+            if (filtered.length > 0) return filtered;
+          } else {
+            return parsed;
+          }
         }
       }
+    } catch (e) {
+      console.warn('Failed to parse saved major tasks from localStorage:', e);
     }
-  } catch (e) {
-    console.warn('Failed to parse saved major tasks:', e);
   }
+
+  // 3순위: 기본값 (사용자 담당 업무 상위 3개)
   return availableIds && availableIds.length > 0 ? availableIds.slice(0, 3) : [];
 }
 
-export function saveMajorTaskIds(ids: string[], userEmail?: string) {
-  if (typeof window === 'undefined') return;
-  const key = `${STORAGE_KEY_PREFIX}${userEmail?.toLowerCase() || 'default'}`;
-  try {
-    localStorage.setItem(key, JSON.stringify(ids));
-  } catch (e) {
-    console.warn('Failed to save major tasks:', e);
+export async function saveMajorTaskIds(ids: string[], userEmail?: string): Promise<void> {
+  // 1. 로컬 스토리지 즉시 캐싱
+  if (typeof window !== 'undefined') {
+    const key = `${STORAGE_KEY_PREFIX}${userEmail?.toLowerCase() || 'default'}`;
+    try {
+      localStorage.setItem(key, JSON.stringify(ids));
+    } catch (e) {
+      console.warn('Failed to save major tasks to localStorage:', e);
+    }
+  }
+
+  // 2. Firestore users DB에 계정 단위 영구 저장 (기기/브라우저 변경 시에도 영구 보존)
+  if (userEmail) {
+    try {
+      await updateUserCustomMajorTasks(userEmail, ids);
+    } catch (e) {
+      console.warn('Failed to save major tasks to Firestore:', e);
+    }
   }
 }
 

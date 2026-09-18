@@ -1549,18 +1549,40 @@ export default function TeacherPage() {
       const studentName = clean(student.nameKo || student.name || student.nameEn);
       const studentGrade = Number(student.grade);
       const studentClass = Number(student.class || student.classNum);
+      const studentEmail = (student.studentEmail || '').toLowerCase().trim();
 
       // 유효한 수강신청만 필터링: CANCELLED 및 미확정(ENROLLED 외) 제외
+      // 동명이인 오매칭 방지: studentId → 이메일 → 이름+학년+반 → 동학년 단독 이름 순서
       const studentEnrollments = afterschoolEnrollments.filter(e => {
         if (e.status === 'CANCELLED') return false;
         if (e.status && e.status !== 'ENROLLED' && e.status !== 'enrolled') return false;
 
+        // 1. 고유 ID 우선 일치
         if (e.studentId && e.studentId === student.id) return true;
+
+        // 2. 학생 이메일 고유 일치
+        const eEmail = (e.studentEmail || (e as any).email || '').toLowerCase().trim();
+        if (studentEmail && eEmail && studentEmail === eEmail) return true;
+
+        // 3. 이름 + 학년 + 반 복합 일치 (grade/classNum 미기재 시 매칭 불가 처리)
         const eName = clean(e.name || e.studentName);
         const matchName = eName === studentName;
-        const matchGrade = !e.grade || Number(e.grade) === studentGrade;
-        const matchClass = !e.classNum || Number(e.classNum) === studentClass;
-        return matchName && matchGrade && matchClass;
+        const eGrade = e.grade ? Number(e.grade) : null;
+        const eClass = e.classNum ? Number(e.classNum) : null;
+        const matchGrade = eGrade !== null && eGrade === studentGrade;
+        const matchClass = eClass !== null && eClass === studentClass;
+        if (matchName && matchGrade && matchClass) return true;
+
+        // 4. 반 정보 불일치 시: 이름+학년 일치 + 동일 학년 내 동명이인이 없는 경우만 허용
+        if (matchName && matchGrade && eClass === null) {
+          const sameNameInGrade = rawStudents.filter(rs =>
+            clean(rs.nameKo || rs.name || rs.nameEn) === studentName &&
+            Number(rs.grade) === studentGrade
+          );
+          if (sameNameInGrade.length === 1) return true;
+        }
+
+        return false;
       });
 
       if (studentEnrollments.length === 0) {

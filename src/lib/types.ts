@@ -42,6 +42,7 @@ export type UserProfile = {
   isManualFaculty?: boolean; // 교직원 탭에서 직접 수동 등록된 계정
   registrationSource?: 'manual_faculty' | 'manual_student' | 'bulk_faculty' | 'bulk_student' | 'auto_login';
   loginRedirectUrl?: string; // 로그인 후 자동 이동 페이지 (담당 계정 전용, 예: /admin/bus)
+  customMajorTaskIds?: string[]; // 대시보드(나의 업무) 개인화 주요 업무 바로가기 ID 목록
 };
 
 export type AbsenceType = '병결' | '미인정' | '기타' | '출석인정';

@@ -54,6 +54,7 @@ import {
   onHomeroomAttendanceUpdate,
   getApprovedAbsenceStudentsForDate,
   saveHomeroomAttendanceAndSync,
+  syncParentApplicationDatesToAttendance,
   type HomeroomAttendanceRecord,
   type HomeroomAttendanceStatus,
 } from '@/lib/services/homeroomAttendanceSync';
@@ -747,6 +748,17 @@ export default function TeacherHomeroomApplyPage() {
         throw new Error(approveRes.error || '담임 서명 처리에 실패했습니다.');
       }
 
+      // 3. 출석부(homeroom_daily_attendance) 및 스쿨버스/방과후에 즉시 결석 자동 반영 (전체 신청 기간)
+      try {
+        await syncParentApplicationDatesToAttendance(
+          parentFormData,
+          user?.email || profile.email || '담임 대리작성',
+          selectedStudentId
+        );
+      } catch (syncErr) {
+        console.warn('[Homeroom] 대리작성 출석부 즉시 동기화 알림:', syncErr);
+      }
+
       toast({
         title: '작성 및 결재 완료!',
         description: `${studentName} 학생의 신청서가 성공적으로 작성되었으며, 담임 서명이 완료되어 다음 결재자에게 상신되었습니다.`
@@ -794,7 +806,6 @@ export default function TeacherHomeroomApplyPage() {
 
   return (
     <MainLayout 
-      isFixedScreen={true}
       title={
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="font-bold text-slate-800 dark:text-slate-100 truncate">담임 업무</span>
@@ -809,13 +820,13 @@ export default function TeacherHomeroomApplyPage() {
           ) : null}
         </div>
       } 
-      contentClassName="p-1.5 sm:p-3 font-body flex flex-col flex-1 min-h-0 overflow-hidden"
+      contentClassName="p-1.5 sm:p-3 font-body flex flex-col flex-1 min-h-0"
     >
-      <div className="w-full h-full flex flex-col flex-1 min-h-0 space-y-1.5 sm:space-y-2 overflow-hidden">
+      <div className="w-full flex flex-col flex-1 min-h-0 space-y-1.5 sm:space-y-2">
       {/* 상단 탭 네비게이션 및 고정 헤더 섹션 */}
-      <Tabs value={activeMainTab} onValueChange={(val: any) => setActiveMainTab(val)} className="w-full h-full flex flex-col flex-1 min-h-0 space-y-1.5 sm:space-y-2 overflow-hidden">
+      <Tabs value={activeMainTab} onValueChange={(val: any) => setActiveMainTab(val)} className="w-full flex flex-col flex-1 min-h-0 space-y-1.5 sm:space-y-2">
         {/* 상단 고정 영역: 5대 탭 + (출석부 탭일 때) 출석부 카드 헤더 */}
-        <div className="shrink-0 z-20 bg-background/95 backdrop-blur-md pt-0.5 pb-1 sm:pb-2 space-y-1.5 sm:space-y-2">
+        <div className="shrink-0 z-20 bg-background/95 backdrop-blur-md pt-0.5 pb-1 sm:pb-2 space-y-1.5 sm:space-y-2 sticky top-0">
           {/* 5대 탭 네비게이션 */}
           <TabsList className="grid grid-cols-5 w-full bg-slate-100 p-1 rounded-xl gap-0.5 sm:gap-1 h-auto shadow-2xs">
             <TabsTrigger value="student-info" className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2 px-0.5 sm:px-2 text-[10px] sm:text-xs font-bold data-[state=active]:shadow-xs">
@@ -1019,9 +1030,9 @@ export default function TeacherHomeroomApplyPage() {
         </div>
 
         {/* 탭 1: 출결/체험학습 대리 작성 */}
-        <TabsContent value="proxy" className="data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:min-h-0 data-[state=active]:flex-col data-[state=inactive]:hidden m-0 space-y-0 overflow-hidden">
-          <Card className="flex-1 min-h-0 flex flex-col rounded-xl border border-slate-200/80 shadow-xs overflow-hidden bg-white">
-            <CardContent className="flex-1 min-h-0 p-2.5 sm:p-3.5 overflow-y-auto overscroll-contain flex flex-col justify-between gap-2">
+        <TabsContent value="proxy" className="data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:min-h-0 data-[state=active]:flex-col data-[state=inactive]:hidden m-0 space-y-0">
+          <Card className="flex-1 min-h-0 flex flex-col rounded-xl border border-slate-200/80 shadow-xs bg-white">
+            <CardContent className="flex-1 min-h-0 p-2.5 sm:p-3.5 flex flex-col justify-between gap-2">
               {/* 2-A. 체험학습 신청서 폼 */}
               {docCategory === 'field-trip' && (
                 <div className="space-y-2 animate-in fade-in flex-1 flex flex-col justify-between min-h-0">
@@ -1207,9 +1218,9 @@ export default function TeacherHomeroomApplyPage() {
         </TabsContent>
 
         {/* 탭 2: 학생 정보 확인 (학급 학생 전용 뷰 및 일일 출석부) */}
-        <TabsContent value="student-info" className="data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:min-h-0 data-[state=active]:flex-col data-[state=inactive]:hidden m-0 space-y-0 overflow-hidden">
-          <Card className="flex-1 min-h-0 flex flex-col rounded-xl border border-slate-200/80 shadow-xs overflow-hidden bg-white">
-            <CardContent className="flex-1 min-h-0 p-0 overflow-y-auto overscroll-contain relative">
+        <TabsContent value="student-info" className="data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:min-h-0 data-[state=active]:flex-col data-[state=inactive]:hidden m-0 space-y-0">
+          <Card className="flex-1 min-h-0 flex flex-col rounded-xl border border-slate-200/80 shadow-xs bg-white">
+            <CardContent className="flex-1 min-h-0 p-0 relative">
               {/* 모바일 전용 출석부 뷰 (sm:hidden) */}
               <div className="sm:hidden divide-y divide-slate-100">
                 {classStudents.length > 0 ? (
@@ -1563,7 +1574,33 @@ export default function TeacherHomeroomApplyPage() {
           </Card>
         </TabsContent>
         {/* 탭 3: 학급 관리 (칠판 알림장, 숙제 체크/프레젠테이션, 행동 관찰, 상담 일지, 월별 매트릭스, 학년 자료 공유) */}
-        <TabsContent value="class-management" className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 p-0.5">
+        <TabsContent value="class-management" className="data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:min-h-0 data-[state=active]:flex-col data-[state=inactive]:hidden m-0 space-y-3 p-0.5">
+          {/* 학급 선택 바 (전교 권한일 경우 다른 학급도 선택/조회 가능) */}
+          {availableClassKeys.length > 1 && (
+            <div className="flex items-center justify-between gap-2 bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-xs">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 font-bold text-[10px] sm:text-xs shrink-0">
+                  학급 선택
+                </Badge>
+                <span className="hidden sm:inline text-xs text-slate-500">교실 관리(알림장, 숙제, 관찰)할 학급을 선택하세요.</span>
+              </div>
+              <div className="w-36 sm:w-48 shrink-0">
+                <Select value={selectedClassKey} onValueChange={(val) => { setSelectedClassKey(val); setSelectedStudentId(''); }}>
+                  <SelectTrigger className="h-8 text-xs font-semibold bg-white">
+                    <SelectValue placeholder="학급 선택" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    {availableClassKeys.map(key => (
+                      <SelectItem key={key} value={key} className="text-xs font-medium">
+                        {formatClassLabel(key)} {myHomeroomKeys.includes(key) ? '(내 학급)' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
           <ClassManagementTab
             classKey={selectedClassKey}
             classLabel={selectedClassKey ? formatClassLabel(selectedClassKey) : '우리 반'}
@@ -1573,7 +1610,7 @@ export default function TeacherHomeroomApplyPage() {
         </TabsContent>
 
         {/* 탭 4: 학년 자료 공유 (Google Drive 05_학년별 수업자료 공유 폴더) */}
-        <TabsContent value="grade-materials" className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 p-0.5">
+        <TabsContent value="grade-materials" className="data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:min-h-0 data-[state=active]:flex-col data-[state=inactive]:hidden m-0 space-y-3 p-0.5">
           <GradeMaterialsTab
             classKey={selectedClassKey}
             classLabel={selectedClassKey ? formatClassLabel(selectedClassKey) : '우리 반'}
@@ -1582,7 +1619,7 @@ export default function TeacherHomeroomApplyPage() {
         </TabsContent>
 
         {/* 탭 5: 학부모 상담 (상담 주간 신청 현황 및 교사/학부모 예약 관리) */}
-        <TabsContent value="consultation" className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 p-0.5">
+        <TabsContent value="consultation" className="data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:min-h-0 data-[state=active]:flex-col data-[state=inactive]:hidden m-0 space-y-3 p-0.5">
           {/* 학급 선택 바 (전교 권한일 경우 다른 학급도 선택/조회 가능) */}
           {availableClassKeys.length > 1 && (
             <div className="flex items-center justify-between gap-2 bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-xs">

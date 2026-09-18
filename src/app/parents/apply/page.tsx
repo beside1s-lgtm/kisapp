@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { format } from 'date-fns';
 import { createDocument, getStudentFieldTripDays, getStudentAbsenceDays, getDocumentById, submitFieldTripReport } from '@/lib/services/documentService';
+import { syncParentApplicationDatesToAttendance } from '@/lib/services/homeroomAttendanceSync';
 import { getDocConfig, onDocConfigUpdate } from '@/lib/services/settingsService';
 import { getWorkingDaysCount, getExcludedDaysInRange } from '@/lib/utils';
 import { useAcademicCalendar } from '@/lib/services/academicCalendarService';
@@ -626,6 +627,19 @@ function ApplyForm() {
 
       if (res && !res.success) {
         throw new Error(res.error || '제출 중 오류가 발생했습니다.');
+      }
+
+      // 신청서(결석계 / 교외체험학습) 접수 즉시 출석부 결석 체크 및 방과후/스쿨버스 자동 연동
+      if (!isReport) {
+        try {
+          await syncParentApplicationDatesToAttendance(
+            parentFormData,
+            user.email || '',
+            (profile as any)?.studentId
+          );
+        } catch (syncErr) {
+          console.warn('[ParentApply] Attendance and bus/afterschool sync failed (non-blocking):', syncErr);
+        }
       }
 
       toast({

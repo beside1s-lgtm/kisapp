@@ -28,6 +28,7 @@ import type {
   DutyRolePermission,
 } from '@/lib/types';
 import { getUserProfileByEmail, saveUserProfile } from '@/lib/services/userService';
+import { syncParentApplicationDatesToAttendance } from '@/lib/services/homeroomAttendanceSync';
 
 const getApprovalsCol = () => collection(getDb(), 'approvals');
 const getSettingsCol = () => collection(getDb(), 'settings');
@@ -994,33 +995,20 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
         `;
         sendMailNotification(requesterEmail, subject, content, false);
 
-        // ── kisbus 스쿨버스 연동: 학부모 결석계/체험학습 승인 시 notBoarding 자동 처리 ──
-        // emailInfo는 transaction 내에서 설정되므로 여기서 docId로 원본 데이터를 재조회합니다
+        // ── 출석부 및 kisbus 스쿨버스 / 방과후 연동: 학부모 결석계/체험학습 최종 승인 시 자동 동기화 ──
         try {
           const finalDocSnap = await getDoc(docRef);
           if (finalDocSnap.exists()) {
             const finalData = finalDocSnap.data() as ApprovalDoc;
             if (finalData.docType === 'parent' && finalData.parentFormData) {
-              const pf = finalData.parentFormData;
-              const studentName = pf.studentName;
-              const gradeClassNumber = pf.gradeClassNumber; // 예: "5-2-15"
-
-              let absenceDates: string[] = [];
-              if (pf.type === 'absence' && pf.absencePeriod?.startDate && pf.absencePeriod?.endDate) {
-                absenceDates = getWeekdayDatesInRange(pf.absencePeriod.startDate, pf.absencePeriod.endDate);
-              } else if (pf.type === 'field-trip' && pf.tripPeriod?.startDate && pf.tripPeriod?.endDate) {
-                absenceDates = getWeekdayDatesInRange(pf.tripPeriod.startDate, pf.tripPeriod.endDate);
-              }
-
-              if (studentName && gradeClassNumber && absenceDates.length > 0) {
-                // 비동기로 호출 (메인 흐름 블로킹하지 않음)
-                notifyKisbusAbsence(studentName, gradeClassNumber, absenceDates);
-              }
+              await syncParentApplicationDatesToAttendance(
+                finalData.parentFormData,
+                userProfile.email || 'final_approval_sync'
+              );
             }
           }
-        } catch (kisbusErr) {
-          // kisbus 연동 실패는 승인 결과에 영향 없음
-          console.error('[kisbus] 연동 처리 중 오류 (비치명적):', kisbusErr);
+        } catch (syncErr) {
+          console.error('[DocumentService] 최종 승인 출석/버스/방과후 동기화 오류 (비치명적):', syncErr);
         }
         // ───────────────────────────────────────────────────────────────────────
       } else if (nextApproverEmail) {

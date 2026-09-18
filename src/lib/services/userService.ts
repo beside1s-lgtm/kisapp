@@ -72,6 +72,17 @@ export async function updateUserCalendarAck(email: string, version: number) {
   }
 }
 
+export async function updateUserCustomMajorTasks(email: string, taskIds: string[]) {
+  if (!email || !taskIds) return;
+  try {
+    const userProfileRef = doc(getUsersCol(), email.toLowerCase());
+    await setDoc(userProfileRef, { customMajorTaskIds: taskIds }, { merge: true });
+    invalidateUsersCache();
+  } catch (error) {
+    console.warn('[UserService] updateUserCustomMajorTasks error:', error);
+  }
+}
+
 export async function saveUserProfile(userId: string, email: string, profileData: Partial<UserProfile>) {
   if (!email || !profileData) return { success: false, error: 'Invalid data' };
   const userProfileRef = doc(getUsersCol(), email.toLowerCase());

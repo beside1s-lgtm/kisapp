@@ -1289,17 +1289,19 @@ export default function AdminPage() {
                 const eEmail = (e.studentEmail || (e as any).email || '').toLowerCase().trim();
                 if (studentEmail && eEmail && studentEmail === eEmail) return true;
 
-                // 3. 이름 + 학년 + 반 복합 일치
+                // 3. 이름 + 학년 + 반 복합 일치 (grade/classNum 미기재 시 매칭 불가 처리)
                 const eName = clean(e.name || e.studentName);
                 const matchName = eName === studentName;
-                const matchGrade = !e.grade || Number(e.grade) === studentGrade;
-                const matchClass = !e.classNum || Number(e.classNum) === studentClass;
+                const eGrade = e.grade ? Number(e.grade) : null;
+                const eClass = e.classNum ? Number(e.classNum) : null;
+                const matchGrade = eGrade !== null && eGrade === studentGrade;
+                const matchClass = eClass !== null && eClass === studentClass;
                 if (matchName && matchGrade && matchClass) return true;
 
-                // 4. 반 정보 불일치 시: 이름 + 학년이 일치하고 동일 학년 내 동명이인이 없는 경우 매칭
-                if (matchName && matchGrade) {
-                    const sameNameInGrade = rawStudents.filter(rs => 
-                        clean(rs.nameKo || rs.name || rs.nameEn) === studentName && 
+                // 4. 반 정보 불일치 시: 이름+학년 일치 + 동일 학년 내 동명이인이 없는 경우만 허용
+                if (matchName && matchGrade && eClass === null) {
+                    const sameNameInGrade = rawStudents.filter(rs =>
+                        clean(rs.nameKo || rs.name || rs.nameEn) === studentName &&
                         Number(rs.grade) === studentGrade
                     );
                     if (sameNameInGrade.length === 1) return true;

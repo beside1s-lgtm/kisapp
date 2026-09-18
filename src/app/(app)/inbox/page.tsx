@@ -164,7 +164,7 @@ function OvertimeBarChart({ data }: { data: { month: string; hours: number }[] }
 // ─────────────────────────────────────────────────────────────────────
 
 export default function InboxPage() {
-    const { user, profile, isParent } = useAuth();
+    const { user, profile, isParent, updateProfile } = useAuth();
     const router = useRouter();
     const { toast } = useToast();
     
@@ -498,13 +498,13 @@ export default function InboxPage() {
         return ALL_MAJOR_TASKS.filter((task) => task.checkAssigned(taskContext));
     }, [profile?.email, taskContext]);
 
-    // 사용자별 주요 업무 선택 상태 동기화 (계정별 localStorage 및 담당 업무 필터링)
+    // 사용자별 주요 업무 선택 상태 동기화 (계정 프로필 DB 우선, localStorage 캐시 및 담당 업무 필터링)
     useEffect(() => {
         if (!profile?.email || myAvailableTasks.length === 0) return;
         const availableIds = myAvailableTasks.map((t) => t.id);
-        const saved = getSavedMajorTaskIds(profile.email, availableIds);
+        const saved = getSavedMajorTaskIds(profile.email, availableIds, profile.customMajorTaskIds);
         setSelectedMajorTaskIds(saved);
-    }, [profile?.email, myAvailableTasks]);
+    }, [profile?.email, profile?.customMajorTaskIds, myAvailableTasks]);
 
     // 실제 화면에 렌더링될 유효한 주요 업무 ID 목록 (담당 업무에 속한 것만)
     const effectiveMajorTaskIds = useMemo(() => {
@@ -750,7 +750,7 @@ export default function InboxPage() {
     }
 
     return (
-        <MainLayout title="전자결재 대시보드" contentClassName="p-2 sm:p-3 lg:p-3.5 h-full max-h-full flex flex-col gap-2.5 lg:gap-3 font-body overflow-hidden">
+        <MainLayout title="전자결재 대시보드" contentClassName="p-2 sm:p-3 lg:p-3.5 h-full max-h-full flex flex-col gap-2.5 lg:gap-3 font-body">
             {/* ── 2열 50:50 나란한 배치: [결재 대기 문서 + 주요 학교 일정] (좌) & [나의 업무] (우) ── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-3.5 flex-1 min-h-0 items-stretch overflow-y-auto lg:overflow-hidden">
                 {/* 1. 좌측 (50%): [결재 대기 문서 목록] (상단) + [주요 학교 일정] (하단) */}
@@ -1743,10 +1743,17 @@ export default function InboxPage() {
               selectedIds={effectiveMajorTaskIds}
               availableTasks={myAvailableTasks}
               userEmail={profile?.email}
-              onSave={(newIds) => {
+              onSave={async (newIds) => {
                 setSelectedMajorTaskIds(newIds);
                 if (profile?.email) {
-                  saveMajorTaskIds(newIds, profile.email);
+                  if (typeof updateProfile === 'function') {
+                    updateProfile({ customMajorTaskIds: newIds });
+                  }
+                  await saveMajorTaskIds(newIds, profile.email);
+                  toast({
+                    title: "주요 업무 설정 저장 완료",
+                    description: "선택하신 주요 업무 바로가기가 계정에 영구 저장되었습니다.",
+                  });
                 }
               }}
             />

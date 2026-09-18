@@ -875,26 +875,48 @@ export default function AdminMasterStudentsPage() {
 
           if (!name) continue; // 이름이 없는 행은 무시
 
-          const grade = gradeRaw.replace(/\D/g, '') || '1';
-          const classNum = classRaw.replace(/\D/g, '') || '1';
+          const grade = gradeRaw.replace(/\D/g, '');
+          const classNum = classRaw.replace(/\D/g, '');
           const studentNum = numRaw.replace(/\D/g, '') || '';
           const gender: 'Male' | 'Female' = (genderRaw === '여' || genderRaw.toLowerCase() === 'female' || genderRaw === 'F') ? 'Female' : 'Male';
 
-          // 이메일 유효성 검사
+          // 유효성 검사: 학년/반 누락 및 이메일 형식 모두 체크 (grade/classNum 없으면 기본값 '1' fallback 금지)
           let error: string | undefined;
-          if (email && !isStudentEmail(email)) {
+          if (!grade || !classNum) {
+            error = `학년(${grade || '?'}) 또는 반(${classNum || '?'}) 정보를 파싱할 수 없습니다. 열 이름을 확인하세요.`;
+          } else if (email && !isStudentEmail(email)) {
             error = '계정 이메일 형식이 올바르지 않습니다. (예: 2023kangdongyun@kshcm.net)';
           }
 
-          // 방과후 연동 조회
-          const lookupKey = `${grade}_${classNum}_${name}`;
-          const enrollments = afterschoolByKey.get(lookupKey) || [];
+          // 방과후/버스 연동 조회: 이메일 우선 → 학년_반_이름 복합키 순서 (동명이인 오매칭 방지)
+          const lookupKey = grade && classNum ? `${grade}_${classNum}_${name}` : '';
+
+          // 방과후 enrollment: 이메일 우선 조회
+          let enrollments: any[] = [];
+          if (email) {
+            const byEmail = afterschoolEnrollments.filter(
+              (e: any) => e.status !== 'CANCELLED' &&
+                (e.studentEmail || (e as any).email || '').toLowerCase().trim() === email.toLowerCase().trim()
+            );
+            enrollments = byEmail;
+          }
+          if (enrollments.length === 0 && lookupKey) {
+            enrollments = afterschoolByKey.get(lookupKey) || [];
+          }
           const afterschoolStatus = enrollments.length > 0
-            ? enrollments.map(e => e.courseTitle || e.title || '강좌').join(', ')
+            ? enrollments.map((e: any) => e.courseTitle || e.title || '강좌').join(', ')
             : '없음';
 
-          // 버스 연동 조회
-          const busStudent = busByKey.get(lookupKey);
+          // 버스 연동: 이메일 우선 조회
+          let busStudent: any = null;
+          if (email) {
+            busStudent = busStudents.find(
+              (bs: any) => (bs.studentEmail || '').toLowerCase().trim() === email.toLowerCase().trim()
+            ) || null;
+          }
+          if (!busStudent && lookupKey) {
+            busStudent = busByKey.get(lookupKey) || null;
+          }
           let busStatus = '없음';
           if (busStudent) {
             const routeNames: string[] = [];
@@ -905,7 +927,7 @@ export default function AdminMasterStudentsPage() {
           }
 
           previewRows.push({
-            grade, classNum, studentNum, name, nameEn, gender, studentEmail: email, contact,
+            grade: grade || '?', classNum: classNum || '?', studentNum, name, nameEn, gender, studentEmail: email, contact,
             afterschoolStatus, busStatus, error
           });
         }
@@ -931,11 +953,12 @@ export default function AdminMasterStudentsPage() {
 
   // 미리보기 확인 후 최종 일괄 등록 실행
   const handleConfirmExcelImport = async () => {
+    // error 필드 있는 행(학년/반 누락, 이메일 오류 등)과 이메일 없는 행 모두 제외
     const validRows = excelPreviewRows.filter(r => !r.error && r.studentEmail && isStudentEmail(r.studentEmail));
-    const skipRows = excelPreviewRows.filter(r => !r.studentEmail || !isStudentEmail(r.studentEmail));
+    const skipRows = excelPreviewRows.filter(r => r.error || !r.studentEmail || !isStudentEmail(r.studentEmail));
 
     if (validRows.length === 0) {
-      toast({ title: '등록 불가', description: '유효한 계정 이메일이 있는 행이 없습니다.', variant: 'destructive' });
+      toast({ title: '등록 불가', description: '유효한 이메일·학년·반이 있는 행이 없습니다. 미리보기의 오류 항목을 확인하세요.', variant: 'destructive' });
       return;
     }
 
@@ -956,7 +979,7 @@ export default function AdminMasterStudentsPage() {
       const count = await batchImportMasterStudents(studentsList);
       setIsExcelPreviewOpen(false);
       setExcelPreviewRows([]);
-      const skipMsg = skipRows.length > 0 ? ` (이메일 없음/오류 ${skipRows.length}명 제외)` : '';
+      const skipMsg = skipRows.length > 0 ? ` (이메일/학년/반 오류 ${skipRows.length}명 제외)` : '';
       toast({ title: '일괄 등록 완료', description: `${count}명의 학생 계정이 마스터 DB에 등록되었습니다.${skipMsg}` });
     } catch (err) {
       console.error(err);

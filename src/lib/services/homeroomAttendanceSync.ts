@@ -98,7 +98,6 @@ export async function getApprovedAbsenceStudentsForDate(
     const approvalsCol = collection(db, 'approvals');
     const q = query(
       approvalsCol,
-      where('status', '==', 'approved'),
       where('docType', '==', 'parent')
     );
 
@@ -108,9 +107,17 @@ export async function getApprovedAbsenceStudentsForDate(
       const pData = data.parentFormData;
       if (!pData) return;
 
+      // 반려, 회수, 취소된 문서는 출석부 결석 대상에서 제외하고, 접수(pending) 및 승인(approved) 문서는 모두 반영
+      if (data.status === 'rejected' || data.status === 'recalled' || data.status === 'cancelled') return;
+
       const pGradeClass = pData.gradeClassNumber || data.gradeClass || '';
-      // 학급 매칭 ("4-4" 또는 "4-4-15"의 앞부분 비교)
-      if (!pGradeClass.startsWith(gradeClass)) return;
+      // 학급 매칭 ("6-6", "6학년 6반", "6-6-1" 등 유연 매칭)
+      const cleanGClass = gradeClass.replace(/[^0-9-]/g, '');
+      const cleanPClass = pGradeClass.replace(/[^0-9-]/g, '');
+      const isClassMatch = pGradeClass.startsWith(gradeClass) ||
+                           pGradeClass.includes(gradeClass) ||
+                           (cleanGClass && cleanPClass.startsWith(cleanGClass));
+      if (!isClassMatch) return;
 
       const sName = (pData.studentName || data.studentName || '').trim();
       const docType = pData.type; // 'field-trip' | 'absence'
@@ -378,3 +385,128 @@ async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
     console.warn('[HomeroomSync] Afterschool attendance sync failed:', afterschoolErr);
   }
 }
+
+// ─── 5. 학부모 신청서(결석/체험학습) 기간 전체 자동 동기화 ─────────────────
+
+/**
+ * 시작일~종료일 사이의 모든 평일(월~금) 날짜 배열을 반환합니다.
+ */
+export function getWeekdayDatesInRange(startDate: string, endDate: string): string[] {
+  const dates: string[] = [];
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+    if (startDate && startDate === endDate) return [startDate];
+    return [];
+  }
+  const cur = new Date(start);
+  while (cur <= end) {
+    const day = cur.getDay();
+    if (day !== 0 && day !== 6) { // 일요일(0), 토요일(6) 제외
+      const yyyy = cur.getFullYear();
+      const mm = String(cur.getMonth() + 1).padStart(2, '0');
+      const dd = String(cur.getDate()).padStart(2, '0');
+      dates.push(`${yyyy}-${mm}-${dd}`);
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
+/**
+ * 학부모 신청서(결석계 / 교외체험학습) 접수 시 신청 기간의 모든 날짜에 대해
+ * 1) 담임 출석부(homeroom_daily_attendance) 결석(ABSENT) 체크
+ * 2) 스쿨버스 해당 날짜 '오늘 안 탐'(notBoarding) 반영
+ * 3) 방과후 출석부 해당 날짜 강좌 결석('X') 반영
+ */
+export async function syncParentApplicationDatesToAttendance(
+  pData: any,
+  submitterEmail: string = '',
+  knownStudentId?: string
+): Promise<{ success: boolean; dates: string[]; error?: string }> {
+  try {
+    if (!pData) return { success: false, dates: [] };
+
+    const docType = pData.type; // 'field-trip' | 'absence'
+    if (docType !== 'field-trip' && docType !== 'absence') {
+      return { success: true, dates: [] };
+    }
+
+    let startDate = '';
+    let endDate = '';
+    let reason = '';
+    const source = docType === 'field-trip' ? 'auto_field_trip' : 'auto_absence';
+
+    if (docType === 'field-trip') {
+      startDate = pData.tripPeriod?.startDate || '';
+      endDate = pData.tripPeriod?.endDate || '';
+      reason = pData.purpose || pData.destination || '교외체험학습';
+    } else {
+      startDate = pData.absencePeriod?.startDate || '';
+      endDate = pData.absencePeriod?.endDate || '';
+      reason = pData.absenceReason || pData.absenceType || '결석';
+    }
+
+    if (!startDate || !endDate) {
+      return { success: false, dates: [], error: '기간 정보가 누락되었습니다.' };
+    }
+
+    const dates = getWeekdayDatesInRange(startDate, endDate);
+    if (dates.length === 0) {
+      return { success: true, dates: [] };
+    }
+
+    const studentName = (pData.studentName || '').trim();
+    const gradeClass = pData.gradeClassNumber || pData.gradeClass || '';
+    const db = getDb();
+
+    // 학생 ID 식별 (knownStudentId 우선, 없으면 master_students 조회)
+    let studentId = knownStudentId || '';
+    if (!studentId && studentName) {
+      try {
+        const clean = (str: any) => String(str || '').replace(/\s+/g, '').toLowerCase();
+        const targetClean = clean(studentName);
+        const parts = gradeClass.replace(/[^0-9-]/g, '-').split('-').filter(Boolean);
+        const targetG = parts[0];
+        const targetC = parts[1];
+
+        const mSnap = await getDocs(collection(db, 'master_students'));
+        const matched = mSnap.docs.find(d => {
+          const s = d.data();
+          if (clean(s.name) !== targetClean) return false;
+          if (targetG && String(s.grade) !== String(targetG)) return false;
+          if (targetC && String(s.classNum) !== String(targetC)) return false;
+          return true;
+        });
+        if (matched) {
+          studentId = matched.id;
+        }
+      } catch (e) {
+        console.warn('[HomeroomSync] Error finding studentId:', e);
+      }
+    }
+
+    const effectiveStudentId = studentId || studentName;
+
+    // 기간 내 모든 평일 날짜에 대해 출석부 저장 및 스쿨버스/방과후 동기화
+    for (const d of dates) {
+      await saveHomeroomAttendanceAndSync({
+        date: d,
+        studentId: effectiveStudentId,
+        studentName,
+        gradeClass,
+        status: 'ABSENT',
+        source,
+        reason,
+        updatedBy: submitterEmail || 'system_parent_sync',
+      });
+    }
+
+    console.log(`[HomeroomSync] Successfully synced parent application: ${studentName}, dates=${dates.join(', ')}`);
+    return { success: true, dates };
+  } catch (err: any) {
+    console.error('[HomeroomSync] syncParentApplicationDatesToAttendance failed:', err);
+    return { success: false, dates: [], error: err.message };
+  }
+}
+

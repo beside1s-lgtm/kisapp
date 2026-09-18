@@ -1270,27 +1270,85 @@ export const purgeMasterStudent = async (
 
 // 5. 전교생 엑셀 일괄 동기화 (Batch Import)
 export const batchImportMasterStudents = async (students: NewMasterStudent[]): Promise<number> => {
-  const batch = writeBatch(getDb());
-  const colRef = collection(getDb(), COLLECTION_NAME);
-  let count = 0;
+  const db = getDb();
+  const colRef = collection(db, COLLECTION_NAME);
   const now = new Date().toISOString();
+  let count = 0;
 
-  students.forEach((s) => {
-    if (!isStudentEmail(s.studentEmail)) return;
-    const docRef = doc(colRef);
-    const payload: MasterStudent = {
-      ...s,
-      studentId: docRef.id,
-      createdAt: now,
-      updatedAt: now,
-    };
-    batch.set(docRef, payload);
-    count++;
-  });
+  // 유효한 학생만 처리
+  const validStudents = students.filter(s => isStudentEmail(s.studentEmail));
+  if (validStudents.length === 0) return 0;
 
-  await batch.commit();
+  // 이메일 목록으로 기존 문서 사전 조회 (upsert 준비)
+  // Firestore 'in' 쿼리는 최대 30개 제한 → 30개씩 청크 조회
+  const emailList = validStudents.map(s => s.studentEmail.trim().toLowerCase());
+  const existingByEmail = new Map<string, { id: string; data: any }>();
+  const emailChunkSize = 30;
+  for (let ei = 0; ei < emailList.length; ei += emailChunkSize) {
+    const emailChunk = emailList.slice(ei, ei + emailChunkSize);
+    const existingSnap = await getDocs(query(colRef, where('studentEmail', 'in', emailChunk)));
+    existingSnap.docs.forEach(d => {
+      const eml = (d.data().studentEmail || '').trim().toLowerCase();
+      if (!eml) return;
+      const current = existingByEmail.get(eml);
+      if (!current) {
+        existingByEmail.set(eml, { id: d.id, data: d.data() });
+      } else {
+        // createdAt 비교: 더 오래된 문서를 canonical로 유지
+        const existingCreated = current.data.createdAt || '';
+        const newCreated = d.data().createdAt || '';
+        if (newCreated < existingCreated) {
+          existingByEmail.set(eml, { id: d.id, data: d.data() });
+        }
+      }
+    });
+  }
+
+  // Firestore는 batch당 500건 제한 — 500건씩 나누어 처리
+  const chunkSize = 499;
+  for (let i = 0; i < validStudents.length; i += chunkSize) {
+    const chunk = validStudents.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+
+    chunk.forEach(s => {
+      const eml = s.studentEmail.trim().toLowerCase();
+      const existing = existingByEmail.get(eml);
+
+      if (existing) {
+        // 기존 문서 update: 이름, 학년, 반, 번호, 연락처, 영문이름, 성별 갱신
+        batch.update(doc(db, COLLECTION_NAME, existing.id), {
+          name: s.name,
+          grade: s.grade,
+          classNum: s.classNum,
+          studentNum: s.studentNum,
+          ...(s.nameEn ? { nameEn: s.nameEn } : {}),
+          ...(s.gender ? { gender: s.gender } : {}),
+          ...(s.contact ? { contact: s.contact } : {}),
+          updatedAt: now,
+        });
+      } else {
+        // 신규 insert
+        const docRef = doc(colRef);
+        const payload: MasterStudent = {
+          ...s,
+          studentEmail: eml,
+          studentId: docRef.id,
+          createdAt: now,
+          updatedAt: now,
+        };
+        batch.set(docRef, payload);
+        // 다음 청크에서 중복 insert 방지를 위해 맵에 추가
+        existingByEmail.set(eml, { id: docRef.id, data: payload });
+      }
+      count++;
+    });
+
+    await batch.commit();
+  }
+
   return count;
 };
+
 
 // 6. 학년/반 일괄 진급 처리 (Grade Advancement Batch Update + Automatic Academic Year Archiving)
 export const batchPromoteStudents = async (advancements: { studentEmail: string; newGrade: string; newClassNum: string; newStudentNum: string }[]): Promise<number> => {
