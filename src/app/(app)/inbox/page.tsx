@@ -750,11 +750,11 @@ export default function InboxPage() {
     }
 
     return (
-        <MainLayout title="전자결재 대시보드" contentClassName="p-2 sm:p-3 lg:p-3.5 h-full max-h-full flex flex-col gap-2.5 lg:gap-3 font-body">
+        <MainLayout title="전자결재 대시보드" contentClassName="p-2 sm:p-3 lg:p-3.5 lg:h-full lg:max-h-full flex flex-col gap-2.5 lg:gap-3 font-body">
             {/* ── 2열 50:50 나란한 배치: [결재 대기 문서 + 주요 학교 일정] (좌) & [나의 업무] (우) ── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-3.5 flex-1 min-h-0 items-stretch overflow-y-auto lg:overflow-hidden">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-3.5 lg:flex-1 lg:min-h-0 items-stretch overflow-visible lg:overflow-hidden">
                 {/* 1. 좌측 (50%): [결재 대기 문서 목록] (상단) + [주요 학교 일정] (하단) */}
-                <div className="flex flex-col gap-2.5 lg:gap-3 flex-1 min-h-0 h-full">
+                <div className="flex flex-col gap-2.5 lg:gap-3 lg:flex-1 lg:min-h-0 lg:h-full">
                     {/* 1-1. 상단: 결재 대기 문서 목록 카드 (높이를 절반으로 줄여 콤팩트화) */}
                     <Card className="rounded-2xl border bg-card shadow-xs flex flex-col shrink-0 overflow-hidden">
                         <div className="p-2.5 sm:p-3 border-b flex items-center justify-between gap-2 shrink-0 bg-slate-50/70 rounded-t-2xl min-h-[46px]">
@@ -801,7 +801,7 @@ export default function InboxPage() {
                     </Card>
 
                     {/* 1-2. 하단: 주요 학교 일정 (위로 끌어올려 충분한 세로 공간 확보) */}
-                    <Card className="rounded-2xl border bg-card shadow-xs flex flex-col flex-1 min-h-0 overflow-hidden">
+                    <Card className="rounded-2xl border bg-card shadow-xs flex flex-col lg:flex-1 lg:min-h-0 overflow-hidden">
                         <div className="p-2.5 sm:p-3 border-b flex items-center justify-between gap-1.5 sm:gap-2 shrink-0 bg-blue-50/50 rounded-t-2xl min-w-0 min-h-[46px]">
                             <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
                                 <div className="p-1.5 bg-blue-600/10 rounded-xl text-blue-600 shrink-0">
@@ -970,7 +970,7 @@ export default function InboxPage() {
                 </div>
 
                 {/* 2. 우측 (50%): 나의 업무 (부서/학급 현행 업무 + 워크플로우 + Todo) 카드 */}
-                <Card className="rounded-2xl border bg-card shadow-xs flex flex-col flex-1 min-h-0 h-full overflow-hidden">
+                <Card className="rounded-2xl border bg-card shadow-xs flex flex-col lg:flex-1 lg:min-h-0 lg:h-full overflow-hidden">
                     <div className="p-2.5 sm:p-3 border-b flex items-center justify-between gap-1.5 sm:gap-2 shrink-0 bg-indigo-50/50 rounded-t-2xl min-w-0 min-h-[46px]">
                         <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
                             <div className="p-1.5 bg-indigo-500/10 rounded-xl text-indigo-600 shrink-0">
@@ -1335,7 +1335,7 @@ export default function InboxPage() {
                         ) : null}
 
                         {/* 2-2. 부서·학년 업무 할당/제출 워크플로우 탭 */}
-                        <div className="space-y-1.5 pt-1 border-t border-slate-100 flex-1 flex flex-col min-h-0 overflow-hidden">
+                        <div className="space-y-1.5 pt-1 border-t border-slate-100 lg:flex-1 flex flex-col lg:min-h-0">
                             <div className="flex items-center justify-between gap-1.5 shrink-0">
                                 {(() => {
                                     const myEmail = profile?.email?.toLowerCase() || '';

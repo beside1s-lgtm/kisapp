@@ -105,6 +105,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
   const [myDepartments, setMyDepartments] = useState<any[]>([]);
   const [allDepartments, setAllDepartments] = useState<any[]>([]);
   const [isPresetDialogOpen, setIsPresetDialogOpen] = useState(false);
+  const [isMobileCircularDialogOpen, setIsMobileCircularDialogOpen] = useState(false);
   
   // 프리셋 저장/관리용 폼 상태
   const [newPresetName, setNewPresetName] = useState('');
@@ -1346,8 +1347,40 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
           </Card>
         )}
         
-        {/* 전결규정 빠른 템플릿 선택 바 */}
-        <div className="flex flex-wrap items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+        {/* 전결규정 빠른 템플릿 선택 바 (모바일 1줄 3개 / 데스크톱 4개 분리) */}
+        <div className="flex sm:hidden items-center gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl">
+          <div className="grid grid-cols-3 gap-1.5 w-full">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleQuickTemplate('general')}
+              className="h-7 text-xs px-1 bg-white hover:bg-slate-100 border-indigo-200 text-indigo-900 font-bold"
+            >
+              교장 결재
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleQuickTemplate('detail')}
+              className="h-7 text-xs px-1 bg-white hover:bg-slate-100 border-emerald-200 text-emerald-900 font-bold"
+            >
+              교감 전결
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleQuickTemplate('dept')}
+              className="h-7 text-xs px-1 bg-white hover:bg-slate-100 border-amber-200 text-amber-900 font-bold"
+            >
+              부장 전결
+            </Button>
+          </div>
+        </div>
+
+        <div className="hidden sm:flex flex-wrap items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
           <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 shrink-0">
             <FileText className="w-3.5 h-3.5 text-indigo-600" />
             전결규정 템플릿:
@@ -1407,15 +1440,15 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
         />
         
         <Card>
-          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b">
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 p-3 sm:p-6 pb-3 sm:pb-4 border-b">
             <div className="flex items-center gap-2">
-              <FolderOpen className="h-5 w-5 text-primary" />
-              <CardTitle>결재선 지정</CardTitle>
+              <FolderOpen className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+              <CardTitle className="text-base sm:text-lg">결재선 지정</CardTitle>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-3 gap-1.5 w-full sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:w-auto">
               {/* 위임전결규정 선택 셀렉트 */}
-              {delegationRules.length > 0 && (
-                <div className="w-[180px]">
+              {delegationRules.length > 0 ? (
+                <div className="w-full sm:w-[180px]">
                   <Select 
                     value={selectedDelegationId} 
                     onValueChange={(id) => {
@@ -1423,8 +1456,8 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                       if (r) handleApplyDelegationRule(r);
                     }}
                   >
-                    <SelectTrigger className="h-9 bg-background text-xs">
-                      <SelectValue placeholder="전결규정 선택..." />
+                    <SelectTrigger className="h-8 sm:h-9 bg-background text-[11px] sm:text-xs px-1.5 sm:px-3 truncate">
+                      <SelectValue placeholder="전결규정" />
                     </SelectTrigger>
                     <SelectContent>
                       {delegationRules.map(rule => (
@@ -1435,13 +1468,13 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                     </SelectContent>
                   </Select>
                 </div>
-              )}
+              ) : <div className="hidden sm:block" />}
 
               {/* 프리셋 선택 셀렉트 */}
-              <div className="w-[200px]">
+              <div className="w-full sm:w-[200px]">
                 <Select value={selectedPresetId} onValueChange={handleApplyPreset}>
-                  <SelectTrigger className="h-9 bg-background">
-                    <SelectValue placeholder="결재선 프리셋 적용..." />
+                  <SelectTrigger className="h-8 sm:h-9 bg-background text-[11px] sm:text-xs px-1.5 sm:px-3 truncate">
+                    <SelectValue placeholder="프리셋" />
                   </SelectTrigger>
                   <SelectContent>
                     {/* 개인 프리셋 목록 */}
@@ -1486,14 +1519,148 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                 onClick={() => {
                   setIsPresetDialogOpen(true);
                 }}
-                className="h-9 gap-1.5"
+                className="h-8 sm:h-9 text-[11px] sm:text-xs px-1.5 sm:px-3 gap-1 shrink-0 w-full sm:w-auto"
               >
-                <Settings2 className="h-4 w-4" />
-                프리셋 관리
+                <Settings2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+                <span className="sm:hidden">관리</span>
+                <span className="hidden sm:inline">프리셋 관리</span>
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* 모바일 전용: 부장, 교감, 협조, 교장, 공람 5칸 한 줄 결재선 직인 박스 */}
+          <div className="block sm:hidden p-2">
+            <div className="grid grid-cols-5 gap-1 border border-slate-200 rounded-xl bg-slate-50/50 p-1">
+              {approverFields.map((field, index) => {
+                const targetRole = field.role;
+                const isActive = form.watch(`approvers.${index}.active`);
+                const approverName = form.watch(`approvers.${index}.name`) || '';
+                const approverType = form.watch(`approvers.${index}.type`) || 'normal';
+                const filteredUsers = users.filter(u => {
+                  if (u.email !== 'beside1s@kshcm.net' && (u.studentName || u.studentGrade || u.role === '학부모' || u.role === 'student' || u.role === 'parent')) return false;
+                  if (/^\d{4}[a-zA-Z]+@kshcm\.net$/i.test(u.email)) return false;
+                  if (targetRole === '협조') return true;
+                  return u.role === targetRole;
+                });
+
+                return (
+                  <div 
+                    key={field.id}
+                    className={cn(
+                      "flex flex-col justify-between rounded-lg border p-1 text-center min-h-[92px] transition-all",
+                      isActive ? "bg-white border-indigo-200 shadow-2xs" : "bg-slate-100/70 border-slate-200 opacity-60"
+                    )}
+                  >
+                    {/* 상단: 직책 + 온/오프 체크박스 */}
+                    <div className="flex items-center justify-between gap-0.5 border-b border-slate-100 pb-1">
+                      <span className="text-[11px] font-black text-slate-800 truncate">
+                        {targetRole === '협조' ? (field.role === '행정실장' ? '행정' : '협조') : targetRole}
+                      </span>
+                      <input 
+                        type="checkbox"
+                        checked={isActive}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          form.setValue(`approvers.${index}.active`, checked, { shouldDirty: true });
+                          const cur = form.getValues(`approvers.${index}`);
+                          updateApprover(index, { ...cur, active: checked });
+                        }}
+                        className="w-3 h-3 accent-indigo-600 rounded cursor-pointer shrink-0"
+                        title={isActive ? "결재선 포함" : "결재선 제외"}
+                      />
+                    </div>
+
+                    {/* 중앙: 결재자 이름 셀렉트 */}
+                    <div className="py-1 min-w-0 flex-1 flex flex-col justify-center items-center">
+                      {isActive ? (
+                        <Select
+                          value={approverName || undefined}
+                          onValueChange={(val) => {
+                            const selected = filteredUsers.find(u => u.name === val || u.email === val);
+                            const nameToSet = selected?.name || val;
+                            const emailToSet = selected?.email || '';
+                            form.setValue(`approvers.${index}.name`, nameToSet, { shouldValidate: true, shouldDirty: true });
+                            form.setValue(`approvers.${index}.email`, emailToSet, { shouldValidate: true, shouldDirty: true });
+                            const cur = form.getValues(`approvers.${index}`);
+                            updateApprover(index, { ...cur, name: nameToSet, email: emailToSet });
+                          }}
+                        >
+                          <SelectTrigger className="h-6 text-[11px] font-black p-0 border-none justify-center focus:ring-0 text-slate-900 truncate">
+                            <span className="truncate">{approverName || '선택'}</span>
+                          </SelectTrigger>
+                          <SelectContent className="max-h-60">
+                            {filteredUsers.map(u => (
+                              <SelectItem key={u.email} value={u.name} className="text-xs">
+                                {u.name} ({u.role || targetRole})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 font-medium">제외</span>
+                      )}
+                    </div>
+
+                    {/* 하단: 결재 구분 (일반/전결/대결) 원터치 토글 */}
+                    {isActive ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextType = approverType === 'normal' ? 'final' : approverType === 'final' ? 'proxy' : 'normal';
+                          form.setValue(`approvers.${index}.type`, nextType as any, { shouldDirty: true });
+                          const cur = form.getValues(`approvers.${index}`);
+                          updateApprover(index, { ...cur, type: nextType as any });
+                        }}
+                        className={cn(
+                          "w-full py-0.5 rounded text-[9px] font-bold border transition-colors",
+                          approverType === 'final' 
+                            ? "bg-amber-100 text-amber-800 border-amber-300" 
+                            : approverType === 'proxy' 
+                            ? "bg-purple-100 text-purple-800 border-purple-300" 
+                            : "bg-slate-100 text-slate-600 border-slate-200"
+                        )}
+                        title="클릭하여 일반/전결/대결 전환"
+                      >
+                        {approverType === 'final' ? '전결' : approverType === 'proxy' ? '대결' : '일반'}
+                      </button>
+                    ) : (
+                      <div className="h-4" />
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* 5번째 박스: 공람 */}
+              <div 
+                onClick={() => setIsMobileCircularDialogOpen(true)}
+                className="flex flex-col justify-between rounded-lg border border-indigo-200 bg-indigo-50/60 p-1 text-center min-h-[92px] cursor-pointer hover:bg-indigo-100/70 transition-all shadow-2xs"
+              >
+                <div className="flex items-center justify-between border-b border-indigo-100 pb-1">
+                  <span className="text-[11px] font-black text-indigo-900">공람</span>
+                  <span className="px-1 py-0 bg-indigo-600 text-white rounded-full text-[8px] font-bold">
+                    {circularFields.length}
+                  </span>
+                </div>
+
+                <div className="py-1 min-w-0 flex-1 flex flex-col justify-center items-center">
+                  {circularFields.length > 0 ? (
+                    <span className="text-[10px] font-bold text-indigo-950 truncate max-w-full">
+                      {circularFields[0].name}
+                      {circularFields.length > 1 ? ` 외 ${circularFields.length - 1}` : ''}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400">미지정</span>
+                  )}
+                </div>
+
+                <div className="w-full py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white shadow-2xs">
+                  공람 설정
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 데스크톱 전용 4열 카드 결재선 그리드 */}
+          <CardContent className="hidden sm:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {approverFields.map((field, index) => {
               const targetRole = field.role;
               const filteredUsers = users.filter(u => {
@@ -1609,8 +1776,56 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
           </CardContent>
         </Card>
 
+        {/* 모바일 전용 공람자 관리 Dialog */}
+        <Dialog open={isMobileCircularDialogOpen} onOpenChange={setIsMobileCircularDialogOpen}>
+          <DialogContent className="max-w-sm rounded-2xl p-5">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold flex items-center justify-between">
+                <span>공람자 지정</span>
+                <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">
+                  총 {circularFields.length}명
+                </Badge>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 pt-2">
+              <UserSearch
+                users={users}
+                value={circularQuery}
+                onChange={(value) => setCircularQuery(value)}
+                onSelectUser={(u) => {
+                  if (!circularFields.some(f => f.email === u.email)) appendCircular({name: u.name, email: u.email, role: u.role});
+                  setCircularQuery(''); 
+                }}
+                placeholder="공람자 검색 및 추가..."
+              />
+              <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
+                {circularFields.length === 0 ? (
+                  <span className="text-xs text-muted-foreground p-2">지정된 공람자가 없습니다.</span>
+                ) : (
+                  circularFields.map((field, i) => (
+                    <div key={field.id} className="bg-white border shadow-2xs px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs font-semibold">
+                      <span>{field.name}</span>
+                      <button type="button" onClick={() => removeCircular(i)} className="text-slate-400 hover:text-red-500">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+              <Button 
+                type="button" 
+                onClick={() => setIsMobileCircularDialogOpen(false)} 
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-9 text-xs"
+              >
+                확인
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* 데스크톱 전용 공람 카드 */}
         {!isFamily && (
-        <div className="grid md:grid-cols-2 gap-8">
+        <div className="hidden sm:grid md:grid-cols-2 gap-8">
             <Card>
             <CardHeader><CardTitle>공람</CardTitle></CardHeader>
             <CardContent>
@@ -1720,6 +1935,73 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
         </div>
         )}
 
+        {/* 모바일 전용: 문서 번호, 게시 상태, 문서 종류 1줄 (3열 그리드) 배치 */}
+        <div className="grid sm:hidden grid-cols-3 gap-1.5 w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+          {/* 1. 문서 번호 */}
+          <div className="space-y-1">
+            <Label className="text-[11px] font-bold text-slate-700">문서 번호</Label>
+            {docConfig.enableFaceToFaceApproval ? (
+              <Input
+                value={faceToFaceDocNo}
+                onChange={(e) => setFaceToFaceDocNo(e.target.value)}
+                placeholder="문서번호"
+                className="h-8 text-[11px] font-semibold bg-white border-slate-300 px-2"
+              />
+            ) : (
+              <Input
+                disabled
+                value="(자동 채번)"
+                className="h-8 text-[10.5px] font-medium bg-slate-100 text-slate-500 border-slate-200 px-1.5"
+              />
+            )}
+          </div>
+
+          {/* 2. 게시 상태 */}
+          <FormField
+            control={form.control}
+            name="publishStatus"
+            render={({ field }) => (
+              <FormItem className="space-y-1">
+                <FormLabel className="text-[11px] font-bold text-slate-700">게시 상태</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <FormControl>
+                    <SelectTrigger className="h-8 text-[11px] font-semibold bg-white border-slate-300 px-2">
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="공개" className="text-xs">공개</SelectItem>
+                    <SelectItem value="비공개" className="text-xs">비공개</SelectItem>
+                    <SelectItem value="부분공개" className="text-xs">부분공개</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )}
+          />
+
+          {/* 3. 문서 종류 */}
+          <FormField
+            control={form.control}
+            name="docType"
+            render={({ field }) => (
+              <FormItem className="space-y-1">
+                <FormLabel className="text-[11px] font-bold text-slate-700">문서 종류</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <FormControl>
+                    <SelectTrigger className="h-8 text-[11px] font-semibold bg-white border-slate-300 px-2">
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="internal" className="text-xs">내부결재</SelectItem>
+                    <SelectItem value="external" className="text-xs">대외공문</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )}
+          />
+        </div>
+
         <FormField
           control={form.control}
           name="content"
@@ -1762,21 +2044,37 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
         />
         
         <Card>
-            <CardHeader>
-                <CardTitle>첨부파일 <span className="text-xs text-muted-foreground font-normal ml-2">(파일당 최대 50MB)</span></CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between p-3 sm:p-6 pb-2 sm:pb-4 border-b sm:border-b-0">
+                <CardTitle className="text-sm sm:text-base flex items-center gap-1.5 sm:gap-2">
+                  <span>첨부파일</span>
+                  <span className="text-xs text-muted-foreground font-normal hidden sm:inline">(파일당 최대 50MB)</span>
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <Input 
+                      ref={attachmentInputRef}
+                      type="file"
+                      multiple
+                      onChange={handleFileChange}
+                      className="hidden"
+                  />
+                  <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => attachmentInputRef.current?.click()}
+                      disabled={isUploadingFiles}
+                      className="h-7 sm:h-8 text-xs font-bold gap-1 text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+                  >
+                      {isUploadingFiles ? <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> 업로드 중...</> : <><Paperclip className="h-3.5 w-3.5" /> 파일 선택</>}
+                  </Button>
+                </div>
             </CardHeader>
-            <CardContent>
-                <div className="space-y-4">
-                    <div className="p-6 border-2 border-dashed rounded-lg flex flex-col items-center justify-center text-center">
+            <CardContent className="p-3 sm:p-6 pt-2 sm:pt-0">
+                <div className="space-y-3">
+                    {/* 데스크톱 전용 대형 드래그 앤 드롭 영역 (모바일에서는 숨김) */}
+                    <div className="hidden sm:flex p-6 border-2 border-dashed rounded-lg flex-col items-center justify-center text-center">
                         <Paperclip className="h-10 w-10 text-muted-foreground mb-2" />
                         <p className="mb-2 text-sm text-muted-foreground">파일을 드래그 앤 드롭하거나 클릭하여 업로드하세요.</p>
-                        <Input 
-                            ref={attachmentInputRef}
-                            type="file"
-                            multiple
-                            onChange={handleFileChange}
-                            className="hidden"
-                        />
                         <Button 
                             type="button" 
                             variant="outline" 

@@ -165,7 +165,7 @@ export const MainLayout: FC<MainLayoutProps> = ({
   }, []);
 
   return (
-    <div className="flex flex-col bg-background w-full max-w-full min-w-0 h-full max-h-full min-h-0 overflow-hidden overscroll-none">
+    <div className="flex flex-col bg-background w-full max-w-full min-w-0 h-dvh max-h-dvh min-h-0 overflow-hidden overscroll-none">
        <header ref={headerRef} className={`${headerStickyClass} flex flex-col gap-1 border-b bg-card/95 px-2.5 sm:px-4 md:px-6 py-1.5 sm:py-2 backdrop-blur-md shadow-xs w-full max-w-full`}>
           {/* 모바일 뷰 (sm:hidden): 2줄 레이아웃 */}
           <div className="flex sm:hidden flex-col gap-1.5 w-full min-w-0">

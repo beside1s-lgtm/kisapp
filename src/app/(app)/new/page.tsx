@@ -7,6 +7,7 @@ import { PenTool, Loader2, ChevronLeft } from "lucide-react";
 import { getDocumentById } from '@/lib/services/documentService';
 import { ApprovalDoc } from '@/lib/types';
 import { Button } from '@/components/ui/button';
+import { MainLayout } from '@/components/layout/main-layout';
 
 // [핵심] useSearchParams를 사용하는 로직을 별도 컴포넌트로 분리
 function NewDocumentContent() {
@@ -73,32 +74,34 @@ export default function NewDocumentPage() {
   const router = useRouter();
 
   return (
-    <div className="max-w-4xl mx-auto p-4 md:p-8">
-       <div className="mb-8">
-            <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.back()}
-                className="mb-4 -ml-2 text-muted-foreground hover:text-foreground flex items-center gap-1"
-            >
-                <ChevronLeft className="h-4 w-4" />
-                뒤로가기
-            </Button>
-            <h1 className="font-headline text-3xl font-bold flex items-center gap-3">
-                <PenTool className="h-8 w-8 text-primary" />
-                새 결재문서 작성
-            </h1>
-            <p className="text-muted-foreground mt-1">아래 양식을 작성하여 새 결재를 요청하세요.</p>
-        </div>
-        
-      {/* [중요] useSearchParams를 사용하는 컴포넌트는 반드시 Suspense로 감싸야 함 */}
-      <Suspense fallback={
-          <div className="flex justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    <MainLayout title="새 결재문서 작성">
+      <div className="max-w-4xl mx-auto">
+         <div className="mb-3 sm:mb-8">
+              <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.back()}
+                  className="mb-2 sm:mb-4 -ml-2 text-muted-foreground hover:text-foreground hidden sm:flex items-center gap-1"
+              >
+                  <ChevronLeft className="h-4 w-4" />
+                  뒤로가기
+              </Button>
+              <h1 className="font-headline text-xl sm:text-3xl font-bold flex items-center gap-2 sm:gap-3">
+                  <PenTool className="h-5 w-5 sm:h-8 sm:w-8 text-primary shrink-0" />
+                  새 결재문서 작성
+              </h1>
+              <p className="text-muted-foreground mt-1 text-xs sm:text-sm hidden sm:block">아래 양식을 작성하여 새 결재를 요청하세요.</p>
           </div>
-      }>
-          <NewDocumentContent />
-      </Suspense>
-    </div>
+          
+        {/* [중요] useSearchParams를 사용하는 컴포넌트는 반드시 Suspense로 감싸야 함 */}
+        <Suspense fallback={
+            <div className="flex justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+        }>
+            <NewDocumentContent />
+        </Suspense>
+      </div>
+    </MainLayout>
   );
 }

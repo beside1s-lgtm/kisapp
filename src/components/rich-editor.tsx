@@ -380,78 +380,78 @@ export default function RichEditor({ value, onChange }: RichEditorProps) {
       {/* 에디터 본문 및 세로형 사이드 퀵 패널 */}
       <div className="flex flex-1 min-h-[420px] bg-white rounded-b-md relative">
         {/* 좌측 세로형 공문서 빠른 입력 도구바 */}
-        <div className="w-24 sm:w-28 bg-slate-50/90 border-r border-slate-200 p-2 flex flex-col gap-1.5 shrink-0 select-none">
-          <div className="text-[11px] font-bold text-slate-500 pb-1 border-b border-slate-200 text-center tracking-tight">
+        <div className="w-10 sm:w-28 bg-slate-50/90 border-r border-slate-200 p-1 sm:p-2 flex flex-col gap-1 sm:gap-1.5 shrink-0 select-none">
+          <div className="text-[11px] font-bold text-slate-500 pb-1 border-b border-slate-200 text-center tracking-tight hidden sm:block">
             항목 빠른 입력
           </div>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="w-full h-8 px-2 justify-start text-xs font-bold text-slate-800 bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border-slate-200 shadow-none transition-colors"
+            className="w-full h-8 px-1 sm:px-2 justify-center sm:justify-start text-xs font-bold text-slate-800 bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border-slate-200 shadow-none transition-colors"
             onClick={() => editor.chain().focus().insertContent('1. ').run()}
             title="1단계 항목 (1.)"
           >
-            <span className="w-5 text-indigo-600 font-extrabold">1.</span>
-            <span className="text-[11px] font-medium text-slate-500">1단계</span>
+            <span className="text-indigo-600 font-extrabold text-xs">1.</span>
+            <span className="text-[11px] font-medium text-slate-500 hidden sm:inline ml-1">1단계</span>
           </Button>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="w-full h-8 px-2 justify-start text-xs font-bold text-slate-800 bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border-slate-200 shadow-none transition-colors"
+            className="w-full h-8 px-1 sm:px-2 justify-center sm:justify-start text-xs font-bold text-slate-800 bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border-slate-200 shadow-none transition-colors"
             onClick={() => editor.chain().focus().insertContent('\u00A0\u00A0가. ').run()}
             title="2단계 항목 (가. / 2칸 들여쓰기)"
           >
-            <span className="w-5 text-indigo-600 font-extrabold">가.</span>
-            <span className="text-[11px] font-medium text-slate-500">2단계</span>
+            <span className="text-indigo-600 font-extrabold text-xs">가.</span>
+            <span className="text-[11px] font-medium text-slate-500 hidden sm:inline ml-1">2단계</span>
           </Button>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="w-full h-8 px-2 justify-start text-xs font-bold text-slate-800 bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border-slate-200 shadow-none transition-colors"
+            className="w-full h-8 px-1 sm:px-2 justify-center sm:justify-start text-xs font-bold text-slate-800 bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border-slate-200 shadow-none transition-colors"
             onClick={() => editor.chain().focus().insertContent('\u00A0\u00A0\u00A0\u00A01) ').run()}
             title="3단계 항목 (1) / 4칸 들여쓰기)"
           >
-            <span className="w-5 text-indigo-600 font-extrabold">1)</span>
-            <span className="text-[11px] font-medium text-slate-500">3단계</span>
+            <span className="text-indigo-600 font-extrabold text-xs">1)</span>
+            <span className="text-[11px] font-medium text-slate-500 hidden sm:inline ml-1">3단계</span>
           </Button>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="w-full h-8 px-2 justify-start text-xs font-bold text-slate-800 bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border-slate-200 shadow-none transition-colors"
+            className="w-full h-8 px-1 sm:px-2 justify-center sm:justify-start text-xs font-bold text-slate-800 bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border-slate-200 shadow-none transition-colors"
             onClick={() => editor.chain().focus().insertContent('\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0가) ').run()}
             title="4단계 항목 (가) / 6칸 들여쓰기)"
           >
-            <span className="w-5 text-indigo-600 font-extrabold">가)</span>
-            <span className="text-[11px] font-medium text-slate-500">4단계</span>
+            <span className="text-indigo-600 font-extrabold text-xs">가)</span>
+            <span className="text-[11px] font-medium text-slate-500 hidden sm:inline ml-1">4단계</span>
           </Button>
 
-          <div className="my-1 border-t border-slate-200" />
+          <div className="my-0.5 sm:my-1 border-t border-slate-200" />
 
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="w-full h-8 px-2 justify-start text-xs font-bold text-slate-800 bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border-slate-200 shadow-none transition-colors"
+            className="w-full h-8 px-1 sm:px-2 justify-center sm:justify-start text-xs font-bold text-slate-800 bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border-slate-200 shadow-none transition-colors"
             onClick={() => editor.chain().focus().insertContent('<p style="margin-top: 18px;">붙임\u00A0\u00A01.\u00A0\u00A0계획서 1부.\u00A0\u00A0끝.</p>').run()}
             title="붙임 표준 양식 삽입"
           >
-            <span className="text-emerald-600 mr-1 text-xs">📎</span>
-            <span className="text-[11px] font-bold text-slate-700">붙임 서식</span>
+            <span className="text-emerald-600 text-xs">📎</span>
+            <span className="text-[11px] font-bold text-slate-700 hidden sm:inline ml-1">붙임 서식</span>
           </Button>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="w-full h-8 px-2 justify-start text-xs font-bold text-slate-800 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300 border-slate-200 shadow-none transition-colors"
+            className="w-full h-8 px-1 sm:px-2 justify-center sm:justify-start text-xs font-bold text-slate-800 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300 border-slate-200 shadow-none transition-colors"
             onClick={() => editor.chain().focus().insertContent('\u00A0\u00A0끝.').run()}
             title="끝. 삽입 (2칸 띄우고 끝.)"
           >
-            <span className="text-amber-600 mr-1.5 font-bold">🏁</span>
-            <span className="text-[11px] font-bold text-slate-700">끝.</span>
+            <span className="text-amber-600 font-bold text-xs">🏁</span>
+            <span className="text-[11px] font-bold text-slate-700 hidden sm:inline ml-1">끝.</span>
           </Button>
         </div>
 

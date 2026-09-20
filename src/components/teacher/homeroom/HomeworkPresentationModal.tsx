@@ -57,20 +57,20 @@ export const HomeworkPresentationModal: React.FC<HomeworkPresentationModalProps>
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-between p-6 sm:p-10 bg-[#0f172a] text-white select-none transition-colors duration-200" style={{ opacity: 1 }}>
+    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-between p-3 sm:p-6 md:p-10 bg-[#0f172a] text-white select-none transition-colors duration-200" style={{ opacity: 1 }}>
       {/* 상단 닫기 및 타이틀 영역 */}
-      <div className="w-full flex items-center justify-between max-w-6xl shrink-0 border-b border-slate-800 pb-4">
+      <div className="w-full flex items-center justify-between max-w-6xl shrink-0 border-b border-slate-800 pb-3 sm:pb-4">
         <div>
           <span className="text-xs tracking-widest text-emerald-400 font-bold uppercase bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
             {mode === 'single' ? '숙제 미제출자 확인' : '전체 숙제 미제출 현황'}
           </span>
-          <h1 className="text-2xl sm:text-4xl font-black tracking-tight mt-2 text-yellow-300 drop-shadow-sm">
+          <h1 className="text-xl sm:text-4xl font-black tracking-tight mt-1.5 sm:mt-2 text-yellow-300 drop-shadow-sm">
             {mode === 'single' && activeHw ? activeHw.title : '미제출 학생 명단'}
           </h1>
         </div>
         <button
           onClick={onClose}
-          className="flex items-center gap-1.5 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-red-500/20 hover:bg-red-500 text-white border border-red-400/60 hover:border-red-400 transition-all cursor-pointer shadow-md"
+          className="flex items-center gap-1.5 px-3.5 sm:px-5 py-1.5 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-red-500/20 hover:bg-red-500 text-white border border-red-400/60 hover:border-red-400 transition-all cursor-pointer shadow-md"
           title="닫기 (ESC)"
         >
           <X className="w-4 h-4 stroke-[2.5]" />
@@ -79,9 +79,9 @@ export const HomeworkPresentationModal: React.FC<HomeworkPresentationModalProps>
       </div>
 
       {/* 중앙 미제출자 카드 영역 */}
-      <div className="flex-1 w-full max-w-6xl overflow-y-auto my-6 py-4 flex flex-col justify-center">
+      <div className="flex-1 w-full max-w-6xl overflow-y-auto my-2 sm:my-6 py-2 sm:py-4 overscroll-contain flex flex-col">
         {mode === 'single' && activeHw && (
-          <div>
+          <div className="w-full">
             {(() => {
               const incompleteStudents = students.filter(
                 (s) => !isDone(activeHw.id, s.studentId || s.id || '')
@@ -89,7 +89,7 @@ export const HomeworkPresentationModal: React.FC<HomeworkPresentationModalProps>
 
               if (incompleteStudents.length === 0) {
                 return (
-                  <div className="text-center py-16 animate-in zoom-in-95">
+                  <div className="text-center py-16 animate-in zoom-in-95 my-auto">
                     <div className="inline-flex p-4 bg-emerald-500/20 text-emerald-400 rounded-full mb-4">
                       <Check className="w-12 h-12 stroke-[3]" />
                     </div>
@@ -100,7 +100,7 @@ export const HomeworkPresentationModal: React.FC<HomeworkPresentationModalProps>
               }
 
               return (
-                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 sm:gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5 sm:gap-4">
                   {incompleteStudents.map((s) => {
                     const sid = s.studentId || s.id || '';
                     const key = `${activeHw.id}_${sid}`;
@@ -110,17 +110,17 @@ export const HomeworkPresentationModal: React.FC<HomeworkPresentationModalProps>
                       <button
                         key={sid}
                         onClick={() => handleCardClick(activeHw.id, s)}
-                        className={`p-4 rounded-2xl bg-white/10 hover:bg-emerald-500/20 border border-white/15 hover:border-emerald-400 flex flex-col items-center justify-center transition-all duration-200 group cursor-pointer ${
+                        className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white/10 hover:bg-emerald-500/20 border border-white/15 hover:border-emerald-400 flex flex-col items-center justify-center transition-all duration-200 group cursor-pointer ${
                           isRemoving ? 'opacity-0 scale-90' : 'opacity-100 scale-100'
                         }`}
                       >
-                        <span className="text-xs text-slate-400 font-semibold mb-1">
+                        <span className="text-[11px] sm:text-xs text-slate-400 font-semibold mb-0.5 sm:mb-1">
                           {s.studentNum ? `${s.studentNum}번` : ''}
                         </span>
-                        <span className="text-xl sm:text-2xl font-black text-white group-hover:text-emerald-300">
+                        <span className="text-lg sm:text-2xl font-black text-white group-hover:text-emerald-300">
                           {s.name}
                         </span>
-                        <span className="text-[10px] text-slate-400 group-hover:text-emerald-400 mt-2 font-medium">
+                        <span className="text-[9px] sm:text-[10px] text-slate-400 group-hover:text-emerald-400 mt-1.5 sm:mt-2 font-medium">
                           클릭 시 제출
                         </span>
                       </button>
@@ -133,7 +133,7 @@ export const HomeworkPresentationModal: React.FC<HomeworkPresentationModalProps>
         )}
 
         {mode === 'all' && (
-          <div className="space-y-6">
+          <div className="space-y-6 w-full">
             {(() => {
               const activeHomeworks = allHws.filter((hw) =>
                 students.some((s) => !isDone(hw.id, s.studentId || s.id || ''))
@@ -141,7 +141,7 @@ export const HomeworkPresentationModal: React.FC<HomeworkPresentationModalProps>
 
               if (activeHomeworks.length === 0) {
                 return (
-                  <div className="text-center py-16 animate-in zoom-in-95">
+                  <div className="text-center py-16 animate-in zoom-in-95 my-auto">
                     <div className="inline-flex p-4 bg-emerald-500/20 text-emerald-400 rounded-full mb-4">
                       <Check className="w-12 h-12 stroke-[3]" />
                     </div>
