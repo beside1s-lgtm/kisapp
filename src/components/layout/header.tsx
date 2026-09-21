@@ -15,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { FileText, LifeBuoy, LogOut, Loader2, Settings, User as UserIcon, PanelLeftClose, PanelLeftOpen, Bell, BellRing } from 'lucide-react';
+import { FileText, LifeBuoy, LogOut, Loader2, Settings, User as UserIcon, PanelLeftClose, PanelLeftOpen, Bell, BellRing, Pin } from 'lucide-react';
 import { SettingsModal } from '../settings-modal';
 import { ProfileModal } from '../profile-modal';
 import { NotificationSettingsModal } from '../notification-settings-modal';
@@ -245,6 +245,11 @@ export function AppHeader() {
                       {pendingApprovalCount}
                     </Badge>
                   )}
+                </DropdownMenuItem>
+
+                <DropdownMenuItem onSelect={() => window.dispatchEvent(new CustomEvent('openSidebarShortcutsModal'))}>
+                  <Pin className="mr-2 h-4 w-4 text-primary" />
+                  <span>사이드바 바로가기 설정</span>
                 </DropdownMenuItem>
 
                 <DropdownMenuItem disabled>

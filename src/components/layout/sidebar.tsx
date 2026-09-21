@@ -28,7 +28,11 @@ import {
   Smartphone,
   Activity,
   Stethoscope,
-  Users2
+  Users2,
+  HeartHandshake,
+  Settings2,
+  Pin,
+  Sparkles
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -48,6 +52,12 @@ import { cn } from '@/lib/utils';
 import { Card } from '../ui/card';
 import { useSidebar } from './sidebar-context';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { SidebarShortcutsModal } from '@/components/sidebar-shortcuts-modal';
+import { 
+  ALL_SHORTCUT_ITEMS, 
+  getSavedShortcutIds, 
+  ShortcutItem 
+} from '@/lib/sidebarShortcuts';
 
 type NavItemProps = {
   href: string;
@@ -282,11 +292,37 @@ export default function AppSidebar() {
   };
 
   const { isSidebarOpen } = useSidebar();
+  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
+  const [userShortcutIds, setUserShortcutIds] = useState<string[]>([]);
+
+  // 사용자 바로가기 목록 로드 및 브라우저 이벤트 동기화
+  useEffect(() => {
+    setUserShortcutIds(getSavedShortcutIds(user?.email));
+
+    const handleShortcutsUpdate = (e: any) => {
+      if (e?.detail?.ids) {
+        setUserShortcutIds(e.detail.ids);
+      } else {
+        setUserShortcutIds(getSavedShortcutIds(user?.email));
+      }
+    };
+
+    const handleOpenModal = () => setIsShortcutsModalOpen(true);
+
+    window.addEventListener('sidebar-shortcuts-updated', handleShortcutsUpdate);
+    window.addEventListener('openSidebarShortcutsModal', handleOpenModal);
+
+    return () => {
+      window.removeEventListener('sidebar-shortcuts-updated', handleShortcutsUpdate);
+      window.removeEventListener('openSidebarShortcutsModal', handleOpenModal);
+    };
+  }, [user?.email]);
 
   // 섹션별 열림/닫힘 상태 관리 (기본적으로 닫힘 상태 유지)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     approval: false,
     teacher: false,
+    education: false,
     parents: false,
   });
 
@@ -325,6 +361,16 @@ export default function AppSidebar() {
       '/teacher/registry',
     ].some((p) => pathname === p || pathname?.startsWith(p + '/'));
 
+    const isSpecificEducationSubPath = [
+      '/teacher/homeroom',
+      '/teacher/afterschool',
+      '/teacher/bus',
+      '/teacher/pe',
+      '/teacher/health',
+      '/volunteer',
+      '/admin/students',
+    ].some((p) => pathname === p || pathname?.startsWith(p + '/'));
+
     if (isSpecificApprovalSubPath) {
       setHasApprovalNew(false);
       setOpenSections((prev) => ({ ...prev, approval: true }));
@@ -332,6 +378,9 @@ export default function AppSidebar() {
     if (isSpecificTeacherSubPath) {
       setHasTeacherNew(false);
       setOpenSections((prev) => ({ ...prev, teacher: true }));
+    }
+    if (isSpecificEducationSubPath) {
+      setOpenSections((prev) => ({ ...prev, education: true }));
     }
   }, [pathname]);
 
@@ -403,8 +452,71 @@ export default function AppSidebar() {
     '/field-trip-registry',
   ].some((p) => pathname === p || pathname?.startsWith(p + '/'));
 
-  const isTeacherActive = pathname?.startsWith('/teacher');
+  const isTeacherActive = [
+    '/teacher/duty',
+    '/teacher/overtime',
+    '/teacher/substitution',
+    '/teacher/registry',
+  ].some((p) => pathname === p || pathname?.startsWith(p + '/'));
+
+  const isEducationActive = [
+    '/teacher/homeroom',
+    '/teacher/afterschool',
+    '/teacher/bus',
+    '/teacher/pe',
+    '/teacher/health',
+    '/volunteer',
+    '/admin/students',
+  ].some((p) => pathname === p || pathname?.startsWith(p + '/'));
+
   const isParentsActive = pathname?.startsWith('/parents');
+
+  // 사용자가 선택한 바로가기 항목 필터링
+  const selectedShortcutItems = useMemo(() => {
+    return ALL_SHORTCUT_ITEMS.filter((item) => userShortcutIds.includes(item.id));
+  }, [userShortcutIds]);
+
+  const getShortcutBadge = (badgeKey?: string) => {
+    switch (badgeKey) {
+      case 'inbox':
+        return inboxCount > 0 ? { count: inboxCount, color: 'bg-red-500 text-white' } : null;
+      case 'pending':
+        return pendingCount > 0 ? { count: pendingCount, color: 'bg-amber-500 text-white' } : null;
+      case 'teacher':
+        return teacherDutyCount > 0 ? { count: teacherDutyCount, color: 'bg-emerald-600 text-white' } : null;
+      case 'absence':
+        return parentAbsenceCount > 0 ? { count: parentAbsenceCount, color: 'bg-purple-600 text-white' } : null;
+      case 'trip':
+        return parentFieldTripCount > 0 ? { count: parentFieldTripCount, color: 'bg-purple-600 text-white' } : null;
+      default:
+        return null;
+    }
+  };
+
+  const renderShortcutIcon = (iconName: string, className = "w-3.5 h-3.5") => {
+    switch (iconName) {
+      case 'Users2': return <Users2 className={className} />;
+      case 'BookOpen': return <BookOpen className={className} />;
+      case 'Bus': return <Bus className={className} />;
+      case 'Activity': return <Activity className={className} />;
+      case 'Stethoscope': return <Stethoscope className={className} />;
+      case 'HeartHandshake': return <HeartHandshake className={className} />;
+      case 'Users': return <Users className={className} />;
+      case 'Plus': return <Plus className={className} />;
+      case 'Inbox': return <Inbox className={className} />;
+      case 'Send': return <Send className={className} />;
+      case 'FileClock': return <FileClock className={className} />;
+      case 'Eye': return <Eye className={className} />;
+      case 'ListFilter': return <ListFilter className={className} />;
+      case 'CalendarCheck': return <CalendarCheck className={className} />;
+      case 'FileText': return <FileText className={className} />;
+      case 'Briefcase': return <Briefcase className={className} />;
+      case 'Clock': return <Clock className={className} />;
+      case 'UserPlus': return <UserPlus className={className} />;
+      case 'Calendar': return <Calendar className={className} />;
+      default: return <Sparkles className={className} />;
+    }
+  };
 
   // 전자결재 총 대기 합계
   const totalApprovalBadge = inboxCount + pendingCount + parentAbsenceCount + parentFieldTripCount;
@@ -451,6 +563,7 @@ export default function AppSidebar() {
                   <NavItem href="/registry" label="문서등록대장" icon={<ListFilter size={16} />} isSubItem />
                   <NavItem href="/attendance-registry" label="결석계 보관함" icon={<CalendarCheck size={16} />} count={parentAbsenceCount} isSubItem badgeColor="bg-purple-600 text-white" />
                   <NavItem href="/field-trip-registry" label="체험학습 문서함" icon={<FileText size={16} />} count={parentFieldTripCount} isSubItem badgeColor="bg-purple-600 text-white" />
+                  <NavItem href="/volunteer?tab=registry" label="봉사활동 대장" icon={<HeartHandshake size={16} />} isSubItem />
                 </DropdownSection>
 
                 <div className="h-px bg-border/60 my-1 mx-1"></div>
@@ -469,18 +582,67 @@ export default function AppSidebar() {
                   <NavItem href="/teacher/duty" label="교원 복무" icon={<Briefcase size={16} />} count={teacherDutyCount} isSubItem badgeColor="bg-emerald-600 text-white" />
                   <NavItem href="/teacher/overtime" label="초과근무" icon={<Clock size={16} />} isSubItem />
                   <NavItem href="/teacher/substitution" label="보결 관리" icon={<UserPlus size={16} />} isSubItem />
+                  <NavItem href="/volunteer" label="봉사활동" icon={<HeartHandshake size={16} />} isSubItem />
                   <NavItem href="/teacher/registry" label="교원 서비스 조회" icon={<ListFilter size={16} />} isSubItem />
+                </DropdownSection>
+
+                <div className="h-px bg-border/60 my-1 mx-1"></div>
+
+                {/* 3. 교육활동 드롭다운 */}
+                <DropdownSection
+                  id="education"
+                  title="교육활동"
+                  icon={<BookOpen size={18} />}
+                  isOpen={openSections.education}
+                  onToggle={() => toggleSection('education')}
+                  hasActiveChild={isEducationActive}
+                >
+                  {canAccessHomeroom && (
+                    <NavItem href="/teacher/homeroom" label="담임 업무 (출결/체험 대리)" icon={<Users2 size={16} />} isSubItem />
+                  )}
+                  <NavItem 
+                    href={myAfterschoolCourses[0]?.id ? `/teacher/afterschool?courseId=${myAfterschoolCourses[0].id}` : '/teacher/afterschool'} 
+                    label={afterschoolShortcutLabel || "방과후 수업 관리"} 
+                    icon={<BookOpen size={16} />} 
+                    isSubItem 
+                  />
+                  <NavItem href="/teacher/bus" label="스쿨버스 탑승 관리" icon={<Bus size={16} />} isSubItem />
+                  {canAccessPe && (
+                    <NavItem href="/teacher/pe" label="학교 체육 (PAPS)" icon={<Activity size={16} />} isSubItem />
+                  )}
+                  {canAccessHealth && (
+                    <NavItem href="/teacher/health" label="학생 건강 (보건실)" icon={<Stethoscope size={16} />} isSubItem />
+                  )}
+                  <NavItem href="/volunteer" label="학생 봉사활동" icon={<HeartHandshake size={16} />} isSubItem />
+                  {canAccessStudentAdmin && (
+                    <NavItem href="/admin/students" label="통합 학생 계정 관리" icon={<Users size={16} />} isSubItem />
+                  )}
                 </DropdownSection>
 
                 <div className="h-px bg-border/60 my-1 mx-1"></div>
               </>
             )}
 
-            {/* 3. 자주 찾는 주요 연계 서비스 (강사: 방과후 출석부 + 스쿨버스만 노출) */}
+            {/* 4. 바로가기 (개인설정 연동) */}
             <div className="pt-1.5 pb-1">
-              <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider px-2.5 mb-1 flex items-center justify-between">
-                <span>{isInstructor ? "담당 업무 바로가기" : "주요 바로가기"}</span>
+              <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider px-2.5 mb-1.5 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Pin size={12} className="text-primary rotate-45" />
+                  <span>{isInstructor ? "담당 업무 바로가기" : "바로가기"}</span>
+                </div>
+                {!isInstructor && (
+                  <button
+                    type="button"
+                    onClick={() => setIsShortcutsModalOpen(true)}
+                    className="text-[10px] text-muted-foreground hover:text-primary flex items-center gap-0.5 px-1.5 py-0.5 rounded-md hover:bg-muted font-bold transition-colors cursor-pointer"
+                    title="바로가기 메뉴 개인 설정"
+                  >
+                    <Settings2 size={11} />
+                    <span>설정</span>
+                  </button>
+                )}
               </div>
+
               <div className="space-y-1">
                 {isInstructor ? (
                   <>
@@ -529,138 +691,82 @@ export default function AppSidebar() {
                   </>
                 ) : (
                   <>
-                    {/* 담임 교사, 학생출결 담당자, 시스템 설정 담당자에게 노출: '담임 업무 (출결/체험 대리)' */}
-                    {canAccessHomeroom && (
-                      <Link
-                        href="/teacher/homeroom"
-                        className={cn(
-                          "flex items-center justify-between p-2 rounded-xl text-xs font-bold transition-all group",
-                          pathname?.startsWith('/teacher/homeroom')
-                            ? "bg-amber-500/15 text-amber-900 font-black shadow-xs"
-                            : "text-slate-700 hover:bg-amber-50 hover:text-amber-900"
-                        )}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="p-1 rounded-lg bg-amber-500/10 text-amber-700 group-hover:bg-amber-600 group-hover:text-white transition-colors">
-                            <Users2 size={14} />
-                          </div>
-                          <span className="truncate">담임 업무 (출결/체험 대리)</span>
-                        </div>
-                        <span className="text-[10px] text-amber-700 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                          이동
-                        </span>
-                      </Link>
-                    )}
-
-                    {/* 방과후학교 강사를 하고 있는 선생님에게만 노출: '(나의 강좌명) 수업 관리' */}
-                    {afterschoolShortcutLabel && (
-                      <Link
-                        href={myAfterschoolCourses[0]?.id ? `/teacher/afterschool?courseId=${myAfterschoolCourses[0].id}` : '/teacher/afterschool'}
-                        className={cn(
-                          "flex items-center justify-between p-2 rounded-xl text-xs font-bold transition-all group",
-                          pathname?.startsWith('/teacher/afterschool')
-                            ? "bg-teal-500/15 text-teal-800 font-black shadow-xs"
-                            : "text-slate-700 hover:bg-teal-50 hover:text-teal-800"
-                        )}
-                        title={myAfterschoolCourses[0]?.title ? `${myAfterschoolCourses[0].title} 수업 관리` : '방과후 수업 관리'}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="p-1 rounded-lg bg-teal-500/10 text-teal-600 group-hover:bg-teal-600 group-hover:text-white transition-colors">
-                            <BookOpen size={14} />
-                          </div>
-                          <span className="truncate">{afterschoolShortcutLabel}</span>
-                        </div>
-                        <span className="text-[10px] text-teal-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                          →
-                        </span>
-                      </Link>
-                    )}
-
-                    <Link
-                      href="/teacher/bus"
-                      className={cn(
-                        "flex items-center justify-between p-2 rounded-xl text-xs font-bold transition-all group",
-                        pathname?.startsWith('/teacher/bus') || pathname?.startsWith('/admin/bus')
-                          ? "bg-blue-500/15 text-blue-800 font-black shadow-xs"
-                          : "text-slate-700 hover:bg-blue-50 hover:text-blue-800"
-                      )}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="p-1 rounded-lg bg-blue-500/10 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                          <Bus size={14} />
-                        </div>
-                        <span className="truncate">스쿨버스 탑승 관리</span>
+                    {selectedShortcutItems.length === 0 ? (
+                      <div className="p-2.5 text-center border border-dashed rounded-xl bg-muted/20">
+                        <p className="text-[11px] text-muted-foreground mb-1.5">선택된 바로가기가 없습니다.</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsShortcutsModalOpen(true)}
+                          className="h-7 text-xs font-bold w-full"
+                        >
+                          <Plus className="w-3 h-3 mr-1" />
+                          바로가기 설정
+                        </Button>
                       </div>
-                      <span className="text-[10px] text-blue-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                        →
-                      </span>
-                    </Link>
+                    ) : (
+                      selectedShortcutItems.map((item) => {
+                        const badge = getShortcutBadge(item.badgeKey);
+                        const isActive = item.href ? (pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href))) : false;
 
-                    {canAccessPe && (
-                      <Link
-                        href="/teacher/pe"
-                        className={cn(
-                          "flex items-center justify-between p-2 rounded-xl text-xs font-bold transition-all group",
-                          pathname?.startsWith('/teacher/pe')
-                            ? "bg-indigo-500/15 text-indigo-800 font-black shadow-xs"
-                            : "text-slate-700 hover:bg-indigo-50 hover:text-indigo-800"
-                        )}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="p-1 rounded-lg bg-indigo-500/10 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                            <Activity size={14} />
-                          </div>
-                          <span className="truncate">학교 체육 (PAPS)</span>
-                        </div>
-                        <span className="text-[10px] text-indigo-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                          →
-                        </span>
-                      </Link>
-                    )}
+                        if (item.actionType === 'calendar-sync') {
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => window.dispatchEvent(new CustomEvent('openAcademicCalendarSyncModal'))}
+                              className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-800 transition-all group select-none text-left cursor-pointer"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="p-1 rounded-lg bg-indigo-500/10 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                  {renderShortcutIcon(item.iconName)}
+                                </div>
+                                <span className="truncate">{item.label}</span>
+                              </div>
+                              <span className="text-[10px] text-indigo-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                                연동
+                              </span>
+                            </button>
+                          );
+                        }
 
-                    {canAccessHealth && (
-                      <Link
-                        href="/teacher/health"
-                        className={cn(
-                          "flex items-center justify-between p-2 rounded-xl text-xs font-bold transition-all group",
-                          pathname?.startsWith('/teacher/health')
-                            ? "bg-emerald-500/15 text-emerald-800 font-black shadow-xs"
-                            : "text-slate-700 hover:bg-emerald-50 hover:text-emerald-800"
-                        )}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="p-1 rounded-lg bg-emerald-500/10 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                            <Stethoscope size={14} />
-                          </div>
-                          <span className="truncate">학생 건강 (보건실)</span>
-                        </div>
-                        <span className="text-[10px] text-emerald-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                          →
-                        </span>
-                      </Link>
-                    )}
-
-
-                    {canAccessStudentAdmin && (
-                      <Link
-                        href="/admin/students"
-                        className={cn(
-                          "flex items-center justify-between p-2 rounded-xl text-xs font-bold transition-all group",
-                          pathname?.startsWith('/admin/students')
-                            ? "bg-purple-500/15 text-purple-800 font-black shadow-xs"
-                            : "text-slate-700 hover:bg-purple-50 hover:text-purple-800"
-                        )}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="p-1 rounded-lg bg-purple-500/10 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                            <Users size={14} />
-                          </div>
-                          <span className="truncate">통합 학생 계정 관리</span>
-                        </div>
-                        <span className="text-[10px] text-purple-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                          →
-                        </span>
-                      </Link>
+                        return (
+                          <Link
+                            key={item.id}
+                            href={item.href || '#'}
+                            className={cn(
+                              "flex items-center justify-between p-2 rounded-xl text-xs font-bold transition-all group",
+                              isActive
+                                ? "bg-primary/10 text-primary font-black shadow-xs"
+                                : "text-slate-700 hover:bg-muted/70 hover:text-foreground"
+                            )}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className={cn(
+                                "p-1 rounded-lg transition-colors",
+                                isActive ? "bg-primary text-white" : "bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white"
+                              )}>
+                                {renderShortcutIcon(item.iconName)}
+                              </div>
+                              <span className="truncate">{item.label}</span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {badge && (
+                                <span className={cn(
+                                  "text-[10px] font-black px-1.5 py-0.5 min-w-4 h-4 flex items-center justify-center rounded-full shrink-0 shadow-xs",
+                                  badge.color
+                                )}>
+                                  {badge.count}
+                                </span>
+                              )}
+                              <span className="text-[10px] text-muted-foreground font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                                →
+                              </span>
+                            </div>
+                          </Link>
+                        );
+                      })
                     )}
                   </>
                 )}
@@ -679,6 +785,7 @@ export default function AppSidebar() {
           >
             <NavItem href="/parents-absence" label="결석계 조회" icon={<CalendarOff size={16} />} isSubItem />
             <NavItem href="/parents-fieldtrip" label="체험학습 신청서 조회" icon={<Backpack size={16} />} isSubItem />
+            <NavItem href="/parents/volunteer" label="봉사활동 신청" icon={<HeartHandshake size={16} />} isSubItem />
             <NavItem href="/parents/registry" label="출결/체험 내역 조회" icon={<ListFilter size={16} />} isSubItem />
             <NavItem href="/parents/afterschool" label="방과후학교" icon={<BookOpen size={16} />} isSubItem />
             <NavItem href="/parents/bus" label="스쿨버스" icon={<Bus size={16} />} isSubItem />
@@ -728,6 +835,12 @@ export default function AppSidebar() {
           </div>
         </div>
       </Card>
+
+      {/* 사이드바 바로가기 개인 설정 모달 */}
+      <SidebarShortcutsModal
+        open={isShortcutsModalOpen}
+        onOpenChange={setIsShortcutsModalOpen}
+      />
     </aside>
   );
 }

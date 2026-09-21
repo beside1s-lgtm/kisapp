@@ -26,6 +26,7 @@ import type {
   UserProfile,
   OrgStructure,
   DutyRolePermission,
+  VolunteerFormData,
 } from '@/lib/types';
 import { getUserProfileByEmail, saveUserProfile } from '@/lib/services/userService';
 import { syncParentApplicationDatesToAttendance } from '@/lib/services/homeroomAttendanceSync';
@@ -355,8 +356,14 @@ export async function getRegistryDocuments(lastDoc?: DocumentSnapshot) {
   try {
     const snapshot = await getDocs(q);
     const docs = serializeDocs(snapshot.docs, 'completedAt');
-    // 대면 결재 문서 및 parent 문서 제외 (대면 결재는 별도 대장으로 관리)
-    const filtered = docs.filter((d: ApprovalDoc) => d.docType !== 'parent' && !d.isFaceToFace);
+    // 대면 결재 문서, 학부모 문서(출결/체험학습) 및 봉사활동 문서 제외 (각각 별도 전용 대장으로 관리)
+    const isVolunteerDoc = (d: ApprovalDoc) =>
+      Boolean(d.docType?.startsWith('volunteer')) ||
+      Boolean(d.volunteerFormData) ||
+      Boolean((d as any).isVolunteer) ||
+      Boolean((d as any).isVolunteerBatch);
+
+    const filtered = docs.filter((d: ApprovalDoc) => d.docType !== 'parent' && !d.isFaceToFace && !isVolunteerDoc(d));
     const lastVisible = snapshot.docs[snapshot.docs.length - 1] ?? null;
     const hasMore = snapshot.docs.length === REGISTRY_PAGE_SIZE;
     return { docs: filtered, lastVisible, hasMore };
@@ -367,21 +374,22 @@ export async function getRegistryDocuments(lastDoc?: DocumentSnapshot) {
 }
 
 export async function getFaceToFaceRegistryDocuments(lastDoc?: DocumentSnapshot) {
-  const constraints: any[] = [
-    where('status', '==', 'approved'),
-    where('isFaceToFace', '==', true),
-    orderBy('completedAt', 'desc'),
-    limit(REGISTRY_PAGE_SIZE),
-  ];
-  if (lastDoc) constraints.push(startAfter(lastDoc));
-
-  const q = query(getApprovalsCol(), ...constraints);
+  // 복합 인덱스(isFaceToFace + status + completedAt) 미생성 에러 방지를 위해 단일 where 쿼리 후 정렬
   try {
+    const q = query(
+      getApprovalsCol(),
+      where('isFaceToFace', '==', true),
+      limit(100)
+    );
     const snapshot = await getDocs(q);
-    const docs = serializeDocs(snapshot.docs, 'completedAt');
-    const lastVisible = snapshot.docs[snapshot.docs.length - 1] ?? null;
-    const hasMore = snapshot.docs.length === REGISTRY_PAGE_SIZE;
-    return { docs, lastVisible, hasMore };
+    const allDocs = serializeDocs(snapshot.docs, 'completedAt')
+      .filter((d: ApprovalDoc) => d.status === 'approved')
+      .sort((a: ApprovalDoc, b: ApprovalDoc) => {
+        const dateA = a.completedAt || a.createdAt || '';
+        const dateB = b.completedAt || b.createdAt || '';
+        return dateB.localeCompare(dateA);
+      });
+    return { docs: allDocs, lastVisible: null, hasMore: false };
   } catch (error) {
     console.error('[DocService] getFaceToFaceRegistryDocuments Error:', error);
     return { docs: [], lastVisible: null, hasMore: false };
@@ -665,6 +673,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       const isParentAbsence = payload.docType === 'parent' && payload.parentFormData?.type === 'absence';
       const isParentFieldTrip = payload.docType === 'parent' && payload.parentFormData?.type === 'field-trip';
       const isParentFieldTripReport = payload.docType === 'parent' && payload.parentFormData?.type === 'field-trip-report';
+      const isVolunteer = payload.docType === 'volunteer';
       
       const now = new Date();
       const currentYear = now.getFullYear();
@@ -685,6 +694,7 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
             nextAbsenceNumber: isParentAbsence ? 2 : 1,
             nextFieldTripNumber: isParentFieldTrip ? 2 : 1,
             nextFieldTripReportNumber: isParentFieldTripReport ? 2 : 1,
+            nextVolunteerNumber: isVolunteer ? 2 : 1,
             currentSchoolYear: schoolYear
           });
         } else {
@@ -703,6 +713,9 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
           } else if (isParentFieldTripReport) {
             nextNum = data.nextFieldTripReportNumber || 1;
             transaction.update(settingsRef, { nextFieldTripReportNumber: nextNum + 1 });
+          } else if (isVolunteer) {
+            nextNum = data.nextVolunteerNumber || 1;
+            transaction.update(settingsRef, { nextVolunteerNumber: nextNum + 1 });
           } else {
             nextNum = isFamily ? (data.nextFamilyNumber || 1) : (data.nextNumber || 1);
             transaction.update(settingsRef, isFamily ? { nextFamilyNumber: nextNum + 1 } : { nextNumber: nextNum + 1 });
@@ -714,9 +727,10 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
           nextFamilyNumber: 1, 
           nextTeacherDutyNumber: isTeacherDuty ? 2 : 1,
           nextAfterschoolNumber: isTeacherAfterschool ? 2 : 1,
-          nextAbsenceNumber: isParentAbsence ? 2 : 1,
-          nextFieldTripNumber: isParentFieldTrip ? 2 : 1,
-          nextFieldTripReportNumber: isParentFieldTripReport ? 2 : 1,
+          nextAbsenceNumber: isParentAbsence ? 2 : 1, 
+          nextFieldTripNumber: isParentFieldTrip ? 2 : 1, 
+          nextFieldTripReportNumber: isParentFieldTripReport ? 2 : 1, 
+          nextVolunteerNumber: isVolunteer ? 2 : 1,
           currentSchoolYear: schoolYear
         };
         transaction.set(settingsRef, initialData);
@@ -731,11 +745,13 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
         return `체험-${schoolYear}-${gradeStr}-${nextNum}`;
       }
       if (isParentFieldTripReport) return `결과-${schoolYear}-${nextNum}`;
+      if (isVolunteer) return `Kish-${schoolYear}-봉사-${nextNum}`;
       return isFamily ? `Kish-${schoolYear}-가통-${nextNum}` : `Kish-${schoolYear}-초등-${nextNum}`;
     });
 
 
     const hasApprovers = payload.approvers && payload.approvers.length > 0;
+    const initialStatus = (payload as any).status || (hasApprovers ? 'pending' : 'approved');
     const newDocData: any = {
       ...payload,
       docNo: finalDocNoStr,
@@ -745,9 +761,9 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       requesterRole: userProfile.role,
       requesterSignature: userProfile.parentSignature || userProfile.signature || '',
       currentStep: 0,
-      status: hasApprovers ? 'pending' : 'approved',
+      status: initialStatus,
       createdAt: serverTimestamp(),
-      completedAt: hasApprovers ? null : serverTimestamp(),
+      completedAt: (initialStatus === 'approved') ? serverTimestamp() : null,
       approverEmails: payload.approvers?.map(a => a.email?.toLowerCase()?.trim()).filter(Boolean) || [],
       circularEmails: payload.circulars?.map(c => c.email?.toLowerCase()?.trim()).filter(Boolean) || [],
     };
@@ -767,8 +783,8 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       }
     );
 
-    // 결재 문서 상신 후 첫 번째 결재자에게 알림 메일 발송 (비동기)
-    if (hasApprovers) {
+    // 결재 문서 상신 후 첫 번째 결재자에게 알림 메일 발송 (비동기, pending 상태일 때만)
+    if (hasApprovers && initialStatus === 'pending') {
       const firstApprover = payload.approvers[0];
       if (firstApprover && firstApprover.email) {
         const mailSubject = `[Kish 결재 시스템] 새 결재 문서가 상신되었습니다.`;
@@ -1006,9 +1022,29 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
                 userProfile.email || 'final_approval_sync'
               );
             }
+
+            // ── 봉사활동 수합 기안문 최종 승인 시: 포함된 모든 개별 계획서 자동 승인(approved) 동기화 ──
+            if (finalData.isVolunteerBatch && finalData.aggregatedDocIds && finalData.aggregatedDocIds.length > 0) {
+              const subDocPromises = finalData.aggregatedDocIds.map(async (subDocId) => {
+                try {
+                  const subRef = doc(getApprovalsCol(), subDocId);
+                  await firestoreUpdateDoc(subRef, {
+                    status: 'approved',
+                    completedAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                    'volunteerFormData.status': 'approved',
+                    'volunteerFormData.batchDocId': docId,
+                    'volunteerFormData.batchDocNo': docNo,
+                  });
+                } catch (subErr) {
+                  console.error(`[DocService] Failed to auto-approve aggregated volunteer doc ${subDocId}:`, subErr);
+                }
+              });
+              await Promise.all(subDocPromises);
+            }
           }
         } catch (syncErr) {
-          console.error('[DocumentService] 최종 승인 출석/버스/방과후 동기화 오류 (비치명적):', syncErr);
+          console.error('[DocumentService] 최종 승인 출석/버스/방과후/봉사활동 동기화 오류 (비치명적):', syncErr);
         }
         // ───────────────────────────────────────────────────────────────────────
       } else if (nextApproverEmail) {
@@ -1684,5 +1720,307 @@ export async function submitFieldTripReport(
     return { success: false, error: error.message };
   }
 }
+
+/**
+ * 봉사활동 확인서(개인/단체) 제출 처리
+ * 승인 완료된 봉사활동 계획서 문서에 확인서 정보(실제 활동 일시, 사진, 소감, 확인 기관 정보)를 갱신
+ */
+export async function submitVolunteerReport(
+  originalDocId: string,
+  reportData: Partial<VolunteerFormData>,
+  userProfile: { uid: string; name: string; parentName?: string; email: string; role: string; signature?: string }
+) {
+  try {
+    const docRef = doc(getApprovalsCol(), originalDocId);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) throw new Error("원본 봉사활동 계획서를 찾을 수 없습니다.");
+    
+    const docData = docSnap.data() as ApprovalDoc;
+    if (docData.status !== 'approved') {
+      throw new Error("승인 완료된 계획서에만 확인서를 제출할 수 있습니다.");
+    }
+
+    const prevVolunteerData = (docData.volunteerFormData || docData.parentFormData || {}) as any;
+    const isGroup = prevVolunteerData.category === 'group' || prevVolunteerData.type === 'volunteer-group-plan';
+
+    const updatedVolunteerData: VolunteerFormData = {
+      ...prevVolunteerData,
+      ...reportData,
+      type: isGroup ? 'volunteer-group-report' : 'volunteer-report',
+      category: isGroup ? 'group' : 'individual',
+      reportSubmitted: true,
+      submittedDate: new Date().toISOString().substring(0, 10),
+    };
+
+    await firestoreUpdateDoc(docRef, {
+      volunteerFormData: updatedVolunteerData,
+      reportSubmitted: true,
+      reportSubmittedAt: new Date().toISOString(),
+      updatedAt: serverTimestamp(),
+    });
+
+    createAuditLog(
+      originalDocId,
+      docData.docNo || '',
+      docData.title,
+      'approve',
+      {
+        uid: userProfile.uid,
+        name: userProfile.parentName || userProfile.name,
+        email: userProfile.email,
+        role: userProfile.role,
+      }
+    );
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error submitting volunteer report:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 교원/관리자용 봉사활동 문서 목록 조회
+ * 개인 및 단체 봉사활동 계획서/확인서를 조회
+ */
+export async function getVolunteerDocuments(userEmail?: string, isAdmin?: boolean, isVolunteerManager?: boolean) {
+  try {
+    const q1 = query(getApprovalsCol(), where('docType', '==', 'volunteer'), limit(300));
+    const snap1 = await getDocs(q1);
+
+    const q2 = query(getApprovalsCol(), where('docType', '==', 'parent'), limit(500));
+    const snap2 = await getDocs(q2);
+
+    const docs1 = serializeDocs(snap1.docs, 'createdAt');
+    const docs2 = serializeDocs(snap2.docs, 'createdAt').filter(d => {
+      const pType = d.parentFormData?.type;
+      return pType === 'volunteer-plan' || pType === 'volunteer-report' || !!d.volunteerFormData;
+    });
+
+    const combinedMap = new Map<string, ApprovalDoc>();
+    [...docs1, ...docs2].forEach(doc => combinedMap.set(doc.id, doc));
+    const allVolunteerDocs = Array.from(combinedMap.values());
+
+    if (isAdmin || isVolunteerManager) {
+      return allVolunteerDocs;
+    }
+
+    const emailLower = userEmail?.trim().toLowerCase();
+    return allVolunteerDocs.filter(d => {
+      if (emailLower && d.requesterEmail?.trim().toLowerCase() === emailLower) return true;
+      return false;
+    });
+  } catch (error) {
+    console.error("[DocService] getVolunteerDocuments Error:", error);
+    return [];
+  }
+}
+
+/**
+ * 봉사활동 담당자용 수합 대기 계획서 목록 조회
+ * (status === 'submitted' 이며 아직 수합 문서에 포함되지 않은 계획서)
+ */
+export async function getVolunteerSubmittedPlans(): Promise<ApprovalDoc[]> {
+  try {
+    const q1 = query(
+      getApprovalsCol(),
+      where('docType', '==', 'volunteer'),
+      where('status', '==', 'submitted'),
+      limit(200)
+    );
+    const snap1 = await getDocs(q1);
+
+    const q2 = query(
+      getApprovalsCol(),
+      where('docType', '==', 'parent'),
+      where('status', '==', 'submitted'),
+      limit(200)
+    );
+    const snap2 = await getDocs(q2);
+
+    const docs1 = serializeDocs(snap1.docs, 'createdAt');
+    const docs2 = serializeDocs(snap2.docs, 'createdAt').filter(d => {
+      const pType = d.parentFormData?.type;
+      return pType === 'volunteer-plan' || !!d.volunteerFormData;
+    });
+
+    const combinedMap = new Map<string, ApprovalDoc>();
+    [...docs1, ...docs2].forEach(doc => {
+      // 이미 다른 수합 문서에 묶인 건 제외
+      if (!doc.batchDocId && !doc.volunteerFormData?.batchDocId && !doc.isVolunteerBatch) {
+        combinedMap.set(doc.id, doc);
+      }
+    });
+
+    return Array.from(combinedMap.values());
+  } catch (error) {
+    console.error("[DocService] getVolunteerSubmittedPlans Error:", error);
+    return [];
+  }
+}
+
+/**
+ * 봉사활동 담당자의 선택 계획서 일괄 수합 기안 상신
+ */
+export async function createVolunteerBatchDocument(
+  title: string,
+  content: string,
+  selectedPlanDocs: ApprovalDoc[],
+  drafterProfile: UserProfile
+) {
+  try {
+    if (!selectedPlanDocs || selectedPlanDocs.length === 0) {
+      throw new Error('수합할 봉사활동 계획서를 1건 이상 선택해 주세요.');
+    }
+
+    const { getVolunteerBatchApprovers } = await import('@/lib/services/userService');
+    const approvers = await getVolunteerBatchApprovers(
+      drafterProfile.email || '',
+      drafterProfile.name || '봉사활동 담당'
+    );
+
+    const aggregatedDocIds = selectedPlanDocs.map(d => d.id);
+    let totalStudents = 0;
+    const aggregatedSummary = selectedPlanDocs.map(d => {
+      const vData = (d.volunteerFormData || d.parentFormData || {}) as any;
+      const isGroup = vData.category === 'group' || vData.type === 'volunteer-group-plan';
+      const studentNameOrCount = isGroup
+        ? (vData.groupStudents?.[0]?.name ? `${vData.groupStudents[0].name} 외 ${(vData.groupStudents.length || 1) - 1}명` : '단체')
+        : (vData.studentName || d.requesterName || '');
+      const count = isGroup ? (vData.groupStudents?.filter((s: any) => s.name?.trim())?.length || 1) : 1;
+      totalStudents += count;
+      const gradeClass = isGroup ? '단체' : (vData.gradeClassNumber || `${vData.grade || ''}-${vData.classNum || ''}`);
+      const hours = Number(vData.period?.totalHours) || 0;
+      return {
+        docId: d.id,
+        category: (isGroup ? 'group' : 'individual') as 'group' | 'individual',
+        studentNameOrCount,
+        gradeClass,
+        institution: vData.institution || '',
+        period: `${vData.period?.startDate || ''} ~ ${vData.period?.endDate || ''}`,
+        hours,
+        content: vData.content || d.content || '',
+      };
+    });
+
+    const totalHours = aggregatedSummary.reduce((sum, item) => sum + item.hours, 0);
+
+    const volunteerData: VolunteerFormData = {
+      type: 'volunteer-group-plan',
+      category: 'group',
+      leaderTeacherName: drafterProfile.name || '봉사활동 담당',
+      leaderTeacherEmail: drafterProfile.email || '',
+      institution: '수합 내역 참조',
+      location: '수합 내역 참조',
+      content: content,
+      isBatchAggregated: true,
+      aggregatedDocIds,
+      aggregatedSummary,
+      period: {
+        startDate: selectedPlanDocs[0]?.volunteerFormData?.period?.startDate || '',
+        endDate: selectedPlanDocs[selectedPlanDocs.length - 1]?.volunteerFormData?.period?.endDate || '',
+        totalDays: 1,
+        totalHours,
+      },
+      submittedDate: new Date().toISOString().substring(0, 10),
+    };
+
+    // 1. 수합 기안문서 생성 (결재 대기: pending 상태로 상신)
+    const createResult = await createDocument({
+      title,
+      content,
+      docType: 'volunteer',
+      category: 'general',
+      publishStatus: '비공개',
+      volunteerFormData: volunteerData,
+      approvers,
+      isVolunteerBatch: true,
+      aggregatedDocIds,
+      status: 'pending',
+    }, drafterProfile.uid, drafterProfile);
+
+    if (!createResult.success || !createResult.docId) {
+      throw new Error(createResult.error || '수합 기안문서 생성에 실패했습니다.');
+    }
+
+    const batchDocId = createResult.docId;
+    const batchDocNo = createResult.docNo || '';
+
+    // 2. 수합된 개별 계획서들에 batchDocId 및 status: 'pending' 업데이트
+    const updatePromises = selectedPlanDocs.map(async (pDoc) => {
+      try {
+        const subRef = doc(getApprovalsCol(), pDoc.id);
+        await firestoreUpdateDoc(subRef, {
+          batchDocId,
+          isBatchAggregated: true,
+          batchAggregatedAt: serverTimestamp(),
+          status: 'pending',
+          'volunteerFormData.batchDocId': batchDocId,
+          'volunteerFormData.batchDocNo': batchDocNo,
+          'volunteerFormData.isBatchAggregated': true,
+        });
+      } catch (err) {
+        console.error(`[DocService] Error updating sub doc ${pDoc.id} with batchDocId:`, err);
+      }
+    });
+    await Promise.all(updatePromises);
+
+    return {
+      success: true,
+      docId: batchDocId,
+      docNo: batchDocNo,
+      totalAggregated: selectedPlanDocs.length,
+      totalStudents,
+      totalHours,
+    };
+  } catch (error: any) {
+    console.error("[DocService] createVolunteerBatchDocument Error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 봉사활동 계획서 수합 전 반려 처리
+ */
+export async function rejectVolunteerSubmission(docId: string, reason: string, userProfile: UserProfile) {
+  try {
+    const docRef = doc(getApprovalsCol(), docId);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) throw new Error("문서를 찾을 수 없습니다.");
+
+    await firestoreUpdateDoc(docRef, {
+      status: 'rejected',
+      comment: reason,
+      completedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      rejectedBy: {
+        name: userProfile.name,
+        email: userProfile.email,
+        role: userProfile.role,
+        rejectedAt: new Date().toISOString(),
+      },
+    });
+
+    createAuditLog(
+      docId,
+      docSnap.data()?.docNo || '',
+      docSnap.data()?.title || '',
+      'reject',
+      {
+        uid: userProfile.uid,
+        name: userProfile.name,
+        email: userProfile.email,
+        role: userProfile.role,
+      },
+      reason
+    );
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("[DocService] rejectVolunteerSubmission Error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
 
 

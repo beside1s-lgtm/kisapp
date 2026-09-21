@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 
 const STATUS_MAP = {
+  submitted: { label: '접수 완료', color: 'bg-sky-100 text-sky-800 border-sky-200' },
   pending: { label: '결재 진행중', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
   approved: { label: '결재 완료', color: 'bg-green-100 text-green-800 border-green-200' },
   rejected: { label: '반려됨', color: 'bg-red-100 text-red-800 border-red-200' },

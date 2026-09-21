@@ -159,7 +159,7 @@ export default function RejectedPage() {
     }
 
     return (
-        <div className="p-4 md:p-8 font-body space-y-6 max-w-7xl mx-auto">
+        <div className="h-full min-h-0 overflow-y-auto overscroll-contain p-4 md:p-8 pb-20 lg:pb-8 font-body space-y-6 max-w-7xl mx-auto">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b pb-5">
                 <div className="flex items-center gap-3">

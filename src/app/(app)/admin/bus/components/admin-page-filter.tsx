@@ -80,18 +80,28 @@ export const AdminPageFilter = ({
         }
     }, [filteredBuses, selectedBusId, setSelectedBusId, filterConfiguredBusesOnly, buses]);
 
-    const currentRouteStops = useMemo(() => {
-        if (!showRouteStops || !selectedBusId || selectedBusId === 'all') return null;
-        const route = routes.find(r => r.busId === selectedBusId && r.dayOfWeek === selectedDay && r.type === selectedRouteType);
-        if (!route || !route.stops || route.stops.length === 0) return t('no_route_info');
-
-        const stopNames = route.stops.map(stopId => destinations.find(d => d.id === stopId)?.name).filter(Boolean) as string[];
-        
-        if (selectedRouteType === 'Afternoon') {
-            return [...stopNames].reverse().join(' -> ');
+    const { currentRouteStops, fullRouteStops } = useMemo(() => {
+        if (!showRouteStops || !selectedBusId || selectedBusId === 'all') {
+            return { currentRouteStops: null, fullRouteStops: null };
         }
+        const route = routes.find(r => r.busId === selectedBusId && r.dayOfWeek === selectedDay && r.type === selectedRouteType);
+        if (!route || !route.stops || route.stops.length === 0) {
+            return { currentRouteStops: t('no_route_info'), fullRouteStops: t('no_route_info') };
+        }
+
+        const rawStopNames = route.stops.map(stopId => destinations.find(d => d.id === stopId)?.name).filter(Boolean) as string[];
+        const orderedStops = selectedRouteType === 'Afternoon' ? [...rawStopNames].reverse() : rawStopNames;
         
-        return stopNames.join(' -> ');
+        // 너무 길면 목적지 앞 7자리까지만 표시해서 한 줄 유지
+        const formattedStops = orderedStops.map(name => {
+            const trimmed = name.trim();
+            return trimmed.length > 7 ? trimmed.slice(0, 7) : trimmed;
+        });
+
+        return {
+            currentRouteStops: formattedStops.join(' -> '),
+            fullRouteStops: orderedStops.join(' -> ')
+        };
     }, [showRouteStops, selectedBusId, routes, selectedDay, selectedRouteType, destinations, t]);
     
     return (
@@ -170,12 +180,12 @@ export const AdminPageFilter = ({
                     )}
                 </div>
 
-                {/* 🌟 데스크톱 전용 레이아웃: 기존 데스크톱 UI 100% 온전히 보존 */}
-                <div className="hidden sm:flex sm:flex-row sm:flex-wrap sm:items-end gap-3">
-                    <div className="w-auto">
+                {/* 🌟 데스크톱 전용 레이아웃: 경로탭 옆으로 노선도 한 줄 배치 */}
+                <div className="hidden sm:flex sm:flex-row sm:items-end gap-2.5 w-full min-w-0">
+                    <div className="w-[110px] lg:w-[125px] shrink-0">
                         <Label className="text-xs font-semibold text-slate-700">{t('bus')}</Label>
                         <Select value={selectedBusId || 'all'} onValueChange={setSelectedBusId}>
-                            <SelectTrigger className="w-[180px] h-10 text-sm">
+                            <SelectTrigger className="w-full h-10 text-sm">
                                 <SelectValue placeholder={t('select_bus')} />
                             </SelectTrigger>
                             <SelectContent position="popper" side="bottom" sideOffset={4} className="max-h-[40vh] overflow-y-auto">
@@ -188,10 +198,10 @@ export const AdminPageFilter = ({
                             </SelectContent>
                         </Select>
                     </div>
-                    <div className="w-auto">
+                    <div className="w-[105px] lg:w-[115px] shrink-0">
                         <Label className="text-xs font-semibold text-slate-700">{t('day')}</Label>
                         <Select value={selectedDay} onValueChange={(v) => setSelectedDay(v as DayOfWeek)}>
-                            <SelectTrigger className="w-[120px] h-10 text-sm">
+                            <SelectTrigger className="w-full h-10 text-sm">
                                 <SelectValue placeholder={t('select_day')} />
                             </SelectTrigger>
                             <SelectContent position="popper" side="bottom" sideOffset={4}>
@@ -203,9 +213,9 @@ export const AdminPageFilter = ({
                             </SelectContent>
                         </Select>
                     </div>
-                    <div className="w-auto">
+                    <div className="w-[190px] lg:w-[210px] shrink-0">
                         <Label className="text-xs font-semibold text-slate-700">{t('route')}</Label>
-                        <Tabs value={selectedRouteType} onValueChange={(v) => setSelectedRouteType(v as RouteType)} className="w-[300px]">
+                        <Tabs value={selectedRouteType} onValueChange={(v) => setSelectedRouteType(v as RouteType)} className="w-full">
                             <TabsList className={cn("grid w-full h-10 p-0.5", (selectedDay === 'Saturday' || semesterMode === 'vacation') ? "grid-cols-2" : "grid-cols-3")}>
                                 <TabsTrigger value="Morning" className="text-xs px-1">{t('route_type.morning')}</TabsTrigger>
                                 <TabsTrigger value="Afternoon" className="text-xs px-1">{t('route_type.afternoon')}</TabsTrigger>
@@ -214,13 +224,18 @@ export const AdminPageFilter = ({
                         </Tabs>
                     </div>
                     {showRouteStops && currentRouteStops && (
-                        <div className="flex-1 min-w-fit">
-                            <Label className="text-xs font-semibold text-slate-700">{t('route')}</Label>
-                            <p className="text-sm p-2 bg-muted rounded-md truncate">{currentRouteStops}</p>
+                        <div className="flex-1 min-w-0">
+                            <Label className="text-xs font-semibold text-slate-700">노선도</Label>
+                            <div 
+                                className="text-xs sm:text-sm h-10 px-2.5 flex items-center bg-muted/80 rounded-md border border-slate-200/60 truncate font-medium text-slate-800 cursor-default"
+                                title={fullRouteStops || undefined}
+                            >
+                                <span className="truncate">{currentRouteStops}</span>
+                            </div>
                         </div>
                     )}
                     {rightContent && (
-                        <div className="ml-auto flex items-end w-auto">
+                        <div className="shrink-0 flex items-end ml-auto">
                             {rightContent}
                         </div>
                     )}

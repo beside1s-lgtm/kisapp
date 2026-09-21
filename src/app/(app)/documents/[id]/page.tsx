@@ -10,6 +10,7 @@ import { ApprovalDoc, DocConfig } from "@/lib/types";
 import { useAuth } from "@/hooks/use-auth"; 
 import { getDb } from "@/lib/firebase"; 
 import { doc, getDoc, Timestamp } from "firebase/firestore";
+import { MainLayout } from "@/components/layout/main-layout";
 
 type DocumentPageProps = {
     params: Promise<{ id: string }>;
@@ -97,31 +98,41 @@ export default function DocumentPage({ params }: DocumentPageProps) {
 
     if (authLoading || dataLoading) {
         return (
-            <div className="flex h-full w-full items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
+            <MainLayout title="문서 조회 중..." contentClassName="p-0 flex items-center justify-center">
+                <div className="flex h-full w-full items-center justify-center p-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+            </MainLayout>
         );
     }
 
     if (error || !docData) {
         return (
-            <div className="flex h-full w-full items-center justify-center p-8">
-                 <Alert variant="destructive" className="max-w-lg">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>접근 불가</AlertTitle>
-                    <AlertDescription>
-                        {error || "문서를 찾을 수 없거나 접근 권한이 없습니다."}
-                        <div className="mt-4">
-                            <Button asChild variant="outline">
-                               <Link href="/inbox">문서함으로 돌아가기</Link>
-                            </Button>
-                        </div>
-                    </AlertDescription>
-                </Alert>
-            </div>
+            <MainLayout title="접근 불가" contentClassName="p-0 flex items-center justify-center">
+                <div className="flex h-full w-full items-center justify-center p-8">
+                     <Alert variant="destructive" className="max-w-lg">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>접근 불가</AlertTitle>
+                        <AlertDescription>
+                            {error || "문서를 찾을 수 없거나 접근 권한이 없습니다."}
+                            <div className="mt-4">
+                                <Button asChild variant="outline">
+                                   <Link href="/inbox">문서함으로 돌아가기</Link>
+                                </Button>
+                            </div>
+                        </AlertDescription>
+                    </Alert>
+                </div>
+            </MainLayout>
         );
     }
     
-    // [중요] 여기서는 DocumentView(조회)를 보여줘야 합니다. Form(수정)이 아닙니다.
-    return <DocumentView initialDoc={docData} initialConfig={configData} />;
+    return (
+        <MainLayout 
+            title={docData.title || "결재 문서 조회"} 
+            contentClassName="p-0 overflow-y-auto overscroll-contain"
+        >
+            <DocumentView initialDoc={docData} initialConfig={configData} />
+        </MainLayout>
+    );
 }

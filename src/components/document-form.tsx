@@ -58,7 +58,7 @@ const formSchema = z.object({
   circulars: z.array(z.object({ name: z.string(), email: z.string(), role: z.string().optional() })).optional().default([]),
   attachments: z.array(z.object({ name: z.string(), size: z.number().optional().default(0), data: z.string() })).optional().default([]),
   publishStatus: z.enum(['공개', '비공개', '부분공개']).optional().default('공개'),
-  docType: z.enum(['internal', 'external', 'parent', 'teacher-duty', 'teacher-overtime', 'teacher-afterschool']).optional().default('internal'),
+  docType: z.enum(['internal', 'external', 'parent', 'teacher-duty', 'teacher-overtime', 'teacher-afterschool', 'volunteer']).optional().default('internal'),
   receiverName: z.string().optional().default(''),
   receiverEmail: z.string().optional().default(''),
 });

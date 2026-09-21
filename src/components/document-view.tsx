@@ -7,12 +7,13 @@ import { approveDocument, rejectDocument, recallDocument, deleteDocument } from 
 import { getUserProfileByEmail } from '@/lib/services/userService';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { CheckCircle2, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, Paperclip, Trash2, Lock, Download, FileCheck, Printer } from 'lucide-react';
+import { CheckCircle2, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, Paperclip, Trash2, Lock, Download, FileCheck, Printer, ArrowLeft } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition, useEffect } from 'react';
 import Link from 'next/link'; 
 import { useRouter, usePathname } from 'next/navigation'; 
 import { exportA4PagesToPdf } from '@/lib/pdf-export'; 
+import { cn } from '@/lib/utils'; 
 import {
     AlertDialog,
     AlertDialogAction,
@@ -30,6 +31,7 @@ import { ParentNotificationModal } from './parent-notification-modal';
 import { TeacherDutyView } from './teacher-duty-view';
 import { TeacherOvertimeView } from './teacher-overtime-view';
 import { AfterschoolFormView } from './afterschool-form-view';
+import { VolunteerFormView } from './volunteer-form-view';
 import { formatOfficialDocumentHtml } from '@/lib/documentFormatter';
 import { useRef } from 'react';
 type DocumentViewProps = {
@@ -177,6 +179,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const isRejected = initialDoc.status === 'rejected';
   const isApproved = initialDoc.status === 'approved';
   const isFamily = initialDoc.category === 'family';
+  const isVolunteerDoc = initialDoc.docType === 'volunteer' || !!initialDoc.volunteerFormData || Boolean(initialDoc.parentFormData?.type?.includes('volunteer'));
 
   const approvalDate = initialDoc.completedAt 
     ? new Date(initialDoc.completedAt as string) 
@@ -445,29 +448,42 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
 
   return (
     <div className="relative w-full bg-muted/30 py-4 sm:py-8 min-h-screen print:bg-white print:py-0 print:min-h-0 print:block">
-        <div className={`print:hidden flex flex-wrap justify-between sm:justify-end items-center gap-2 mb-4 sm:mb-6 ${containerMaxWidth} mx-auto px-2 sm:px-4`}>
-             {process.env.NODE_ENV === 'development' && initialDoc.status === 'pending' && (
-                 <div className="w-full sm:w-auto flex flex-wrap gap-1.5 p-1 border border-amber-200 bg-amber-50 rounded-xl shadow-inner sm:mr-auto items-center">
-                     <span className="text-[10px] text-amber-800 font-bold px-1.5">🛠️ 우회 결재:</span>
-                     <Button 
-                         variant="outline" 
-                         onClick={handleBypassApprove}
-                         className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-7 px-2.5 border-none font-bold rounded-lg"
-                         disabled={isApproving}
-                     >
-                         {isApproving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
-                         강제 승인 ({initialDoc.approvers[initialDoc.currentStep]?.role})
-                     </Button>
-                     <Button 
-                         variant="outline" 
-                         onClick={handleBypassReject}
-                         className="bg-red-600 hover:bg-red-700 text-white text-xs h-7 px-2.5 border-none font-bold rounded-lg"
-                         disabled={isRejecting}
-                     >
-                         강제 반려
-                     </Button>
-                 </div>
-             )}
+        <div className={`print:hidden flex flex-wrap justify-between items-center gap-2 mb-4 sm:mb-6 ${containerMaxWidth} mx-auto px-2 sm:px-4`}>
+             <div className="flex items-center gap-2 flex-wrap mr-auto">
+                 <Button
+                     variant="outline"
+                     size="sm"
+                     onClick={() => router.back()}
+                     className="h-8 px-3 text-xs font-bold gap-1.5 bg-white hover:bg-slate-100 shadow-xs border-slate-300 shrink-0 cursor-pointer"
+                     title="이전 화면으로 돌아가기"
+                 >
+                     <ArrowLeft className="h-3.5 w-3.5" />
+                     뒤로 가기
+                 </Button>
+
+                 {process.env.NODE_ENV === 'development' && initialDoc.status === 'pending' && (
+                     <div className="flex flex-wrap gap-1.5 p-1 border border-amber-200 bg-amber-50 rounded-xl shadow-inner items-center">
+                         <span className="text-[10px] text-amber-800 font-bold px-1.5">🛠️ 우회 결재:</span>
+                         <Button 
+                             variant="outline" 
+                             onClick={handleBypassApprove}
+                             className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-7 px-2.5 border-none font-bold rounded-lg"
+                             disabled={isApproving}
+                         >
+                             {isApproving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                             강제 승인 ({initialDoc.approvers[initialDoc.currentStep]?.role})
+                         </Button>
+                         <Button 
+                             variant="outline" 
+                             onClick={handleBypassReject}
+                             className="bg-red-600 hover:bg-red-700 text-white text-xs h-7 px-2.5 border-none font-bold rounded-lg"
+                             disabled={isRejecting}
+                         >
+                             강제 반려
+                         </Button>
+                     </div>
+                 )}
+             </div>
 
             <div className="flex items-center gap-2 ml-auto flex-wrap">
               {canRecall && (
@@ -480,7 +496,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                   </AlertDialog>
               )}
 
-              {(isRecalled || isRejected) && isRequester && (
+              {(isRecalled || isRejected) && isRequester && !isVolunteerDoc && (
                   <>
                   <Button asChild variant="default" size="sm" className="h-8 text-xs shadow-sm cursor-pointer bg-primary hover:bg-primary/90 text-primary-foreground font-bold">
                       <Link href={
@@ -505,7 +521,8 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                   </>
               )}
 
-              {isApproved && isRequester && (
+              {/* 봉사활동 문서는 기안문서가 아니므로 재기안(복사) 제외 */}
+              {isApproved && isRequester && !isVolunteerDoc && (
                   <Button asChild variant="default" size="sm" className="h-8 text-xs shadow-sm cursor-pointer font-bold">
                       <Link href={
                         initialDoc.docType === 'parent' 
@@ -558,27 +575,35 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
               )}
 
               <Button 
-                  variant="outline" 
+                  variant={isVolunteerDoc ? "default" : "outline"} 
                   size="sm"
                   type="button" 
                   onClick={() => window.print()}
-                  className="h-8 text-xs cursor-pointer shadow-xs bg-white hover:bg-slate-50 text-slate-700 font-bold border-slate-300"
+                  className={cn(
+                    "h-8 text-xs cursor-pointer shadow-xs font-bold",
+                    isVolunteerDoc 
+                      ? "bg-primary hover:bg-primary/90 text-primary-foreground" 
+                      : "bg-white hover:bg-slate-50 text-slate-700 border-slate-300"
+                  )}
               >
-                  <Printer className="mr-1.5 h-3.5 w-3.5 text-slate-600" />
-                  인쇄 / 브라우저 저장
+                  <Printer className="mr-1.5 h-3.5 w-3.5" />
+                  {isVolunteerDoc ? '인쇄 / PDF 저장' : '인쇄 / 브라우저 저장'}
               </Button>
 
-              <Button 
-                  variant="default" 
-                  size="sm"
-                  type="button" 
-                  onClick={handlePdfDownload}
-                  disabled={isPdfGenerating}
-                  className="h-8 text-xs cursor-pointer shadow-xs bg-blue-600 hover:bg-blue-700 text-white font-bold"
-              >
-                  {isPdfGenerating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}
-                  {isPdfGenerating ? (pdfStatusText || 'PDF 생성 중...') : 'PDF 다운로드'}
-              </Button>
+              {/* 기안문서 전용 PDF 다운로드 버튼 (봉사활동 문서는 렌더링 구조가 달라 제외) */}
+              {!isVolunteerDoc && (
+                <Button 
+                    variant="default" 
+                    size="sm"
+                    type="button" 
+                    onClick={handlePdfDownload}
+                    disabled={isPdfGenerating}
+                    className="h-8 text-xs cursor-pointer shadow-xs bg-blue-600 hover:bg-blue-700 text-white font-bold"
+                >
+                    {isPdfGenerating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}
+                    {isPdfGenerating ? (pdfStatusText || 'PDF 생성 중...') : 'PDF 다운로드'}
+                </Button>
+              )}
             </div>
         </div>
 
@@ -648,6 +673,10 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
         ) : initialDoc.docType === 'teacher-afterschool' ? (
             <div className={`w-full ${containerMaxWidth} mx-auto px-4`}>
                 <AfterschoolFormView doc={initialDoc} approverSignatures={approverSignatures} />
+            </div>
+        ) : initialDoc.docType === 'volunteer' || initialDoc.volunteerFormData || initialDoc.parentFormData?.type?.includes('volunteer') ? (
+            <div className={`w-full ${containerMaxWidth} mx-auto px-4 print:p-0 print:w-[210mm] print:mx-auto`}>
+                <VolunteerFormView doc={initialDoc} approverSignatures={approverSignatures} />
             </div>
         ) : initialDoc.docType === 'parent' ? (
             <div className={`w-full ${containerMaxWidth} mx-auto px-4 print:p-0 print:w-[210mm] print:mx-auto`}>

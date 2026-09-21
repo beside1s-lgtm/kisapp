@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { BatchDocumentPrintModal } from "@/components/batch-document-print-modal";
+import { MainLayout } from "@/components/layout/main-layout";
 
 export default function FieldTripRegistryPage() {
     const router = useRouter();
@@ -175,24 +176,17 @@ export default function FieldTripRegistryPage() {
 
     if (loading) {
         return (
-            <div className="flex h-full w-full items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
+            <MainLayout title="체험학습 문서함" contentClassName="p-0 flex items-center justify-center">
+                <div className="flex h-full w-full items-center justify-center p-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+            </MainLayout>
         );
     }
 
     return (
-        <div className="p-4 md:p-8">
-            <div className="mb-6 flex items-center gap-3 border-b pb-4">
-                <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    onClick={() => router.back()} 
-                    className="h-9 w-9 rounded-xl hover:bg-slate-100 shrink-0"
-                    title="뒤로 가기"
-                >
-                    <ArrowLeft className="h-5 w-5 text-slate-600" />
-                </Button>
+        <MainLayout title="체험학습 문서함" contentClassName="p-4 md:p-8 space-y-6 overflow-y-auto overscroll-contain">
+            <div className="flex items-center gap-3 border-b pb-4">
                 <div>
                     <h1 className="font-headline text-2xl sm:text-3xl font-bold flex items-center gap-2.5 text-slate-900">
                         <FileText className="h-6 w-6 text-primary" />
@@ -348,6 +342,6 @@ export default function FieldTripRegistryPage() {
                 documents={selectedDocs}
                 title="체험학습 신청서 및 결과보고서 일괄 인쇄"
             />
-        </div>
+        </MainLayout>
     );
 }

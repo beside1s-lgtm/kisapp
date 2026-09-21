@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { FileEdit, History, Info, AlertCircle, Loader2, Bus as BusIcon, GraduationCap, Calendar, UserCheck, CheckCircle2, Clock, MessageSquare, ArrowRight, CalendarPlus } from 'lucide-react';
+import { FileEdit, History, Info, AlertCircle, Loader2, Bus as BusIcon, GraduationCap, Calendar, UserCheck, CheckCircle2, Clock, MessageSquare, ArrowRight, CalendarPlus, HeartHandshake } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 
 // Google Calendar 원클릭 일정 등록 URL 생성 헬퍼
@@ -615,7 +615,7 @@ export default function ParentsDashboard() {
           <span className="text-[11px] text-muted-foreground">현재 이용 현황</span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-4">
           {/* 스쿨버스 미니멀 카드 */}
           <Link 
             href={busInfoText !== '미신청' ? '/parents/bus/student' : (config?.isBusApplyActive ? '/parents/bus/apply' : '/parents/bus')}
@@ -668,6 +668,32 @@ export default function ParentsDashboard() {
               </span>
               <span className="text-[10px] text-muted-foreground hidden sm:inline">
                 {afterschoolInfoText !== '미수강' ? '수강 확인' : (isAfterschoolActive ? '신청 가능' : '강좌 안내')}
+              </span>
+            </div>
+          </Link>
+
+          {/* 학생 봉사활동 카드 */}
+          <Link 
+            href="/parents/volunteer"
+            className="group block p-3 sm:p-4 rounded-2xl border border-sky-200/90 bg-gradient-to-br from-sky-500/10 via-sky-50/40 to-background hover:border-sky-400 hover:shadow-md transition-all duration-200 col-span-2 sm:col-span-1"
+          >
+            <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                <div className="p-1 sm:p-1.5 bg-sky-500/15 rounded-lg text-sky-700 shrink-0">
+                  <HeartHandshake className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                </div>
+                <span className="font-extrabold text-xs sm:text-sm text-foreground truncate">봉사활동</span>
+              </div>
+              <span className="text-[10px] text-sky-700 font-bold group-hover:translate-x-0.5 transition-transform shrink-0">
+                &rarr;
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-1 flex-wrap">
+              <span className="text-xs sm:text-sm font-black truncate text-sky-800">
+                신청 및 확인
+              </span>
+              <span className="text-[10px] text-muted-foreground hidden sm:inline">
+                계획서·확인서
               </span>
             </div>
           </Link>

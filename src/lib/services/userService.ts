@@ -985,6 +985,135 @@ export async function getApproversByGradeClass(
 }
 
 /**
+ * 봉사활동(개인/단체) 결재선 생성 함수
+ * 서식 규격: [업무 담당] -> [담당 부장] -> [교감(전결)]
+ */
+/**
+ * 봉사활동 계획서 제출 시 접수자(업무 담당자) 결재선 생성
+ * 일반 교사나 학생이 계획서를 제출하면 봉사활동 담당자에게 1차 접수(submitted)됨
+ * 조직도에 volunteerManager가 지정되지 않았더라도 시스템 관리자로 자동 fallback하여 에러를 원천 차단
+ */
+export async function getVolunteerApprovers(): Promise<Approver[]> {
+  const org = await getOrgStructure();
+  const approvers: Approver[] = [];
+
+  // 1. 업무 담당 (양유정: yjng05@kshcm.net)
+  let managerEmail = org.volunteerManager?.trim() || 'yjng05@kshcm.net';
+  let managerName = '양유정';
+
+  if (managerEmail) {
+    const managerUser = await getUserProfileByEmail(managerEmail.toLowerCase());
+    if (managerUser) {
+      managerName = managerUser.name || '양유정';
+      managerEmail = managerUser.email;
+    }
+  }
+
+  approvers.push({
+    name: managerName,
+    email: managerEmail,
+    role: '업무 담당',
+    type: 'normal',
+    status: 'pending',
+  });
+
+  // 2. 담당 부장 (수업연구부장: 최선미 kisechoisunmee@kshcm.net)
+  // 봉사활동 소관 부서(수업연구부)의 부장을 최우선으로 지정
+  let deptHeadEmail: string | null = null;
+  let deptHeadName = '최선미';
+
+  const volunteerDept = (org.departments || []).find((d: any) =>
+    d.name?.includes('수업연구') ||
+    d.headEmail?.toLowerCase() === 'kisechoisunmee@kshcm.net' ||
+    d.memberEmails?.some((m: string) => m.toLowerCase() === managerEmail.toLowerCase())
+  );
+
+  if (volunteerDept?.headEmail) {
+    deptHeadEmail = volunteerDept.headEmail.trim();
+  } else {
+    deptHeadEmail = 'kisechoisunmee@kshcm.net';
+  }
+
+  if (deptHeadEmail) {
+    const headUser = await getUserProfileByEmail(deptHeadEmail.toLowerCase());
+    if (headUser) {
+      deptHeadName = headUser.name || '최선미';
+      deptHeadEmail = headUser.email;
+    }
+  }
+
+  approvers.push({
+    name: deptHeadName,
+    email: deptHeadEmail || 'kisechoisunmee@kshcm.net',
+    role: '담당 부장',
+    type: 'normal',
+    status: 'pending',
+  });
+
+  // 3. 교감 (신선영: shinedu@kshcm.net, 전결)
+  const vpEmail = org.vicePrincipal?.trim() || 'shinedu@kshcm.net';
+  let vpName = '신선영';
+  const vpUser = await getUserProfileByEmail(vpEmail.toLowerCase());
+  if (vpUser) {
+    vpName = vpUser.name || '신선영';
+  }
+
+  approvers.push({
+    name: vpName,
+    email: vpUser?.email || vpEmail,
+    role: '교감',
+    type: 'final',
+    status: 'pending',
+  });
+
+  return approvers;
+}
+
+/**
+ * 봉사활동 담당자가 수합한 계획서들을 모아 정식으로 상신할 때의 상위 결재선 생성
+ * [기안: 업무 담당(본인)] -> [검토: 담당 부장] -> [결재: 교감(전결)]
+ */
+export async function getVolunteerBatchApprovers(drafterEmail: string, drafterName: string): Promise<Approver[]> {
+  const org = await getOrgStructure();
+  const approvers: Approver[] = [];
+
+  // 1. 담당 부장: 수업연구부장 (최선미)
+  let deptHeadEmail: string | null = null;
+  let deptHeadName = '최선미';
+  const volunteerDept = (org.departments || []).find((d: any) =>
+    d.name?.includes('수업연구') ||
+    d.headEmail?.toLowerCase() === 'kisechoisunmee@kshcm.net'
+  );
+  deptHeadEmail = volunteerDept?.headEmail || 'kisechoisunmee@kshcm.net';
+  const headUser = await getUserProfileByEmail(deptHeadEmail.toLowerCase());
+  if (headUser) {
+    deptHeadName = headUser.name || '최선미';
+    deptHeadEmail = headUser.email;
+  }
+
+  approvers.push({
+    name: deptHeadName,
+    email: deptHeadEmail || 'kisechoisunmee@kshcm.net',
+    role: '담당 부장',
+    type: 'normal',
+    status: 'pending',
+  });
+
+  // 2. 교감 (전결)
+  const vpEmail = org.vicePrincipal || 'shinedu@kshcm.net';
+  const vpUser = await getUserProfileByEmail(vpEmail.trim().toLowerCase());
+  approvers.push({
+    name: vpUser?.name || '신선영',
+    email: vpUser?.email || vpEmail,
+    role: '교감',
+    type: 'final',
+    status: 'pending',
+  });
+
+  return approvers;
+}
+
+/**
  * 주어진 사용자가 교직원인지 여부를 일관성 있게 판별
  * - 슈퍼 관리자 / 스쿨버스 관리자: 무조건 교직원
  * - isFaculty === true 또는 isStaff === true 또는 isManualFaculty === true: 무조건 교직원

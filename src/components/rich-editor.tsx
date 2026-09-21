@@ -129,7 +129,7 @@ export default function RichEditor({ value, onChange }: RichEditorProps) {
   return (
     <div className="border rounded-md bg-white flex flex-col shadow-sm">
       {/* 툴바 (가운데 정렬) */}
-      <div className="flex flex-wrap gap-1.5 p-2 border-b bg-gray-50 sticky top-0 z-10 rounded-t-md items-center justify-center">
+      <div className="flex flex-wrap gap-1.5 p-2 border-b bg-gray-50 rounded-t-md items-center justify-center">
         {/* 글자 스타일 */}
         <Button
           type="button"

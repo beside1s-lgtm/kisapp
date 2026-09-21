@@ -123,6 +123,8 @@ export default function ParentHistoryPage() {
             const isAbsence = pfd?.type === 'absence';
             const isFieldTrip = pfd?.type === 'field-trip';
             const isReport = pfd?.type === 'field-trip-report';
+            const isVolunteer = doc.docType === 'volunteer' || pfd?.type?.includes('volunteer') || !!doc.volunteerFormData;
+            const isVolunteerReport = isVolunteer && (pfd?.type === 'volunteer-report' || doc.volunteerFormData?.type?.includes('report') || doc.volunteerFormData?.reportSubmitted);
             
             let docTypeName = '신청서';
             let badgeBg = 'bg-indigo-50 text-indigo-700 border-indigo-200';
@@ -135,10 +137,14 @@ export default function ParentHistoryPage() {
             } else if (isReport) {
               docTypeName = t('parents.apply.report_title') || '결과보고서';
               badgeBg = 'bg-purple-50 text-purple-700 border-purple-200';
+            } else if (isVolunteer) {
+              docTypeName = isVolunteerReport ? '봉사활동 확인서' : '봉사활동 계획서';
+              badgeBg = 'bg-sky-50 text-sky-700 border-sky-200';
             }
 
-            const needsReport = isFieldTrip && doc.status === 'approved' && !pfd?.reportSubmitted;
-            const hasReport = isFieldTrip && doc.status === 'approved' && pfd?.reportSubmitted;
+            const isSubmittedReport = Boolean(pfd?.reportSubmitted || doc.volunteerFormData?.reportSubmitted);
+            const needsReport = (isFieldTrip || isVolunteer) && doc.status === 'approved' && !isSubmittedReport;
+            const hasReport = (isFieldTrip || isVolunteer) && doc.status === 'approved' && isSubmittedReport;
             
             const studentInfo = pfd?.studentName 
               ? `${pfd.studentName} (${pfd.gradeClassNumber || ''})` 
@@ -258,15 +264,21 @@ export default function ParentHistoryPage() {
                     </Button>
                   )}
 
-                  {/* 결과보고서 작성 버튼 */}
+                  {/* 결과보고서 / 확인서 작성 버튼 */}
                   {needsReport && (
                     <Button
                       size="sm"
                       className="flex-1 min-w-0 h-8 px-1 sm:px-2 text-[10px] sm:text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white flex items-center justify-center gap-1 shadow-2xs"
-                      onClick={() => router.push(`/parents/apply?type=field-trip-report&applyId=${doc.id}`)}
+                      onClick={() => {
+                        if (isVolunteer) {
+                          router.push(`/parents/volunteer?type=report&applyId=${doc.id}`);
+                        } else {
+                          router.push(`/parents/apply?type=field-trip-report&applyId=${doc.id}`);
+                        }
+                      }}
                     >
                       <Edit3 className="hidden sm:inline-block w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">{t('parents.history.btn_write_report') || '보고서 작성'}</span>
+                      <span className="truncate">{isVolunteer ? '확인서 작성' : (t('parents.history.btn_write_report') || '보고서 작성')}</span>
                     </Button>
                   )}
 

@@ -866,7 +866,7 @@ export function SettingsModal() {
   const [selectedHomeroomFile, setSelectedHomeroomFile] = useState<File | null>(null);
   const [selectedDeptFile, setSelectedDeptFile] = useState<File | null>(null);
   const [activeMainTab, setActiveMainTab] = useState<string>('general');
-  const [org, setOrg] = useState<OrgStructure>({ principal: '', principalName: '', vicePrincipal: '', vicePrincipalName: '', administrativeHead: '', administrativeHeadName: '', academicHead: '', academicHeadName: '', gradeHeads: {}, homerooms: {}, gradeSubjects: {}, departments: [], afterschoolManager: '', busManager: '', afterschoolManagers: [], busManagers: [], systemManagers: [], peTeachers: [], healthTeachers: [], specialTeachers: [], librarianTeachers: [], subjectTeacherGroups: [], customDutyRoles: [], dutyRoleDepts: {} });
+  const [org, setOrg] = useState<OrgStructure>({ principal: '', principalName: '', vicePrincipal: '', vicePrincipalName: '', administrativeHead: '', administrativeHeadName: '', academicHead: '', academicHeadName: '', gradeHeads: {}, homerooms: {}, gradeSubjects: {}, departments: [], afterschoolManager: '', busManager: '', volunteerManager: '', afterschoolManagers: [], busManagers: [], systemManagers: [], peTeachers: [], healthTeachers: [], specialTeachers: [], librarianTeachers: [], subjectTeacherGroups: [], customDutyRoles: [], dutyRoleDepts: {} });
   const [orgSubTab, setOrgSubTab] = useState<'leadership' | 'duties' | 'grades' | 'departments'>('leadership');
   const [isDutyRolesOpen, setIsDutyRolesOpen] = useState(true);
   const [isSubjectGroupOpen, setIsSubjectGroupOpen] = useState(false);
@@ -1148,6 +1148,7 @@ export function SettingsModal() {
           healthTeachers: data.healthTeachers || [],
           specialTeachers: data.specialTeachers || [],
           librarianTeachers: data.librarianTeachers || [],
+          volunteerManager: data.volunteerManager || '',
           subjectTeacherGroups: data.subjectTeacherGroups || [],
           customDutyRoles: data.customDutyRoles || [],
           dutyRoleDepts: data.dutyRoleDepts || {},
@@ -1343,7 +1344,7 @@ export function SettingsModal() {
   const assignDutyToMember = (dutyKeyOrId: string, email: string, deptName?: string) => {
     updateAndSaveOrg(prev => {
       let next = { ...prev };
-      if (deptName && ['afterschool', 'bus', 'system', 'pe', 'health', 'special', 'librarian'].includes(dutyKeyOrId)) {
+      if (deptName && ['afterschool', 'bus', 'system', 'pe', 'health', 'special', 'librarian', 'volunteer'].includes(dutyKeyOrId)) {
         next.dutyRoleDepts = { ...(next.dutyRoleDepts || {}), [dutyKeyOrId]: deptName };
       }
       if (dutyKeyOrId === 'afterschool') {
@@ -1367,6 +1368,8 @@ export function SettingsModal() {
       } else if (dutyKeyOrId === 'librarian') {
         const cur = next.librarianTeachers || [];
         if (!cur.includes(email)) next.librarianTeachers = [...cur, email];
+      } else if (dutyKeyOrId === 'volunteer') {
+        next.volunteerManager = email;
       } else {
         next.customDutyRoles = (next.customDutyRoles || []).map(r => {
           if (r.id === dutyKeyOrId || r.roleName === dutyKeyOrId) {
@@ -1419,6 +1422,8 @@ export function SettingsModal() {
         next.specialTeachers = (next.specialTeachers || []).filter(e => e !== email);
       } else if (dutyKeyOrId === 'librarian' || dutyKeyOrId === '사서교사') {
         next.librarianTeachers = (next.librarianTeachers || []).filter(e => e !== email);
+      } else if (dutyKeyOrId === 'volunteer' || dutyKeyOrId === '봉사활동' || dutyKeyOrId === '봉사활동 담당') {
+        if (next.volunteerManager === email) next.volunteerManager = '';
       } else {
         next.customDutyRoles = (next.customDutyRoles || []).map(r => {
           if (r.id === dutyKeyOrId || r.roleName === dutyKeyOrId) {
@@ -4238,6 +4243,7 @@ export function SettingsModal() {
                       if (org.healthTeachers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('보건교사');
                       if (org.specialTeachers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('특수교사');
                       if (org.librarianTeachers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('사서교사');
+                      if (org.volunteerManager && org.volunteerManager.toLowerCase() === emailLower) matchedDuties.push('봉사활동');
 
                       (org.customDutyRoles || []).forEach(duty => {
                         if (duty.teacherEmails?.some(m => m.toLowerCase() === emailLower)) {
@@ -4257,6 +4263,7 @@ export function SettingsModal() {
                       { id: 'system', name: '시스템설정', deptName: org.dutyRoleDepts?.['system'] },
                       { id: 'special', name: '특수교사', deptName: org.dutyRoleDepts?.['special'] },
                       { id: 'librarian', name: '사서교사', deptName: org.dutyRoleDepts?.['librarian'] },
+                      { id: 'volunteer', name: '봉사활동', deptName: org.dutyRoleDepts?.['volunteer'] },
                       ...(org.customDutyRoles || []).map(duty => ({
                         id: duty.id,
                         name: duty.roleName,

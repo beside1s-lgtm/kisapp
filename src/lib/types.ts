@@ -48,8 +48,86 @@ export type UserProfile = {
 export type AbsenceType = '병결' | '미인정' | '기타' | '출석인정';
 export type TripType = '가족동반여행' | '친인척 방문' | '답사·견학 활동' | '체험활동' | '기타';
 
+export type VolunteerStudentItem = {
+  id?: string;
+  grade: string;
+  classNum: string;
+  studentNum?: string;
+  name: string;
+  nameEn?: string;
+};
+
+export type VolunteerFormData = {
+  type: 'volunteer-plan' | 'volunteer-report' | 'volunteer-group-plan' | 'volunteer-group-report';
+  category: 'individual' | 'group'; // 개인 vs 단체
+  
+  // 개인용 인적사항
+  studentName?: string;
+  gradeClassNumber?: string;
+  grade?: string;
+  classNum?: string;
+  studentNum?: string;
+  nameEn?: string;
+
+  // 단체용 학생 명단
+  groupStudents?: VolunteerStudentItem[];
+  leaderTeacherName?: string;
+  leaderTeacherEmail?: string;
+
+  // 활동 기간 및 시간
+  period: {
+    startDate: string;
+    endDate: string;
+    startDayOfWeek?: string;
+    endDayOfWeek?: string;
+    totalDays: number;
+    startTime?: string;
+    endTime?: string;
+    totalHours: number;
+  };
+
+  // 장소 및 내용
+  institution?: string; // 대상 기관명
+  location?: string;    // 활동 장소
+  content: string;     // 활동 내용
+
+  // 확인서 전용 필드
+  relatedPlanDocId?: string;
+  reportSubmitted?: boolean;
+  activityPhotos?: string[];
+  impression?: string; // 활동 소감 (개인용)
+  confirmationInstitution?: {
+    name: string;
+    phone: string;
+    personInCharge: string;
+    signImageUrl?: string;
+  };
+
+  // 서명란
+  studentSignature?: string;
+  parentSignature?: string;
+  teacherSignature?: string;
+  submittedDate?: string;
+
+  // 봉사활동 담당자 수합 및 일괄 기안 연동 필드
+  batchDocId?: string; // 수합된 상위 결재문서 ID
+  isBatchAggregated?: boolean; // 담당자에 의해 수합 기안되었는지 여부
+  batchAggregatedAt?: string; // 수합 기안 일시 ISO
+  aggregatedDocIds?: string[]; // 수합 기안문서인 경우 포함된 하위 계획서 docId 목록
+  aggregatedSummary?: Array<{
+    docId: string;
+    category: 'individual' | 'group';
+    studentNameOrCount: string;
+    gradeClass: string;
+    institution: string;
+    period: string;
+    hours: number;
+    content: string;
+  }>;
+};
+
 export type ParentFormData = {
-  type: 'absence' | 'field-trip' | 'field-trip-report';
+  type: 'absence' | 'field-trip' | 'field-trip-report' | 'volunteer-plan' | 'volunteer-report';
   studentName: string;
   gradeClassNumber: string;
   
@@ -308,6 +386,7 @@ export type OrgStructure = {
   healthTeachers?: string[]; // 보건교사들 (이메일 배열)
   specialTeachers?: string[]; // 특수교사들 (이메일 배열)
   librarianTeachers?: string[]; // 사서교사들 (이메일 배열)
+  volunteerManager?: string; // 봉사활동 업무 담당자 (1인 이메일)
   subjectTeacherGroups?: SubjectTeacherGroup[]; // 교과전담교사 그룹 (과목명 커스텀 등록 + 담당 선생님 지정)
   customDutyRoles?: CustomDutyRole[]; // 동적으로 추가된 업무 담당 직책 목록
   dutyRoleDepts?: { [roleKeyOrId: string]: string }; // 기본 직책 및 커스텀 직책별 소속 부서명 매핑
@@ -410,11 +489,12 @@ export type AfterschoolCourseData = {
 export type ApprovalDocPayload = {
   title: string;
   content: string;
-  docType: 'internal' | 'external' | 'parent' | 'teacher-duty' | 'teacher-overtime' | 'teacher-afterschool';
+  docType: 'internal' | 'external' | 'parent' | 'teacher-duty' | 'teacher-overtime' | 'teacher-afterschool' | 'volunteer';
   category?: 'draft' | 'family' | 'general'; 
   // [수정] 실제 사용되는 값인 한글로 타입 변경 ('public' | 'private' -> '공개' | '비공개')
   publishStatus: '공개' | '비공개' | '부분공개'; 
   parentFormData?: ParentFormData;
+  volunteerFormData?: VolunteerFormData;
   teacherDutyData?: TeacherDutyData;
   teacherOvertimeData?: TeacherOvertimeData;
   afterschoolCourseData?: AfterschoolCourseData;
@@ -423,6 +503,10 @@ export type ApprovalDocPayload = {
   circulars?: Circular[];
   receiverInfo?: { name: string; email?: string };
   headerImage?: string;
+  status?: 'pending' | 'approved' | 'rejected' | 'recalled' | 'submitted';
+  isVolunteerBatch?: boolean;
+  aggregatedDocIds?: string[];
+  batchDocId?: string;
   footerInfo?: {
       address: string;
       phone: string;
@@ -442,13 +526,18 @@ export type ApprovalDoc = ApprovalDocPayload & {
   requesterRole: string;
   requesterSignature: string;
   currentStep: number;
-  status: 'pending' | 'approved' | 'rejected' | 'recalled';
+  status: 'pending' | 'approved' | 'rejected' | 'recalled' | 'submitted';
   comment?: string;
   createdAt: any;
   completedAt?: any;
   updatedAt?: any;
   isFaceToFace?: boolean; // 대면 결재 문서 여부
   faceToFaceDocNo?: string; // 기안자가 직접 입력한 문서 번호 (대면 결재 시)
+  reportSubmitted?: boolean; // 확인서/결과보고서 제출 여부
+  reportSubmittedAt?: string; // 확인서/결과보고서 제출 시각 ISO
+  isVolunteerBatch?: boolean; // 봉사활동 일괄 수합 기안 문서 여부
+  aggregatedDocIds?: string[]; // 수합된 하위 계획서 docId 목록
+  batchDocId?: string; // 소속된 상위 수합 기안 문서 docId
 };
 
 // ─── 부서 및 학년 그룹 업무 할당 및 제출 관리 타입 ───────────────────────────

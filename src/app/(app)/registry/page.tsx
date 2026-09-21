@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { getDoc, doc } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
+import { MainLayout } from "@/components/layout/main-layout";
 
 
 export default function RegistryPage() {
@@ -124,6 +125,8 @@ export default function RegistryPage() {
     // 클라이언트 사이드 필터링
     const filteredDocs = useMemo(() => {
         return docs.filter(doc => {
+            // 봉사활동 문서는 봉사활동 전용 관리대장에서만 관리
+            if (doc.docType?.startsWith('volunteer') || Boolean(doc.volunteerFormData) || (doc as any).isVolunteer || (doc as any).isVolunteerBatch) return false;
             if (keyword && !doc.title.toLowerCase().includes(keyword.toLowerCase())) return false;
             if (publishFilter !== '전체' && doc.publishStatus !== publishFilter) return false;
             if (docTypeFilter !== '전체') {
@@ -162,30 +165,23 @@ export default function RegistryPage() {
 
     if (loading) {
         return (
-            <div className="flex h-full w-full items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
+            <MainLayout title="문서등록대장" contentClassName="p-0 flex items-center justify-center">
+                <div className="flex h-full w-full items-center justify-center p-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+            </MainLayout>
         );
     }
 
     return (
-        <>
+        <MainLayout title="문서등록대장" contentClassName="p-0 overflow-y-auto overscroll-contain">
         <div className="p-4 md:p-8 space-y-6">
-            {/* 헤더 */}
+            {/* 상단 안내 */}
             <div className="flex items-center gap-3 border-b pb-4">
-                <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    onClick={() => router.back()} 
-                    className="h-9 w-9 rounded-xl hover:bg-slate-100 shrink-0"
-                    title="뒤로 가기"
-                >
-                    <ArrowLeft className="h-5 w-5 text-slate-600" />
-                </Button>
                 <div>
                     <h1 className="font-headline text-2xl sm:text-3xl font-bold flex items-center gap-2.5 text-slate-900">
                         <ListFilter className="h-6 w-6 text-primary" />
-                        문서대장
+                        문서등록대장
                     </h1>
                     <p className="text-muted-foreground mt-0.5 text-xs sm:text-sm">결재 완료된 모든 문서의 기록입니다.</p>
                 </div>
@@ -420,6 +416,6 @@ export default function RegistryPage() {
                 )}
             </div>
         )}
-        </>
+        </MainLayout>
     );
 }
