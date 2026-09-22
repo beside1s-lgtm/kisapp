@@ -38,26 +38,8 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
 import {
   Calendar as CalendarIcon,
   Plus,
@@ -65,37 +47,23 @@ import {
   Edit,
   FileText,
   Send,
-  CheckCircle2,
-  Clock,
   MapPin,
   Users,
   Coins,
-  DollarSign,
-  Layers,
   ChevronRight,
-  Sparkles,
   Search,
   RefreshCw,
-  Building2,
   Flame,
   Activity,
-  Award,
   CalendarDays,
-  FileSpreadsheet,
   Inbox,
-  UserPlus,
-  Download,
-  Presentation,
-  Check,
-  AlertTriangle,
-  Link as LinkIcon,
-  ExternalLink,
-  RotateCcw,
-  X,
-  ChevronDown
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { v4 as uuidv4 } from 'uuid';
+import { PeEventFormDialog } from './PeEventFormDialog';
+import { PeTaskRequestDialog } from './PeTaskRequestDialog';
+import { PeSubmissionsViewDialog } from './PeSubmissionsViewDialog';
+import { PeSuggestDialog } from './PeSuggestDialog';
 
 interface PeEventManagementProps {
   allStudents?: Student[];
@@ -1566,961 +1534,89 @@ export function PeEventManagement({ allStudents = [] }: PeEventManagementProps) 
       {/* =========================================================================
           행사 등록 및 수정 다이얼로그 (개편된 요일/시간대 배정표 탑재)
          ========================================================================= */}
-      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] sm:max-h-[92vh] flex flex-col p-0 overflow-hidden rounded-2xl bg-white shadow-2xl">
-          {/* 상단 고정 헤더 (X 버튼과 함께 스크롤 무관 항상 고정) */}
-          <DialogHeader className="px-5 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 bg-white shrink-0 sticky top-0 z-20 text-left">
-            <DialogTitle className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2 pr-8">
-              <CalendarDays className="w-5 h-5 text-indigo-600 shrink-0" />
-              {editingEvent ? '체육 행사 계획 수정' : '신규 체육 행사 계획 수립'}
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500 mt-0.5">
-              측정주간, 스포츠데이, 교내 리그전 등의 일정과 예산을 수립하고 결재 기안을 상신합니다.
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* 스크롤 가능한 본문 폼 영역 */}
-          <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 space-y-4">
-            {/* 1. 기본 정보 */}
-            <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80 space-y-3">
-              <h3 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-indigo-600" />
-                1. 기본 행사 정보
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div className="space-y-1 sm:col-span-2">
-                  <Label className="text-xs font-bold text-slate-700">행사명</Label>
-                  <Input
-                    placeholder="예: 2026학년도 초등 스포츠 데이 한마당 계획"
-                    value={formTitle}
-                    onChange={e => setFormTitle(e.target.value)}
-                    className="h-8 text-xs bg-white font-bold"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-700">행사 유형</Label>
-                  <Select value={formEventType} onValueChange={(v: PeEventType) => setFormEventType(v)}>
-                    <SelectTrigger className="h-8 text-xs bg-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="sports_day">스포츠 데이 (운동회 / 체육대회)</SelectItem>
-                      <SelectItem value="paps_week">PAPS 집중 측정주간</SelectItem>
-                      <SelectItem value="tournament">교내 리그전 및 기타 대회</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-700">추진 담당 교사</Label>
-                  <Input
-                    value={formManager}
-                    onChange={e => setFormManager(e.target.value)}
-                    className="h-8 text-xs bg-white"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-700">운영 시작일</Label>
-                  <Input
-                    type="date"
-                    value={formStartDate}
-                    onChange={e => setFormStartDate(e.target.value)}
-                    className="h-8 text-xs bg-white"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-700">운영 종료일</Label>
-                  <Input
-                    type="date"
-                    value={formEndDate}
-                    onChange={e => setFormEndDate(e.target.value)}
-                    className="h-8 text-xs bg-white"
-                  />
-                </div>
-
-                <div className="space-y-1 sm:col-span-2">
-                  <Label className="text-xs font-bold text-slate-700">주요 진행 장소</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="예: 학교 대운동장 및 메인 체육관"
-                      value={formLocation}
-                      onChange={e => setFormLocation(e.target.value)}
-                      className="h-8 text-xs bg-white flex-1"
-                    />
-                    <div className="hidden sm:flex items-center gap-1">
-                      {['대운동장', '메인 체육관', '소체육관'].map(loc => (
-                        <button
-                          key={loc}
-                          type="button"
-                          onClick={() => setFormLocation(loc)}
-                          className="px-2 py-1 text-[11px] font-bold bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"
-                        >
-                          {loc}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 sm:col-span-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-bold text-slate-700">대상 학년 선택 (전체 학년 지원)</Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleToggleAllGrades}
-                      className="h-6 text-[11px] text-indigo-600 px-2 hover:bg-indigo-50 font-bold"
-                    >
-                      전체선택/해제
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {availableGrades.map(g => {
-                      const isSelected = formTargetGrades.includes(g);
-                      return (
-                        <button
-                          key={g}
-                          type="button"
-                          onClick={() => handleToggleGrade(g)}
-                          className={cn(
-                            "px-3 py-1 text-xs font-bold rounded-lg border transition-all",
-                            isSelected
-                              ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
-                              : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                          )}
-                        >
-                          {g}학년
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="space-y-1 sm:col-span-2">
-                  <Label className="text-xs font-bold text-slate-700">추진 목적 및 방침</Label>
-                  <Textarea
-                    placeholder="행사의 추진 목적, 운영 방침, 주요 기대 효과를 입력하세요."
-                    value={formDescription}
-                    onChange={e => setFormDescription(e.target.value)}
-                    rows={2}
-                    className="text-xs bg-white resize-none"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* 2. 학년별 요일/교시 시간대 배정표 (개편: 교시 범위 선택 & 학년 배정 중심) */}
-            <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <h3 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                    <CalendarDays className="w-4 h-4 text-indigo-600" />
-                    2. 학년별 요일 / 교시 시간대 배정표 ({formSchedules.length}건 배정됨)
-                  </h3>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    교시별로 어떤 학년이 활동할지 배정하세요. 세부 경기 종목 및 시나리오는 각 학년 선생님이 제출할 세부계획서에 반영됩니다.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={handleAddNewDateSchedule}
-                  className="h-7 text-xs font-bold text-indigo-600 border-indigo-200 hover:bg-indigo-50 bg-white shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" />
-                  날짜 추가
-                </Button>
-              </div>
-
-              {/* 날짜별 그룹 렌더링 */}
-              <div className="space-y-3">
-                {scheduleDates.map((dateStr) => {
-                  const dateSchedules = formSchedules.filter(s => s.date === dateStr);
-
-                  return (
-                    <div key={dateStr} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-                      {/* 날짜 헤더 */}
-                      <div className="bg-indigo-50/70 px-3.5 py-2 border-b border-indigo-100 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <CalendarIcon className="w-4 h-4 text-indigo-600" />
-                          <span className="font-bold text-xs text-indigo-950">{dateStr}</span>
-                          <Badge variant="secondary" className="text-[10px] font-semibold bg-white text-indigo-800">
-                            {dateSchedules.length}개 교시 블록 배정
-                          </Badge>
-                        </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleAddSchedule(dateStr)}
-                          className="h-6 px-2 text-[11px] font-bold text-indigo-600 hover:bg-indigo-100 rounded-lg"
-                        >
-                          <Plus className="w-3 h-3 mr-1" />
-                          이 날짜에 교시 배정 추가
-                        </Button>
-                      </div>
-
-                      {/* 시간대 프로그램 목록 */}
-                      <div className="p-3 space-y-3 divide-y divide-slate-100">
-                        {dateSchedules.map((s, idx) => {
-                          const currentStartP = s.startPeriod || periodSchedules[0]?.name || '1교시';
-                          const currentEndP = s.endPeriod || s.startPeriod || periodSchedules[0]?.name || '1교시';
-
-                          return (
-                            <div key={s.id} className={cn("space-y-2.5 text-xs", idx > 0 && "pt-3")}>
-                              {/* 1행: 교시 범위 선택 & 시간대 프리셋 & 삭제 버튼 */}
-                              <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap bg-slate-50/80 p-2 rounded-lg border border-slate-200/60">
-                                <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
-                                  <Badge variant="outline" className="text-[10px] font-bold bg-white text-slate-700 shrink-0">
-                                    #{idx + 1}
-                                  </Badge>
-
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    <span className="text-[11px] font-bold text-slate-600">교시:</span>
-                                    {/* 시작 교시 */}
-                                    <Select
-                                      value={currentStartP}
-                                      onValueChange={(val) => handlePeriodRangeChange(s.id, val, currentEndP)}
-                                    >
-                                      <SelectTrigger className="h-7 w-[95px] text-xs font-bold bg-white border-slate-300">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {periodSchedules.map(p => (
-                                          <SelectItem key={p.id} value={p.name} className="text-xs">
-                                            {p.name}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-
-                                    <span className="text-slate-400 font-bold">~</span>
-
-                                    {/* 종료 교시 */}
-                                    <Select
-                                      value={currentEndP}
-                                      onValueChange={(val) => handlePeriodRangeChange(s.id, currentStartP, val)}
-                                    >
-                                      <SelectTrigger className="h-7 w-[95px] text-xs font-bold bg-white border-slate-300">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {periodSchedules.map(p => (
-                                          <SelectItem key={p.id} value={p.name} className="text-xs">
-                                            {p.name}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-
-                                  {/* 계산된 시간대 표시 / 직접 수정 */}
-                                  <div className="flex items-center gap-1 flex-1 min-w-[150px]">
-                                    <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                    <Input
-                                      value={s.time || ''}
-                                      onChange={e => handleUpdateSchedule(s.id, 'time', e.target.value)}
-                                      placeholder="08:30 ~ 11:00 (1~3교시)"
-                                      className="h-7 text-xs font-mono font-bold bg-white border-slate-200"
-                                      title="시간대를 직접 수정할 수도 있습니다."
-                                    />
-                                  </div>
-                                </div>
-
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleRemoveSchedule(s.id)}
-                                  className="h-7 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 shrink-0"
-                                  title="배정 삭제"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </Button>
-                              </div>
-
-                              {/* 2행: 핵심 배정 대상 학년 & 진행 장소 */}
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-2 sm:pl-3">
-                                {/* 배정 대상 학년 (교시별 어떤 학년이 참여하는지 선택) */}
-                                <div className="space-y-1">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[11px] font-bold text-indigo-900 flex items-center gap-1">
-                                      <Users className="w-3.5 h-3.5 text-indigo-600" />
-                                      배정 대상 학년
-                                    </span>
-                                    <div className="flex items-center gap-1 flex-wrap">
-                                      {['1학년', '2학년', '3학년', '4학년', '5학년', '6학년'].map(gr => (
-                                        <button
-                                          key={gr}
-                                          type="button"
-                                          onClick={() => handleTargetGradeSelect(s.id, gr)}
-                                          className={cn(
-                                            "text-[10px] px-1.5 py-0.5 rounded font-bold transition-all",
-                                            s.target === gr
-                                              ? "bg-indigo-600 text-white"
-                                              : "bg-slate-100 hover:bg-indigo-50 text-slate-700"
-                                          )}
-                                        >
-                                          {gr}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-1">
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      {['전교생', '1~3학년', '4~6학년'].map(tg => (
-                                        <button
-                                          key={tg}
-                                          type="button"
-                                          onClick={() => handleTargetGradeSelect(s.id, tg)}
-                                          className={cn(
-                                            "text-[9px] px-1.5 py-0.5 rounded font-semibold transition-all",
-                                            s.target === tg
-                                              ? "bg-indigo-100 text-indigo-800 border border-indigo-300"
-                                              : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200"
-                                          )}
-                                        >
-                                          {tg}
-                                        </button>
-                                      ))}
-                                    </div>
-                                    <Input
-                                      placeholder="예: 1학년, 4~5학년"
-                                      value={s.target || ''}
-                                      onChange={e => handleUpdateSchedule(s.id, 'target', e.target.value)}
-                                      className="h-7 text-xs bg-white font-bold flex-1"
-                                    />
-                                  </div>
-                                </div>
-
-                                {/* 진행 장소 */}
-                                <div className="space-y-1">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                                      <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                                      진행 장소
-                                    </span>
-                                    <div className="flex items-center gap-1">
-                                      {['대운동장', '메인 체육관', '소체육관', '강당'].map(loc => (
-                                        <button
-                                          key={loc}
-                                          type="button"
-                                          onClick={() => handleUpdateSchedule(s.id, 'location', loc)}
-                                          className={cn(
-                                            "text-[9px] px-1.5 py-0.5 rounded font-medium",
-                                            s.location === loc
-                                              ? "bg-slate-800 text-white"
-                                              : "bg-slate-100 hover:bg-slate-200 text-slate-600"
-                                          )}
-                                        >
-                                          {loc}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                  <Input
-                                    placeholder="예: 대운동장"
-                                    value={s.location || ''}
-                                    onChange={e => handleUpdateSchedule(s.id, 'location', e.target.value)}
-                                    className="h-7 text-xs bg-white"
-                                  />
-                                </div>
-                              </div>
-
-                              {/* 3행: 활동 개요 및 세부계획서 연동 메모 */}
-                              <div className="pl-2 sm:pl-3 pt-0.5 flex items-center gap-2">
-                                <span className="text-[10px] font-semibold text-slate-500 whitespace-nowrap">활동 개요:</span>
-                                <Input
-                                  placeholder="예: 1학년 스포츠 활동 (세부 운영 시나리오는 학년 계획서 참조)"
-                                  value={s.title || ''}
-                                  onChange={e => handleUpdateSchedule(s.id, 'title', e.target.value)}
-                                  className="h-6 text-[11px] bg-slate-50/50 flex-1 border-dashed"
-                                />
-                                <span className="text-[10px] text-slate-400 hidden md:inline shrink-0">
-                                  * 세부 경기 종목은 학년별 계획서에서 수합
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 3. 소요 예산 편성 */}
-            <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                    <Coins className="w-4 h-4 text-amber-600" />
-                    3. 소요 예산 내역 (총 {calculatedTotalBudget.toLocaleString()} VND)
-                  </h3>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={handleAddBudget}
-                  className="h-7 text-xs font-bold text-amber-700 border-amber-200 hover:bg-amber-50 bg-white"
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" />
-                  예산 항목 추가
-                </Button>
-              </div>
-
-              <div className="space-y-2">
-                {formBudgets.map((b, idx) => (
-                  <div key={b.id} className="p-2.5 bg-white border border-slate-200 rounded-lg shadow-2xs flex items-center gap-2 flex-wrap sm:flex-nowrap text-xs">
-                    <Badge variant="secondary" className="text-[10px] font-bold shrink-0">#{idx + 1}</Badge>
-                    <Input
-                      placeholder="구분 (예: 용품비)"
-                      value={b.category}
-                      onChange={e => handleUpdateBudget(b.id, 'category', e.target.value)}
-                      className="h-7 text-xs w-[110px] shrink-0"
-                    />
-                    <Input
-                      placeholder="산출 내역 / 품명"
-                      value={b.item}
-                      onChange={e => handleUpdateBudget(b.id, 'item', e.target.value)}
-                      className="h-7 text-xs flex-1 min-w-[140px]"
-                    />
-                    <Input
-                      type="number"
-                      placeholder="금액(VND)"
-                      value={b.amount || ''}
-                      onChange={e => handleUpdateBudget(b.id, 'amount', parseInt(e.target.value) || 0)}
-                      className="h-7 text-xs w-[130px] font-bold text-right shrink-0"
-                    />
-                    <Input
-                      placeholder="비고"
-                      value={b.note || ''}
-                      onChange={e => handleUpdateBudget(b.id, 'note', e.target.value)}
-                      className="h-7 text-xs w-[120px] shrink-0"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRemoveBudget(b.id)}
-                      className="h-6 px-1 text-rose-500 hover:text-rose-700 shrink-0"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* 하단 고정 푸터 (계획 저장 완료 버튼 항상 고정) */}
-          <DialogFooter className="px-5 sm:px-6 py-3.5 border-t border-slate-200 bg-slate-50/95 backdrop-blur-xs shrink-0 flex items-center justify-between sticky bottom-0 z-20">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsFormOpen(false)}
-              className="text-xs"
-            >
-              취소
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleSaveEvent}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs"
-            >
-              {editingEvent ? '수정사항 저장' : '계획 저장 완료'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PeEventFormDialog
+        open={isFormOpen}
+        onOpenChange={setIsFormOpen}
+        editingEvent={editingEvent}
+        formTitle={formTitle}
+        setFormTitle={setFormTitle}
+        formEventType={formEventType}
+        setFormEventType={setFormEventType}
+        formManager={formManager}
+        setFormManager={setFormManager}
+        formStartDate={formStartDate}
+        setFormStartDate={setFormStartDate}
+        formEndDate={formEndDate}
+        setFormEndDate={setFormEndDate}
+        formLocation={formLocation}
+        setFormLocation={setFormLocation}
+        formDescription={formDescription}
+        setFormDescription={setFormDescription}
+        availableGrades={availableGrades}
+        formTargetGrades={formTargetGrades}
+        onToggleAllGrades={handleToggleAllGrades}
+        onToggleGrade={handleToggleGrade}
+        formSchedules={formSchedules}
+        scheduleDates={scheduleDates}
+        periodSchedules={periodSchedules}
+        onAddNewDateSchedule={handleAddNewDateSchedule}
+        onAddSchedule={handleAddSchedule}
+        onUpdateSchedule={handleUpdateSchedule}
+        onRemoveSchedule={handleRemoveSchedule}
+        onPeriodRangeChange={handlePeriodRangeChange}
+        onTargetGradeSelect={handleTargetGradeSelect}
+        formBudgets={formBudgets}
+        calculatedTotalBudget={calculatedTotalBudget}
+        onAddBudget={handleAddBudget}
+        onUpdateBudget={handleUpdateBudget}
+        onRemoveBudget={handleRemoveBudget}
+        onSaveEvent={handleSaveEvent}
+      />
 
       {/* =========================================================================
           업무 요청 모달 (교사 실명 & 학년부 스마트 필터링 & 검색 선택창 탑재)
          ========================================================================= */}
-      <Dialog open={isTaskRequestOpen} onOpenChange={setIsTaskRequestOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden rounded-2xl bg-white shadow-2xl">
-          {/* 상단 고정 헤더 */}
-          <DialogHeader className="px-5 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 bg-white shrink-0 sticky top-0 z-20 text-left">
-            <DialogTitle className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2 pr-8">
-              <Send className="w-5 h-5 text-indigo-600 shrink-0" />
-              학년별 세부 운영계획 업무 요청
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500 mt-0.5">
-              각 학년 담당 교사(학년부장/담임교사)를 지정하여 세부 타임테이블 시나리오 및 PPT 제출을 요청합니다.
-            </DialogDescription>
-          </DialogHeader>
-
-          {targetEventForTask && (
-            <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 space-y-4">
-              <div className="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200 space-y-2 text-xs">
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-700">제출 마감일 설정</Label>
-                  <Input
-                    type="date"
-                    value={taskDeadline}
-                    onChange={e => setTaskDeadline(e.target.value)}
-                    className="h-8 text-xs bg-white font-bold"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-700">요청 지침 및 안내 사항</Label>
-                  <Textarea
-                    value={taskNotice}
-                    onChange={e => setTaskNotice(e.target.value)}
-                    rows={3}
-                    className="text-xs bg-white resize-none leading-relaxed"
-                  />
-                </div>
-              </div>
-
-              {/* 학년별 담당자 지정 (학년 선택 시 소속 교사 명단이 인라인으로 쭉 펼쳐지고 체크 선택) */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-indigo-600" />
-                    업무 요청 대상 학년 및 담당 교사 지정 ({selectedGradesForTask.length}개 학년 선택됨)
-                  </Label>
-                  <span className="text-[11px] text-slate-500">
-                    학년 체크 후 원하는 담당 선생님을 클릭해 주세요.
-                  </span>
-                </div>
-                
-                <div className="space-y-3">
-                  {(targetEventForTask.targetGrades && targetEventForTask.targetGrades.length > 0 ? targetEventForTask.targetGrades : ['1', '2', '3', '4', '5', '6']).map(grade => {
-                    const current = gradeAssignees[grade] || { email: '', name: '' };
-                    const isChecked = selectedGradesForTask.includes(grade);
-
-                    // 해당 학년 소속 교사 (부장, 담임, 교과 등) 필터링
-                    const gradeTeachers = teacherList.filter(t => {
-                      return (
-                        t.grade === grade ||
-                        (t.role && (
-                          t.role.includes(`${grade}학년`) ||
-                          t.role.startsWith(`${grade}-`) ||
-                          t.role.includes(`(${grade}-`) ||
-                          t.role.includes(` ${grade}-`)
-                        )) ||
-                        (t.dept && (
-                          t.dept.includes(`${grade}학년`) ||
-                          t.dept.startsWith(`${grade}-`)
-                        ))
-                      );
-                    });
-
-                    // 타 학년/부서 교직원
-                    const otherTeachers = teacherList.filter(t => !gradeTeachers.some(gt => gt.email.toLowerCase() === t.email.toLowerCase()));
-
-                    return (
-                      <div
-                        key={grade}
-                        className={cn(
-                          "rounded-2xl border transition-all overflow-hidden",
-                          isChecked
-                            ? "bg-white border-indigo-200 shadow-xs"
-                            : "bg-slate-50/70 border-slate-200 opacity-70"
-                        )}
-                      >
-                        {/* 학년 카드 헤더 (체크박스 및 현재 선택된 담당자 요약) */}
-                        <div
-                          className={cn(
-                            "p-3 flex items-center justify-between gap-3 cursor-pointer select-none",
-                            isChecked ? "bg-indigo-50/40 border-b border-indigo-100" : "bg-transparent"
-                          )}
-                          onClick={() => {
-                            setSelectedGradesForTask(prev =>
-                              isChecked ? prev.filter(g => g !== grade) : [...prev, grade]
-                            );
-                          }}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <Checkbox
-                              checked={isChecked}
-                              onCheckedChange={(checked) => {
-                                setSelectedGradesForTask(prev =>
-                                  checked ? [...prev, grade] : prev.filter(g => g !== grade)
-                                );
-                              }}
-                              onClick={e => e.stopPropagation()}
-                            />
-                            <Badge className={cn(
-                              "font-bold text-xs px-2.5 py-0.5",
-                              isChecked ? "bg-indigo-600 text-white" : "bg-slate-200 text-slate-600"
-                            )}>
-                              {grade}학년
-                            </Badge>
-                            <span className="text-xs font-bold text-slate-900">
-                              {grade}학년 세부 운영계획서 제출 요청
-                            </span>
-                          </div>
-
-                          {isChecked && current.name && (
-                            <div className="flex items-center gap-1.5 text-xs text-indigo-700 font-bold bg-white px-2.5 py-1 rounded-lg border border-indigo-200 shadow-2xs">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                              <span>지정 교사: {current.name}</span>
-                              <span className="text-[10px] text-slate-400 font-normal">({current.email})</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* 학년 체크 시 인라인으로 펼쳐지는 교사 명단 그리드 (체크/라디오 선택) */}
-                        {isChecked && (
-                          <div className="p-3.5 space-y-2.5 bg-white">
-                            <div className="text-[11px] font-bold text-slate-600 flex items-center justify-between">
-                              <span>★ {grade}학년부 소속 선생님 ({gradeTeachers.length}명) - 담당자로 지정할 교사를 체크하세요:</span>
-                            </div>
-
-                            {gradeTeachers.length > 0 ? (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                                {gradeTeachers.map(teacher => {
-                                  const isSelected = current.email.toLowerCase() === teacher.email.toLowerCase();
-                                  return (
-                                    <button
-                                      key={teacher.email}
-                                      type="button"
-                                      onClick={() => {
-                                        setGradeAssignees(prev => ({
-                                          ...prev,
-                                          [grade]: {
-                                            email: teacher.email,
-                                            name: teacher.name
-                                          }
-                                        }));
-                                      }}
-                                      className={cn(
-                                        "p-2 rounded-xl border text-left flex items-center gap-2.5 transition-all cursor-pointer",
-                                        isSelected
-                                          ? "bg-indigo-50/90 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs text-indigo-950"
-                                          : "bg-slate-50/60 border-slate-200 hover:border-indigo-200 hover:bg-indigo-50/30 text-slate-700"
-                                      )}
-                                    >
-                                      {/* 체크/라디오 아이콘 */}
-                                      <div className={cn(
-                                        "w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors",
-                                        isSelected ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white"
-                                      )}>
-                                        {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                                      </div>
-
-                                      {/* 교사 이름 & 직책 */}
-                                      <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span className="font-black text-xs">{teacher.name}</span>
-                                          <Badge className={cn(
-                                            "text-[9px] px-1.5 py-0 h-4 font-bold border-0",
-                                            isSelected ? "bg-indigo-600 text-white" : "bg-slate-200/80 text-slate-700"
-                                          )}>
-                                            {teacher.role}
-                                          </Badge>
-                                        </div>
-                                        <div className="text-[10px] text-slate-400 font-mono truncate mt-0.5">
-                                          {teacher.email}
-                                        </div>
-                                      </div>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="py-2 text-center text-xs text-slate-400">
-                                등록된 {grade}학년부 교사가 없습니다.
-                              </div>
-                            )}
-
-                            {/* 타 학년/부서 교사 선택이 필요한 경우 인라인 셀렉트 */}
-                            <div className="pt-2 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2">
-                              <span className="text-[11px] text-slate-500 font-medium">
-                                목록 외 다른 교사를 지정하시겠습니까?
-                              </span>
-                              <Select
-                                value={current.email}
-                                onValueChange={(val) => {
-                                  const found = teacherList.find(t => t.email.toLowerCase() === val.toLowerCase());
-                                  if (found) {
-                                    setGradeAssignees(prev => ({
-                                      ...prev,
-                                      [grade]: {
-                                        email: found.email,
-                                        name: found.name
-                                      }
-                                    }));
-                                  }
-                                }}
-                              >
-                                <SelectTrigger className="h-7 text-xs bg-slate-50 w-[240px]">
-                                  <SelectValue placeholder="전체 교직원 목록에서 직접 선택..." />
-                                </SelectTrigger>
-                                <SelectContent className="max-h-56">
-                                  {teacherList.map(t => (
-                                    <SelectItem key={t.email} value={t.email} className="text-xs">
-                                      {t.name} ({t.role} - {t.email})
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 하단 고정 푸터 (취소 및 업무 요청 발송 버튼 상시 고정) */}
-          <DialogFooter className="px-5 sm:px-6 py-3.5 border-t border-slate-200 bg-slate-50/95 backdrop-blur-xs shrink-0 flex items-center justify-between sticky bottom-0 z-20">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsTaskRequestOpen(false)}
-              disabled={isRequestingTask}
-              className="text-xs"
-            >
-              취소
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleSendGradeTaskRequest}
-              disabled={isRequestingTask || selectedGradesForTask.length === 0}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1 shadow-xs"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>업무 요청 발송 ({selectedGradesForTask.length}개 학년)</span>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PeTaskRequestDialog
+        open={isTaskRequestOpen}
+        onOpenChange={setIsTaskRequestOpen}
+        targetEventForTask={targetEventForTask}
+        teacherList={teacherList}
+        taskDeadline={taskDeadline}
+        setTaskDeadline={setTaskDeadline}
+        taskNotice={taskNotice}
+        setTaskNotice={setTaskNotice}
+        selectedGradesForTask={selectedGradesForTask}
+        setSelectedGradesForTask={setSelectedGradesForTask}
+        gradeAssignees={gradeAssignees}
+        setGradeAssignees={setGradeAssignees}
+        isRequestingTask={isRequestingTask}
+        onSendGradeTaskRequest={handleSendGradeTaskRequest}
+      />
 
       {/* =========================================================================
           3. 학년별 제출 현황 및 세부 시나리오/PPT/캔바 열람 및 정리 모달
          ========================================================================= */}
-      <Dialog open={isSubmissionsViewOpen} onOpenChange={setIsSubmissionsViewOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0 overflow-hidden rounded-2xl bg-white shadow-2xl">
-          <DialogHeader className="px-5 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 bg-white shrink-0 sticky top-0 z-20 text-left">
-            <DialogTitle className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2 pr-8">
-              <Layers className="w-5 h-5 text-indigo-600 shrink-0" />
-              학년별 세부계획 제출 현황 및 취합 내역
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500 mt-0.5">
-              지정된 학년 담당 교사들이 제출한 타임테이블 시나리오와 자료를 확인하고 정리합니다.
-            </DialogDescription>
-          </DialogHeader>
-
-          {targetEventForView && (() => {
-            const { task, submissions, submittedCount, totalCount, percent, requestedGrades } = getEventTaskSubmissions(targetEventForView);
-            if (!task) return <div className="py-6 text-center text-xs text-slate-400">연결된 업무가 없습니다.</div>;
-
-            return (
-              <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 space-y-4">
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-bold">
-                    <span className="text-slate-700">전체 제출 진행률: {submittedCount}/{totalCount}개 학년 제출 완료</span>
-                    <span className="text-indigo-600 font-extrabold">{percent}%</span>
-                  </div>
-                  <Progress value={percent} className="h-2 bg-slate-200" />
-                </div>
-
-                <div className="space-y-3">
-                  {requestedGrades.map(grade => {
-                    const gradeKey = Object.keys(submissions).find(k => {
-                      const s = submissions[k];
-                      return String(s.grade) === String(grade) || k.endsWith(`_${grade}`);
-                    });
-                    const sub = gradeKey ? submissions[gradeKey] : Object.values(submissions).find(s => String(s.grade) === String(grade));
-
-                    return (
-                      <div key={grade} className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs space-y-2.5">
-                        <div className="flex items-center justify-between border-b pb-2">
-                          <div className="flex items-center gap-2">
-                            <Badge className="bg-indigo-600 text-white font-bold text-xs">
-                              {grade}학년
-                            </Badge>
-                            {sub ? (
-                              <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                제출 완료 (작성: {sub.submitterName || '담당교사'})
-                              </span>
-                            ) : (
-                              <span className="text-xs font-semibold text-amber-600 flex items-center gap-1">
-                                <Clock className="w-3.5 h-3.5" />
-                                미제출 (대기 중)
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            {sub?.fileUrl && (
-                              <a
-                                href={sub.fileUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 h-6 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-colors"
-                              >
-                                <Download className="w-3 h-3 text-indigo-600" />
-                                <span>{sub.fileName || '문서 다운'}</span>
-                              </a>
-                            )}
-                            {sub?.linkUrl && (
-                              <a
-                                href={sub.linkUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 h-6 px-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold transition-colors"
-                              >
-                                <ExternalLink className="w-3 h-3 text-purple-600" />
-                                <span>{sub.linkTitle || '캔바 자료'}</span>
-                              </a>
-                            )}
-                            {sub && gradeKey && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDeleteSubmissionItem(task.id, gradeKey)}
-                                className="h-6 px-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                                title="제출 내역 삭제"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-
-                        {sub ? (
-                          <div className="space-y-2 text-xs">
-                            {sub.scenarios && sub.scenarios.length > 0 ? (
-                              <div className="border border-slate-100 rounded-lg overflow-hidden">
-                                <table className="w-full text-xs">
-                                  <thead className="bg-slate-50 text-slate-600 font-bold border-b">
-                                    <tr>
-                                      <th className="p-1.5 text-center w-24">시간</th>
-                                      <th className="p-1.5 text-left">프로그램명</th>
-                                      <th className="p-1.5 text-left">경기 규칙</th>
-                                      <th className="p-1.5 text-left">준비물/역할</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100">
-                                    {sub.scenarios.map((sc, i) => (
-                                      <tr key={sc.id || i} className="hover:bg-slate-50/50">
-                                        <td className="p-1.5 text-center font-bold text-indigo-700">{sc.time}</td>
-                                        <td className="p-1.5 font-bold text-slate-900">{sc.program}</td>
-                                        <td className="p-1.5 text-slate-600">{sc.rules || '-'}</td>
-                                        <td className="p-1.5 text-slate-600">{sc.preparations || '-'}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            ) : (
-                              <p className="text-slate-400 italic text-[11px]">작성된 시나리오가 없습니다.</p>
-                            )}
-                            {sub.note && (
-                              <p className="text-slate-600 bg-slate-50 p-2 rounded-lg text-[11px]">
-                                <strong className="text-slate-800">특이사항:</strong> {sub.note}
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="py-2 text-center text-slate-400 text-[11px]">
-                            해당 학년의 세부 운영 계획이 아직 제출되지 않았습니다.
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* 하단 고정 푸터 */}
-          <DialogFooter className="px-5 sm:px-6 py-3.5 border-t border-slate-200 bg-slate-50/95 backdrop-blur-xs shrink-0 flex items-center justify-end sticky bottom-0 z-20">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsSubmissionsViewOpen(false)}
-              className="text-xs"
-            >
-              닫기
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PeSubmissionsViewDialog
+        open={isSubmissionsViewOpen}
+        onOpenChange={setIsSubmissionsViewOpen}
+        targetEventForView={targetEventForView}
+        getEventTaskSubmissions={getEventTaskSubmissions}
+        onDeleteSubmissionItem={handleDeleteSubmissionItem}
+      />
 
       {/* =========================================================================
           4. 부장 건의 모달
          ========================================================================= */}
-      <Dialog open={isSuggestModalOpen} onOpenChange={setIsSuggestModalOpen}>
-        <DialogContent className="max-w-xl p-5 sm:p-6 rounded-2xl">
-          <DialogHeader className="border-b pb-3">
-            <DialogTitle className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-teal-600" />
-              부장 건의 (주간/월간 학사일정 공식 반영 요청)
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
-              결재가 완료된 체육 행사를 교무부장/학년부장에게 건의하여 학교 주간학습안내 및 월간 일정에 공식 등록합니다.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2 text-xs">
-            <div className="space-y-1">
-              <Label className="text-xs font-bold text-slate-700">건의 제목</Label>
-              <Input
-                value={suggestTitle}
-                onChange={e => setSuggestTitle(e.target.value)}
-                className="h-8 text-xs bg-white font-bold"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs font-bold text-slate-700">건의 내용 및 전달 사항</Label>
-              <Textarea
-                value={suggestContent}
-                onChange={e => setSuggestContent(e.target.value)}
-                rows={6}
-                className="text-xs bg-white font-mono leading-relaxed resize-none"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="border-t pt-3 flex items-center justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsSuggestModalOpen(false)}
-              disabled={isSubmittingSuggest}
-              className="text-xs"
-            >
-              취소
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleSendSuggestion}
-              disabled={isSubmittingSuggest || !suggestTitle.trim()}
-              className="bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1 shadow-xs"
-            >
-              <Check className="w-3.5 h-3.5" />
-              <span>건의안 전송</span>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PeSuggestDialog
+        open={isSuggestModalOpen}
+        onOpenChange={setIsSuggestModalOpen}
+        suggestTitle={suggestTitle}
+        setSuggestTitle={setSuggestTitle}
+        suggestContent={suggestContent}
+        setSuggestContent={setSuggestContent}
+        isSubmittingSuggest={isSubmittingSuggest}
+        onSendSuggestion={handleSendSuggestion}
+      />
     </div>
   );
 }
