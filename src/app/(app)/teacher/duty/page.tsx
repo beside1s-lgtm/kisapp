@@ -12,17 +12,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Briefcase, Calendar, Clock, Loader2, Send, ArrowLeft, Info, UserCheck, PlusCircle, Trash2, Search, Users, CalendarDays } from 'lucide-react';
+import { Briefcase, Calendar, Clock, Loader2, Send, ArrowLeft, Info, UserCheck } from 'lucide-react';
 import { createDocument, getTeacherDutyStats, getDocumentById } from '@/lib/services/documentService';
 import { TeacherDutyData } from '@/lib/types';
 import { getOrgStructure } from '@/lib/services/settingsService';
 import { getUserProfileByEmail, getUsersDirectory } from '@/lib/services/userService';
 import { getDelegationRules } from '@/lib/services/settingsService';
 import type { DelegationRule } from '@/lib/types';
+import { TravelItemsSection } from '@/components/teacher-duty/TravelItemsSection';
+import { StudyAbroadPlanSection } from '@/components/teacher-duty/StudyAbroadPlanSection';
+import { RepeatTravelDialog } from '@/components/teacher-duty/RepeatTravelDialog';
 
 const studyAbroadScheduleSchema = z.object({
   date: z.string().optional(),
@@ -138,7 +138,7 @@ const dutySchema = z.object({
   }
 });
 
-type DutyFormValues = z.infer<typeof dutySchema>;
+export type DutyFormValues = z.infer<typeof dutySchema>;
 
 export default function TeacherDutyPage() {
   const { user, profile } = useAuth();
@@ -773,194 +773,19 @@ export default function TeacherDutyPage() {
 
             {/* 복수 출장 테이블 및 생성 도구 (출장일 때만 노출) */}
             {mainType === '출장' && (
-              <div className="space-y-6 animate-in slide-in-from-top-4 duration-500">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-muted/20 p-4 rounded-xl border border-muted-foreground/10">
-                  <div>
-                    <h3 className="text-base font-bold text-foreground flex items-center gap-2">
-                      💼 복수 출장 및 동행자 신청 목록
-                    </h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      여러 날짜의 출장을 각각 한 행씩 입력하여 하나의 기안문으로 묶어 상신할 수 있습니다.
-                    </p>
-                  </div>
-                  <div className="flex gap-2 w-full sm:w-auto">
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => openRepeatModal()}
-                      className="text-primary border-primary/20 hover:bg-primary/10 w-full sm:w-auto text-xs"
-                    >
-                      <CalendarDays className="mr-1.5 h-4 w-4" /> 요일 반복 / 동행자 일괄 생성
-                    </Button>
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => appendTravel({
-                        date: new Date().toISOString().split('T')[0],
-                        subType: '관내',
-                        destination: '',
-                        reason: '',
-                        noExpensesPaid: false,
-                        useCompanyVehicle: false,
-                        travelers: profile ? [{ name: profile.name, email: profile.email }] : []
-                      })}
-                      className="text-primary border-primary/20 hover:bg-primary/10 w-full sm:w-auto text-xs"
-                    >
-                      <PlusCircle className="mr-1.5 h-4 w-4" /> 일정 추가
-                    </Button>
-                  </div>
-                </div>
-
-                {errors.travelItems && (
-                  <p className="text-sm font-semibold text-destructive">{errors.travelItems.message || '출장 일정을 올바르게 입력해주세요.'}</p>
-                )}
-
-                <div className="border rounded-xl overflow-x-auto bg-white shadow-sm">
-                  <table className="w-full text-sm border-collapse">
-                    <thead>
-                      <tr className="bg-muted/50 border-b text-muted-foreground font-semibold text-xs text-left">
-                        <th className="p-3 min-w-[130px]">날짜*</th>
-                        <th className="p-3 min-w-[90px]">구분*</th>
-                        <th className="p-3 min-w-[150px]">목적지*</th>
-                        <th className="p-3 min-w-[180px]">동행자*</th>
-                        <th className="p-3 min-w-[180px]">옵션</th>
-                        <th className="p-3 min-w-[200px]">사유*</th>
-                        <th className="p-3 text-center w-12"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {travelFields.map((field, index) => (
-                        <tr key={field.id} className="border-b last:border-0 hover:bg-muted/5 transition-colors">
-                          <td className="p-2">
-                            <Input 
-                              type="date" 
-                              {...register(`travelItems.${index}.date` as const)} 
-                              className="h-9 text-xs" 
-                            />
-                          </td>
-                          <td className="p-2">
-                            <Select 
-                              value={watch(`travelItems.${index}.subType` as const)} 
-                              onValueChange={(val) => setValue(`travelItems.${index}.subType` as const, val)}
-                            >
-                              <SelectTrigger className="h-9 text-xs">
-                                <SelectValue placeholder="선택" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="관내">관내</SelectItem>
-                                <SelectItem value="관외">관외</SelectItem>
-                                <SelectItem value="국외">국외</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </td>
-                          <td className="p-2">
-                            <Input 
-                              {...register(`travelItems.${index}.destination` as const)} 
-                              placeholder="목적지 입력" 
-                              className="h-9 text-xs" 
-                            />
-                          </td>
-                          <td className="p-2">
-                            <div className="flex flex-col gap-1.5">
-                              <div className="flex flex-wrap gap-1">
-                                {watch(`travelItems.${index}.travelers` as const)?.map((tr: any, tIdx: number) => (
-                                  <span key={tr.email} className="inline-flex items-center gap-1 bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full border border-primary/20">
-                                    {tr.name}
-                                    <button 
-                                      type="button" 
-                                      onClick={() => {
-                                        const currentTravelers = getValues(`travelItems.${index}.travelers` as const) || [];
-                                        setValue(`travelItems.${index}.travelers` as const, currentTravelers.filter((_: any, i: number) => i !== tIdx));
-                                      }}
-                                      className="text-primary hover:text-destructive hover:scale-110 ml-0.5 text-xs font-bold transition-all"
-                                    >
-                                      &times;
-                                    </button>
-                                  </span>
-                                ))}
-                              </div>
-                              
-                              <Select 
-                                onValueChange={(val) => {
-                                  if (val === 'ADD_SELF' && profile) {
-                                    const curr = getValues(`travelItems.${index}.travelers` as const) || [];
-                                    if (!curr.some(t => t.email === profile.email)) {
-                                      setValue(`travelItems.${index}.travelers` as const, [...curr, { name: profile.name, email: profile.email }]);
-                                    }
-                                  } else if (val.startsWith('ADD_USER_')) {
-                                    const email = val.replace('ADD_USER_', '');
-                                    const u = users.find(x => x.email === email);
-                                    if (u) {
-                                      const curr = getValues(`travelItems.${index}.travelers` as const) || [];
-                                      if (!curr.some(t => t.email === u.email)) {
-                                        setValue(`travelItems.${index}.travelers` as const, [...curr, { name: u.name, email: u.email }]);
-                                      }
-                                    }
-                                  }
-                                }}
-                              >
-                                <SelectTrigger className="h-8 text-[11px] text-muted-foreground bg-muted/30">
-                                  <span className="flex items-center gap-1"><Users size={12} /> 인원 추가</span>
-                                </SelectTrigger>
-                                <SelectContent className="max-h-[200px]">
-                                  <SelectItem value="ADD_SELF">본인 추가</SelectItem>
-                                  {users.map(u => (
-                                    <SelectItem key={`add-${index}-${u.email}`} value={`ADD_USER_${u.email}`}>{u.name} ({u.role})</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </td>
-                          <td className="p-2">
-                            <div className="flex flex-col gap-1">
-                              <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer select-none">
-                                <input 
-                                  type="checkbox"
-                                  checked={watch(`travelItems.${index}.noExpensesPaid` as const) || false}
-                                  onChange={(e) => setValue(`travelItems.${index}.noExpensesPaid` as const, e.target.checked)}
-                                  className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary"
-                                />
-                                여비 부지급
-                              </label>
-                              <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer select-none">
-                                <input 
-                                  type="checkbox"
-                                  checked={watch(`travelItems.${index}.useCompanyVehicle` as const) || false}
-                                  onChange={(e) => setValue(`travelItems.${index}.useCompanyVehicle` as const, e.target.checked)}
-                                  className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary"
-                                />
-                                관용차량 이용
-                              </label>
-                            </div>
-                          </td>
-                          <td className="p-2">
-                            <Input 
-                              {...register(`travelItems.${index}.reason` as const)} 
-                              placeholder="출장 사유 입력" 
-                              className="h-9 text-xs" 
-                            />
-                          </td>
-                          <td className="p-2 text-center">
-                            {travelFields.length > 1 && (
-                              <Button 
-                                type="button" 
-                                variant="ghost" 
-                                size="icon" 
-                                onClick={() => removeTravel(index)}
-                                className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <TravelItemsSection
+                profile={profile}
+                openRepeatModal={openRepeatModal}
+                appendTravel={appendTravel}
+                errors={errors}
+                travelFields={travelFields}
+                register={register}
+                watch={watch}
+                setValue={setValue}
+                getValues={getValues}
+                users={users}
+                removeTravel={removeTravel}
+              />
             )}
 
             {/* 일반 사유 입력 (출장이 아닐 때만 노출) */}
@@ -977,192 +802,15 @@ export default function TeacherDutyPage() {
             )}
 
             {mainType === '41조 연수' && subType === '국외자율연수' && (
-              <div className="space-y-6 pt-6 border-t-2 border-primary/20 animate-in slide-in-from-top-4 duration-500">
-                <div className="bg-primary/5 p-4 rounded-xl border border-primary/20">
-                  <h3 className="text-lg font-bold text-primary flex items-center gap-2">
-                    📄 국외자율연수를 위한 공무외국외여행 계획서 작성
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    국외자율연수 시에는 학교장 승인을 받기 위한 공무외국외여행 계획서 제출이 필수적입니다. 아래 양식의 모든 정보를 상세히 입력해 주세요.
-                  </p>
-                </div>
-
-                {/* 기본 인적 사항 */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label className="font-bold text-sm">소속</Label>
-                    <Input {...register('studyAbroadPlan.affiliation')} className="h-12" placeholder="예: 서울송정초등학교" />
-                    {errors.studyAbroadPlan?.affiliation && (
-                      <p className="text-xs text-destructive">{errors.studyAbroadPlan.affiliation.message}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="font-bold text-sm">직위(급)</Label>
-                    <Input {...register('studyAbroadPlan.position')} className="h-12" placeholder="예: 교사" />
-                    {errors.studyAbroadPlan?.position && (
-                      <p className="text-xs text-destructive">{errors.studyAbroadPlan.position.message}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="font-bold text-sm">성명</Label>
-                    <Input {...register('studyAbroadPlan.name')} className="h-12" placeholder="예: 홍길동" />
-                    {errors.studyAbroadPlan?.name && (
-                      <p className="text-xs text-destructive">{errors.studyAbroadPlan.name.message}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="font-bold text-sm">과목</Label>
-                    <Input {...register('studyAbroadPlan.subject')} className="h-12" placeholder="예: 공통" />
-                    {errors.studyAbroadPlan?.subject && (
-                      <p className="text-xs text-destructive">{errors.studyAbroadPlan.subject.message}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* 기간 정보 (자동 연동 & 노출) */}
-                <div className="space-y-2">
-                  <Label className="font-bold text-sm">연수 기간 (복무 신청 기간과 자동 연동)</Label>
-                  <div className="p-4 bg-muted/30 border rounded-lg h-12 flex items-center text-sm font-semibold text-gray-700">
-                    {(() => {
-                      const sDate = watch('startDate');
-                      const eDate = watch('endDate');
-                      const tDays = watch('totalDays');
-                      return sDate && eDate
-                        ? `${sDate.replace(/-/g, '.')} - ${eDate.replace(/-/g, '.')} (${tDays || 0})일간`
-                        : '시작일과 종료일을 먼저 입력해 주세요.';
-                    })()}
-                  </div>
-                </div>
-
-                {/* 연수 구분 */}
-                <div className="space-y-3">
-                  <Label className="font-bold text-sm">연수 구분</Label>
-                  <RadioGroup 
-                    value={watch('studyAbroadPlan.category')} 
-                    onValueChange={(val) => setValue('studyAbroadPlan.category', val)}
-                    className="grid grid-cols-1 md:grid-cols-2 gap-4"
-                  >
-                    {[
-                      '교직단체가 주관하는 연수',
-                      '해외 교육기관의 초청',
-                      '개인의 학습자료 수집',
-                      '기타'
-                    ].map((cat) => (
-                      <div key={cat} className="flex items-center space-x-2 border p-3 rounded-lg hover:bg-muted/30 transition-colors">
-                        <RadioGroupItem value={cat} id={`cat-${cat}`} />
-                        <Label htmlFor={`cat-${cat}`} className="cursor-pointer text-sm font-medium w-full">{cat}</Label>
-                      </div>
-                    ))}
-                  </RadioGroup>
-                  {watch('studyAbroadPlan.category') === '기타' && (
-                    <div className="pt-2 animate-in slide-in-from-top-2 duration-300">
-                      <Label className="font-bold text-xs text-muted-foreground">기타 상세 내용</Label>
-                      <Input {...register('studyAbroadPlan.categoryEtcDetail')} placeholder="기타 연수 구분을 구체적으로 적어주세요." className="h-10 mt-1" />
-                    </div>
-                  )}
-                  {errors.studyAbroadPlan?.category && (
-                    <p className="text-xs text-destructive">{errors.studyAbroadPlan.category.message}</p>
-                  )}
-                </div>
-
-                {/* 목적(배경) */}
-                <div className="space-y-2">
-                  <Label className="font-bold text-sm">목적 (배경)</Label>
-                  <Textarea 
-                    {...register('studyAbroadPlan.purpose')} 
-                    placeholder="연수를 통해 넓히고자 하는 견문이나 목적, 수집하려는 자료의 활용 계획 등을 작성해 주세요."
-                    className="min-h-[100px] text-sm"
-                  />
-                  {errors.studyAbroadPlan?.purpose && (
-                    <p className="text-xs text-destructive">{errors.studyAbroadPlan.purpose.message}</p>
-                  )}
-                </div>
-
-                {/* 연수 세부 일정 */}
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <Label className="font-bold text-sm">연수 세부 일정</Label>
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => append({ date: '', departure: '', destination: '', institution: '', content: '', note: '' })}
-                      className="text-primary hover:text-primary-foreground hover:bg-primary"
-                    >
-                      <PlusCircle className="mr-1.5 h-4 w-4" /> 일정 추가
-                    </Button>
-                  </div>
-                  {errors.studyAbroadPlan?.schedules && (
-                    <p className="text-xs text-destructive">세부 일정의 모든 행의 필수 항목(날짜, 방문기관, 연수내용)을 올바르게 채워 주세요.</p>
-                  )}
-
-                  <div className="border rounded-lg overflow-x-auto bg-white shadow-sm">
-                    <table className="w-full text-sm border-collapse">
-                      <thead>
-                        <tr className="bg-muted/50 border-b text-muted-foreground font-semibold text-xs">
-                          <th className="p-3 text-left min-w-[90px]">월 일*</th>
-                          <th className="p-3 text-left min-w-[100px]">출발지</th>
-                          <th className="p-3 text-left min-w-[100px]">도착지</th>
-                          <th className="p-3 text-left min-w-[150px]">방문기관*</th>
-                          <th className="p-3 text-left min-w-[200px]">연수 내용*</th>
-                          <th className="p-3 text-left min-w-[100px]">비고</th>
-                          <th className="p-3 text-center w-12"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {fields.map((field, index) => (
-                          <tr key={field.id} className="border-b last:border-0 hover:bg-muted/10">
-                            <td className="p-2">
-                              <Input {...register(`studyAbroadPlan.schedules.${index}.date` as const)} placeholder="예: 8.4" className="h-9 text-xs" />
-                            </td>
-                            <td className="p-2">
-                              <Input {...register(`studyAbroadPlan.schedules.${index}.departure` as const)} placeholder="예: 인천" className="h-9 text-xs" />
-                            </td>
-                            <td className="p-2">
-                              <Input {...register(`studyAbroadPlan.schedules.${index}.destination` as const)} placeholder="예: 괌" className="h-9 text-xs" />
-                            </td>
-                            <td className="p-2">
-                              <Input {...register(`studyAbroadPlan.schedules.${index}.institution` as const)} placeholder="예: 사랑의 절벽" className="h-9 text-xs" />
-                            </td>
-                            <td className="p-2">
-                              <Input {...register(`studyAbroadPlan.schedules.${index}.content` as const)} placeholder="예: 유적지 답사 및 자료 수집" className="h-9 text-xs" />
-                            </td>
-                            <td className="p-2">
-                              <Input {...register(`studyAbroadPlan.schedules.${index}.note` as const)} className="h-9 text-xs" />
-                            </td>
-                            <td className="p-2 text-center">
-                              {fields.length > 1 && (
-                                <Button 
-                                  type="button" 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  onClick={() => remove(index)}
-                                  className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* 연수 효과 */}
-                <div className="space-y-2">
-                  <Label className="font-bold text-sm">연수 효과</Label>
-                  <Textarea 
-                    {...register('studyAbroadPlan.effects')} 
-                    placeholder="연수를 통해 기대하는 교육적 효과, 교과 지도 및 학생 생활 지도에의 기여 방안 등을 작성해 주세요."
-                    className="min-h-[100px] text-sm"
-                  />
-                  {errors.studyAbroadPlan?.effects && (
-                    <p className="text-xs text-destructive">{errors.studyAbroadPlan.effects.message}</p>
-                  )}
-                </div>
-              </div>
+              <StudyAbroadPlanSection
+                register={register}
+                errors={errors}
+                watch={watch}
+                setValue={setValue}
+                fields={fields}
+                append={append}
+                remove={remove}
+              />
             )}
 
             {/* 결재선 지정 UI */}
@@ -1254,194 +902,34 @@ export default function TeacherDutyPage() {
         </form>
       </Card>
 
-      <Dialog open={isRepeatModalOpen} onOpenChange={setIsRepeatModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold flex items-center gap-2">
-              <CalendarDays className="text-primary h-5 w-5" /> 요일 반복 및 동행자 일괄 설정
-            </DialogTitle>
-            <DialogDescription>
-              지정된 기간 동안 선택하신 요일에 맞춰 일자별 출장 일정을 일괄 생성하고, 동행자를 함께 지정합니다.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-5 my-4">
-            {/* 1. 기간 설정 */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="font-semibold text-xs">시작일</Label>
-                <Input type="date" value={repeatStartDate} onChange={(e) => setRepeatStartDate(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label className="font-semibold text-xs">종료일</Label>
-                <Input type="date" value={repeatEndDate} onChange={(e) => setRepeatEndDate(e.target.value)} />
-              </div>
-            </div>
-
-            {/* 2. 반복 요일 선택 */}
-            <div className="space-y-2">
-              <Label className="font-semibold text-xs">반복 요일</Label>
-              <div className="flex gap-2">
-                {[
-                  { label: '일', value: 0 },
-                  { label: '월', value: 1 },
-                  { label: '화', value: 2 },
-                  { label: '수', value: 3 },
-                  { label: '목', value: 4 },
-                  { label: '금', value: 5 },
-                  { label: '토', value: 6 },
-                ].map((d) => {
-                  const isSelected = selectedDays.includes(d.value);
-                  return (
-                    <button
-                      key={d.value}
-                      type="button"
-                      onClick={() => {
-                        if (isSelected) {
-                          setSelectedDays(selectedDays.filter(v => v !== d.value));
-                        } else {
-                          setSelectedDays([...selectedDays, d.value]);
-                        }
-                      }}
-                      className={`flex-1 py-2 text-center rounded-lg border font-semibold text-sm transition-all ${
-                        isSelected 
-                          ? 'bg-primary text-primary-foreground border-primary shadow-sm' 
-                          : 'bg-background hover:bg-muted text-muted-foreground'
-                      }`}
-                    >
-                      {d.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 3. 출장 세부 정보 */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="font-semibold text-xs">출장 구분</Label>
-                <Select value={repeatSubType} onValueChange={setRepeatSubType}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="구분 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="관내">관내</SelectItem>
-                    <SelectItem value="관외">관외</SelectItem>
-                    <SelectItem value="국외">국외</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="font-semibold text-xs">목적지</Label>
-                <Input placeholder="목적지 입력" value={repeatDestination} onChange={(e) => setRepeatDestination(e.target.value)} />
-              </div>
-            </div>
-
-            {/* 4. 옵션 선택 */}
-            <div className="flex gap-6 border-y py-3">
-              <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer select-none">
-                <Checkbox 
-                  checked={repeatNoExpensesPaid} 
-                  onCheckedChange={(checked) => setRepeatNoExpensesPaid(!!checked)}
-                />
-                여비 부지급
-              </label>
-              <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer select-none">
-                <Checkbox 
-                  checked={repeatUseCompanyVehicle} 
-                  onCheckedChange={(checked) => setRepeatUseCompanyVehicle(!!checked)}
-                />
-                관용차량 이용
-              </label>
-            </div>
-
-            {/* 5. 사유 */}
-            <div className="space-y-2">
-              <Label className="font-semibold text-xs">출장 사유</Label>
-              <Input placeholder="사유 입력" value={repeatReason} onChange={(e) => setRepeatReason(e.target.value)} />
-            </div>
-
-            {/* 6. 동행자 선택 */}
-            <div className="space-y-3 pt-2">
-              <Label className="font-semibold text-sm flex items-center gap-1.5">
-                <Users size={16} className="text-primary" /> 동행자 지정
-              </Label>
-              
-              {/* 선택된 동행자 표시 */}
-              <div className="flex flex-wrap gap-1.5 min-h-[36px] p-2 border rounded-lg bg-muted/20">
-                {selectedTravelers.length === 0 ? (
-                  <span className="text-xs text-muted-foreground self-center px-1">선택된 인원이 없습니다 (본인을 포함시켜 주세요).</span>
-                ) : (
-                  selectedTravelers.map((tr) => (
-                    <span key={tr.email} className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs font-bold px-2.5 py-1 rounded-full border border-primary/20">
-                      {tr.name}
-                      {profile?.email !== tr.email && (
-                        <button 
-                          type="button" 
-                          onClick={() => setSelectedTravelers(selectedTravelers.filter(t => t.email !== tr.email))}
-                          className="text-primary hover:text-destructive hover:scale-110 ml-1 text-sm font-bold transition-all"
-                        >
-                          &times;
-                        </button>
-                      )}
-                    </span>
-                  ))
-                )}
-              </div>
-
-              {/* 검색 및 검색 결과 */}
-              <div className="space-y-2">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input 
-                    placeholder="교사 이름 또는 이메일 검색..." 
-                    value={searchKeyword} 
-                    onChange={(e) => setSearchKeyword(e.target.value)} 
-                    className="pl-9"
-                  />
-                </div>
-
-                <div className="border rounded-lg max-h-[160px] overflow-y-auto bg-white divide-y">
-                  {users.filter(u => 
-                    u.name.toLowerCase().includes(searchKeyword.toLowerCase()) || 
-                    u.email.toLowerCase().includes(searchKeyword.toLowerCase())
-                  ).map((u) => {
-                    const isSelected = selectedTravelers.some(t => t.email === u.email);
-                    return (
-                      <div 
-                        key={u.uid} 
-                        onClick={() => toggleTraveler(u)}
-                        className={`flex items-center justify-between p-2.5 text-xs cursor-pointer hover:bg-muted/50 transition-colors ${
-                          isSelected ? 'bg-primary/5 font-semibold text-primary' : ''
-                        }`}
-                      >
-                        <div>
-                          <span className="font-bold text-sm">{u.name}</span>
-                          <span className="text-muted-foreground ml-1.5">({u.role || '교사'})</span>
-                          <span className="text-muted-foreground/60 ml-2 block sm:inline">{u.email}</span>
-                        </div>
-                        <Checkbox 
-                          checked={isSelected}
-                          onCheckedChange={() => toggleTraveler(u)}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setIsRepeatModalOpen(false)}>
-              취소
-            </Button>
-            <Button type="button" onClick={handleGenerateRepeatTravels}>
-              일정 일괄 생성
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RepeatTravelDialog
+        isRepeatModalOpen={isRepeatModalOpen}
+        setIsRepeatModalOpen={setIsRepeatModalOpen}
+        repeatStartDate={repeatStartDate}
+        setRepeatStartDate={setRepeatStartDate}
+        repeatEndDate={repeatEndDate}
+        setRepeatEndDate={setRepeatEndDate}
+        selectedDays={selectedDays}
+        setSelectedDays={setSelectedDays}
+        repeatSubType={repeatSubType}
+        setRepeatSubType={setRepeatSubType}
+        repeatDestination={repeatDestination}
+        setRepeatDestination={setRepeatDestination}
+        repeatNoExpensesPaid={repeatNoExpensesPaid}
+        setRepeatNoExpensesPaid={setRepeatNoExpensesPaid}
+        repeatUseCompanyVehicle={repeatUseCompanyVehicle}
+        setRepeatUseCompanyVehicle={setRepeatUseCompanyVehicle}
+        repeatReason={repeatReason}
+        setRepeatReason={setRepeatReason}
+        selectedTravelers={selectedTravelers}
+        setSelectedTravelers={setSelectedTravelers}
+        searchKeyword={searchKeyword}
+        setSearchKeyword={setSearchKeyword}
+        users={users}
+        profile={profile}
+        toggleTraveler={toggleTraveler}
+        handleGenerateRepeatTravels={handleGenerateRepeatTravels}
+      />
     </div>
   );
 }
