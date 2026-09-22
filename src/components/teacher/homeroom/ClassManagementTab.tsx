@@ -4,43 +4,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
 import {
-  Calendar,
   CheckCircle2,
-  Clock,
   BookOpen,
-  FileText,
   MessageSquare,
   BarChart3,
-  Search,
-  Plus,
-  Trash2,
   Edit2,
-  Maximize2,
-  Monitor,
-  Copy,
-  Sparkles,
-  Download,
-  AlertCircle,
-  Save,
-  X,
-  User,
   FolderOpen,
-  History,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  CalendarDays,
-  ListFilter,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import {
   onDailyMemoUpdate,
@@ -70,6 +42,14 @@ import type { MasterStudent } from '@/lib/types/masterStudent';
 import { HomeworkPresentationModal } from './HomeworkPresentationModal';
 import { DailyMemoFullscreenModal } from './DailyMemoFullscreenModal';
 import { GradeMaterialsTab } from './GradeMaterialsTab';
+import { MemoTabContent } from './class-management/MemoTabContent';
+import { HomeworkTabContent } from './class-management/HomeworkTabContent';
+import { BehaviorTabContent } from './class-management/BehaviorTabContent';
+import { ReviewTabContent } from './class-management/ReviewTabContent';
+import { MatrixTabContent } from './class-management/MatrixTabContent';
+import { BehaviorInputDialog } from './class-management/BehaviorInputDialog';
+import { EditHomeworkDialog } from './class-management/EditHomeworkDialog';
+import { MemoHistoryDialog } from './class-management/MemoHistoryDialog';
 
 interface ClassManagementTabProps {
   classKey: string;
@@ -717,1035 +697,94 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
 
       {/* ────────────────── 1. 칠판 알림 메모 탭 ────────────────── */}
       {subTab === 'memo' && (
-        <Card className="rounded-xl border-slate-200/80 shadow-xs">
-          <CardHeader className="p-3 sm:p-5 pb-2.5 border-b border-slate-100">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <CardTitle className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" />
-                  <span>{todayDisplay} 오늘의 알림장</span>
-                </CardTitle>
-                <CardDescription className="hidden sm:block text-xs text-slate-500">
-                  교실 빔프로젝터나 전자칠판에 띄워두는 일일 학급 공지사항입니다.
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => handleSaveMemo()}
-                  className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-xs cursor-pointer"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>저장</span>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleOpenMemoHistory}
-                  className="h-8 text-xs font-bold border-emerald-300 text-emerald-800 bg-emerald-50/60 hover:bg-emerald-100/80 gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <FolderOpen className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>불러오기</span>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setIsMemoFullscreenOpen(true)}
-                  className="h-8 text-xs font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 gap-1.5 cursor-pointer"
-                >
-                  <Maximize2 className="w-3.5 h-3.5" />
-                  <span>전자칠판 전체화면</span>
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-4 space-y-3">
-            <Textarea
-              value={memoContent}
-              onChange={(e) => setMemoContent(e.target.value)}
-              placeholder="여기를 클릭하여 오늘의 알림장, 숙제, 준비물 및 전달사항을 작성하세요..."
-              rows={12}
-              className="text-base sm:text-lg font-bold leading-relaxed border-slate-200 focus-visible:ring-emerald-500 resize-y p-4 bg-slate-50/50"
-            />
-            <p className="text-xs text-slate-400 text-center">
-              💡 [전자칠판 전체화면]을 누르면 TV/칠판 전용 대형 폰트 모드로 전환되어 교실 뒤에서도 선명하게 보입니다.
-            </p>
-          </CardContent>
-        </Card>
+        <MemoTabContent
+          todayDisplay={todayDisplay}
+          memoContent={memoContent}
+          setMemoContent={setMemoContent}
+          handleSaveMemo={handleSaveMemo}
+          handleOpenMemoHistory={handleOpenMemoHistory}
+          setIsMemoFullscreenOpen={setIsMemoFullscreenOpen}
+        />
       )}
 
       {/* ────────────────── 2. 숙제 확인 탭 (일자별 달력/드롭다운 듀얼 탐색 & 2단계 계층 구조) ────────────────── */}
       {subTab === 'homework' && (
-        <div className="space-y-4">
-          {/* 상단 1: 일자 탐색 및 모드 전환 바 */}
-          <Card className="rounded-2xl border-slate-200/80 shadow-xs">
-            <CardContent className="p-3 sm:p-4 space-y-3">
-              {/* 탐색 모드 전환 & 일자 빠른 선택 행 */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                {/* 좌측: 달력 열기 / 드롭다운 목록 토글 버튼 */}
-                <div className="flex items-center gap-1.5">
-                  <div className="bg-slate-100 p-0.5 rounded-xl flex items-center shrink-0">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={dateNavMode === 'dropdown' ? 'default' : 'ghost'}
-                      onClick={() => setDateNavMode('dropdown')}
-                      className={`h-8 text-xs font-bold gap-1 rounded-lg px-2.5 ${dateNavMode === 'dropdown' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
-                    >
-                      <ListFilter className="w-3.5 h-3.5" />
-                      <span>일자 목록</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={dateNavMode === 'calendar' ? 'default' : 'ghost'}
-                      onClick={() => setDateNavMode('calendar')}
-                      className={`h-8 text-xs font-bold gap-1 rounded-lg px-2.5 ${dateNavMode === 'calendar' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
-                    >
-                      <CalendarDays className="w-3.5 h-3.5" />
-                      <span>달력 열기</span>
-                    </Button>
-                  </div>
-
-                  {/* 오늘 날짜 바로가기 버튼 */}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setSelectedHwDate(todayStr);
-                      setCalCurrentDate(new Date());
-                    }}
-                    className={`h-8 text-xs font-bold px-2.5 rounded-xl border-slate-200 ${selectedHwDate === todayStr ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'text-slate-600'}`}
-                  >
-                    오늘
-                  </Button>
-                </div>
-
-                {/* 우측: 드롭다운 모드일 때 일자 선택기 & 직접 입력 */}
-                {dateNavMode === 'dropdown' && (
-                  <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-                    {/* 숙제 등록된 일자 목록 드롭다운 */}
-                    {registeredDates.length > 0 && (
-                      <div className="min-w-[180px] sm:min-w-[220px]">
-                        <Select
-                          value={registeredDates.includes(selectedHwDate) ? selectedHwDate : ''}
-                          onValueChange={(val) => {
-                            if (val) setSelectedHwDate(val);
-                          }}
-                        >
-                          <SelectTrigger className="h-8 sm:h-9 text-xs font-bold bg-white border-slate-200">
-                            <SelectValue placeholder="숙제 등록 일자 선택..." />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-72">
-                            {registeredDates.map((d) => {
-                              const stats = dateStatsMap.get(d);
-                              return (
-                                <SelectItem key={d} value={d} className="text-xs">
-                                  <div className="flex items-center gap-2 py-0.5">
-                                    <span className="font-bold text-slate-800">{d}</span>
-                                    <Badge className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-1.5 py-0 h-4 border-0">
-                                      {stats?.hwCount || 0}
-                                    </Badge>
-                                    {stats?.isAllDone ? (
-                                      <Badge className="bg-emerald-600 text-white text-[10px] font-bold px-1 py-0 h-4 gap-0.5 border-0">
-                                        <Check className="w-2.5 h-2.5" /> 완료
-                                      </Badge>
-                                    ) : (
-                                      <Badge variant="outline" className="text-slate-600 border-slate-300 text-[10px] font-bold px-1.5 py-0 h-4">
-                                        {stats?.summaryText}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-
-                    {/* 임의 날짜 직접 선택 Input */}
-                    <div className="flex items-center gap-1">
-                      <Input
-                        type="date"
-                        value={selectedHwDate}
-                        onChange={(e) => {
-                          if (e.target.value) setSelectedHwDate(e.target.value);
-                        }}
-                        className="h-8 sm:h-9 w-32 sm:w-36 text-xs font-bold bg-white text-center border-slate-200"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* 달력 모드일 때: 달력 그리드 패널 */}
-              {dateNavMode === 'calendar' && (
-                <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-3 sm:p-4">
-                  {/* 달력 헤더 (이전달, 연월, 다음달) */}
-                  <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-200">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setCalCurrentDate(new Date(calCurrentDate.getFullYear(), calCurrentDate.getMonth() - 1, 1));
-                      }}
-                      className="h-7 w-7 p-0 text-slate-600 hover:bg-slate-200 rounded-lg cursor-pointer"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </Button>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-black text-slate-800">
-                        {format(calCurrentDate, 'yyyy년 M월')}
-                      </span>
-                      {selectedHwDate && (
-                        <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-0.5">
-                          선택: {selectedHwDate}
-                        </span>
-                      )}
-                    </div>
-
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setCalCurrentDate(new Date(calCurrentDate.getFullYear(), calCurrentDate.getMonth() + 1, 1));
-                      }}
-                      className="h-7 w-7 p-0 text-slate-600 hover:bg-slate-200 rounded-lg cursor-pointer"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-
-                  {/* 요일 헤더 */}
-                  <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold text-slate-400 mb-1">
-                    <div className="text-rose-500">일</div>
-                    <div>월</div>
-                    <div>화</div>
-                    <div>수</div>
-                    <div>목</div>
-                    <div>금</div>
-                    <div className="text-blue-500">토</div>
-                  </div>
-
-                  {/* 날짜 셀 그리드 */}
-                  <div className="grid grid-cols-7 gap-1">
-                    {calendarDays.map((cd, idx) => {
-                      const hasHw = Boolean(cd.stats && cd.stats.hwCount > 0);
-                      const isSel = cd.isSelected;
-                      const items = cd.stats?.items || [];
-
-                      return (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setSelectedHwDate(cd.dateStr)}
-                          className={`min-h-[58px] sm:min-h-[72px] p-1 sm:p-1.5 rounded-xl border flex flex-col justify-between items-center transition-all cursor-pointer text-left relative ${
-                            !cd.isCurrentMonth
-                              ? 'bg-slate-50/40 text-slate-300 border-transparent hover:bg-slate-100/50'
-                              : isSel
-                              ? 'bg-emerald-50/90 border-emerald-400 ring-2 ring-emerald-500 shadow-xs'
-                              : hasHw
-                              ? 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/70 shadow-2xs'
-                              : 'bg-white border-slate-100 hover:bg-slate-50/60'
-                          }`}
-                        >
-                          {/* 상단: 일자 번호 & 숙제 개수 숫자 뱃지 */}
-                          <div className="w-full flex items-center justify-between">
-                            <span
-                              className={`text-[11px] sm:text-xs font-bold whitespace-nowrap ${
-                                cd.isToday
-                                  ? 'bg-emerald-600 text-white rounded-full w-5 h-5 flex items-center justify-center -ml-0.5'
-                                  : isSel
-                                  ? 'text-emerald-900'
-                                  : cd.isCurrentMonth
-                                  ? 'text-slate-700'
-                                  : 'text-slate-300'
-                              }`}
-                            >
-                              {cd.dayNum}
-                            </span>
-
-                            {/* 하루에 여러 숙제가 있을 수 있으므로 숫자 뱃지로 표시 */}
-                            {hasHw && (
-                              <span
-                                className="bg-indigo-600 text-white text-[9px] font-black rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center shadow-2xs shrink-0"
-                                title={`숙제 ${cd.stats!.hwCount}개`}
-                              >
-                                {cd.stats!.hwCount}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* 하단: 유동적 높이의 개별 숙제별 상태바 목록 */}
-                          <div className="w-full mt-1.5 flex flex-col gap-1">
-                            {hasHw ? (
-                              items.length > 0 ? (
-                                items.map((item, itemIdx) => (
-                                  <div
-                                    key={item.id || itemIdx}
-                                    className={`w-full rounded-md px-1.5 py-1 text-[10px] font-bold flex items-center justify-between gap-1 leading-tight transition-all ${
-                                      item.isDone
-                                        ? 'bg-emerald-600 text-white shadow-2xs'
-                                        : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100/70'
-                                    }`}
-                                    title={`${item.title}: ${item.isDone ? '완료' : `${item.doneCount}/${cd.stats!.totalStudents} (${item.pct}%)`}`}
-                                  >
-                                    <span className="truncate max-w-[50px] sm:max-w-[100px] md:max-w-[130px] font-medium hidden sm:inline">
-                                      {item.title}
-                                    </span>
-                                    {item.isDone ? (
-                                      <span className="flex items-center gap-0.5 text-white font-black ml-auto whitespace-nowrap">
-                                        <Check className="w-2.5 h-2.5 shrink-0" />
-                                        <span className="text-[9px] sm:text-[10px]">완료</span>
-                                      </span>
-                                    ) : (
-                                      <span className="font-extrabold ml-auto whitespace-nowrap text-[9px] sm:text-[10px]">
-                                        {item.doneCount}/{cd.stats!.totalStudents}
-                                      </span>
-                                    )}
-                                  </div>
-                                ))
-                              ) : (
-                                cd.stats!.isAllDone ? (
-                                  <div
-                                    className="w-full bg-emerald-600 text-white rounded-md text-[10px] font-bold py-1 flex items-center justify-center gap-0.5 shadow-2xs"
-                                    title="전원 제출 완료"
-                                  >
-                                    <Check className="w-2.5 h-2.5" />
-                                    <span className="hidden sm:inline">완료</span>
-                                  </div>
-                                ) : (
-                                  <div
-                                    className="w-full bg-slate-100 text-slate-700 border border-slate-200 rounded-md text-[10px] font-black py-1 text-center leading-none"
-                                    title={`제출 현황: ${cd.stats!.summaryText}`}
-                                  >
-                                    {cd.stats!.summaryText}
-                                  </div>
-                                )
-                              )
-                            ) : (
-                              <div className="h-3" />
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* 상단 2: 새 숙제 추가 입력창 */}
-              <div className="pt-1 flex flex-row items-center justify-between gap-1.5 sm:gap-2.5 w-full overflow-x-hidden">
-                <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
-                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 font-extrabold text-[11px] sm:text-xs px-2 sm:px-2.5 py-2 rounded-xl shrink-0 flex items-center gap-1 whitespace-nowrap">
-                    <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span>{selectedHwDate}</span>
-                  </div>
-                  <Input
-                    value={newHwTitle}
-                    onChange={(e) => setNewHwTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleAddHomework();
-                    }}
-                    placeholder={`[${selectedHwDate}] 숙제 추가`}
-                    className="h-9 sm:h-10 text-xs sm:text-sm bg-white flex-1 min-w-0"
-                  />
-                  <Button
-                    onClick={handleAddHomework}
-                    className="h-9 sm:h-10 text-xs font-bold px-2.5 sm:px-4 shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer whitespace-nowrap"
-                  >
-                    <Plus className="w-4 h-4 sm:mr-1 shrink-0" />
-                    <span className="hidden sm:inline">추가</span>
-                  </Button>
-                </div>
-
-                {homeworks.length > 0 && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setPresMode('all');
-                      setIsPresModalOpen(true);
-                    }}
-                    className="h-9 sm:h-10 text-xs font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 shrink-0 gap-1 px-2.5 sm:px-3 cursor-pointer whitespace-nowrap"
-                    title="전체 미제출 칠판"
-                  >
-                    <Monitor className="w-4 h-4 shrink-0" />
-                    <span className="hidden sm:inline">전체 미제출 칠판</span>
-                    <span className="sm:hidden text-[11px]">칠판</span>
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* ────────────────── 1단계: 선택된 날짜의 숙제 목록 ────────────────── */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-black text-slate-800">
-                  {selectedHwDate} 등록된 숙제
-                </h3>
-                <Badge variant="outline" className="bg-slate-100 text-slate-700 text-xs font-bold">
-                  총 {currentDayHomeworks.length}개
-                </Badge>
-              </div>
-              {currentDayHomeworks.length > 1 && (
-                <span className="text-xs text-slate-400">
-                  💡 아래 숙제 카드를 클릭하면 학생 체크표가 전환됩니다.
-                </span>
-              )}
-            </div>
-
-            {currentDayHomeworks.length === 0 ? (
-              <Card className="rounded-2xl border-dashed border-slate-200 p-10 text-center bg-slate-50/50">
-                <div className="inline-flex p-3 bg-white text-slate-400 rounded-full mb-2.5 shadow-2xs">
-                  <BookOpen className="w-5 h-5" />
-                </div>
-                <h4 className="text-sm font-bold text-slate-700">이 날짜에 등록된 숙제가 없습니다</h4>
-                <p className="text-xs text-slate-400 mt-1">
-                  선택하신 <span className="font-semibold text-emerald-700">{selectedHwDate}</span> 일자에 숙제를 입력하고 [추가]를 눌러주세요.
-                </p>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {currentDayHomeworks.map((hw) => {
-                  const { doneCount, totalCount, pct, isAllDone } = getHwStats(hw.id);
-                  const isSelected = selectedHw?.id === hw.id;
-
-                  return (
-                    <Card
-                      key={hw.id}
-                      onClick={() => setSelectedHwId(hw.id)}
-                      className={`rounded-2xl transition-all cursor-pointer border relative overflow-hidden ${
-                        isSelected
-                          ? 'border-emerald-500 bg-emerald-50/20 ring-2 ring-emerald-500/80 shadow-md'
-                          : 'border-slate-200/90 bg-white hover:border-slate-300 hover:shadow-xs'
-                      }`}
-                    >
-                      <CardHeader className="p-3.5 pb-2.5">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-sm font-black text-slate-900 truncate">
-                                {hw.title}
-                              </span>
-                              {isSelected && (
-                                <Badge className="bg-emerald-600 text-white text-[9px] font-bold px-1.5 py-0 h-4">
-                                  선택됨
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
-                              {isAllDone ? (
-                                <Badge className="bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0 h-4 gap-0.5">
-                                  <Check className="w-2.5 h-2.5" /> 전원 완료
-                                </Badge>
-                              ) : (
-                                <span className="font-bold text-emerald-700">
-                                  제출 {doneCount}/{totalCount}명 ({pct}%)
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* 카드 액션 버튼들 */}
-                          <div
-                            className="flex items-center gap-0.5 shrink-0"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setPresMode('single');
-                                setPresTargetHw(hw);
-                                setIsPresModalOpen(true);
-                              }}
-                              className="h-7 w-7 p-0 text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
-                              title="칠판 뷰"
-                            >
-                              <Monitor className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setEditingHw(hw);
-                                setEditHwTitle(hw.title);
-                              }}
-                              className="h-7 w-7 p-0 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
-                              title="수정"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleDeleteHomework(hw.id)}
-                              className="h-7 w-7 p-0 text-rose-400 hover:text-rose-700 hover:bg-rose-50 rounded-lg cursor-pointer"
-                              title="삭제"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* 프로그레스 바 */}
-                        <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
-                          <div
-                            className={`h-full transition-all duration-300 ${isAllDone ? 'bg-emerald-500' : 'bg-emerald-600'}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </CardHeader>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* ────────────────── 2단계: 선택된 숙제의 학생 체크표 상세 ────────────────── */}
-          {selectedHw && (
-            (() => {
-              const { doneCount, totalCount, pct, isAllDone } = getHwStats(selectedHw.id);
-              const doneIdSet = new Set(
-                homeworkChecks
-                  .filter((c) => c.hwId === selectedHw.id && c.checked)
-                  .map((c) => c.studentId)
-              );
-              const incompleteStudents = students.filter(
-                (s) => !doneIdSet.has(s.studentId || s.id || '')
-              );
-
-              return (
-                <Card className="rounded-2xl border-slate-200/90 shadow-xs overflow-hidden bg-white">
-                  <CardHeader className="p-4 pb-3 bg-slate-50/80 border-b border-slate-100">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-base font-black text-slate-800">
-                            {selectedHw.title}
-                          </span>
-                          <span className="text-xs font-semibold text-slate-500">
-                            - 학생 제출 체크표
-                          </span>
-                          {isAllDone && (
-                            <Badge className="bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5">
-                              ✓ 전원 완료
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 font-medium">
-                          <span>{selectedHw.dateWithDay || selectedHw.date}</span>
-                          <span>·</span>
-                          <span className="font-bold text-emerald-700">
-                            제출 완료 {doneCount}/{totalCount}명 ({pct}%)
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setPresMode('single');
-                            setPresTargetHw(selectedHw);
-                            setIsPresModalOpen(true);
-                          }}
-                          className="h-8 text-xs px-2.5 font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 gap-1 cursor-pointer"
-                          title="미제출자 전자칠판 띄우기"
-                        >
-                          <Monitor className="w-3.5 h-3.5" />
-                          <span>칠판 뷰</span>
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleBatchToggleHw(selectedHw.id)}
-                          className="h-8 text-xs px-2.5 font-bold text-slate-700 hover:bg-slate-100 gap-1 border-slate-200 cursor-pointer"
-                          title="전체 완료 / 전체 해제"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>{isAllDone ? '전체 해제' : '전체 완료'}</span>
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* 미제출자 명단 띠 배너 */}
-                    {incompleteStudents.length > 0 ? (
-                      <div className="text-[11px] font-semibold text-rose-700 bg-rose-50/80 border border-rose-100 rounded-lg px-2.5 py-1.5 mt-2.5 flex items-center gap-1.5 flex-wrap">
-                        <span className="font-bold text-rose-800">⚠ 미제출 ({incompleteStudents.length}명):</span>
-                        <span>
-                          {incompleteStudents
-                            .map((s) => `${s.studentNum ? `${s.studentNum}.` : ''}${s.name}`)
-                            .join(' · ')}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="text-[11px] font-semibold text-emerald-700 bg-emerald-50/80 border border-emerald-100 rounded-lg px-2.5 py-1.5 mt-2.5 flex items-center gap-1.5">
-                        <Check className="w-3.5 h-3.5" />
-                        <span>모든 학생이 숙제를 정상 제출하였습니다.</span>
-                      </div>
-                    )}
-                  </CardHeader>
-
-                  <CardContent className="p-3.5">
-                    {/* 학생별 원터치 체크 그리드 */}
-                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-1.5">
-                      {students.map((s) => {
-                        const sid = s.studentId || s.id || '';
-                        const isDone = doneIdSet.has(sid);
-
-                        return (
-                          <button
-                            key={sid}
-                            type="button"
-                            onClick={() => handleToggleHwCheck(selectedHw.id, sid, s.name)}
-                            className={`p-2 rounded-xl border flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer ${
-                              isDone
-                                ? 'bg-emerald-50/80 border-emerald-300 text-emerald-900 shadow-xs'
-                                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                            }`}
-                          >
-                            <span className="text-[10px] text-slate-400 font-medium">
-                              {s.studentNum ? `${s.studentNum}번` : ''}
-                            </span>
-                            <span className="text-xs font-bold tracking-tight">{s.name}</span>
-                            <div
-                              className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black mt-0.5 ${
-                                isDone ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'
-                              }`}
-                            >
-                              {isDone ? '✓' : ''}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })()
-          )}
-        </div>
+        <HomeworkTabContent
+          dateNavMode={dateNavMode}
+          setDateNavMode={setDateNavMode}
+          selectedHwDate={selectedHwDate}
+          setSelectedHwDate={setSelectedHwDate}
+          calCurrentDate={calCurrentDate}
+          setCalCurrentDate={setCalCurrentDate}
+          todayStr={todayStr}
+          registeredDates={registeredDates}
+          dateStatsMap={dateStatsMap}
+          newHwTitle={newHwTitle}
+          setNewHwTitle={setNewHwTitle}
+          handleAddHomework={handleAddHomework}
+          homeworks={homeworks}
+          setPresMode={setPresMode}
+          setIsPresModalOpen={setIsPresModalOpen}
+          currentDayHomeworks={currentDayHomeworks}
+          getHwStats={getHwStats}
+          selectedHw={selectedHw}
+          setSelectedHwId={setSelectedHwId}
+          setPresTargetHw={setPresTargetHw}
+          setEditingHw={setEditingHw}
+          setEditHwTitle={setEditHwTitle}
+          handleDeleteHomework={handleDeleteHomework}
+          homeworkChecks={homeworkChecks}
+          students={students}
+          handleToggleHwCheck={handleToggleHwCheck}
+          handleBatchToggleHw={handleBatchToggleHw}
+          calendarDays={calendarDays}
+        />
       )}
 
       {/* ────────────────── 3. 행동 관찰 기록 탭 ────────────────── */}
       {subTab === 'behavior' && (
-        <Card className="rounded-2xl border-slate-200/80 shadow-xs">
-          <CardHeader className="pb-3 border-b border-slate-100">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <CardTitle className="text-base font-bold text-slate-800 flex items-center gap-2">
-                  <Edit2 className="w-4 h-4 text-indigo-600" />
-                  <span>학생 행동 관찰 기록</span>
-                </CardTitle>
-                <CardDescription className="text-xs text-slate-500">
-                  학생 타일을 클릭하면 오늘 관찰한 행동이나 특이사항을 빠르게 기록할 수 있습니다.
-                </CardDescription>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                  누적 {behaviors.length}건 기록됨
-                </span>
-              </div>
-            </div>
-
-            {/* 검색창 */}
-            <div className="relative pt-2">
-              <Search className="absolute left-3 top-4.5 w-3.5 h-3.5 text-slate-400" />
-              <Input
-                value={behaviorSearch}
-                onChange={(e) => setBehaviorSearch(e.target.value)}
-                placeholder="학생 이름 또는 번호 검색..."
-                className="pl-8 h-9 text-xs bg-white"
-              />
-            </div>
-          </CardHeader>
-
-          <CardContent className="pt-4">
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5">
-              {students
-                .filter((s) => {
-                  if (!behaviorSearch) return true;
-                  return (
-                    s.name.includes(behaviorSearch) ||
-                    String(s.studentNum || '').includes(behaviorSearch)
-                  );
-                })
-                .map((s) => {
-                  const sid = s.studentId || s.id || '';
-                  const count = behaviorCountMap[sid] || 0;
-
-                  return (
-                    <button
-                      key={sid}
-                      onClick={() => handleOpenBehaviorModal(s)}
-                      className={`p-3 rounded-xl border flex flex-col items-center justify-center relative transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md cursor-pointer ${
-                        count > 0
-                          ? 'bg-indigo-50/50 border-indigo-200 text-indigo-950 hover:bg-indigo-100/50'
-                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                      }`}
-                    >
-                      {count > 0 && (
-                        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-indigo-600 text-white">
-                          {count}
-                        </span>
-                      )}
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        {s.studentNum ? `${s.studentNum}번` : ''}
-                      </span>
-                      <span className="text-sm font-extrabold mt-0.5">{s.name}</span>
-                      <span className="text-[10px] text-slate-400 mt-1 font-medium">클릭 시 기록</span>
-                    </button>
-                  );
-                })}
-            </div>
-          </CardContent>
-        </Card>
+        <BehaviorTabContent
+          behaviors={behaviors}
+          behaviorSearch={behaviorSearch}
+          setBehaviorSearch={setBehaviorSearch}
+          students={students}
+          behaviorCountMap={behaviorCountMap}
+          handleOpenBehaviorModal={handleOpenBehaviorModal}
+        />
       )}
 
       {/* ────────────────── 4. 기록 조회 및 상담 메모 탭 ────────────────── */}
       {subTab === 'review' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">학생별 누적 관찰 일지 및 상담 이력</span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleExportBehaviorExcel}
-              className="h-8 text-xs font-bold border-slate-200 text-slate-700 gap-1.5 cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>행동 기록 엑셀 다운로드</span>
-            </Button>
-          </div>
-
-          {!selectedStudentForReview ? (
-            /* 학생 선택 그리드 */
-            <Card className="rounded-2xl border-slate-200/80 shadow-xs">
-              <CardHeader className="pb-3 border-b border-slate-100">
-                <div className="relative">
-                  <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
-                  <Input
-                    value={reviewSearch}
-                    onChange={(e) => setReviewSearch(e.target.value)}
-                    placeholder="학생 이름 또는 번호 검색..."
-                    className="pl-8 h-8 text-xs bg-white"
-                  />
-                </div>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5">
-                  {students
-                    .filter((s) => {
-                      if (!reviewSearch) return true;
-                      return (
-                        s.name.includes(reviewSearch) ||
-                        String(s.studentNum || '').includes(reviewSearch)
-                      );
-                    })
-                    .map((s) => {
-                      const sid = s.studentId || s.id || '';
-                      const count = behaviorCountMap[sid] || 0;
-
-                      return (
-                        <button
-                          key={sid}
-                          onClick={() => handleSelectStudentForReview(s)}
-                          className="p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 flex flex-col items-center justify-center transition-all cursor-pointer hover:border-indigo-400"
-                        >
-                          <span className="text-[10px] text-slate-400">{s.studentNum ? `${s.studentNum}번` : ''}</span>
-                          <span className="text-sm font-bold text-slate-800">{s.name}</span>
-                          <span className="text-[10px] text-indigo-600 font-semibold mt-1">
-                            {count > 0 ? `${count}건 기록` : '기록 없음'}
-                          </span>
-                        </button>
-                      );
-                    })}
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            /* 선택된 학생 상세 타임라인 & 보호자 상담 메모 분할 뷰 */
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setSelectedStudentForReview(null)}
-                className="h-8 text-xs font-bold text-slate-600 hover:bg-slate-100 gap-1 cursor-pointer"
-              >
-                ← 학생 목록으로 돌아가기
-              </Button>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* 좌측: 행동 관찰 타임라인 (2열) */}
-                <Card className="lg:col-span-2 rounded-2xl border-slate-200/80 shadow-xs">
-                  <CardHeader className="p-4 border-b border-slate-100 flex flex-row items-center justify-between">
-                    <div>
-                      <CardTitle className="text-base font-black text-slate-800 flex items-center gap-2">
-                        <User className="w-4 h-4 text-indigo-600" />
-                        <span>
-                          {selectedStudentForReview.studentNum ? `${selectedStudentForReview.studentNum}번 ` : ''}
-                          {selectedStudentForReview.name} 행동 관찰 일지
-                        </span>
-                      </CardTitle>
-                      <CardDescription className="text-xs text-slate-500">
-                        총{' '}
-                        {
-                          behaviors.filter(
-                            (b) => b.studentId === (selectedStudentForReview.studentId || selectedStudentForReview.id)
-                          ).length
-                        }
-                        건의 관찰 기록이 있습니다.
-                      </CardDescription>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleCopyBehaviorRecords(selectedStudentForReview)}
-                        className="h-7 text-xs font-bold border-slate-200 text-slate-700 gap-1 cursor-pointer"
-                        title="기록 전체 텍스트 복사"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>복사</span>
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleCopyAIPrompt(selectedStudentForReview)}
-                        className="h-7 text-xs font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 gap-1 cursor-pointer"
-                        title="생기부 종합의견 AI 분석용 프롬프트 복사"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>AI 생기부 프롬프트</span>
-                      </Button>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="p-4 space-y-3">
-                    {(() => {
-                      const sid = selectedStudentForReview.studentId || selectedStudentForReview.id || '';
-                      const studentBehaviors = behaviors
-                        .filter((b) => b.studentId === sid)
-                        .sort((a, b) => b.date.localeCompare(a.date));
-
-                      if (studentBehaviors.length === 0) {
-                        return (
-                          <div className="py-12 text-center text-slate-400 text-xs">
-                            등록된 행동 관찰 기록이 없습니다.
-                          </div>
-                        );
-                      }
-
-                      return studentBehaviors.map((b) => (
-                        <div
-                          key={b.id}
-                          className="flex items-start justify-between gap-3 p-3 rounded-xl bg-slate-50/70 border border-slate-100"
-                        >
-                          <div className="space-y-1 flex-1">
-                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 inline-block">
-                              {b.date}
-                            </span>
-                            <p className="text-xs sm:text-sm font-medium text-slate-800 leading-relaxed whitespace-pre-wrap mt-1">
-                              {b.content}
-                            </p>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDeleteBehavior(b.id)}
-                            className="h-7 w-7 p-0 text-slate-300 hover:text-rose-600 hover:bg-rose-50 shrink-0 cursor-pointer"
-                            title="삭제"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      ));
-                    })()}
-                  </CardContent>
-                </Card>
-
-                {/* 우측: 보호자 상담 메모 (1열) */}
-                <Card className="rounded-2xl border-slate-200/80 shadow-xs h-fit">
-                  <CardHeader className="p-4 border-b border-slate-100 flex flex-row items-center justify-between">
-                    <CardTitle className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                      <MessageSquare className="w-4 h-4 text-emerald-600" />
-                      <span>보호자 상담 메모</span>
-                    </CardTitle>
-                    <Button
-                      size="sm"
-                      onClick={handleSaveConsultMemo}
-                      className="h-7 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
-                    >
-                      저장
-                    </Button>
-                  </CardHeader>
-                  <CardContent className="p-4 space-y-2">
-                    <Textarea
-                      value={consultInput}
-                      onChange={(e) => setConsultInput(e.target.value)}
-                      placeholder="학부모 전화 상담, 방문 상담 메모를 자유롭게 입력하세요..."
-                      rows={10}
-                      className="text-xs leading-relaxed resize-none bg-slate-50/60"
-                    />
-                    <p className="text-[11px] text-slate-400">
-                      * 학생별로 안전하게 분리 저장되며, 상시 열람 가능합니다.
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          )}
-        </div>
+        <ReviewTabContent
+          selectedStudentForReview={selectedStudentForReview}
+          setSelectedStudentForReview={setSelectedStudentForReview}
+          reviewSearch={reviewSearch}
+          setReviewSearch={setReviewSearch}
+          students={students}
+          behaviorCountMap={behaviorCountMap}
+          handleSelectStudentForReview={handleSelectStudentForReview}
+          behaviors={behaviors}
+          handleCopyBehaviorRecords={handleCopyBehaviorRecords}
+          handleCopyAIPrompt={handleCopyAIPrompt}
+          handleDeleteBehavior={handleDeleteBehavior}
+          consultInput={consultInput}
+          setConsultInput={setConsultInput}
+          handleSaveConsultMemo={handleSaveConsultMemo}
+          handleExportBehaviorExcel={handleExportBehaviorExcel}
+        />
       )}
 
       {/* ────────────────── 5. 월별 현황 매트릭스 탭 ────────────────── */}
       {subTab === 'matrix' && (
-        <Card className="rounded-2xl border-slate-200/80 shadow-xs">
-          <CardHeader className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-base font-black text-slate-800 flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-indigo-600" />
-                <span>월별 숙제 제출 현황표</span>
-              </CardTitle>
-              <CardDescription className="text-xs text-slate-500">
-                학생별 과제 제출 현황(O/X)과 전체 완료율을 한눈에 조회하고 엑셀로 내보냅니다.
-              </CardDescription>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Select value={matrixMonth} onValueChange={setMatrixMonth}>
-                <SelectTrigger className="h-8 text-xs w-[120px] bg-white font-bold">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all" className="text-xs">전체 기간</SelectItem>
-                  {(() => {
-                    const months = Array.from(
-                      new Set(homeworks.map((h) => (h.date ? h.date.slice(0, 7) : '')).filter(Boolean))
-                    ).sort().reverse();
-                    return months.map((m) => (
-                      <SelectItem key={m} value={m} className="text-xs">
-                        {m}월
-                      </SelectItem>
-                    ));
-                  })()}
-                </SelectContent>
-              </Select>
-
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleExportHomeworkExcel}
-                className="h-8 text-xs font-bold border-slate-200 text-slate-700 gap-1.5 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>엑셀 다운로드</span>
-              </Button>
-            </div>
-          </CardHeader>
-
-          <CardContent className="p-0 overflow-x-auto">
-            {(() => {
-              let filteredHws = homeworks;
-              if (matrixMonth !== 'all') {
-                filteredHws = filteredHws.filter((h) => h.date && h.date.startsWith(matrixMonth));
-              }
-
-              if (filteredHws.length === 0) {
-                return (
-                  <div className="p-12 text-center text-xs text-slate-400">
-                    선택한 기간에 등록된 숙제가 없습니다.
-                  </div>
-                );
-              }
-
-              return (
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
-                      <th className="p-2.5 text-left border-r border-slate-200 min-w-[120px] sticky left-0 bg-slate-50 z-10">
-                        학생명
-                      </th>
-                      {filteredHws.map((hw) => (
-                        <th key={hw.id} className="p-2.5 text-center border-r border-slate-200 min-w-[90px]">
-                          <div className="font-bold text-slate-800">{hw.title}</div>
-                          <div className="text-[10px] font-normal text-slate-400 mt-0.5">{hw.date}</div>
-                        </th>
-                      ))}
-                      <th className="p-2.5 text-center min-w-[80px]">완료율</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {students.map((s, idx) => {
-                      const sid = s.studentId || s.id || '';
-                      let doneCount = 0;
-                      const cells = filteredHws.map((hw) => {
-                        const isDone = homeworkChecks.some((c) => c.hwId === hw.id && c.studentId === sid && c.checked);
-                        if (isDone) doneCount++;
-                        return isDone;
-                      });
-                      const pct = filteredHws.length > 0 ? Math.round((doneCount / filteredHws.length) * 100) : 0;
-
-                      return (
-                        <tr
-                          key={sid}
-                          className={`border-b border-slate-100 hover:bg-emerald-50/40 transition-colors ${
-                            idx % 2 === 1 ? 'bg-slate-50/40' : 'bg-white'
-                          }`}
-                        >
-                          <td className="p-2.5 font-bold border-r border-slate-200 sticky left-0 bg-inherit z-10 text-slate-800">
-                            {s.studentNum ? `${s.studentNum}. ` : ''}
-                            {s.name}
-                          </td>
-                          {cells.map((isDone, cIdx) => (
-                            <td key={cIdx} className="p-2 text-center border-r border-slate-200">
-                              <span
-                                className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-black ${
-                                  isDone ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'
-                                }`}
-                              >
-                                {isDone ? '✓' : '✕'}
-                              </span>
-                            </td>
-                          ))}
-                          <td className="p-2 text-center">
-                            <span
-                              className={`font-black text-xs ${
-                                pct === 100
-                                  ? 'text-emerald-700'
-                                  : pct >= 80
-                                  ? 'text-indigo-700'
-                                  : pct >= 50
-                                  ? 'text-amber-700'
-                                  : 'text-rose-600'
-                              }`}
-                            >
-                              {pct}%
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              );
-            })()}
-          </CardContent>
-        </Card>
+        <MatrixTabContent
+          matrixMonth={matrixMonth}
+          setMatrixMonth={setMatrixMonth}
+          homeworks={homeworks}
+          handleExportHomeworkExcel={handleExportHomeworkExcel}
+          students={students}
+          homeworkChecks={homeworkChecks}
+        />
       )}
-
       {/* ────────────────── 6. 학년 자료 공유 탭 ────────────────── */}
       {subTab === 'materials' && (
         <GradeMaterialsTab
@@ -1756,71 +795,24 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
       )}
 
       {/* ─── 행동 기록 입력 모달 ─── */}
-      <Dialog open={isBehaviorModalOpen} onOpenChange={setIsBehaviorModalOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold">
-              {selectedStudentForBehavior?.name} 관찰 기록 입력
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              {todayDisplay} 관찰 내용을 입력해 주세요. (Ctrl + Enter로 바로 저장)
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-2">
-            <Textarea
-              value={behaviorInput}
-              onChange={(e) => setBehaviorInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.ctrlKey && e.key === 'Enter') handleSaveBehavior();
-              }}
-              placeholder="예: 모둠 활동 시 친구들의 의견을 경청하고 배려하는 태도를 보임."
-              rows={4}
-              className="text-xs leading-relaxed"
-              autoFocus
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" size="sm" onClick={() => setIsBehaviorModalOpen(false)}>
-              취소
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSaveBehavior}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
-            >
-              저장
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <BehaviorInputDialog
+        isBehaviorModalOpen={isBehaviorModalOpen}
+        setIsBehaviorModalOpen={setIsBehaviorModalOpen}
+        selectedStudentForBehavior={selectedStudentForBehavior}
+        todayDisplay={todayDisplay}
+        behaviorInput={behaviorInput}
+        setBehaviorInput={setBehaviorInput}
+        handleSaveBehavior={handleSaveBehavior}
+      />
 
       {/* ─── 숙제 이름 수정 모달 ─── */}
-      <Dialog open={!!editingHw} onOpenChange={(open) => !open && setEditingHw(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold">숙제 내용 수정</DialogTitle>
-          </DialogHeader>
-          <div className="py-2">
-            <Input
-              value={editHwTitle}
-              onChange={(e) => setEditHwTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSaveEditHw();
-              }}
-              className="text-xs"
-              autoFocus
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" size="sm" onClick={() => setEditingHw(null)}>
-              취소
-            </Button>
-            <Button size="sm" onClick={handleSaveEditHw} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-              수정 완료
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EditHomeworkDialog
+        editingHw={editingHw}
+        setEditingHw={setEditingHw}
+        editHwTitle={editHwTitle}
+        setEditHwTitle={setEditHwTitle}
+        handleSaveEditHw={handleSaveEditHw}
+      />
 
       {/* ─── 칠판 미제출자 프레젠테이션 모달 ─── */}
       <HomeworkPresentationModal
@@ -1851,134 +843,17 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
       />
 
       {/* ─── 일자별 칠판 알림장 불러오기 다이얼로그 ─── */}
-      <Dialog open={isMemoHistoryOpen} onOpenChange={setIsMemoHistoryOpen}>
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 overflow-hidden z-[10000]">
-          <DialogHeader className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/80">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-xl bg-emerald-100 text-emerald-800">
-                <FolderOpen className="w-5 h-5" />
-              </div>
-              <div>
-                <DialogTitle className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-2">
-                  <span>일자별 칠판 알림장 불러오기</span>
-                  <Badge variant="outline" className="text-xs bg-white text-emerald-700 border-emerald-200 font-bold">
-                    {classLabel}
-                  </Badge>
-                </DialogTitle>
-                <DialogDescription className="text-xs text-slate-500 mt-0.5">
-                  이전에 저장된 일자별 알림장/칠판 내용을 확인하고 오늘의 칠판으로 불러옵니다.
-                </DialogDescription>
-              </div>
-            </div>
-          </DialogHeader>
-
-          <div className="flex-1 flex flex-col md:flex-row min-h-0 divide-y md:divide-y-0 md:divide-x divide-slate-200 overflow-hidden">
-            {/* 좌측: 일자 목록 */}
-            <div className="w-full md:w-64 shrink-0 flex flex-col bg-slate-50/50 p-3 overflow-y-auto max-h-48 md:max-h-none">
-              <div className="text-xs font-bold text-slate-500 mb-2 px-1 flex items-center justify-between">
-                <span>저장된 날짜 목록</span>
-                <span className="text-[11px] font-mono text-emerald-600 font-black">{memoHistoryList.length}건</span>
-              </div>
-
-              {isLoadingMemos ? (
-                <div className="py-8 text-center text-xs text-slate-400">
-                  알림장 내역을 불러오는 중...
-                </div>
-              ) : memoHistoryList.length === 0 ? (
-                <div className="py-8 text-center text-xs text-slate-400">
-                  저장된 알림장 내역이 없습니다.
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {memoHistoryList.map((memo) => {
-                    const isSelected = selectedHistoryMemo?.date === memo.date;
-                    const isToday = memo.date === todayStr;
-                    return (
-                      <button
-                        key={memo.date}
-                        type="button"
-                        onClick={() => setSelectedHistoryMemo(memo)}
-                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
-                          isSelected
-                            ? 'bg-emerald-600 text-white shadow-xs'
-                            : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/70'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <Calendar className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-slate-400'}`} />
-                          <span className="font-mono truncate">{memo.date}</span>
-                        </div>
-                        {isToday && (
-                          <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-extrabold ${
-                              isSelected ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
-                            }`}
-                          >
-                            오늘
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* 우측: 선택된 일자의 알림장 내용 미리보기 */}
-            <div className="flex-1 flex flex-col p-4 overflow-y-auto bg-white min-h-0">
-              {selectedHistoryMemo ? (
-                <div className="flex-1 flex flex-col min-h-0 space-y-3">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 shrink-0">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-emerald-600" />
-                      <span className="font-bold text-sm text-slate-800">{selectedHistoryMemo.date} 저장 내용</span>
-                    </div>
-                    {selectedHistoryMemo.updatedAt && (
-                      <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {new Date(selectedHistoryMemo.updatedAt).toLocaleString('ko-KR', {
-                          month: 'numeric',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex-1 min-h-[220px] max-h-[380px] overflow-y-auto p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-sm sm:text-base font-semibold text-slate-800 whitespace-pre-wrap leading-relaxed">
-                    {selectedHistoryMemo.content || '(내용 없음)'}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex-1 flex items-center justify-center text-xs text-slate-400">
-                  좌측에서 조회할 날짜를 선택하세요.
-                </div>
-              )}
-            </div>
-          </div>
-
-          <DialogFooter className="p-3 sm:p-4 border-t border-slate-200 bg-slate-50/50 flex flex-row items-center justify-between sm:justify-end gap-2 shrink-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsMemoHistoryOpen(false)}
-              className="text-xs font-bold text-slate-600"
-            >
-              닫기
-            </Button>
-            <Button
-              size="sm"
-              disabled={!selectedHistoryMemo}
-              onClick={() => selectedHistoryMemo && handleApplyHistoryMemo(selectedHistoryMemo)}
-              className="text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-xs cursor-pointer"
-            >
-              <Check className="w-3.5 h-3.5" />
-              <span>선택한 날짜 내용으로 불러오기</span>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <MemoHistoryDialog
+        isMemoHistoryOpen={isMemoHistoryOpen}
+        setIsMemoHistoryOpen={setIsMemoHistoryOpen}
+        memoHistoryList={memoHistoryList}
+        isLoadingMemos={isLoadingMemos}
+        selectedHistoryMemo={selectedHistoryMemo}
+        setSelectedHistoryMemo={setSelectedHistoryMemo}
+        todayStr={todayStr}
+        classLabel={classLabel}
+        handleApplyHistoryMemo={handleApplyHistoryMemo}
+      />
     </div>
   );
 };
