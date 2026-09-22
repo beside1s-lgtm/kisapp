@@ -38,6 +38,8 @@ import { sendMailNotification } from '@/lib/services/documentService';
 import { getDocumentById } from '@/lib/services/documentService';
 import { generateAfterschoolSettlementWorkbook } from '@/lib/afterschool/excel';
 import { getRealtimeSemesterInfo } from '@/lib/services/academicCalendarService';
+import { PresetManagementDialog } from './document-form/PresetManagementDialog';
+import { MobileCirculationDialog } from './document-form/MobileCirculationDialog';
 
 const approverSchema = z.object({
   name: z.string().optional().default(''),
@@ -1776,52 +1778,16 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
           </CardContent>
         </Card>
 
-        {/* 모바일 전용 공람자 관리 Dialog */}
-        <Dialog open={isMobileCircularDialogOpen} onOpenChange={setIsMobileCircularDialogOpen}>
-          <DialogContent className="max-w-sm rounded-2xl p-5">
-            <DialogHeader>
-              <DialogTitle className="text-base font-bold flex items-center justify-between">
-                <span>공람자 지정</span>
-                <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">
-                  총 {circularFields.length}명
-                </Badge>
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3 pt-2">
-              <UserSearch
-                users={users}
-                value={circularQuery}
-                onChange={(value) => setCircularQuery(value)}
-                onSelectUser={(u) => {
-                  if (!circularFields.some(f => f.email === u.email)) appendCircular({name: u.name, email: u.email, role: u.role});
-                  setCircularQuery(''); 
-                }}
-                placeholder="공람자 검색 및 추가..."
-              />
-              <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
-                {circularFields.length === 0 ? (
-                  <span className="text-xs text-muted-foreground p-2">지정된 공람자가 없습니다.</span>
-                ) : (
-                  circularFields.map((field, i) => (
-                    <div key={field.id} className="bg-white border shadow-2xs px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs font-semibold">
-                      <span>{field.name}</span>
-                      <button type="button" onClick={() => removeCircular(i)} className="text-slate-400 hover:text-red-500">
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-              <Button 
-                type="button" 
-                onClick={() => setIsMobileCircularDialogOpen(false)} 
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-9 text-xs"
-              >
-                확인
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <MobileCirculationDialog
+          open={isMobileCircularDialogOpen}
+          onOpenChange={setIsMobileCircularDialogOpen}
+          users={users}
+          circularQuery={circularQuery}
+          setCircularQuery={setCircularQuery}
+          circularFields={circularFields}
+          onAppendCircular={appendCircular}
+          onRemoveCircular={removeCircular}
+        />
 
         {/* 데스크톱 전용 공람 카드 */}
         {!isFamily && (
@@ -2171,148 +2137,25 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
       </form>
     </Form>
 
-    {/* 결재선 프리셋 관리 다이얼로그 */}
-    <Dialog open={isPresetDialogOpen} onOpenChange={setIsPresetDialogOpen}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>결재선 프리셋 관리</DialogTitle>
-          <DialogDescription>
-            자주 사용하는 결재선을 프리셋으로 저장하여 빠르게 기안할 수 있습니다.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-6 py-4">
-          {/* 새 프리셋 저장 섹션 */}
-          <div className="space-y-3 border-b pb-4">
-            <h4 className="text-sm font-bold">현재 결재선을 프리셋으로 저장</h4>
-            
-            <div className="space-y-2">
-              <Label htmlFor="preset-name">프리셋 이름</Label>
-              <Input
-                id="preset-name"
-                placeholder="예: 교무부 복무 결재선, 내 기안 결재선"
-                value={newPresetName}
-                onChange={(e) => setNewPresetName(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>프리셋 종류</Label>
-              <RadioGroup
-                value={newPresetType}
-                onValueChange={(val: any) => setNewPresetType(val)}
-                className="flex gap-4 pt-1"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="personal" id="type-personal" />
-                  <Label htmlFor="type-personal" className="cursor-pointer">개인 프리셋</Label>
-                </div>
-                {canSaveDeptPreset && (
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="department" id="type-department" />
-                    <Label htmlFor="type-department" className="cursor-pointer">부서 프리셋</Label>
-                  </div>
-                )}
-              </RadioGroup>
-            </div>
-
-            {newPresetType === 'department' && (
-              <div className="space-y-2 animate-in fade-in duration-200">
-                <Label htmlFor="preset-dept-select">대상 부서</Label>
-                <Select
-                  value={selectedDeptIdForPreset}
-                  onValueChange={setSelectedDeptIdForPreset}
-                >
-                  <SelectTrigger id="preset-dept-select">
-                    <SelectValue placeholder="부서 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {profile?.isAdmin ? (
-                      allDepartments.map(d => (
-                        <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                      ))
-                    ) : (
-                      leadDepartments.map(d => (
-                        <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-                <p className="text-[10px] text-muted-foreground">
-                  * 부서 공통 프리셋은 해당 부서원 모두가 기안 시 조회하고 적용할 수 있습니다.
-                </p>
-              </div>
-            )}
-
-            <Button
-              type="button"
-              onClick={handleSavePreset}
-              className="w-full mt-2"
-              size="sm"
-            >
-              현재 결재선 추가
-            </Button>
-          </div>
-
-          {/* 저장된 프리셋 목록 섹션 */}
-          <div className="space-y-3">
-            <h4 className="text-sm font-bold">저장된 프리셋 목록</h4>
-            <div className="max-h-[200px] overflow-y-auto space-y-2 border rounded-md p-2 bg-muted/20">
-              {presets.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-6">저장된 프리셋이 없습니다.</p>
-              ) : (
-                presets.map((preset) => {
-                  const isPersonal = preset.type === 'personal';
-                  const isMyDept = myDepartments.some(d => d.id === preset.departmentId);
-                  
-                  const canDelete = isPersonal || 
-                    profile?.isAdmin || 
-                    myDepartments.some(d => d.id === preset.departmentId && d.headEmail?.trim().toLowerCase() === profile?.email?.trim().toLowerCase());
-
-                  return (
-                    <div
-                      key={preset.id}
-                      className="flex items-center justify-between p-2.5 rounded-lg border bg-background shadow-sm text-xs"
-                    >
-                      <div className="flex flex-col gap-1 min-w-0 pr-2">
-                        <span className="font-semibold text-foreground truncate">{preset.name}</span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {isPersonal ? (
-                            <span className="text-indigo-600 font-medium">개인 프리셋</span>
-                          ) : (
-                            <span className="text-emerald-600 font-medium">
-                              부서 공통 ({preset.departmentName}) {isMyDept && '• 내 소속'}
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                      
-                      {canDelete && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeletePreset(preset.id!)}
-                          className="h-7 w-7 text-destructive hover:bg-destructive/10 shrink-0"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setIsPresetDialogOpen(false)}>
-            닫기
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <PresetManagementDialog
+      open={isPresetDialogOpen}
+      onOpenChange={setIsPresetDialogOpen}
+      newPresetName={newPresetName}
+      setNewPresetName={setNewPresetName}
+      newPresetType={newPresetType}
+      setNewPresetType={setNewPresetType}
+      canSaveDeptPreset={canSaveDeptPreset}
+      selectedDeptIdForPreset={selectedDeptIdForPreset}
+      setSelectedDeptIdForPreset={setSelectedDeptIdForPreset}
+      isAdmin={profile?.isAdmin}
+      allDepartments={allDepartments}
+      leadDepartments={leadDepartments}
+      onSavePreset={handleSavePreset}
+      presets={presets}
+      myDepartments={myDepartments}
+      currentUserEmail={profile?.email}
+      onDeletePreset={handleDeletePreset}
+    />
     </>
   );
 }
