@@ -73,9 +73,12 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { v4 as uuidv4 } from 'uuid';
-import { Badge } from "@/components/ui/badge";
+import { TeamsTabContent } from './team-balancer/TeamsTabContent';
+import { SetupTabContent, type ClassSelection } from './team-balancer/SetupTabContent';
+import { StudentsTabContent } from './team-balancer/StudentsTabContent';
+import { StudentMoveDialog } from './team-balancer/StudentMoveDialog';
+import { ScoutingReportDialog } from './team-balancer/ScoutingReportDialog';
 
 interface TeamBalancerProps {
   allStudents: Student[];
@@ -86,15 +89,6 @@ interface TeamBalancerProps {
   onTeamGroupDelete: (groupId: string) => void;
   sportsClubs: SportsClub[];
 }
-
-type ClassSelection = {
-  [grade: string]: {
-    all: boolean;
-    classes: {
-      [classNum: string]: boolean;
-    };
-  };
-};
 
 export default function TeamBalancer({
   allStudents,
@@ -844,748 +838,86 @@ export default function TeamBalancer({
       <div className="flex-1 min-h-0 overflow-hidden relative">
         {/* ======================= TAB 1: 팀 배정 결과 뷰 ======================= */}
         {activeTab === 'teams' && (
-          <div className="w-full h-full flex flex-col min-h-0 overflow-hidden p-1.5 sm:p-2 space-y-1.5">
-            {teams.length === 0 ? (
-              <div className="w-full h-full flex flex-col items-center justify-center text-center p-4 bg-white rounded-xl border border-dashed border-slate-300">
-                <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mb-3">
-                  <Shuffle className="w-6 h-6" />
-                </div>
-                <h3 className="text-sm font-black text-slate-800 mb-1">아직 편성된 팀이 없습니다</h3>
-                <p className="text-xs text-slate-500 mb-4">
-                  대상: <span className="font-bold text-slate-700">{selectedClassSummary}</span> ({targetStudents.length}명)
-                  <br />
-                  종목: <span className="font-bold text-slate-700">{selectedItemNames.join(', ') || '미선택'}</span>
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setActiveTab('setup')}
-                    className="h-8 text-xs font-bold"
-                  >
-                    <Sliders className="w-3.5 h-3.5 mr-1" />
-                    조건 설정하기
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleBalanceTeams}
-                    disabled={targetStudents.length === 0 || selectedItemNames.length === 0}
-                    className="h-8 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 mr-1" />
-                    팀 자동 편성 실행
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <>
-                {/* 팀 요약 & 서브 필터 바 */}
-                <div className="flex items-center justify-between gap-1 px-2 py-1 bg-white rounded-lg border border-slate-200 text-xs shrink-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[10px] font-bold text-slate-500">평균 편차:</span>
-                    <Badge
-                      variant={scoreDeviation <= 3 ? 'default' : 'secondary'}
-                      className={cn(
-                        "text-[10px] font-black px-1.5 py-0 h-4.5",
-                        scoreDeviation <= 3 ? "bg-emerald-600" : "bg-amber-500 text-white"
-                      )}
-                    >
-                      {scoreDeviation}점 {scoreDeviation <= 3 ? '(우수)' : '(보통)'}
-                    </Badge>
-                    <div className="hidden sm:flex items-center gap-1 text-[11px] text-slate-600">
-                      {teamOverallAverages.map((t) => (
-                        <span key={t.teamId} className="font-bold">
-                          {t.name}: <span className="text-indigo-600">{t.avg}점</span>({t.count}명)
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      id="btn-toggle-radar"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowRadar(!showRadar)}
-                      className={cn(
-                        "h-6 px-1.5 text-[10px] font-bold rounded",
-                        showRadar ? "bg-indigo-50 text-indigo-700" : "text-slate-500"
-                      )}
-                      title="스파이더웹 차트 토글"
-                    >
-                      <BarChart2 className="w-3 h-3 mr-0.5" />
-                      차트 {showRadar ? 'ON' : 'OFF'}
-                    </Button>
-
-                    {/* 3팀 이상일 때 탭 스위처 */}
-                    {teams.length > 2 && (
-                      <div className="flex items-center gap-0.5 p-0.5 bg-slate-100 rounded">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedTeamTab('all')}
-                          className={cn(
-                            "px-1.5 py-0.5 text-[10px] font-bold rounded",
-                            selectedTeamTab === 'all' ? "bg-white text-indigo-700 shadow-2xs" : "text-slate-600"
-                          )}
-                        >
-                          전체
-                        </button>
-                        {teams.map((t, idx) => (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => setSelectedTeamTab(t.id)}
-                            className={cn(
-                              "px-1.5 py-0.5 text-[10px] font-bold rounded",
-                              selectedTeamTab === t.id ? "bg-white text-indigo-700 shadow-2xs" : "text-slate-600"
-                            )}
-                          >
-                            {idx + 1}팀
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 팀 카드 그리드 (스크롤 없는 2열 분할 또는 탭 뷰) */}
-                <div className="flex-1 min-h-0 overflow-hidden">
-                  <div
-                    className={cn(
-                      "w-full h-full gap-1.5",
-                      selectedTeamTab !== 'all'
-                        ? "flex flex-col"
-                        : teams.length === 2
-                        ? "grid grid-cols-2"
-                        : "grid grid-cols-2 md:grid-cols-3 overflow-y-auto overscroll-contain pr-0.5"
-                    )}
-                  >
-                    {teams
-                      .filter((t) => selectedTeamTab === 'all' || selectedTeamTab === t.id)
-                      .map((t, tIdx) => {
-                        const tAvg = teamOverallAverages.find((a) => a.teamId === t.id);
-                        return (
-                          <div
-                            key={t.id}
-                            className="flex flex-col h-full min-h-0 bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden"
-                          >
-                            {/* 팀 카드 헤더 */}
-                            <div className="px-2 py-1.5 bg-gradient-to-r from-slate-50 to-slate-100/80 border-b border-slate-200 flex items-center justify-between gap-1 shrink-0">
-                              <div className="flex items-center gap-1 flex-1 min-w-0">
-                                <span className="w-4 h-4 rounded bg-indigo-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
-                                  {tIdx + 1}
-                                </span>
-                                <Input
-                                  value={t.name}
-                                  onChange={(e) => handleRenameTeam(t.id, e.target.value)}
-                                  className="h-6 text-[11px] font-black bg-transparent border-none p-0 focus-visible:ring-0 shadow-none text-slate-800 truncate"
-                                  placeholder="팀 이름"
-                                />
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0">
-                                <Badge variant="outline" className="text-[10px] font-black px-1 py-0 bg-white text-indigo-700 border-indigo-200">
-                                  평균 {tAvg?.avg || 0}점
-                                </Badge>
-                                <span className="text-[10px] font-bold text-slate-400">
-                                  {t.members?.length || 0}명
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* 옵션: 레이더 차트 (토글 켜졌을 때만 75px 미니 렌더링) */}
-                            {showRadar && (
-                              <div className="h-[75px] shrink-0 border-b border-slate-100 bg-slate-50/40">
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <RadarChart data={teamAverages.get(t.id)} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-                                    <PolarGrid strokeOpacity={0.2} />
-                                    <PolarAngleAxis dataKey="item" tick={{ fontSize: 7, fontWeight: 700 }} />
-                                    <Radar dataKey="score" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.3} />
-                                  </RadarChart>
-                                </ResponsiveContainer>
-                              </div>
-                            )}
-
-                            {/* 팀 멤버 목록 (내부 스크롤, 컴팩트 1줄) */}
-                            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-1 space-y-0.5 scrollbar-thin">
-                              {t.members?.map((m, mIdx) => {
-                                const score = studentScores.get(m.id)?.totalScore ?? 0;
-                                const isCaptainCandidate = mIdx === 0;
-                                return (
-                                  <div
-                                    key={m.id}
-                                    data-student-row={m.id}
-                                    onClick={() => setStudentToMove({ student: m, sourceTeamId: t.id })}
-                                    className="px-1.5 py-1 rounded bg-slate-50 hover:bg-indigo-50/70 border border-slate-100 flex items-center justify-between text-[11px] transition-colors cursor-pointer group"
-                                  >
-                                    <div className="flex items-center gap-1 min-w-0">
-                                      <span className="text-[9px] font-bold text-slate-400 w-3 text-center">
-                                        {mIdx + 1}
-                                      </span>
-                                      <span className="font-bold text-slate-900 truncate student-name-label">
-                                        {m.name}
-                                      </span>
-                                      <span className="text-[9px] text-slate-400 font-medium">
-                                        {m.gender}
-                                      </span>
-                                      {isCaptainCandidate && (
-                                        <span className="text-[8px] font-black px-1 py-0 bg-amber-100 text-amber-800 rounded border border-amber-300 flex items-center gap-0.5 shrink-0">
-                                          <Crown className="w-2.5 h-2.5 text-amber-600" />
-                                          주장
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      <span className="text-[10px] font-bold text-slate-600">
-                                        {score}점
-                                      </span>
-                                      <ArrowRightLeft className="w-2.5 h-2.5 text-slate-300 group-hover:text-indigo-600" />
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-
-                {/* 잔여 인원 안내 배너 (팀당 인원 기준 편성 시) */}
-                {leftoverStudents.length > 0 && (
-                  <div className="px-2 py-1 bg-amber-50 rounded-lg border border-amber-200 flex items-center gap-1.5 text-xs shrink-0">
-                    <Info className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span className="text-[11px] font-bold text-amber-900">
-                      잔여 학생 {leftoverStudents.length}명: {leftoverStudents.map((s) => s.name).join(', ')}
-                    </span>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+          <TeamsTabContent
+            teams={teams}
+            selectedClassSummary={selectedClassSummary}
+            targetStudents={targetStudents}
+            selectedItemNames={selectedItemNames}
+            setActiveTab={setActiveTab}
+            handleBalanceTeams={handleBalanceTeams}
+            scoreDeviation={scoreDeviation}
+            teamOverallAverages={teamOverallAverages}
+            showRadar={showRadar}
+            setShowRadar={setShowRadar}
+            selectedTeamTab={selectedTeamTab}
+            setSelectedTeamTab={setSelectedTeamTab}
+            teamAverages={teamAverages}
+            studentScores={studentScores}
+            setStudentToMove={setStudentToMove}
+            handleRenameTeam={handleRenameTeam}
+            leftoverStudents={leftoverStudents}
+          />
         )}
 
         {/* ======================= TAB 2: 조건 및 대상 설정 뷰 ======================= */}
         {activeTab === 'setup' && (
-          <div className="w-full h-full overflow-y-auto overscroll-contain p-2 sm:p-3 space-y-2.5">
-            {/* 카드 1: 대상 학년 & 반 선택 */}
-            <div className="p-2.5 bg-white rounded-xl border border-slate-200/90 shadow-2xs space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-black text-slate-800 flex items-center gap-1">
-                  <Users className="w-3.5 h-3.5 text-indigo-600" />
-                  1. 대상 학급 및 클럽 선택
-                </Label>
-                <Badge variant="outline" className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200">
-                  선택 대상 {targetStudents.length}명
-                </Badge>
-              </div>
-
-              {/* 학년 및 반 칩 목록 */}
-              <div className="space-y-1.5 pt-1">
-                {grades.map((grade) => {
-                  const isGradeAll = classSelection[grade]?.all || false;
-                  return (
-                    <div key={grade} className="p-1.5 bg-slate-50 rounded-lg border border-slate-200/60 flex flex-col sm:flex-row sm:items-center gap-1.5">
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const next = { ...classSelection };
-                            const newVal = !isGradeAll;
-                            next[grade].all = newVal;
-                            Object.keys(next[grade].classes).forEach((cn) => (next[grade].classes[cn] = newVal));
-                            setClassSelection(next);
-                          }}
-                          className={cn(
-                            "px-2 py-0.5 rounded text-xs font-black transition-all",
-                            isGradeAll
-                              ? "bg-indigo-600 text-white shadow-2xs"
-                              : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-100"
-                          )}
-                        >
-                          {grade}학년 전체
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-1 flex-wrap pl-1">
-                        {classNumsByGrade[grade]?.map((classNum) => {
-                          const isChecked = classSelection[grade]?.classes[classNum] || false;
-                          return (
-                            <button
-                              key={classNum}
-                              type="button"
-                              onClick={() => {
-                                const next = { ...classSelection };
-                                next[grade].classes[classNum] = !isChecked;
-                                next[grade].all = Object.values(next[grade].classes).every(Boolean);
-                                setClassSelection(next);
-                              }}
-                              className={cn(
-                                "px-2 py-0.5 rounded text-[11px] font-bold transition-all",
-                                isChecked
-                                  ? "bg-indigo-100 border border-indigo-300 text-indigo-900"
-                                  : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
-                              )}
-                            >
-                              {classNum}반
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* 스포츠 클럽 선택 */}
-                {sportsClubs.length > 0 && (
-                  <div className="pt-1 flex items-center gap-1 flex-wrap">
-                    <span className="text-[11px] font-bold text-slate-500 mr-1">스포츠클럽:</span>
-                    {sportsClubs.map((club) => {
-                      const isChecked = clubSelection[club.id] || false;
-                      return (
-                        <button
-                          key={club.id}
-                          type="button"
-                          onClick={() => setClubSelection({ ...clubSelection, [club.id]: !isChecked })}
-                          className={cn(
-                            "px-2 py-0.5 rounded text-[11px] font-bold transition-all",
-                            isChecked
-                              ? "bg-amber-100 border border-amber-300 text-amber-900"
-                              : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
-                          )}
-                        >
-                          {club.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 카드 2: 밸런스 기준 종목 선택 */}
-            <div className="p-2.5 bg-white rounded-xl border border-slate-200/90 shadow-2xs space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-black text-slate-800 flex items-center gap-1">
-                  <BarChart2 className="w-3.5 h-3.5 text-indigo-600" />
-                  2. 밸런스 기준 종목 (다중 선택)
-                </Label>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const papsItems = (groupedItems['PAPS'] || []).map((i) => i.name);
-                      setSelectedItemNames(papsItems);
-                    }}
-                    className="text-[10px] font-bold text-indigo-600 hover:underline px-1"
-                  >
-                    PAPS만
-                  </button>
-                  <span className="text-slate-300">|</span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedItemNames(uniqueItems.map((i) => i.name))}
-                    className="text-[10px] font-bold text-indigo-600 hover:underline px-1"
-                  >
-                    전체선택
-                  </button>
-                  <span className="text-slate-300">|</span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedItemNames([])}
-                    className="text-[10px] font-bold text-slate-500 hover:underline px-1"
-                  >
-                    해제
-                  </button>
-                </div>
-              </div>
-
-              {/* 종목 태그 칩 */}
-              <div className="flex flex-wrap gap-1 pt-1 max-h-32 overflow-y-auto scrollbar-thin">
-                {uniqueItems.map((item) => {
-                  const isSelected = selectedItemNames.includes(item.name);
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() =>
-                        setSelectedItemNames((prev) =>
-                          isSelected ? prev.filter((n) => n !== item.name) : [...prev, item.name]
-                        )
-                      }
-                      className={cn(
-                        "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1",
-                        isSelected
-                          ? "bg-indigo-600 text-white shadow-2xs"
-                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                      )}
-                    >
-                      {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                      <span>{item.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 카드 3: 상세 필터 및 편성 옵션 */}
-            <div className="p-2.5 bg-white rounded-xl border border-slate-200/90 shadow-2xs space-y-2.5">
-              <Label className="text-xs font-black text-slate-800 flex items-center gap-1">
-                <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-600" />
-                3. 편성 방식 및 필터 옵션
-              </Label>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                {/* 성별 구분 */}
-                <div className="space-y-1">
-                  <span className="text-[10px] font-bold text-slate-500">성별 옵션</span>
-                  <div className="grid grid-cols-4 gap-1 p-0.5 bg-slate-100 rounded-lg">
-                    {[
-                      { id: 'all', label: '혼성' },
-                      { id: 'separate', label: '성별분리' },
-                      { id: '남', label: '남학생만' },
-                      { id: '여', label: '여학생만' },
-                    ].map((g) => (
-                      <button
-                        key={g.id}
-                        type="button"
-                        onClick={() => setSelectedGender(g.id as any)}
-                        className={cn(
-                          "py-1 text-[10px] font-bold rounded transition-all text-center",
-                          selectedGender === g.id
-                            ? "bg-white text-indigo-700 shadow-2xs"
-                            : "text-slate-600 hover:text-slate-900"
-                        )}
-                      >
-                        {g.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 밸런스 기준 */}
-                <div className="space-y-1">
-                  <span className="text-[10px] font-bold text-slate-500">편성 로직</span>
-                  <div className="grid grid-cols-3 gap-1 p-0.5 bg-slate-100 rounded-lg">
-                    {[
-                      { id: 'balanced', label: '균등 실력' },
-                      { id: 'by-ability', label: '실력순' },
-                      { id: 'random', label: '무작위' },
-                    ].map((b) => (
-                      <button
-                        key={b.id}
-                        type="button"
-                        onClick={() => setBalancingStrategy(b.id as any)}
-                        className={cn(
-                          "py-1 text-[10px] font-bold rounded transition-all text-center",
-                          balancingStrategy === b.id
-                            ? "bg-white text-indigo-700 shadow-2xs"
-                            : "text-slate-600 hover:text-slate-900"
-                        )}
-                      >
-                        {b.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 팀 수 / 팀당 인원 기준 */}
-                <div className="space-y-1">
-                  <span className="text-[10px] font-bold text-slate-500">나누는 기준</span>
-                  <div className="flex items-center gap-1">
-                    <Select value={divideBy} onValueChange={(v) => setDivideBy(v as any)}>
-                      <SelectTrigger className="h-7 text-xs font-bold bg-slate-50 flex-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="teams" className="text-xs">팀 수 기준</SelectItem>
-                        <SelectItem value="members" className="text-xs">팀당 인원 기준</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {divideBy === 'teams' ? (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Input
-                          type="number"
-                          value={numTeams}
-                          onChange={(e) => setNumTeams(Math.max(2, parseInt(e.target.value) || 2))}
-                          className="w-16 h-7 text-xs font-bold text-center"
-                          min={2}
-                        />
-                        <span className="text-[11px] font-bold text-slate-600">개 팀</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Input
-                          type="number"
-                          value={membersPerTeam}
-                          onChange={(e) => setMembersPerTeam(Math.max(2, parseInt(e.target.value) || 2))}
-                          className="w-16 h-7 text-xs font-bold text-center"
-                          min={2}
-                        />
-                        <span className="text-[11px] font-bold text-slate-600">명씩</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 기록 없는 학생 제외 스위치 */}
-                <div className="flex items-center gap-2 pt-3 sm:pt-4">
-                  <Checkbox
-                    id="ex-non"
-                    checked={excludeNonParticipants}
-                    onCheckedChange={(c) => setExcludeNonParticipants(!!c)}
-                  />
-                  <Label htmlFor="ex-non" className="text-[11px] font-bold text-slate-700 cursor-pointer">
-                    측정 기록 없는 학생 제외
-                  </Label>
-                </div>
-              </div>
-            </div>
-
-            {/* 실행 버튼 */}
-            <div className="pt-1">
-              <Button
-                id="btn-auto-balance-bottom"
-                onClick={handleBalanceTeams}
-                disabled={targetStudents.length === 0 || selectedItemNames.length === 0}
-                className="w-full h-10 text-xs font-black bg-indigo-700 hover:bg-indigo-800 text-white shadow-md flex items-center justify-center gap-1.5"
-              >
-                <Sparkles className="w-4 h-4 text-amber-300" />
-                <span>선택된 조건으로 팀 편성 실행 ({targetStudents.length}명 대상)</span>
-              </Button>
-            </div>
-          </div>
+          <SetupTabContent
+            targetStudents={targetStudents}
+            grades={grades}
+            classSelection={classSelection}
+            setClassSelection={setClassSelection}
+            classNumsByGrade={classNumsByGrade}
+            sportsClubs={sportsClubs}
+            clubSelection={clubSelection}
+            setClubSelection={setClubSelection}
+            groupedItems={groupedItems}
+            setSelectedItemNames={setSelectedItemNames}
+            uniqueItems={uniqueItems}
+            selectedItemNames={selectedItemNames}
+            selectedGender={selectedGender}
+            setSelectedGender={setSelectedGender}
+            balancingStrategy={balancingStrategy}
+            setBalancingStrategy={setBalancingStrategy}
+            divideBy={divideBy}
+            setDivideBy={setDivideBy}
+            numTeams={numTeams}
+            setNumTeams={setNumTeams}
+            membersPerTeam={membersPerTeam}
+            setMembersPerTeam={setMembersPerTeam}
+            excludeNonParticipants={excludeNonParticipants}
+            setExcludeNonParticipants={setExcludeNonParticipants}
+            handleBalanceTeams={handleBalanceTeams}
+          />
         )}
 
         {/* ======================= TAB 3: 대상 학생 명단 및 AI 분석 뷰 ======================= */}
         {activeTab === 'students' && (
-          <div className="w-full h-full flex flex-col min-h-0 overflow-hidden p-2 space-y-1.5">
-            {/* 상단 검색 & 카운터 바 */}
-            <div className="flex items-center justify-between gap-2 px-2 py-1 bg-white rounded-lg border border-slate-200 shrink-0">
-              <div className="relative flex-1 max-w-[200px]">
-                <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-slate-400" />
-                <Input
-                  id="input-student-search"
-                  placeholder="학생 이름 검색..."
-                  value={studentSearchTerm}
-                  onChange={(e) => setStudentSearchTerm(e.target.value)}
-                  className="pl-7 h-7 text-xs"
-                />
-              </div>
-              <div className="flex items-center gap-1">
-                <Badge variant="outline" className="text-[10px] font-bold text-slate-700">
-                  전체 {candidateList.length}명
-                </Badge>
-              </div>
-            </div>
-
-            {/* 학생 목록 테이블 (화면 꽉 차게 내부 스크롤) */}
-            <div className="flex-1 min-h-0 bg-white rounded-xl border border-slate-200 overflow-y-auto overscroll-contain">
-              <Table>
-                <TableHeader className="bg-slate-50 sticky top-0 z-10">
-                  <TableRow className="h-7">
-                    <TableHead className="w-10 text-center text-[10px] font-black p-1">순위</TableHead>
-                    <TableHead className="text-[10px] font-black p-1">이름</TableHead>
-                    <TableHead className="text-[10px] font-black p-1 text-center">반</TableHead>
-                    <TableHead className="text-[10px] font-black p-1 text-center">성별</TableHead>
-                    <TableHead className="text-[10px] font-black p-1 text-center">능력치</TableHead>
-                    <TableHead className="w-12 text-right text-[10px] font-black p-1 pr-2">AI분석</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredCandidates.map((c, idx) => {
-                    const score = c.score?.totalScore || 0;
-                    return (
-                      <TableRow key={c.student.id} className="h-8 hover:bg-indigo-50/50">
-                        <TableCell className="text-center font-bold text-[10px] text-slate-400 p-1">
-                          {idx + 1}
-                        </TableCell>
-                        <TableCell className="font-bold text-xs p-1 text-slate-900">
-                          {c.student.name}
-                        </TableCell>
-                        <TableCell className="text-center text-[11px] p-1 text-slate-600">
-                          {c.student.grade}-{c.student.classNum}
-                        </TableCell>
-                        <TableCell className="text-center text-[10px] p-1 text-slate-500">
-                          {c.student.gender}
-                        </TableCell>
-                        <TableCell className="text-center p-1">
-                          <Badge
-                            variant={score >= 80 ? 'default' : score >= 50 ? 'secondary' : 'outline'}
-                            className="font-black text-[10px] px-1.5 py-0 h-4.5"
-                          >
-                            {score}점
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right p-1 pr-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-indigo-600 hover:bg-indigo-50 btn-ai-scouting"
-                            onClick={() => handleGetScoutingReport(c.student)}
-                            title="AI 스카우팅 리포트"
-                          >
-                            <Search className="h-3.5 w-3.5" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
+          <StudentsTabContent
+            studentSearchTerm={studentSearchTerm}
+            setStudentSearchTerm={setStudentSearchTerm}
+            candidateList={candidateList}
+            filteredCandidates={filteredCandidates}
+            handleGetScoutingReport={handleGetScoutingReport}
+          />
         )}
       </div>
 
       {/* 학생 팀 이동 다이얼로그 (모바일 원터치) */}
-      <Dialog open={!!studentToMove} onOpenChange={(open) => !open && setStudentToMove(null)}>
-        <DialogContent className="max-w-xs p-4">
-          <DialogHeader className="pb-2">
-            <DialogTitle className="text-sm font-black flex items-center gap-1.5">
-              <ArrowRightLeft className="w-4 h-4 text-indigo-600" />
-              팀 변경: {studentToMove?.student.name}
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              이동할 팀을 선택하세요.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid grid-cols-1 gap-1.5 py-2">
-            {teams.map((t) => {
-              const isCurrent = studentToMove?.sourceTeamId === t.id;
-              return (
-                <Button
-                  key={t.id}
-                  variant={isCurrent ? "secondary" : "outline"}
-                  disabled={isCurrent}
-                  onClick={() => {
-                    if (studentToMove) {
-                      handleMoveStudentToTeam(studentToMove.student.id, studentToMove.sourceTeamId, t.id);
-                    }
-                  }}
-                  className={cn(
-                    "w-full h-9 justify-between font-bold text-xs",
-                    !isCurrent && "hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300"
-                  )}
-                >
-                  <span>{t.name}</span>
-                  <span className="text-[10px] text-slate-500 font-normal">
-                    {isCurrent ? "현재 팀" : `${t.members?.length || 0}명`}
-                  </span>
-                </Button>
-              );
-            })}
-          </div>
-
-          <DialogFooter className="pt-2">
-            <Button variant="ghost" size="sm" onClick={() => setStudentToMove(null)} className="w-full text-xs">
-              취소
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <StudentMoveDialog
+        studentToMove={studentToMove}
+        setStudentToMove={setStudentToMove}
+        teams={teams}
+        handleMoveStudentToTeam={handleMoveStudentToTeam}
+      />
 
       {/* AI 스카우팅 리포트 다이얼로그 */}
-      <Dialog open={!!analyzingStudent} onOpenChange={(open) => !open && setAnalyzingStudent(null)}>
-        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-4">
-          <DialogHeader className="pb-2 border-b">
-            <DialogTitle className="flex items-center gap-1.5 text-base font-black">
-              <Wand2 className="h-4 w-4 text-indigo-600" />
-              {analyzingStudent?.name} 학생 AI 분석 리포트
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              {analyzingStudent?.grade}학년 백분위 기준 및 AI 추천 포지션
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto pr-1 py-3 space-y-3 scrollbar-thin">
-            {isReportLoading ? (
-              <div className="flex flex-col items-center justify-center py-12 gap-3">
-                <Loader2 className="h-8 w-8 animate-spin text-indigo-600 opacity-60" />
-                <p className="font-bold text-xs text-slate-500 animate-pulse">
-                  AI 분석 리포트를 생성 중입니다...
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {/* 레이더 차트 */}
-                <div className="bg-slate-50 rounded-xl p-2 border border-slate-200">
-                  <div className="flex justify-between items-center mb-1 px-1">
-                    <span className="text-[11px] font-black text-slate-700">능력치 스파이더웹</span>
-                    <Badge className="text-[10px] font-black bg-indigo-600">
-                      평균 {studentScores.get(analyzingStudent?.id || '')?.totalScore}점
-                    </Badge>
-                  </div>
-                  <div className="h-[180px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RadarChart
-                        cx="50%"
-                        cy="50%"
-                        outerRadius="75%"
-                        data={studentScores.get(analyzingStudent?.id || '')?.scores || []}
-                      >
-                        <PolarGrid strokeOpacity={0.2} />
-                        <PolarAngleAxis dataKey="item" tick={{ fontSize: 9, fontWeight: 700 }} />
-                        <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                        <Radar dataKey="score" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.4} />
-                        <RechartsTooltip contentStyle={{ borderRadius: '8px', fontSize: '11px' }} />
-                      </RadarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* AI 스카우팅 결과 */}
-                {scoutingReport ? (
-                  <div className="space-y-2 text-xs">
-                    <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-200">
-                      <span className="font-black text-emerald-800 flex items-center gap-1 mb-1 text-[11px]">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> 핵심 강점
-                      </span>
-                      <p className="text-[11px] text-emerald-950 leading-relaxed whitespace-pre-wrap">
-                        {scoutingReport.strengths}
-                      </p>
-                    </div>
-
-                    <div className="p-2.5 bg-rose-50 rounded-lg border border-rose-200">
-                      <span className="font-black text-rose-800 flex items-center gap-1 mb-1 text-[11px]">
-                        <Info className="w-3.5 h-3.5" /> 보완점
-                      </span>
-                      <p className="text-[11px] text-rose-950 leading-relaxed whitespace-pre-wrap">
-                        {scoutingReport.weaknesses}
-                      </p>
-                    </div>
-
-                    <div className="p-2.5 bg-indigo-50/70 rounded-lg border border-indigo-200">
-                      <span className="font-black text-indigo-900 flex items-center gap-1 mb-1 text-[11px]">
-                        <Trophy className="w-3.5 h-3.5" /> 종합 평가
-                      </span>
-                      <p className="text-[11px] text-indigo-950 leading-relaxed italic">
-                        {scoutingReport.assessment}
-                      </p>
-                    </div>
-
-                    <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200">
-                      <span className="font-black text-amber-800 flex items-center gap-1 mb-1 text-[11px]">
-                        <Wand2 className="w-3.5 h-3.5" /> 추천 포지션
-                      </span>
-                      <p className="text-[11px] font-black text-amber-950">
-                        {scoutingReport.position}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-center text-xs text-slate-400 py-6">분석 결과가 없습니다.</p>
-                )}
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="border-t pt-2">
-            <Button onClick={() => setAnalyzingStudent(null)} size="sm" className="w-full text-xs font-bold">
-              확인 완료
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ScoutingReportDialog
+        analyzingStudent={analyzingStudent}
+        setAnalyzingStudent={setAnalyzingStudent}
+        isReportLoading={isReportLoading}
+        studentScores={studentScores}
+        scoutingReport={scoutingReport}
+      />
     </div>
   );
 }
