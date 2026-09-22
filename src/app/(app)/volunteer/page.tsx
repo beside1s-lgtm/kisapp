@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { format } from 'date-fns';
+import { format, addDays } from 'date-fns';
 import { 
   createDocument, 
   getDocumentById, 
@@ -18,46 +18,21 @@ import { getOrgStructure } from '@/lib/services/settingsService';
 import { onMasterStudentsUpdate } from '@/lib/services/masterStudentService';
 import { ApprovalDoc, VolunteerFormData, VolunteerStudentItem, OrgStructure } from '@/lib/types';
 import type { MasterStudent } from '@/lib/types/masterStudent';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { 
-  Loader2, 
-  Send, 
-  CheckCircle2, 
-  HeartHandshake, 
-  FileText, 
-  FileCheck, 
-  Calendar, 
-  Clock, 
-  MapPin, 
-  Building, 
-  History, 
-  Printer, 
-  Users, 
-  Search, 
-  Plus, 
-  Trash2, 
-  Download, 
-  Filter,
-  CheckSquare
-} from 'lucide-react';
-import { VolunteerDocumentPrint } from '@/components/volunteer-document-print';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { FileText, FileCheck, History, Users, CheckSquare } from 'lucide-react';
 import { MainLayout } from '@/components/layout/main-layout';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
+import { ApplyTabContent } from '@/components/volunteer/ApplyTabContent';
+import { BatchTabContent } from '@/components/volunteer/BatchTabContent';
+import { ReportTabContent } from '@/components/volunteer/ReportTabContent';
+import { HistoryTabContent } from '@/components/volunteer/HistoryTabContent';
+import { RegistryTabContent } from '@/components/volunteer/RegistryTabContent';
+import { StudentSearchDialog } from '@/components/volunteer/StudentSearchDialog';
+import { PrintPreviewDialog } from '@/components/volunteer/PrintPreviewDialog';
+import { BatchSubmitDialog } from '@/components/volunteer/BatchSubmitDialog';
+import { RejectDialog } from '@/components/volunteer/RejectDialog';
 
 export default function TeacherVolunteerPage() {
   const { user, profile } = useAuth();
@@ -257,6 +232,11 @@ export default function TeacherVolunteerPage() {
     }
   }, [applyId]);
 
+  // 봉사활동 계획서는 최소 7일 전 제출 (신청일부터 6일 이후까지는 신청 불가)
+  const minSelectableDate = useMemo(() => {
+    return format(addDays(new Date(), 7), 'yyyy-MM-dd');
+  }, []);
+
   // 날짜 변경 시 요일 및 일수 자동 계산
   const handleDateChange = (start: string, end: string) => {
     const days = ['일', '월', '화', '수', '목', '금', '토'];
@@ -264,17 +244,30 @@ export default function TeacherVolunteerPage() {
     let endDayOfWeek = '월';
     let totalDays = 1;
 
+    let adjustedEnd = end;
+    // 시작일이 있고 종료일이 시작일보다 앞서면 시작일로 자동 보정
+    if (start && end && end < start) {
+      adjustedEnd = start;
+    }
+
     if (start) {
       const sDate = new Date(start);
       startDayOfWeek = days[sDate.getDay()];
+      if (start.length === 10 && start < minSelectableDate) {
+        toast({
+          title: '신청 불가 날짜 안내',
+          description: `봉사활동 계획서는 무조건 실시 7일 전 제출해야 합니다. (${minSelectableDate}부터 신청 가능)`,
+          variant: 'destructive',
+        });
+      }
     }
-    if (end) {
-      const eDate = new Date(end);
+    if (adjustedEnd) {
+      const eDate = new Date(adjustedEnd);
       endDayOfWeek = days[eDate.getDay()];
     }
-    if (start && end) {
+    if (start && adjustedEnd) {
       const s = new Date(start).getTime();
-      const e = new Date(end).getTime();
+      const e = new Date(adjustedEnd).getTime();
       if (e >= s) {
         totalDays = Math.round((e - s) / (1000 * 60 * 60 * 24)) + 1;
       }
@@ -282,7 +275,7 @@ export default function TeacherVolunteerPage() {
     setGroupPlanForm(prev => ({
       ...prev,
       startDate: start,
-      endDate: end,
+      endDate: adjustedEnd,
       startDayOfWeek,
       endDayOfWeek,
       totalDays,
@@ -351,6 +344,22 @@ export default function TeacherVolunteerPage() {
     }
     if (!groupPlanForm.startDate || !groupPlanForm.endDate) {
       toast({ title: '오류', description: '활동 기간을 입력해 주세요.', variant: 'destructive' });
+      return;
+    }
+    if (groupPlanForm.startDate < minSelectableDate) {
+      toast({
+        title: '신청 기간 오류',
+        description: `봉사활동 계획서는 무조건 7일 전 제출해야 합니다. (${minSelectableDate}부터 신청 가능하며 신청일로부터 6일 이내는 신청 불가)`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (groupPlanForm.endDate < groupPlanForm.startDate) {
+      toast({
+        title: '신청 기간 오류',
+        description: '종료일은 시작일 이후여야 합니다.',
+        variant: 'destructive',
+      });
       return;
     }
     if (!groupPlanForm.institution || !groupPlanForm.location || !groupPlanForm.content) {
@@ -777,1196 +786,109 @@ export default function TeacherVolunteerPage() {
         </TabsList>
 
         {/* ── 탭 1: 단체 계획서 신청 (서식 3) ── */}
-        <TabsContent value="apply">
-          <Card className="border shadow-xs">
-            <CardHeader className="p-4 sm:p-5 bg-muted/20 border-b">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-base sm:text-lg font-bold flex items-center gap-2">
-                    <Users className="w-5 h-5 text-primary" />
-                    봉사활동 계획서 작성 (초등단체)
-                  </CardTitle>
-                  <CardDescription className="text-xs mt-1">
-                    담당 교사가 학생 단체를 대표하여 계획서를 상신합니다. (결재선: [업무 담당: {volunteerManagerName || '양유정'}] → [담당 부장: 최선미] → [교감: 신선영 전결])
-                  </CardDescription>
-                </div>
-                <Badge variant="outline" className="text-xs text-blue-700 bg-blue-50 border-blue-200">
-                  서식 3
-                </Badge>
-              </div>
-            </CardHeader>
-
-            <form onSubmit={handleSubmitGroupPlan}>
-              <CardContent className="p-4 sm:p-6 space-y-5">
-                {/* 1. 학생 명단 20명 슬롯 테이블 */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
-                      <Label className="text-xs font-bold flex items-center gap-1.5">
-                        <Users className="w-4 h-4 text-primary" />
-                        참여 학생 명단 (최대 20명)
-                      </Label>
-                      <Badge variant="secondary" className="text-[11px]">
-                        입력됨: <b>{groupPlanForm.students.filter(s => s.name?.trim()).length}</b>명
-                      </Badge>
-                    </div>
-
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs font-bold"
-                      onClick={() => setIsStudentSearchOpen(true)}
-                    >
-                      <Search className="w-3.5 h-3.5 mr-1" />
-                      학생 검색 추가
-                    </Button>
-                  </div>
-
-                  {/* 2열 20명 슬롯 그리드 */}
-                  <div className="border rounded-xl overflow-hidden shadow-2xs">
-                    <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x">
-                      {/* 좌측 1~10번 */}
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs text-center border-collapse">
-                          <thead className="bg-muted/50 text-[11px] font-bold border-b">
-                            <tr>
-                              <th className="p-1.5 w-10">순번</th>
-                              <th className="p-1.5 w-14">학년</th>
-                              <th className="p-1.5 w-12">반</th>
-                              <th className="p-1.5 w-14">번호</th>
-                              <th className="p-1.5">이름</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y text-[11px]">
-                            {groupPlanForm.students.slice(0, 10).map((s, idx) => (
-                              <tr key={idx} className="hover:bg-muted/30">
-                                <td className="p-1 font-bold text-muted-foreground">{idx + 1}</td>
-                                <td className="p-1">
-                                  <Input
-                                    value={s.grade}
-                                    onChange={e => handleStudentChange(idx, 'grade', e.target.value)}
-                                    placeholder="학년"
-                                    className="h-7 text-xs text-center p-1"
-                                  />
-                                </td>
-                                <td className="p-1">
-                                  <Input
-                                    value={s.classNum}
-                                    onChange={e => handleStudentChange(idx, 'classNum', e.target.value)}
-                                    placeholder="반"
-                                    className="h-7 text-xs text-center p-1"
-                                  />
-                                </td>
-                                <td className="p-1">
-                                  <Input
-                                    value={s.studentNum}
-                                    onChange={e => handleStudentChange(idx, 'studentNum', e.target.value)}
-                                    placeholder="번호"
-                                    className="h-7 text-xs text-center p-1"
-                                  />
-                                </td>
-                                <td className="p-1">
-                                  <Input
-                                    value={s.name}
-                                    onChange={e => handleStudentChange(idx, 'name', e.target.value)}
-                                    placeholder="학생 이름"
-                                    className="h-7 text-xs font-bold p-1"
-                                  />
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* 우측 11~20번 */}
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs text-center border-collapse">
-                          <thead className="bg-muted/50 text-[11px] font-bold border-b">
-                            <tr>
-                              <th className="p-1.5 w-10">순번</th>
-                              <th className="p-1.5 w-14">학년</th>
-                              <th className="p-1.5 w-12">반</th>
-                              <th className="p-1.5 w-14">번호</th>
-                              <th className="p-1.5">이름</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y text-[11px]">
-                            {groupPlanForm.students.slice(10, 20).map((s, idx) => {
-                              const realIdx = idx + 10;
-                              return (
-                                <tr key={realIdx} className="hover:bg-muted/30">
-                                  <td className="p-1 font-bold text-muted-foreground">{realIdx + 1}</td>
-                                  <td className="p-1">
-                                    <Input
-                                      value={s.grade}
-                                      onChange={e => handleStudentChange(realIdx, 'grade', e.target.value)}
-                                      placeholder="학년"
-                                      className="h-7 text-xs text-center p-1"
-                                    />
-                                  </td>
-                                  <td className="p-1">
-                                    <Input
-                                      value={s.classNum}
-                                      onChange={e => handleStudentChange(realIdx, 'classNum', e.target.value)}
-                                      placeholder="반"
-                                      className="h-7 text-xs text-center p-1"
-                                    />
-                                  </td>
-                                  <td className="p-1">
-                                    <Input
-                                      value={s.studentNum}
-                                      onChange={e => handleStudentChange(realIdx, 'studentNum', e.target.value)}
-                                      placeholder="번호"
-                                      className="h-7 text-xs text-center p-1"
-                                    />
-                                  </td>
-                                  <td className="p-1">
-                                    <Input
-                                      value={s.name}
-                                      onChange={e => handleStudentChange(realIdx, 'name', e.target.value)}
-                                      placeholder="학생 이름"
-                                      className="h-7 text-xs font-bold p-1"
-                                    />
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. 활동 기간 및 총 계획 시간 */}
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-bold flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-primary" />
-                      활동 기간 및 계획 시간
-                    </Label>
-                    <span className="text-[11px] text-red-600 font-bold">
-                      ※ 2026년 12월 24일 봉사활동 계획서 제출 마감
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <div>
-                      <Label className="text-[11px] text-muted-foreground">시작일</Label>
-                      <Input
-                        type="date"
-                        value={groupPlanForm.startDate}
-                        onChange={e => handleDateChange(e.target.value, groupPlanForm.endDate)}
-                        required
-                        className="h-8 text-xs mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-[11px] text-muted-foreground">종료일</Label>
-                      <Input
-                        type="date"
-                        value={groupPlanForm.endDate}
-                        onChange={e => handleDateChange(groupPlanForm.startDate, e.target.value)}
-                        required
-                        className="h-8 text-xs mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-[11px] text-muted-foreground">봉사활동 계획 시간 (총 시간)</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={groupPlanForm.totalHours}
-                        onChange={e => setGroupPlanForm({ ...groupPlanForm, totalHours: Number(e.target.value) })}
-                        required
-                        className="h-8 text-xs mt-1 font-bold"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-lg text-[11px] text-amber-800 leading-relaxed">
-                    선택 기간: <b>{groupPlanForm.startDate || 'YYYY-MM-DD'} ({groupPlanForm.startDayOfWeek}요일) ~ {groupPlanForm.endDate || 'YYYY-MM-DD'} ({groupPlanForm.endDayOfWeek}요일)</b> / 총 <b>{groupPlanForm.totalDays}</b>일간 (계획: <b>{groupPlanForm.totalHours}</b>시간)
-                    <br />
-                    <span className="text-red-600 font-semibold">※ 휴일, 공휴일 8시간 이내 인정 (학기 중 등교 시간은 미인정)</span>
-                  </div>
-                </div>
-
-                {/* 3. 대상 기관 및 장소 */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs font-bold flex items-center gap-1.5">
-                      <Building className="w-3.5 h-3.5 text-primary" />
-                      대상 기관명
-                    </Label>
-                    <Input
-                      value={groupPlanForm.institution}
-                      onChange={e => setGroupPlanForm({ ...groupPlanForm, institution: e.target.value })}
-                      placeholder="예: 호치민 적십자사, 교내 도서관 등"
-                      required
-                      className="h-8 text-xs mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs font-bold flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-primary" />
-                      활동 장소
-                    </Label>
-                    <Input
-                      value={groupPlanForm.location}
-                      onChange={e => setGroupPlanForm({ ...groupPlanForm, location: e.target.value })}
-                      placeholder="예: 7군 센터 회관, 학교 도서관 등"
-                      required
-                      className="h-8 text-xs mt-1"
-                    />
-                  </div>
-                </div>
-
-                {/* 4. 활동 내용 */}
-                <div>
-                  <Label className="text-xs font-bold">활동 내용</Label>
-                  <Textarea
-                    value={groupPlanForm.content}
-                    onChange={e => setGroupPlanForm({ ...groupPlanForm, content: e.target.value })}
-                    placeholder="단체 봉사활동의 구체적인 계획 및 활동 내용을 상세히 기재해 주세요."
-                    rows={4}
-                    required
-                    className="text-xs mt-1 leading-relaxed"
-                  />
-                </div>
-
-                {/* 안내 문구 */}
-                <div className="text-[11px] text-red-600 bg-red-50/50 p-2.5 rounded-lg border border-red-100 leading-normal">
-                  ※ 봉사활동 실시 7일 전까지 계획서 제출, 봉사활동 실시 이후 7일 내 확인서 제출 시 학교생활기록부에 등재됩니다.
-                </div>
-              </CardContent>
-
-              <CardFooter className="p-4 bg-muted/20 border-t flex justify-end gap-2">
-                <Button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="h-9 px-4 font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs"
-                >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Send className="w-4 h-4 mr-1.5" />}
-                  단체 계획서 결재 상신
-                </Button>
-              </CardFooter>
-            </form>
-          </Card>
-        </TabsContent>
+        <ApplyTabContent
+          groupPlanForm={groupPlanForm}
+          setGroupPlanForm={setGroupPlanForm}
+          minSelectableDate={minSelectableDate}
+          handleStudentChange={handleStudentChange}
+          handleDateChange={handleDateChange}
+          setIsStudentSearchOpen={setIsStudentSearchOpen}
+          isSubmitting={isSubmitting}
+          handleSubmitGroupPlan={handleSubmitGroupPlan}
+          volunteerManagerName={volunteerManagerName}
+        />
 
         {/* ── 탭 2 (담당자 전용): 계획서 수합 및 일괄 기안 ── */}
         {isVolunteerManager && (
-          <TabsContent value="batch" className="space-y-4">
-            <Card className="border shadow-xs">
-              <CardHeader className="p-4 sm:p-5 bg-muted/20 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <CardTitle className="text-base sm:text-lg font-bold flex items-center gap-2">
-                    <CheckSquare className="w-5 h-5 text-primary" />
-                    봉사활동 계획서 수합 및 일괄 기안
-                  </CardTitle>
-                  <CardDescription className="text-xs mt-1">
-                    교사 및 학부모(학생)가 제출한 계획서를 다중 선택하여 공문서로 일괄 수합 기안을 상신합니다.
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs font-bold"
-                    onClick={loadSubmittedPlans}
-                    disabled={loadingSubmitted}
-                  >
-                    {loadingSubmitted ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
-                    새로고침
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="h-8 px-3 text-xs font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs"
-                    onClick={handleOpenBatchModal}
-                    disabled={selectedDocIds.length === 0}
-                  >
-                    <Send className="w-3.5 h-3.5 mr-1.5" />
-                    선택 계획서 일괄 기안 상신 ({selectedDocIds.length}건)
-                  </Button>
-                </div>
-              </CardHeader>
-
-              <CardContent className="p-4 sm:p-5 space-y-4">
-                {/* 선택 상태 요약 바 */}
-                <div className="flex items-center justify-between bg-sky-50 border border-sky-200 rounded-lg p-3 text-xs flex-wrap gap-2">
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="select-all-plans"
-                        checked={submittedPlans.length > 0 && selectedDocIds.length === submittedPlans.length}
-                        onCheckedChange={(checked) => handleSelectAllPlans(!!checked)}
-                      />
-                      <label htmlFor="select-all-plans" className="font-bold text-sky-900 cursor-pointer text-xs">
-                        전체 선택 ({selectedDocIds.length}/{submittedPlans.length}건)
-                      </label>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 text-sky-950 font-medium">
-                    <span>
-                      총 선택 학생: <b>
-                        {submittedPlans
-                          .filter(p => selectedDocIds.includes(p.id))
-                          .reduce((sum, p) => {
-                            const v = (p.volunteerFormData || p.parentFormData || {}) as any;
-                            const count = (v.category === 'group' || v.type === 'volunteer-group-plan')
-                              ? (v.groupStudents?.filter((s: any) => s.name?.trim())?.length || 1)
-                              : 1;
-                            return sum + count;
-                          }, 0)}
-                      </b>명
-                    </span>
-                    <span className="text-sky-300">|</span>
-                    <span>
-                      총 인정 시간: <b>
-                        {submittedPlans
-                          .filter(p => selectedDocIds.includes(p.id))
-                          .reduce((sum, p) => {
-                            const v = (p.volunteerFormData || p.parentFormData || {}) as any;
-                            return sum + (Number(v.period?.totalHours) || 0);
-                          }, 0)}
-                      </b>시간
-                    </span>
-                  </div>
-                </div>
-
-                {/* 수합 대기 목록 테이블 */}
-                <div className="border rounded-xl bg-card overflow-hidden shadow-2xs">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left border-collapse">
-                      <thead className="bg-muted/50 text-[11px] font-bold border-b text-slate-700">
-                        <tr>
-                          <th className="p-2.5 text-center w-10">선택</th>
-                          <th className="p-2.5 text-center w-14">구분</th>
-                          <th className="p-2.5 w-36">신청자/학생</th>
-                          <th className="p-2.5 w-24 text-center">학년/반</th>
-                          <th className="p-2.5">대상 기관 및 활동 장소</th>
-                          <th className="p-2.5 w-36 text-center">활동 기간</th>
-                          <th className="p-2.5 text-center w-16">시간</th>
-                          <th className="p-2.5 text-center w-24">제출일</th>
-                          <th className="p-2.5 text-center w-28">관리</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y text-xs">
-                        {loadingSubmitted ? (
-                          <tr>
-                            <td colSpan={9} className="p-8 text-center text-muted-foreground">
-                              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-primary" />
-                              수합 대기 계획서를 조회하고 있습니다...
-                            </td>
-                          </tr>
-                        ) : submittedPlans.length === 0 ? (
-                          <tr>
-                            <td colSpan={9} className="p-12 text-center text-muted-foreground">
-                              <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
-                              <p className="font-bold text-sm">현재 수합 대기 중인 봉사활동 계획서가 없습니다.</p>
-                              <p className="text-xs text-muted-foreground mt-1">교사나 학부모가 새 계획서를 제출하면 이곳에 자동으로 표시됩니다.</p>
-                            </td>
-                          </tr>
-                        ) : (
-                          submittedPlans.map((p) => {
-                            const v = (p.volunteerFormData || p.parentFormData || {}) as any;
-                            const isGroup = v.category === 'group' || v.type === 'volunteer-group-plan';
-                            const isSelected = selectedDocIds.includes(p.id);
-                            const studentName = isGroup
-                              ? `${v.groupStudents?.[0]?.name || ''} 외 ${(v.groupStudents?.length || 1) - 1}명`
-                              : (v.studentName || p.title);
-                            const gradeClass = isGroup ? '단체' : (v.gradeClassNumber || `${v.grade || ''}-${v.classNum || ''}`);
-
-                            return (
-                              <tr key={p.id} className={`hover:bg-muted/30 transition-colors ${isSelected ? 'bg-primary/5' : ''}`}>
-                                <td className="p-2.5 text-center">
-                                  <Checkbox
-                                    checked={isSelected}
-                                    onCheckedChange={() => handleTogglePlanSelect(p.id)}
-                                  />
-                                </td>
-                                <td className="p-2.5 text-center">
-                                  <Badge variant="outline" className={`text-[10px] ${isGroup ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
-                                    {isGroup ? '단체' : '개인'}
-                                  </Badge>
-                                </td>
-                                <td className="p-2.5 font-bold">
-                                  <div className="flex flex-col">
-                                    <span>{studentName}</span>
-                                    <span className="text-[10px] text-muted-foreground font-normal">신청: {p.requesterName}</span>
-                                  </div>
-                                </td>
-                                <td className="p-2.5 text-center text-muted-foreground font-medium">
-                                  {gradeClass}
-                                </td>
-                                <td className="p-2.5">
-                                  <div className="font-semibold truncate max-w-[200px]">{v.institution || '미입력'}</div>
-                                  <div className="text-[11px] text-muted-foreground truncate max-w-[200px]">{v.location || ''}</div>
-                                </td>
-                                <td className="p-2.5 text-center text-[11px] text-muted-foreground whitespace-nowrap">
-                                  {v.period?.startDate} ~ {v.period?.endDate}
-                                </td>
-                                <td className="p-2.5 text-center font-bold">
-                                  {v.period?.totalHours || 0}h
-                                </td>
-                                <td className="p-2.5 text-center text-muted-foreground text-[11px]">
-                                  {p.createdAt ? format(new Date(p.createdAt), 'yyyy-MM-dd') : '-'}
-                                </td>
-                                <td className="p-2.5 text-center">
-                                  <div className="flex items-center justify-center gap-1">
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-7 px-2 text-xs"
-                                      onClick={() => setPreviewDoc(p)}
-                                      title="계획서 미리보기"
-                                    >
-                                      미리보기
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                                      onClick={() => {
-                                        setRejectModalDoc(p);
-                                        setRejectReason('');
-                                      }}
-                                      title="접수 반려"
-                                    >
-                                      반려
-                                    </Button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+          <BatchTabContent
+            submittedPlans={submittedPlans}
+            selectedDocIds={selectedDocIds}
+            loadingSubmitted={loadingSubmitted}
+            handleSelectAllPlans={handleSelectAllPlans}
+            handleTogglePlanSelect={handleTogglePlanSelect}
+            handleOpenBatchModal={handleOpenBatchModal}
+            loadSubmittedPlans={loadSubmittedPlans}
+            setPreviewDoc={setPreviewDoc}
+            setRejectModalDoc={setRejectModalDoc}
+            setRejectReason={setRejectReason}
+          />
         )}
 
         {/* ── 탭 3: 단체 확인서 제출 (서식 4) ── */}
-        <TabsContent value="report">
-          {originalPlanDoc ? (
-            <Card className="border shadow-xs">
-              <CardHeader className="p-4 sm:p-5 bg-muted/20 border-b">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-base sm:text-lg font-bold flex items-center gap-2">
-                      <FileCheck className="w-5 h-5 text-teal-600" />
-                      봉사활동 확인서 작성 (초등단체)
-                    </CardTitle>
-                    <CardDescription className="text-xs mt-1">
-                      승인된 단체 계획서를 바탕으로 실제 활동 시간, 사진 및 확인 기관 정보를 등록합니다.
-                    </CardDescription>
-                  </div>
-                  <Badge variant="outline" className="text-xs text-teal-700 bg-teal-50 border-teal-200">
-                    서식 4
-                  </Badge>
-                </div>
-              </CardHeader>
-
-              <form onSubmit={handleSubmitGroupReport}>
-                <CardContent className="p-4 sm:p-6 space-y-4">
-                  {/* 연동된 원본 계획서 요약 정보 */}
-                  <div className="bg-teal-50/60 border border-teal-200 p-3.5 rounded-xl space-y-1.5 text-xs">
-                    <div className="font-bold text-teal-900 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-teal-600" />
-                      연동된 승인 단체 계획서: {originalPlanDoc.title}
-                    </div>
-                    <div className="text-slate-600 text-[11px]">
-                      인원: <b>{originalPlanDoc.volunteerFormData?.groupStudents?.length || 1}명</b> &nbsp;|&nbsp;
-                      기관: <b>{originalPlanDoc.volunteerFormData?.institution}</b> &nbsp;|&nbsp;
-                      기간: <b>{originalPlanDoc.volunteerFormData?.period?.startDate} ~ {originalPlanDoc.volunteerFormData?.period?.endDate}</b>
-                    </div>
-                  </div>
-
-                  {/* 실제 활동 시간대 */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <div>
-                      <Label className="text-[11px] text-muted-foreground">시작 시각 (Start Time)</Label>
-                      <Input
-                        type="time"
-                        value={groupReportForm.startTime}
-                        onChange={e => setGroupReportForm({ ...groupReportForm, startTime: e.target.value })}
-                        required
-                        className="h-8 text-xs mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-[11px] text-muted-foreground">종료 시각 (End Time)</Label>
-                      <Input
-                        type="time"
-                        value={groupReportForm.endTime}
-                        onChange={e => setGroupReportForm({ ...groupReportForm, endTime: e.target.value })}
-                        required
-                        className="h-8 text-xs mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-[11px] text-muted-foreground">인정 실적 시간 (총 시간)</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={groupReportForm.totalHours}
-                        onChange={e => setGroupReportForm({ ...groupReportForm, totalHours: Number(e.target.value) })}
-                        required
-                        className="h-8 text-xs mt-1 font-bold"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="text-[11px] text-red-600 font-medium">
-                    ※ 봉사활동 실적은 시간 단위로 기록 권장 &nbsp;|&nbsp; ※ 2026년 12월 31일 봉사활동 확인서 제출 마감
-                  </div>
-
-                  {/* 활동 사진 업로드 (최대 2장) */}
-                  <div className="space-y-2">
-                    <Label className="text-xs font-bold">활동 사진 첨부 (최대 2장)</Label>
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={handlePhotoUpload}
-                      className="text-xs h-9"
-                    />
-                    {groupReportForm.activityPhotos.length > 0 && (
-                      <div className="flex gap-2.5 mt-2">
-                        {groupReportForm.activityPhotos.map((src, i) => (
-                          <div key={i} className="relative group border rounded-lg overflow-hidden">
-                            <img src={src} alt="사진" className="h-20 w-32 object-cover" />
-                            <button
-                              type="button"
-                              onClick={() => setGroupReportForm(prev => ({ ...prev, activityPhotos: prev.activityPhotos.filter((_, idx) => idx !== i) }))}
-                              className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 text-[10px] flex items-center justify-center shadow-xs"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 확인 기관 정보 */}
-                  <div className="bg-muted/40 p-3.5 rounded-xl border space-y-3">
-                    <div className="text-xs font-bold text-slate-700">확인 기관 정보 (Confirmation of Institution)</div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <div>
-                        <Label className="text-[11px] text-muted-foreground">기관명</Label>
-                        <Input
-                          value={groupReportForm.institutionName}
-                          onChange={e => setGroupReportForm({ ...groupReportForm, institutionName: e.target.value })}
-                          required
-                          className="h-8 text-xs mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-[11px] text-muted-foreground">연락처</Label>
-                        <Input
-                          value={groupReportForm.phone}
-                          onChange={e => setGroupReportForm({ ...groupReportForm, phone: e.target.value })}
-                          placeholder="예: 028-1234-5678"
-                          className="h-8 text-xs mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-[11px] text-muted-foreground">확인자 성명</Label>
-                        <Input
-                          value={groupReportForm.personInCharge}
-                          onChange={e => setGroupReportForm({ ...groupReportForm, personInCharge: e.target.value })}
-                          placeholder="예: 김담당"
-                          required
-                          className="h-8 text-xs mt-1"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-
-                <CardFooter className="p-4 bg-muted/20 border-t flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-9 text-xs"
-                    onClick={() => setActiveTab('history')}
-                  >
-                    취소
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="h-9 px-4 font-bold bg-teal-600 hover:bg-teal-700 text-white shadow-xs"
-                  >
-                    {isSubmitting ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1.5" />}
-                    단체 확인서 최종 제출
-                  </Button>
-                </CardFooter>
-              </form>
-            </Card>
-          ) : (
-            <Card className="p-8 text-center border shadow-xs">
-              <FileCheck className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-40" />
-              <p className="font-bold text-sm mb-1">연동된 승인 단체 계획서가 없습니다.</p>
-              <p className="text-xs text-muted-foreground mb-4">
-                '나의 신청 내역' 탭에서 승인 완료된 단체 계획서의 [확인서 제출] 버튼을 눌러주세요.
-              </p>
-              <Button size="sm" onClick={() => setActiveTab('history')}>
-                나의 신청 내역으로 이동
-              </Button>
-            </Card>
-          )}
-        </TabsContent>
+        <ReportTabContent
+          originalPlanDoc={originalPlanDoc}
+          groupReportForm={groupReportForm}
+          setGroupReportForm={setGroupReportForm}
+          handlePhotoUpload={handlePhotoUpload}
+          handleSubmitGroupReport={handleSubmitGroupReport}
+          isSubmitting={isSubmitting}
+          setActiveTab={setActiveTab}
+        />
 
         {/* ── 탭 3: 나의 신청 내역 ── */}
-        <TabsContent value="history">
-          {loadingDocs ? (
-            <div className="flex justify-center p-12">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            </div>
-          ) : allDocs.filter(d => d.requesterEmail?.toLowerCase() === user?.email?.toLowerCase()).length === 0 ? (
-            <Card className="p-8 text-center border shadow-xs">
-              <History className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-40" />
-              <p className="font-bold text-sm mb-1">교사 계정으로 제출한 신청 내역이 없습니다.</p>
-              <p className="text-xs text-muted-foreground mb-4">
-                학생 단체를 대표하여 새 단체 봉사활동 계획서를 작성해 보세요.
-              </p>
-              <Button size="sm" onClick={() => setActiveTab('apply')}>
-                단체 계획서 작성하기
-              </Button>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {allDocs
-                .filter(d => d.requesterEmail?.toLowerCase() === user?.email?.toLowerCase())
-                .map(doc => {
-                  const v = (doc.volunteerFormData || doc.parentFormData || {}) as any;
-                  const isGroup = v.category === 'group' || v.type === 'volunteer-group-plan';
-                  const isApproved = doc.status === 'approved';
-                  const hasReport = Boolean(v.reportSubmitted || doc.reportSubmitted);
-                  const needsReport = isApproved && !hasReport;
-
-                  return (
-                    <div
-                      key={doc.id}
-                      className="bg-card border rounded-xl p-4 shadow-xs hover:border-primary/40 transition-all space-y-2.5"
-                    >
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className={isGroup ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-200'}>
-                            {isGroup ? '단체 봉사' : '개인 봉사'}
-                          </Badge>
-                          <span className="text-xs font-bold text-foreground">
-                            {doc.title}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                          {doc.status === 'submitted' && (
-                            <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-xs font-bold">
-                              접수 완료 (수합 대기)
-                            </Badge>
-                          )}
-                          {doc.status === 'pending' && (
-                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-xs font-bold">
-                              결재 진행 중
-                            </Badge>
-                          )}
-                          {doc.status === 'approved' && (
-                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs font-bold">
-                              승인 완료
-                            </Badge>
-                          )}
-                          {doc.status === 'rejected' && (
-                            <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-xs font-bold">
-                              반려됨
-                            </Badge>
-                          )}
-
-                          {needsReport && (
-                            <Badge className="bg-amber-500 text-white text-[10px] font-bold">
-                              확인서 미제출
-                            </Badge>
-                          )}
-                          {hasReport && (
-                            <Badge className="bg-teal-600 text-white text-[10px] font-bold">
-                              확인서 완료
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* 요약 정보 */}
-                      <div className="bg-muted/30 p-2.5 rounded-lg text-xs space-y-1">
-                        <div className="flex items-center gap-1.5 text-muted-foreground">
-                          <Building className="w-3.5 h-3.5 shrink-0" />
-                          <span>기관: <b>{v.institution || '미입력'}</b> ({v.location || ''})</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-muted-foreground">
-                          <Calendar className="w-3.5 h-3.5 shrink-0" />
-                          <span>
-                            기간: {v.period?.startDate} ~ {v.period?.endDate} (총 {v.period?.totalDays || 1}일간, {v.period?.totalHours || 0}시간)
-                          </span>
-                        </div>
-                        {isGroup && (
-                          <div className="text-[11px] text-slate-500">
-                            참여 학생: {(v.groupStudents || []).map((s: any) => s.name).filter(Boolean).join(', ')} (총 {v.groupStudents?.length || 0}명)
-                          </div>
-                        )}
-                      </div>
-
-                      {/* 액션 버튼 */}
-                      <div className="flex items-center gap-2 pt-1 border-t">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-xs font-bold"
-                          onClick={() => router.push(`/documents/${doc.id}`)}
-                        >
-                          <FileText className="w-3.5 h-3.5 mr-1" />
-                          문서 보기
-                        </Button>
-
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-xs font-bold"
-                          onClick={() => setPreviewDoc(doc)}
-                        >
-                          <Printer className="w-3.5 h-3.5 mr-1" />
-                          A4 인쇄
-                        </Button>
-
-                        {needsReport && (
-                          <Button
-                            size="sm"
-                            className="h-8 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white ml-auto"
-                            onClick={() => {
-                              setOriginalPlanDoc(doc);
-                              const prevV = (doc.volunteerFormData || doc.parentFormData || {}) as any;
-                              setGroupReportForm(prev => ({
-                                ...prev,
-                                institutionName: prevV.institution || '',
-                                totalHours: prevV.period?.totalHours || 4,
-                              }));
-                              setActiveTab('report');
-                            }}
-                          >
-                            <FileCheck className="w-3.5 h-3.5 mr-1" />
-                            확인서 제출하기
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          )}
-        </TabsContent>
+        <HistoryTabContent
+          loadingDocs={loadingDocs}
+          allDocs={allDocs}
+          user={user}
+          router={router}
+          setPreviewDoc={setPreviewDoc}
+          setOriginalPlanDoc={setOriginalPlanDoc}
+          setGroupReportForm={setGroupReportForm}
+          setActiveTab={setActiveTab}
+        />
 
         {/* ── 탭 4: 봉사활동 관리대장 (전체 조회, 필터, 엑셀) ── */}
-        <TabsContent value="registry" className="space-y-3">
-          {/* 통계 요약 카드 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <Card className="p-3 shadow-2xs">
-              <div className="text-[11px] text-muted-foreground font-bold">전체 제출</div>
-              <div className="text-xl font-bold text-foreground mt-0.5">{allDocs.length}건</div>
-            </Card>
-            <Card className="p-3 shadow-2xs">
-              <div className="text-[11px] text-muted-foreground font-bold">승인 완료</div>
-              <div className="text-xl font-bold text-green-700 mt-0.5">
-                {allDocs.filter(d => d.status === 'approved').length}건
-              </div>
-            </Card>
-            <Card className="p-3 shadow-2xs">
-              <div className="text-[11px] text-muted-foreground font-bold">확인서 완료</div>
-              <div className="text-xl font-bold text-teal-700 mt-0.5">
-                {allDocs.filter(d => d.volunteerFormData?.reportSubmitted || d.reportSubmitted).length}건
-              </div>
-            </Card>
-            <Card className="p-3 shadow-2xs">
-              <div className="text-[11px] text-muted-foreground font-bold">결재 대기</div>
-              <div className="text-xl font-bold text-amber-700 mt-0.5">
-                {allDocs.filter(d => d.status === 'pending').length}건
-              </div>
-            </Card>
-          </div>
-
-          {/* 필터 및 검색 바 */}
-          <Card className="p-3 shadow-2xs">
-            <div className="flex flex-col sm:flex-row gap-2 items-center justify-between">
-              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                <Select value={filterCategory} onValueChange={setFilterCategory}>
-                  <SelectTrigger className="h-8 text-xs w-24">
-                    <SelectValue placeholder="구분" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="전체">전체 구분</SelectItem>
-                    <SelectItem value="개인">개인 봉사</SelectItem>
-                    <SelectItem value="단체">단체 봉사</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger className="h-8 text-xs w-28">
-                    <SelectValue placeholder="결재상태" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="전체">전체 상태</SelectItem>
-                    <SelectItem value="submitted">접수 (수합대기)</SelectItem>
-                    <SelectItem value="pending">결재 진행 중</SelectItem>
-                    <SelectItem value="approved">승인 완료</SelectItem>
-                    <SelectItem value="rejected">반려됨</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <div className="relative w-full sm:w-48">
-                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
-                  <Input
-                    value={filterSearch}
-                    onChange={e => setFilterSearch(e.target.value)}
-                    placeholder="학생명, 기관명 검색"
-                    className="h-8 text-xs pl-8"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 text-xs font-bold"
-                  onClick={handleExportCsv}
-                >
-                  <Download className="w-3.5 h-3.5 mr-1" />
-                  엑셀(CSV) 다운로드
-                </Button>
-              </div>
-            </div>
-          </Card>
-
-          {/* 관리대장 목록 테이블 */}
-          <div className="border rounded-xl bg-card overflow-hidden shadow-2xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left border-collapse">
-                <thead className="bg-muted/50 text-[11px] font-bold border-b text-slate-700">
-                  <tr>
-                    <th className="p-2.5 text-center w-12">구분</th>
-                    <th className="p-2.5 w-32">학생명/인원</th>
-                    <th className="p-2.5 w-20 text-center">학년/반</th>
-                    <th className="p-2.5">기관명 및 장소</th>
-                    <th className="p-2.5 w-36">활동 기간</th>
-                    <th className="p-2.5 text-center w-16">시간</th>
-                    <th className="p-2.5 text-center w-20">결재상태</th>
-                    <th className="p-2.5 text-center w-20">확인서</th>
-                    <th className="p-2.5 text-center w-24">작업</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y text-xs">
-                  {loadingDocs ? (
-                    <tr>
-                      <td colSpan={9} className="p-8 text-center text-muted-foreground">
-                        <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-primary" />
-                        데이터를 불러오는 중입니다...
-                      </td>
-                    </tr>
-                  ) : filteredDocs.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="p-8 text-center text-muted-foreground">
-                        조건에 일치하는 봉사활동 신청 내역이 없습니다.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredDocs.map(d => {
-                      const v = (d.volunteerFormData || d.parentFormData || {}) as any;
-                      const isGroup = v.category === 'group' || v.type === 'volunteer-group-plan';
-                      const hasReport = Boolean(v.reportSubmitted || d.reportSubmitted);
-
-                      return (
-                        <tr key={d.id} className="hover:bg-muted/30">
-                          <td className="p-2.5 text-center">
-                            <Badge variant="outline" className={`text-[10px] ${isGroup ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'}`}>
-                              {isGroup ? '단체' : '개인'}
-                            </Badge>
-                          </td>
-                          <td className="p-2.5 font-bold">
-                            {isGroup 
-                              ? `${v.groupStudents?.[0]?.name || ''} 외 ${(v.groupStudents?.length || 1) - 1}명` 
-                              : (v.studentName || d.title)}
-                          </td>
-                          <td className="p-2.5 text-center text-muted-foreground">
-                            {isGroup ? '단체' : (v.gradeClassNumber || `${v.grade || ''}-${v.classNum || ''}`)}
-                          </td>
-                          <td className="p-2.5">
-                            <div className="font-semibold truncate max-w-[200px]">{v.institution || '미입력'}</div>
-                            <div className="text-[11px] text-muted-foreground truncate max-w-[200px]">{v.location || ''}</div>
-                          </td>
-                          <td className="p-2.5 text-[11px] text-muted-foreground whitespace-nowrap">
-                            {v.period?.startDate} ~ {v.period?.endDate}
-                          </td>
-                          <td className="p-2.5 text-center font-bold">
-                            {v.period?.totalHours || 0}h
-                          </td>
-                          <td className="p-2.5 text-center">
-                            {d.status === 'submitted' && <Badge variant="outline" className="bg-sky-50 text-sky-700 text-[10px]">접수</Badge>}
-                            {d.status === 'pending' && <Badge variant="outline" className="bg-amber-50 text-amber-700 text-[10px]">대기</Badge>}
-                            {d.status === 'approved' && <Badge variant="outline" className="bg-green-50 text-green-700 text-[10px]">승인</Badge>}
-                            {d.status === 'rejected' && <Badge variant="outline" className="bg-red-50 text-red-700 text-[10px]">반려</Badge>}
-                          </td>
-                          <td className="p-2.5 text-center">
-                            {hasReport ? (
-                              <Badge className="bg-teal-600 text-white text-[10px]">완료</Badge>
-                            ) : (
-                              <span className="text-muted-foreground text-[10px]">-</span>
-                            )}
-                          </td>
-                          <td className="p-2.5 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 px-2 text-xs font-bold"
-                                onClick={() => router.push(`/documents/${d.id}`)}
-                                title="문서 보기"
-                              >
-                                보기
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 px-2 text-xs text-muted-foreground"
-                                onClick={() => setPreviewDoc(d)}
-                                title="A4 인쇄"
-                              >
-                                인쇄
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </TabsContent>
+        <RegistryTabContent
+          allDocs={allDocs}
+          filteredDocs={filteredDocs}
+          loadingDocs={loadingDocs}
+          filterCategory={filterCategory}
+          setFilterCategory={setFilterCategory}
+          filterStatus={filterStatus}
+          setFilterStatus={setFilterStatus}
+          filterSearch={filterSearch}
+          setFilterSearch={setFilterSearch}
+          handleExportCsv={handleExportCsv}
+          router={router}
+          setPreviewDoc={setPreviewDoc}
+        />
       </Tabs>
 
       {/* 학생 검색 다이얼로그 (마스터 학생 연동) */}
-      <Dialog open={isStudentSearchOpen} onOpenChange={setIsStudentSearchOpen}>
-        <DialogContent className="max-w-md p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold flex items-center gap-2">
-              <Search className="w-4 h-4 text-primary" />
-              참여 학생 검색 및 추가
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              이름 또는 학년-반으로 검색하여 단체 봉사활동 참여 학생을 추가하세요.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Input
-              value={studentSearchQuery}
-              onChange={e => setStudentSearchQuery(e.target.value)}
-              placeholder="학생 이름 또는 학년-반 (예: 김철수, 3-2)"
-              className="h-9 text-xs"
-              autoFocus
-            />
-
-            <div className="border rounded-lg max-h-60 overflow-y-auto divide-y text-xs">
-              {searchedMasterStudents.length === 0 ? (
-                <div className="p-4 text-center text-muted-foreground text-xs">
-                  검색 결과가 없습니다.
-                </div>
-              ) : (
-                searchedMasterStudents.map((s, idx) => (
-                  <div
-                    key={s.id ? `${s.id}-${idx}` : `search-std-${idx}`}
-                    className="p-2.5 hover:bg-muted flex items-center justify-between cursor-pointer transition-colors"
-                    onClick={() => handleSelectMasterStudent(s)}
-                  >
-                    <div>
-                      <span className="font-bold text-foreground mr-2">{s.name}</span>
-                      <span className="text-[11px] text-muted-foreground">
-                        ({s.grade}학년 {s.classNum}반 {s.studentNum ? `${s.studentNum}번` : ''})
-                      </span>
-                    </div>
-                    <Button size="sm" variant="ghost" className="h-6 text-xs text-primary font-bold">
-                      추가
-                    </Button>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <StudentSearchDialog
+        isStudentSearchOpen={isStudentSearchOpen}
+        setIsStudentSearchOpen={setIsStudentSearchOpen}
+        studentSearchQuery={studentSearchQuery}
+        setStudentSearchQuery={setStudentSearchQuery}
+        searchedMasterStudents={searchedMasterStudents}
+        handleSelectMasterStudent={handleSelectMasterStudent}
+      />
 
       {/* 인쇄 미리보기 다이얼로그 */}
-      <Dialog open={!!previewDoc} onOpenChange={open => !open && setPreviewDoc(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold flex items-center justify-between">
-              <span>봉사활동 서식 인쇄 미리보기</span>
-              <Button size="sm" onClick={() => window.print()} className="h-8 text-xs font-bold">
-                <Printer className="w-3.5 h-3.5 mr-1" />
-                인쇄하기
-              </Button>
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              봉사활동 서식 인쇄 미리보기 화면입니다.
-            </DialogDescription>
-          </DialogHeader>
-          {previewDoc && (
-            <div className="border rounded bg-white p-2">
-              <VolunteerDocumentPrint doc={previewDoc} />
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <PrintPreviewDialog previewDoc={previewDoc} setPreviewDoc={setPreviewDoc} />
 
       {/* 봉사활동 계획서 일괄 기안 상신 다이얼로그 */}
-      <Dialog open={isBatchModalOpen} onOpenChange={setIsBatchModalOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 space-y-4">
-          <DialogHeader>
-            <DialogTitle className="text-base sm:text-lg font-bold flex items-center gap-2">
-              <CheckSquare className="w-5 h-5 text-primary" />
-              봉사활동 계획서 일괄 기안 상신
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              선택된 {selectedDocIds.length}건의 봉사활동 계획서를 수합하여 결재선으로 기안합니다.
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* 결재선 안내 */}
-          <div className="bg-muted/40 p-3 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <span className="font-bold text-slate-700">결재선 (전결 규정 자동 지정):</span>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <Badge variant="outline" className="bg-sky-50 text-sky-800 border-sky-200 text-xs">
-                기안: {profile?.name || '봉사활동 담당'}
-              </Badge>
-              <span className="text-muted-foreground">→</span>
-              <Badge variant="outline" className="bg-indigo-50 text-indigo-800 border-indigo-200 text-xs">
-                검토: 담당 부장
-              </Badge>
-              <span className="text-muted-foreground">→</span>
-              <Badge variant="outline" className="bg-purple-50 text-purple-800 border-purple-200 text-xs">
-                결재: 교감 (전결)
-              </Badge>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div>
-              <Label className="text-xs font-bold">기안문 제목</Label>
-              <Input
-                value={batchTitle}
-                onChange={e => setBatchTitle(e.target.value)}
-                placeholder="기안문 제목을 입력하세요"
-                className="h-9 text-xs mt-1 font-bold"
-              />
-            </div>
-
-            <div>
-              <Label className="text-xs font-bold">본문 내용 (공문서 표준 수합 양식)</Label>
-              <Textarea
-                value={batchContent}
-                onChange={e => setBatchContent(e.target.value)}
-                rows={10}
-                className="text-xs mt-1 font-mono leading-relaxed"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                ※ 위 본문은 HTML 양식으로 전자결재 본문에 등록됩니다. 필요에 따라 세부 문구를 수정하실 수 있습니다.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2 border-t">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsBatchModalOpen(false)}
-              disabled={isSubmittingBatch}
-            >
-              취소
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="font-bold bg-primary hover:bg-primary/90 text-primary-foreground"
-              onClick={handleSubmitBatch}
-              disabled={isSubmittingBatch}
-            >
-              {isSubmittingBatch ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Send className="w-4 h-4 mr-1.5" />}
-              일괄 기안 상신하기 ({selectedDocIds.length}건)
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <BatchSubmitDialog
+        isBatchModalOpen={isBatchModalOpen}
+        setIsBatchModalOpen={setIsBatchModalOpen}
+        selectedDocIds={selectedDocIds}
+        profile={profile}
+        batchTitle={batchTitle}
+        setBatchTitle={setBatchTitle}
+        batchContent={batchContent}
+        setBatchContent={setBatchContent}
+        handleSubmitBatch={handleSubmitBatch}
+        isSubmittingBatch={isSubmittingBatch}
+      />
 
       {/* 계획서 접수 반려 다이얼로그 */}
-      <Dialog open={!!rejectModalDoc} onOpenChange={open => !open && setRejectModalDoc(null)}>
-        <DialogContent className="max-w-md p-4 sm:p-6 space-y-3">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-red-600 flex items-center gap-2">
-              봉사활동 계획서 접수 반려
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              선택한 봉사활동 계획서를 수합하지 않고 기안자에게 반려합니다.
-            </DialogDescription>
-          </DialogHeader>
-
-          {rejectModalDoc && (
-            <div className="bg-muted/30 p-3 rounded-lg border text-xs space-y-1">
-              <div><b>제목:</b> {rejectModalDoc.title}</div>
-              <div><b>신청자:</b> {rejectModalDoc.requesterName} ({rejectModalDoc.requesterEmail})</div>
-              <div><b>신청일:</b> {rejectModalDoc.createdAt ? format(new Date(rejectModalDoc.createdAt), 'yyyy-MM-dd') : '-'}</div>
-            </div>
-          )}
-
-          <div>
-            <Label className="text-xs font-bold">반려 사유</Label>
-            <Textarea
-              value={rejectReason}
-              onChange={e => setRejectReason(e.target.value)}
-              placeholder="반려 사유를 구체적으로 입력하세요 (신청자에게 전달됩니다)"
-              rows={3}
-              className="text-xs mt-1"
-              autoFocus
-            />
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2 border-t">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setRejectModalDoc(null)}
-            >
-              취소
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="destructive"
-              className="font-bold"
-              onClick={handleRejectSubmission}
-            >
-              반려 확정
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <RejectDialog
+        rejectModalDoc={rejectModalDoc}
+        setRejectModalDoc={setRejectModalDoc}
+        rejectReason={rejectReason}
+        setRejectReason={setRejectReason}
+        handleRejectSubmission={handleRejectSubmission}
+      />
       </div>
     </MainLayout>
   );
