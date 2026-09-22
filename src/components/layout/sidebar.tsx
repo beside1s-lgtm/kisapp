@@ -53,6 +53,7 @@ import { Card } from '../ui/card';
 import { useSidebar } from './sidebar-context';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { SidebarShortcutsModal } from '@/components/sidebar-shortcuts-modal';
+import { SidebarFeatureSearch } from '@/components/layout/feature-search';
 import { 
   ALL_SHORTCUT_ITEMS, 
   getSavedShortcutIds, 
@@ -797,6 +798,9 @@ export default function AppSidebar() {
         <div className="pt-1 pb-1">
           <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider px-2.5 mb-1">
             <span>빠른 도구</span>
+          </div>
+          <div className="px-0.5 mb-1.5">
+            <SidebarFeatureSearch />
           </div>
           <div className="space-y-1">
             <button

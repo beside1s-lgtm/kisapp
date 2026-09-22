@@ -6,19 +6,17 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { 
-  Users2, 
-  CalendarOff, 
-  Backpack, 
-  CheckCircle2, 
-  Loader2, 
-  Send, 
-  AlertCircle, 
-  Calendar as CalendarIcon, 
-  User, 
-  Phone, 
+  Users2,
+  CalendarOff,
+  Backpack,
+  Loader2,
+  Send,
+  AlertCircle,
+  Calendar as CalendarIcon,
+  User,
+  Phone,
   FileText,
   AlertTriangle,
-  ArrowRight,
   Edit3,
   Camera,
   Users,
@@ -26,7 +24,6 @@ import {
   Check,
   X,
   Clock,
-  LogOut,
   ChevronDown,
   FolderOpen
 } from 'lucide-react';
@@ -37,10 +34,6 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getDocConfig, onOrgStructureUpdate } from '@/lib/services/settingsService';
 import { checkHomeroomAccessPermission } from '@/lib/services/permissionService';
 import { onMasterStudentsUpdate, updateMasterStudent, extractEnglishNameFromEmail } from '@/lib/services/masterStudentService';
@@ -63,9 +56,12 @@ import type { OrgStructure, DocConfig } from '@/lib/types';
 import { ClassManagementTab } from '@/components/teacher/homeroom/ClassManagementTab';
 import { GradeMaterialsTab } from '@/components/teacher/homeroom/GradeMaterialsTab';
 import { ParentConsultationTab } from '@/components/teacher/homeroom/ParentConsultationTab';
+import { HomeroomAttendanceTab } from '@/components/teacher/homeroom/HomeroomAttendanceTab';
+import { HomeroomProxyApplyForm } from '@/components/teacher/homeroom/HomeroomProxyApplyForm';
+import { EditHomeroomStudentDialog } from '@/components/teacher/homeroom/EditHomeroomStudentDialog';
+import { BusUnassignConfirmDialog, type BusUnassignTarget } from '@/components/teacher/homeroom/BusUnassignConfirmDialog';
 import { onRoutesUpdate } from '@/lib/kisbus/routes';
 import { onBusesUpdate } from '@/lib/kisbus/buses';
-import { unassignStudentFromAllRoutes } from '@/lib/kisbus/assignments';
 import type { Route, Bus, DayOfWeek } from '@/lib/kisbus/types';
 
 // ─── 학급 키 정렬 및 라벨 포맷 헬퍼 ──────────────────────────────────────────
@@ -180,16 +176,8 @@ export default function TeacherHomeroomApplyPage() {
   const [afternoonRoutes, setAfternoonRoutes] = useState<Route[]>([]);
   const [kisbuses, setKisbuses] = useState<Bus[]>([]);
 
-  // 하교 버스 해제 확인 팝업 상태
-  const [busUnassignTarget, setBusUnassignTarget] = useState<{
-    studentId: string;
-    studentName: string;
-    dayOfWeek: DayOfWeek;
-    dayLabel: string;
-    routeId: string;
-    busNo: string;
-  } | null>(null);
-  const [isBusUnassigning, setIsBusUnassigning] = useState(false);
+  // 하교 버스 해제 확인 팝업 상태 (해제 처리 자체는 BusUnassignConfirmDialog 내부에서 수행)
+  const [busUnassignTarget, setBusUnassignTarget] = useState<BusUnassignTarget | null>(null);
 
   // 문서 유형 (체험학습 신청서 vs 결석계)
   const [docCategory, setDocCategory] = useState<'field-trip' | 'absence'>('field-trip');
@@ -1031,547 +1019,54 @@ export default function TeacherHomeroomApplyPage() {
 
         {/* 탭 1: 출결/체험학습 대리 작성 */}
         <TabsContent value="proxy" className="data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:min-h-0 data-[state=active]:flex-col data-[state=inactive]:hidden m-0 space-y-0">
-          <Card className="flex-1 min-h-0 flex flex-col rounded-xl border border-slate-200/80 shadow-xs bg-white">
-            <CardContent className="flex-1 min-h-0 p-2.5 sm:p-3.5 flex flex-col justify-between gap-2">
-              {/* 2-A. 체험학습 신청서 폼 */}
-              {docCategory === 'field-trip' && (
-                <div className="space-y-2 animate-in fade-in flex-1 flex flex-col justify-between min-h-0">
-                  {/* 시작일, 종료일 & 수업일수 뱃지 인라인 헤더 */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-[11px] sm:text-xs font-bold text-slate-700">신청 기간 및 수업일수 <span className="text-red-500">*</span></Label>
-                      <Badge variant="outline" className="bg-indigo-50/80 border-indigo-200 text-indigo-700 text-[10px] font-bold px-1.5 py-0">
-                        수업 {ftTotalDays}일간 (공휴일/주말 제외)
-                      </Badge>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
-                      <Input type="date" value={ftStartDate} onChange={(e) => setFtStartDate(e.target.value)} className="h-8 text-xs bg-white px-2" />
-                      <Input type="date" value={ftEndDate} onChange={(e) => setFtEndDate(e.target.value)} className="h-8 text-xs bg-white px-2" />
-                    </div>
-                  </div>
-
-                  {/* 학습 형태, 장소, 보호자, 관계 4개 입력칸 1줄 배치 */}
-                  <div className="grid grid-cols-4 gap-1 sm:gap-2">
-                    <div className="space-y-0.5 min-w-0">
-                      <Label className="text-[10px] sm:text-[11px] font-bold truncate block text-slate-600">학습 형태</Label>
-                      <Select value={ftType} onValueChange={setFtType}>
-                        <SelectTrigger className="h-7 sm:h-8 text-[11px] sm:text-xs bg-white px-1 sm:px-2 truncate">
-                          <SelectValue placeholder="형태" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="가족동반여행" className="text-xs">가족동반여행</SelectItem>
-                          <SelectItem value="친인척 방문" className="text-xs">친인척 방문</SelectItem>
-                          <SelectItem value="답사·견학 활동" className="text-xs">답사·견학 활동</SelectItem>
-                          <SelectItem value="체험활동" className="text-xs">체험활동</SelectItem>
-                          <SelectItem value="기타" className="text-xs">기타</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-0.5 min-w-0">
-                      <Label className="text-[10px] sm:text-[11px] font-bold truncate block text-slate-600">장소 <span className="text-red-500">*</span></Label>
-                      <Input 
-                        placeholder="다낭, 서울 등" 
-                        value={ftDestination} 
-                        onChange={(e) => setFtDestination(e.target.value)} 
-                        className="h-7 sm:h-8 text-[11px] sm:text-xs bg-white px-1.5"
-                      />
-                    </div>
-
-                    <div className="space-y-0.5 min-w-0">
-                      <Label className="text-[10px] sm:text-[11px] font-bold truncate block text-slate-600">보호자</Label>
-                      <Input 
-                        placeholder="성명" 
-                        value={ftCompanionName} 
-                        onChange={(e) => setFtCompanionName(e.target.value)} 
-                        className="h-7 sm:h-8 text-[11px] sm:text-xs bg-white px-1.5"
-                      />
-                    </div>
-
-                    <div className="space-y-0.5 min-w-0">
-                      <Label className="text-[10px] sm:text-[11px] font-bold truncate block text-slate-600">관계</Label>
-                      <Input 
-                        placeholder="부, 모" 
-                        value={ftCompanionRelation} 
-                        onChange={(e) => setFtCompanionRelation(e.target.value)} 
-                        className="h-7 sm:h-8 text-[11px] sm:text-xs bg-white px-1.5"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 목적 */}
-                  <div className="space-y-0.5">
-                    <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">체험학습 목적</Label>
-                    <Input 
-                      placeholder="예: 현지 문화 탐방 및 가족 유대 강화" 
-                      value={ftPurpose} 
-                      onChange={(e) => setFtPurpose(e.target.value)} 
-                      className="h-7 sm:h-8 text-xs bg-white px-2"
-                    />
-                  </div>
-
-                  {/* 구체적 계획 */}
-                  <div className="space-y-0.5 flex-1 flex flex-col min-h-0">
-                    <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">구체적 계획</Label>
-                    <Textarea 
-                      placeholder="예: 1일차 유적지 탐방, 2일차 자연 생태 체험 등" 
-                      value={ftDetailedPlan} 
-                      onChange={(e) => setFtDetailedPlan(e.target.value)} 
-                      rows={2}
-                      className="text-xs bg-white resize-none flex-1 min-h-[56px]"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* 2-B. 결석계 폼 */}
-              {docCategory === 'absence' && (
-                <div className="space-y-2 animate-in fade-in flex-1 flex flex-col justify-between min-h-0">
-                  {/* 시작일, 종료일 & 결석일수 뱃지 인라인 헤더 */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-[11px] sm:text-xs font-bold text-slate-700">결석 기간 및 일수 <span className="text-red-500">*</span></Label>
-                      <Badge variant="outline" className="bg-rose-50/80 border-rose-200 text-rose-600 text-[10px] font-bold px-1.5 py-0">
-                        결석 {absTotalDays}일간 (공휴일/주말 제외)
-                      </Badge>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
-                      <Input type="date" value={absStartDate} onChange={(e) => setAbsStartDate(e.target.value)} className="h-8 text-xs bg-white px-2" />
-                      <Input type="date" value={absEndDate} onChange={(e) => setAbsEndDate(e.target.value)} className="h-8 text-xs bg-white px-2" />
-                    </div>
-                  </div>
-
-                  {/* 결석 종류, 담임 확인 방법 한 줄 나란히 배치 */}
-                  <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
-                    <div className="space-y-0.5 min-w-0">
-                      <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">결석 종류</Label>
-                      <Select value={absType} onValueChange={(val) => setAbsType(val as any)}>
-                        <SelectTrigger className="h-7 sm:h-8 text-xs bg-white px-2">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="병결" className="text-xs">병결</SelectItem>
-                          <SelectItem value="미인정" className="text-xs">미인정</SelectItem>
-                          <SelectItem value="기타" className="text-xs">기타</SelectItem>
-                          <SelectItem value="출석인정" className="text-xs">출석인정</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-0.5 min-w-0">
-                      <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">담임 확인 방법</Label>
-                      <Select value={teacherConfirmMethod} onValueChange={(val) => setTeacherConfirmMethod(val as any)}>
-                        <SelectTrigger className="h-7 sm:h-8 text-xs bg-white px-2">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="전화/문자" className="text-xs">전화/문자</SelectItem>
-                          <SelectItem value="학부모 내교" className="text-xs">학부모 내교</SelectItem>
-                          <SelectItem value="가정방문" className="text-xs">가정방문</SelectItem>
-                          <SelectItem value="기타" className="text-xs">기타</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* 결석 사유 */}
-                  <div className="space-y-0.5 flex-1 flex flex-col min-h-0">
-                    <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">결석 사유 <span className="text-red-500">*</span></Label>
-                    <Textarea 
-                      placeholder="예: 감기 몸살 및 발열로 인한 가료 요양" 
-                      value={absReason} 
-                      onChange={(e) => setAbsReason(e.target.value)} 
-                      rows={3}
-                      className="text-xs bg-white resize-none flex-1 min-h-[60px]"
-                    />
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* 제출 액션 버튼 */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 pt-1.5 shrink-0">
-            <p className="text-[10px] text-muted-foreground hidden sm:block">
-              * '작성 및 담임 결재 완료' 시 문서가 즉시 승인되어 상신됩니다.
-            </p>
-            <Button 
-              size="default" 
-              onClick={handleSubmitAndApprove} 
-              disabled={isSubmitting || !selectedStudentId}
-              className="w-full sm:w-auto font-bold px-4 h-9 gap-1.5 bg-primary shadow-sm hover:shadow-md transition-all text-xs"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  처리 중...
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  작성 및 담임 결재 완료
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </>
-              )}
-            </Button>
-          </div>
+          <HomeroomProxyApplyForm
+            docCategory={docCategory}
+            isSubmitting={isSubmitting}
+            selectedStudentId={selectedStudentId}
+            onSubmit={handleSubmitAndApprove}
+            ftStartDate={ftStartDate}
+            setFtStartDate={setFtStartDate}
+            ftEndDate={ftEndDate}
+            setFtEndDate={setFtEndDate}
+            ftTotalDays={ftTotalDays}
+            ftType={ftType}
+            setFtType={setFtType}
+            ftDestination={ftDestination}
+            setFtDestination={setFtDestination}
+            ftCompanionName={ftCompanionName}
+            setFtCompanionName={setFtCompanionName}
+            ftCompanionRelation={ftCompanionRelation}
+            setFtCompanionRelation={setFtCompanionRelation}
+            ftPurpose={ftPurpose}
+            setFtPurpose={setFtPurpose}
+            ftDetailedPlan={ftDetailedPlan}
+            setFtDetailedPlan={setFtDetailedPlan}
+            absStartDate={absStartDate}
+            setAbsStartDate={setAbsStartDate}
+            absEndDate={absEndDate}
+            setAbsEndDate={setAbsEndDate}
+            absTotalDays={absTotalDays}
+            absType={absType}
+            setAbsType={setAbsType}
+            absReason={absReason}
+            setAbsReason={setAbsReason}
+            teacherConfirmMethod={teacherConfirmMethod}
+            setTeacherConfirmMethod={setTeacherConfirmMethod}
+          />
         </TabsContent>
 
         {/* 탭 2: 학생 정보 확인 (학급 학생 전용 뷰 및 일일 출석부) */}
         <TabsContent value="student-info" className="data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:min-h-0 data-[state=active]:flex-col data-[state=inactive]:hidden m-0 space-y-0">
-          <Card className="flex-1 min-h-0 flex flex-col rounded-xl border border-slate-200/80 shadow-xs bg-white">
-            <CardContent className="flex-1 min-h-0 p-0 relative">
-              {/* 모바일 전용 출석부 뷰 (sm:hidden) */}
-              <div className="sm:hidden divide-y divide-slate-100">
-                {classStudents.length > 0 ? (
-                  classStudents.map(student => {
-                    const sId = student.studentId || student.id || '';
-                    const att = effectiveAttendanceMap.get(sId);
-                    const currentStatus = att?.status || 'ATTEND';
-                    const isAuto = att?.source === 'auto_field_trip' || att?.source === 'auto_absence';
-                    const isHighlighted = highlightedStudentId === sId;
-
-                    return (
-                      <div
-                        key={sId}
-                        id={`student-row-mobile-${sId}`}
-                        className={cn(
-                          "p-2.5 flex items-center justify-between gap-2 transition-all select-none",
-                          isHighlighted ? "bg-amber-100/90 ring-1 ring-amber-400" : "hover:bg-slate-50/80"
-                        )}
-                      >
-                        {/* 좌측: 번호, 아바타, 이름, 연락처 */}
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <span className="w-5 text-center text-xs font-bold text-slate-500 shrink-0">
-                            {student.studentNum || '-'}
-                          </span>
-                          <Avatar className="w-8 h-8 rounded-lg border border-slate-200 shrink-0 bg-white shadow-2xs">
-                            {student.photoUrl ? (
-                              <AvatarImage src={student.photoUrl} alt={student.name} className="object-cover rounded-lg" />
-                            ) : (
-                              <AvatarFallback className="bg-indigo-50 text-indigo-700 font-extrabold text-[11px] rounded-lg">
-                                {(student.name || '학생').slice(0, 2)}
-                              </AvatarFallback>
-                            )}
-                          </Avatar>
-                          <div className="flex flex-col min-w-0 leading-tight">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-extrabold text-slate-900 text-xs truncate">
-                                {student.name}
-                              </span>
-                              <span className="text-[10px] text-slate-400 font-normal">
-                                {student.gender === 'Female' ? '여' : '남'}
-                              </span>
-                              {isAuto && (
-                                <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 text-[9px] px-1 py-0 h-4 font-bold shrink-0">
-                                  {att?.source === 'auto_field_trip' ? '체험' : '결석'}
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5 flex-wrap">
-                              {student.contact && (
-                                <a href={`tel:${student.contact.replace(/\D/g, '')}`} className="text-slate-600 font-medium hover:text-indigo-600 flex items-center gap-0.5">
-                                  <Phone className="w-2.5 h-2.5" />
-                                  <span>{student.contact}</span>
-                                </a>
-                              )}
-                              {/* 하교 버스 간단 표시 */}
-                              {(() => {
-                                const bSum = student.busSummary;
-                                const sid = (student.studentId || student.id || '') as string;
-                                const afternoonByDay = studentAfternoonBusMap.get(sid);
-                                const DAY_LABELS: Record<string, string> = { Monday: '월', Tuesday: '화', Wednesday: '수', Thursday: '목', Friday: '금' };
-                                const todayDayEn = format(new Date(), 'EEEE') as DayOfWeek;
-                                const todayBus = afternoonByDay?.[todayDayEn] || (afternoonByDay ? Object.values(afternoonByDay)[0] : null);
-                                if (todayBus) {
-                                  return (
-                                    <span className="bg-blue-50 text-blue-800 border border-blue-200 rounded px-1 text-[9px] font-semibold">
-                                      버스: {todayBus.busNo}
-                                    </span>
-                                  );
-                                }
-                                if (bSum?.regularBusName) {
-                                  return (
-                                    <span className="bg-sky-50 text-sky-800 border border-sky-200 rounded px-1 text-[9px] font-semibold">
-                                      등교: {bSum.regularBusName}
-                                    </span>
-                                  );
-                                }
-                                return null;
-                              })()}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 우측: 모바일 원터치 출결 버튼 & 정보수정 */}
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => cycleAttendanceStatus(student, currentStatus)}
-                            className={cn(
-                              "h-7 px-2.5 rounded-lg text-xs font-extrabold border transition-all active:scale-95 shadow-2xs select-none cursor-pointer flex items-center justify-center min-w-[58px]",
-                              currentStatus === 'ATTEND' && "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600",
-                              currentStatus === 'ABSENT' && "bg-rose-500 hover:bg-rose-600 text-white border-rose-600",
-                              currentStatus === 'EARLY_LEAVE' && "bg-amber-500 hover:bg-amber-600 text-white border-amber-600",
-                              currentStatus === 'INDIVIDUAL_DISMISSAL' && "bg-purple-600 hover:bg-purple-700 text-white border-purple-700"
-                            )}
-                            title="탭하여 출석/결석/조퇴/개별하교 순환 변경"
-                          >
-                            {currentStatus === 'ATTEND' && '출석'}
-                            {currentStatus === 'ABSENT' && '결석'}
-                            {currentStatus === 'EARLY_LEAVE' && '조퇴'}
-                            {currentStatus === 'INDIVIDUAL_DISMISSAL' && '개별하교'}
-                          </button>
-
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg shrink-0"
-                            onClick={() => handleStartEditStudent(student)}
-                            title="정보 수정"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="p-8 text-center text-xs text-slate-500">
-                    담당 학급에 등록된 학생이 없습니다.
-                  </div>
-                )}
-              </div>
-
-              {/* 데스크톱 전용 출석부 테이블 뷰 (hidden sm:block) */}
-              <div className="hidden sm:block">
-                <Table>
-                  <TableHeader className="bg-slate-100 sticky top-0 z-20 shadow-xs">
-                    <TableRow>
-                      <TableHead className="w-[60px] whitespace-nowrap font-bold text-slate-700">번호</TableHead>
-                      <TableHead className="whitespace-nowrap font-bold text-slate-700">학생 이름</TableHead>
-                      <TableHead className="whitespace-nowrap font-bold text-slate-700 min-w-[130px]">오늘 출결</TableHead>
-                      <TableHead className="whitespace-nowrap font-bold text-slate-700">학생 계정 이메일</TableHead>
-                      <TableHead className="whitespace-nowrap font-bold text-slate-700">보호자 연락처</TableHead>
-                      <TableHead className="whitespace-nowrap font-bold text-slate-700">방과후 수강 현황</TableHead>
-                      <TableHead className="whitespace-nowrap font-bold text-slate-700">스쿨버스 노선</TableHead>
-                      <TableHead className="text-right whitespace-nowrap font-bold text-slate-700">관리</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {classStudents.length > 0 ? (
-                      classStudents.map(student => {
-                        const sId = student.studentId || student.id || '';
-                        const att = effectiveAttendanceMap.get(sId);
-                        const currentStatus = att?.status || 'ATTEND';
-                        const isAuto = att?.source === 'auto_field_trip' || att?.source === 'auto_absence';
-                        const isHighlighted = highlightedStudentId === sId;
-
-                        return (
-                          <TableRow
-                            key={sId}
-                            id={`student-row-${sId}`}
-                            className={cn(
-                              "transition-all duration-300",
-                              isHighlighted ? "bg-amber-100/80 ring-2 ring-amber-400 ring-inset" : "hover:bg-slate-50/80"
-                            )}
-                          >
-                            <TableCell className="whitespace-nowrap font-medium text-slate-700">
-                              {student.studentNum ? `${student.studentNum}번` : '-'}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap">
-                              <div className="flex items-center gap-2.5">
-                                <Avatar className="w-9 h-9 rounded-xl border border-slate-200 shrink-0 shadow-2xs bg-white">
-                                  {student.photoUrl ? (
-                                    <AvatarImage src={student.photoUrl} alt={student.name} className="object-cover rounded-xl" />
-                                  ) : (
-                                    <AvatarFallback className="bg-indigo-50 text-indigo-700 font-extrabold text-xs rounded-xl">
-                                      {(student.name || '학생').slice(0, 2)}
-                                    </AvatarFallback>
-                                  )}
-                                </Avatar>
-                                <div className="flex flex-col items-start leading-tight">
-                                  <span className="font-extrabold text-slate-900">{student.name}</span>
-                                  <span className="text-[10px] text-slate-400 font-normal">
-                                    {student.gender === 'Female' ? '여' : '남'}
-                                  </span>
-                                </div>
-                              </div>
-                            </TableCell>
-
-                            {/* 오늘 출결 선택 드롭다운 칼럼 */}
-                            <TableCell className="whitespace-nowrap">
-                              <div className="flex items-center gap-1.5">
-                                <Select
-                                  value={currentStatus}
-                                  onValueChange={(val: HomeroomAttendanceStatus) => handleAttendanceChange(student, val)}
-                                >
-                                  <SelectTrigger
-                                    className={cn(
-                                      "h-7 px-2 text-xs font-bold rounded-lg border cursor-pointer min-w-[75px]",
-                                      currentStatus === 'ATTEND' && "bg-emerald-50 text-emerald-700 border-emerald-300",
-                                      currentStatus === 'ABSENT' && "bg-rose-50 text-rose-700 border-rose-300",
-                                      currentStatus === 'EARLY_LEAVE' && "bg-amber-50 text-amber-700 border-amber-300",
-                                      currentStatus === 'INDIVIDUAL_DISMISSAL' && "bg-purple-50 text-purple-700 border-purple-300"
-                                    )}
-                                  >
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="ATTEND" className="text-xs font-bold text-emerald-700">
-                                      출석
-                                    </SelectItem>
-                                    <SelectItem value="ABSENT" className="text-xs font-bold text-rose-700">
-                                      결석
-                                    </SelectItem>
-                                    <SelectItem value="EARLY_LEAVE" className="text-xs font-bold text-amber-700">
-                                      조퇴
-                                    </SelectItem>
-                                    <SelectItem value="INDIVIDUAL_DISMISSAL" className="text-xs font-bold text-purple-700">
-                                      개별하교
-                                    </SelectItem>
-                                  </SelectContent>
-                                </Select>
-
-                                {isAuto && (
-                                  <Badge
-                                    variant="outline"
-                                    title={att?.reason || '결재 승인 문서'}
-                                    className="bg-rose-100 text-rose-800 border-rose-200 text-[10px] px-1 py-0 font-bold shrink-0"
-                                  >
-                                    {att?.source === 'auto_field_trip' ? '체험학습' : '결석계'}
-                                  </Badge>
-                                )}
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="whitespace-nowrap font-mono text-xs text-slate-600">
-                              {student.studentEmail}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap text-xs text-slate-600">
-                              {student.contact || '-'}
-                            </TableCell>
-                            <TableCell className="whitespace-normal min-w-[140px] max-w-[220px]">
-                              {student.afterschoolSummary?.enrolledCourses && student.afterschoolSummary.enrolledCourses.length > 0 ? (
-                                <div className="flex flex-col gap-1 py-1">
-                                  {student.afterschoolSummary.enrolledCourses.map((c, idx) => (
-                                    <Badge key={idx} variant="secondary" className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold py-0.5 px-2 w-fit">
-                                      <span className="font-bold text-emerald-950 mr-1">[{c.days.join(',')}]</span>
-                                      <span>{(c.title || '').slice(0, 5)}{(c.title || '').length > 5 ? '..' : ''}</span>
-                                    </Badge>
-                                  ))}
-                                </div>
-                              ) : student.afterschoolSummary?.enrolledCourseTitles && student.afterschoolSummary.enrolledCourseTitles.length > 0 ? (
-                                <div className="flex flex-col gap-1">
-                                  {student.afterschoolSummary.enrolledCourseTitles.map((t, idx) => (
-                                    <Badge key={idx} variant="secondary" className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] w-fit">
-                                      {(t || '').slice(0, 5)}{(t || '').length > 5 ? '..' : ''}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              ) : (
-                                <span className="text-xs text-slate-400 italic whitespace-nowrap">미수강</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="whitespace-normal min-w-[150px] max-w-[220px]">
-                              {(() => {
-                                const bSum = student.busSummary;
-                                const sid = (student.studentId || student.id || '') as string;
-                                const afternoonByDay = studentAfternoonBusMap.get(sid);
-                                const afterschoolBuses = bSum?.afterSchoolBuses || [];
-                                const hasAfternoonBus = afternoonByDay
-                                  ? Object.values(afternoonByDay).some(v => v !== null)
-                                  : false;
-                                const hasMorningBus = !!bSum?.regularBusName;
-                                const hasAfterschoolBuses = afterschoolBuses.length > 0;
-
-                                const DAY_LABELS: Record<string, string> = {
-                                  Monday: '월', Tuesday: '화', Wednesday: '수', Thursday: '목', Friday: '금',
-                                };
-                                const DAY_ORDER: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-
-                                if (!hasMorningBus && !hasAfternoonBus && !hasAfterschoolBuses && !bSum?.assignedBusName) {
-                                  return <span className="text-xs text-slate-400 italic whitespace-nowrap">자가 귀가</span>;
-                                }
-
-                                return (
-                                  <div className="flex flex-col gap-1 py-1">
-                                    {/* 등교 버스 (정규) */}
-                                    {hasMorningBus && (
-                                      <Badge variant="outline" className="bg-sky-50 text-sky-800 border-sky-200 text-[11px] font-semibold py-0.5 px-2 w-fit">
-                                        <span className="font-bold text-sky-950 mr-1">[등교]</span>
-                                        <span>{bSum!.regularBusName}</span>
-                                      </Badge>
-                                    )}
-                                    {/* 하교 버스 - 요일별 항상 표시, 클릭 시 해제 팝업 */}
-                                    {afternoonByDay && DAY_ORDER.map(day => {
-                                      const info = afternoonByDay[day];
-                                      if (!info) return null;
-                                      const dayLabel = DAY_LABELS[day] || day;
-                                      return (
-                                        <Badge
-                                          key={day}
-                                          variant="outline"
-                                          className="bg-blue-50 text-blue-800 border-blue-200 text-[11px] font-semibold py-0.5 px-2 w-fit cursor-pointer hover:bg-red-50 hover:border-red-300 hover:text-red-700 transition-colors"
-                                          title={`${dayLabel}요일 하교 버스 해제/유지 선택`}
-                                          onClick={() => setBusUnassignTarget({
-                                            studentId: sid,
-                                            studentName: student.nameKo || student.name || '',
-                                            dayOfWeek: day,
-                                            dayLabel,
-                                            routeId: info.routeId,
-                                            busNo: info.busNo,
-                                          })}
-                                        >
-                                          <span className="font-bold text-blue-950 mr-1">[하교 {dayLabel}]</span>
-                                          <span>{info.busNo}</span>
-                                        </Badge>
-                                      );
-                                    })}
-                                    {/* 방과후 버스 */}
-                                    {afterschoolBuses.map((asb, idx) => (
-                                      <Badge key={idx} variant="outline" className="bg-amber-50 text-amber-900 border-amber-200 text-[11px] font-semibold py-0.5 px-2 w-fit">
-                                        <span className="font-bold text-amber-950 mr-1">[방과후 {asb.day}]</span>
-                                        <span>{asb.busName}</span>
-                                      </Badge>
-                                    ))}
-                                    {/* 기타 assignedBus (위에 아무것도 없을 때) */}
-                                    {!hasMorningBus && !hasAfternoonBus && !hasAfterschoolBuses && bSum?.assignedBusName && (
-                                      <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-[11px] font-bold w-fit">
-                                        {bSum.assignedBusName}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                            </TableCell>
-                            <TableCell className="text-right whitespace-nowrap">
-                              <Button 
-                                type="button"
-                                variant="outline" 
-                                size="sm" 
-                                className="h-7 text-xs px-2.5 text-indigo-700 hover:bg-indigo-50 border-indigo-200 cursor-pointer font-medium"
-                                onClick={() => handleStartEditStudent(student)}
-                              >
-                                <Edit3 className="h-3.5 w-3.5 mr-1" /> 정보 수정
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={8} className="h-28 text-center text-slate-500 whitespace-nowrap">
-                          담당 학급에 등록된 학생이 없습니다.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+          <HomeroomAttendanceTab
+            classStudents={classStudents}
+            effectiveAttendanceMap={effectiveAttendanceMap}
+            highlightedStudentId={highlightedStudentId}
+            studentAfternoonBusMap={studentAfternoonBusMap}
+            onAttendanceChange={handleAttendanceChange}
+            onCycleAttendanceStatus={cycleAttendanceStatus}
+            onEditStudent={handleStartEditStudent}
+            onBusUnassignRequest={setBusUnassignTarget}
+          />
         </TabsContent>
         {/* 탭 3: 학급 관리 (칠판 알림장, 숙제 체크/프레젠테이션, 행동 관찰, 상담 일지, 월별 매트릭스, 학년 자료 공유) */}
         <TabsContent value="class-management" className="data-[state=active]:flex data-[state=active]:flex-col data-[state=inactive]:hidden m-0 space-y-3 p-0.5">
@@ -1664,230 +1159,20 @@ export default function TeacherHomeroomApplyPage() {
       />
 
       {/* 개별 학생 정보 및 사진 수정 모달 */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-[560px] w-[95vw] max-h-[88vh] overflow-y-auto p-6 rounded-2xl">
-          <DialogHeader className="pb-1">
-            <DialogTitle className="text-base font-bold flex items-center gap-2">
-              <Edit3 className="h-4 w-4 text-indigo-600 shrink-0" /> 학급 학생 정보 및 사진 수정
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
-              {editStudentForm.studentEmail} 학생의 프로필 사진 및 기본 정보를 수정합니다.
-            </DialogDescription>
-          </DialogHeader>
+      <EditHomeroomStudentDialog
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        editStudentForm={editStudentForm}
+        setEditStudentForm={setEditStudentForm}
+        editPhotoInputRef={editPhotoInputRef}
+        onPhotoChange={handleEditPhotoChange}
+        onSave={handleSaveEditStudent}
+      />
 
-          <div className="space-y-4 py-2 text-xs">
-            {/* 사진 등록 섹션 (가로세로 2cm 규격) */}
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <span className="font-bold text-slate-800 text-xs">학생 프로필 사진 (가로세로 2cm 규격)</span>
-                <Badge variant="outline" className="text-[10px] bg-indigo-50 border-indigo-200 text-indigo-700 font-medium px-2 py-0.5">
-                  PC 최적 160x160 자동 압축
-                </Badge>
-              </div>
-              <div className="flex items-center gap-4">
-                <Avatar className="rounded-2xl border-2 border-indigo-200 shadow-2xs shrink-0 bg-white" style={{ width: '2cm', height: '2cm' }}>
-                  {editStudentForm.photoUrl ? (
-                    <AvatarImage src={editStudentForm.photoUrl} alt={editStudentForm.name || '학생'} className="object-cover rounded-2xl" />
-                  ) : (
-                    <AvatarFallback className="bg-indigo-50 text-indigo-700 font-bold text-xs rounded-2xl">
-                      사진 없음
-                    </AvatarFallback>
-                  )}
-                </Avatar>
-                <div className="space-y-2 flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <input
-                      type="file"
-                      ref={editPhotoInputRef}
-                      onChange={handleEditPhotoChange}
-                      accept="image/*"
-                      className="hidden"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => editPhotoInputRef.current?.click()}
-                      className="h-8 text-xs px-3 bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold cursor-pointer shadow-2xs"
-                    >
-                      <Camera className="w-3.5 h-3.5 mr-1" />
-                      사진 업로드
-                    </Button>
-                    {editStudentForm.photoUrl && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setEditStudentForm(prev => ({ ...prev, photoUrl: '' }))}
-                        className="h-8 text-xs px-2.5 text-rose-600 hover:bg-rose-50 cursor-pointer"
-                      >
-                        사진 삭제
-                      </Button>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-slate-500 leading-tight">
-                    사진을 선택하면 증명사진용 2cm 정사각형으로 자동 압축되어 즉시 적용됩니다.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* 인적사항 입력 필드 */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">학생 이름</Label>
-                <Input
-                  value={editStudentForm.name || ''}
-                  onChange={(e) => setEditStudentForm(prev => ({ ...prev, name: e.target.value }))}
-                  className="h-8 text-xs bg-white"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">학생 영문 이름</Label>
-                <Input
-                  value={editStudentForm.nameEn || ''}
-                  onChange={(e) => setEditStudentForm(prev => ({ ...prev, nameEn: e.target.value }))}
-                  placeholder="예: Kwon Garim"
-                  className="h-8 text-xs bg-white font-medium"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">출석 번호</Label>
-                <Input
-                  value={editStudentForm.studentNum || ''}
-                  onChange={(e) => setEditStudentForm(prev => ({ ...prev, studentNum: e.target.value }))}
-                  placeholder="예: 5"
-                  className="h-8 text-xs bg-white"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">성별</Label>
-                <Select
-                  value={editStudentForm.gender || 'Male'}
-                  onValueChange={(val: any) => setEditStudentForm(prev => ({ ...prev, gender: val }))}
-                >
-                  <SelectTrigger className="h-8 text-xs bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Male">남학생</SelectItem>
-                    <SelectItem value="Female">여학생</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1 col-span-2 sm:col-span-1">
-                <Label className="text-xs font-bold text-slate-700">보호자 연락처</Label>
-                <Input
-                  value={editStudentForm.contact || ''}
-                  onChange={(e) => setEditStudentForm(prev => ({ ...prev, contact: e.target.value }))}
-                  placeholder="010-0000-0000"
-                  className="h-8 text-xs bg-white"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs font-bold text-slate-700">거주지 주소 / 스쿨버스 정류장</Label>
-              <Input
-                value={editStudentForm.address || ''}
-                onChange={(e) => setEditStudentForm(prev => ({ ...prev, address: e.target.value }))}
-                placeholder="예: 현대아파트 앞"
-                className="h-8 text-xs bg-white"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="pt-2 border-t flex items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsEditDialogOpen(false)}
-              className="h-8 text-xs font-medium"
-            >
-              취소
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleSaveEditStudent}
-              className="h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white"
-            >
-              저장 완료
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 하교 버스 해제 확인 Dialog */}
-      <Dialog open={!!busUnassignTarget} onOpenChange={(open) => { if (!open) setBusUnassignTarget(null); }}>
-        <DialogContent className="sm:max-w-[420px] w-[95vw] rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold flex items-center gap-2">
-              <LogOut className="h-4 w-4 text-red-500 shrink-0" />
-              하교 버스 탑승 해제
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500 pt-1">
-              {busUnassignTarget && (
-                <>
-                  <span className="font-semibold text-slate-700">{busUnassignTarget.studentName}</span> 학생을{' '}
-                  <span className="font-semibold text-blue-700">{busUnassignTarget.dayLabel}요일 하교</span> 버스(
-                  <span className="font-semibold">{busUnassignTarget.busNo}</span>)에서 미배정 처리합니다.
-                  <br />
-                  해제 후 스쿨버스 관리자/교사 페이지에 실시간 반영됩니다.
-                </>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="pt-2 border-t flex items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setBusUnassignTarget(null)}
-              className="h-8 text-xs font-medium"
-              disabled={isBusUnassigning}
-            >
-              유지
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="destructive"
-              disabled={isBusUnassigning}
-              className="h-8 text-xs font-bold"
-              onClick={async () => {
-                if (!busUnassignTarget) return;
-                setIsBusUnassigning(true);
-                try {
-                  await unassignStudentFromAllRoutes(
-                    busUnassignTarget.studentId,
-                    ['Afternoon'],
-                    busUnassignTarget.dayOfWeek
-                  );
-                  toast({
-                    title: '버스 탑승 해제 완료',
-                    description: `${busUnassignTarget.studentName} - ${busUnassignTarget.dayLabel}요일 하교 버스(${busUnassignTarget.busNo}) 미배정 처리되었습니다.`,
-                  });
-                  setBusUnassignTarget(null);
-                } catch (err) {
-                  console.error('[BusUnassign]', err);
-                  toast({
-                    title: '해제 실패',
-                    description: '버스 탑승 해제 중 오류가 발생했습니다.',
-                    variant: 'destructive',
-                  });
-                } finally {
-                  setIsBusUnassigning(false);
-                }
-              }}
-            >
-              {isBusUnassigning ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
-              해제
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <BusUnassignConfirmDialog
+        target={busUnassignTarget}
+        onClose={() => setBusUnassignTarget(null)}
+      />
     </div>
   </MainLayout>
 );

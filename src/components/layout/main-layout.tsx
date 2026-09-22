@@ -165,7 +165,18 @@ export const MainLayout: FC<MainLayoutProps> = ({
   }, []);
 
   return (
-    <div className="flex flex-col bg-background w-full max-w-full min-w-0 h-dvh max-h-dvh min-h-0 overflow-hidden overscroll-none">
+    <div
+      className="flex flex-col bg-background w-full max-w-full min-w-0 min-h-0 overflow-hidden overscroll-none"
+      style={{
+        // 100dvh를 기본값으로 쓰되, (app)/layout.tsx의 데스크톱 상단 AppHeader·하단
+        // AppFooter 아래/위에 중첩되어 렌더링되는 경우 그 실제 높이만큼 빼서
+        // 화면 높이를 초과해 아래 내용이 잘리거나 sticky 헤더가 겹치는 문제를 방지한다.
+        // 이 CSS 변수들이 없는 단독 페이지(/teacher/bus 등)에서는 0px로 대체되어
+        // 기존과 동일하게 100dvh 그대로 적용된다.
+        height: 'calc(100dvh - var(--app-header-height, 0px) - var(--app-footer-height, 0px))',
+        maxHeight: 'calc(100dvh - var(--app-header-height, 0px) - var(--app-footer-height, 0px))',
+      }}
+    >
        <header ref={headerRef} className={`${headerStickyClass} flex flex-col gap-1 border-b bg-card/95 px-2.5 sm:px-4 md:px-6 py-1.5 sm:py-2 backdrop-blur-md shadow-xs w-full max-w-full`}>
           {/* 모바일 뷰 (sm:hidden): 2줄 레이아웃 */}
           <div className="flex sm:hidden flex-col gap-1.5 w-full min-w-0">

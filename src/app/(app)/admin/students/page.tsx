@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MainLayout } from '@/components/layout/main-layout';
-import { 
-  onMasterStudentsUpdate, createMasterStudent, updateMasterStudent, 
+import {
+  onMasterStudentsUpdate, createMasterStudent, updateMasterStudent,
   deleteMasterStudent, batchImportMasterStudents, batchPromoteStudents, isStudentEmail,
-  extractEnglishNameFromEmail, linkMasterStudentSiblings, unlinkMasterStudentSibling,
+  extractEnglishNameFromEmail,
   onDeletedMasterStudentsUpdate, restoreMasterStudent, permanentlyDeleteMasterStudent,
   purgeMasterStudent
 } from '@/lib/services/masterStudentService';
@@ -13,27 +13,30 @@ import type { DeletedMasterStudent } from '@/lib/services/masterStudentService';
 import type { MasterStudent, NewMasterStudent } from '@/lib/types/masterStudent';
 import { onDestinationsUpdate } from '@/lib/kisbus';
 import type { Destination } from '@/lib/kisbus/types';
-import { Combobox } from '@/components/ui/combobox';
-import { Checkbox } from '@/components/ui/checkbox';
-
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  Users, GraduationCap, Bus, Calendar, Plus, Upload, Download, Search, 
-  UserCheck, Mail, Phone, MapPin, CreditCard, ShieldCheck, Trash2, Edit3, FileText, CheckCircle2, ArrowUpRight, Sparkles, CheckSquare, Square, Filter, Camera, Image as ImageIcon, AlertCircle, BookOpen, CheckCheck, RotateCcw
+import {
+  Users, Download, Search,
+  UserCheck, Mail, Phone, MapPin, CreditCard, ShieldCheck, Trash2, Edit3, FileText, CheckCircle2, ArrowUpRight, CheckSquare, Square, Filter, Camera, Image as ImageIcon, RotateCcw
 } from 'lucide-react';
 import { cn } from '@/lib/kisbus/utils';
 import { resizeStudentPhoto } from '@/lib/imageResize';
 import { BatchPhotoModal } from './batch-photo-modal';
+import { PromoteStudentsDialog, type GradeClassTreeItem } from './PromoteStudentsDialog';
+import { AddStudentDialog } from './AddStudentDialog';
+import { ExcelBulkUploadDialog } from './ExcelBulkUploadDialog';
+import { EditStudentDialog } from './EditStudentDialog';
+import { StudentDetailDialog } from './StudentDetailDialog';
+import { DownloadStudentListDialog } from './DownloadStudentListDialog';
+import { ExcelPreviewDialog, type ExcelPreviewRow } from './ExcelPreviewDialog';
+import { TrashDialog } from './TrashDialog';
 
 export default function AdminMasterStudentsPage() {
   const { toast } = useToast();
@@ -76,19 +79,6 @@ export default function AdminMasterStudentsPage() {
   const [deletedStudents, setDeletedStudents] = useState<DeletedMasterStudent[]>([]);
 
   // 엑셀 미리보기 행 데이터
-  type ExcelPreviewRow = {
-    grade: string;
-    classNum: string;
-    studentNum: string;
-    name: string;
-    nameEn: string;
-    gender: 'Male' | 'Female';
-    studentEmail: string;
-    contact: string;
-    afterschoolStatus: string; // 방과후 수강 현황 (연동 결과)
-    busStatus: string;         // 스쿨버스 노선 현황 (연동 결과)
-    error?: string;            // 유효성 오류 메시지
-  };
   const [excelPreviewRows, setExcelPreviewRows] = useState<ExcelPreviewRow[]>([]);
 
 
@@ -1044,276 +1034,35 @@ export default function AdminMasterStudentsPage() {
               {/* 관리 액션 버튼 그룹 (한 줄 정렬) */}
               <div className="flex items-center gap-2 flex-wrap shrink-0">
                 {/* 1. 🎓 진급 처리 모달 */}
-                <Dialog open={isPromoteDialogOpen} onOpenChange={setIsPromoteDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="h-8 text-xs px-2.5 font-bold whitespace-nowrap bg-purple-600 hover:bg-purple-700 text-white shadow-xs">
-                      <GraduationCap className="mr-1.5 h-3.5 w-3.5" /> 진급 처리
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-lg">
-                    <DialogHeader>
-                      <DialogTitle className="text-lg font-bold flex items-center gap-2">
-                        <GraduationCap className="h-5 w-5 text-purple-600" /> 새 학년 진급 일괄 처리
-                      </DialogTitle>
-                      <DialogDescription className="text-xs">
-                        새 학년도 개학 시 전교생의 학년/반 정보를 일괄 업로드하거나 1학년씩 일괄 진급합니다.
-                      </DialogDescription>
-                    </DialogHeader>
-
-                    <Tabs defaultValue="excel" className="w-full py-2">
-                      <TabsList className="grid grid-cols-2 w-full">
-                        <TabsTrigger value="excel" className="text-xs font-bold">진급 엑셀 파일 업로드</TabsTrigger>
-                        <TabsTrigger value="auto" className="text-xs font-bold">전교생 자동 +1학년 진급</TabsTrigger>
-                      </TabsList>
-
-                      <TabsContent value="excel" className="space-y-3 pt-3">
-                        <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-xl text-xs space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-purple-950 flex items-center gap-1.5">
-                              <GraduationCap className="w-4 h-4 text-purple-700" />
-                              <span>진급 서식 양식 다운로드 (이전 학년 담임용)</span>
-                            </span>
-                          </div>
-                          
-                          <p className="text-purple-800 text-[11px] leading-relaxed">
-                            이전 학년 담임 교사가 직접 진급할 학생의 새 학년/반을 작성할 수 있도록, <strong>원하는 학년과 반을 선택하여 서식을 다운로드</strong>하세요.
-                          </p>
-
-                          {/* 학년 및 반 선택 필터 바 */}
-                          <div className="grid grid-cols-2 gap-2 bg-white p-2.5 rounded-lg border border-purple-200">
-                            <div className="space-y-1">
-                              <Label className="text-[11px] font-bold text-purple-900">학년 선택</Label>
-                              <Select value={promoteTemplateGrade} onValueChange={(val) => {
-                                setPromoteTemplateGrade(val);
-                                setPromoteTemplateClass('all');
-                              }}>
-                                <SelectTrigger className="h-8 text-xs bg-purple-50/50">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="all">전체 학년</SelectItem>
-                                  <SelectItem value="1">1학년</SelectItem>
-                                  <SelectItem value="2">2학년</SelectItem>
-                                  <SelectItem value="3">3학년</SelectItem>
-                                  <SelectItem value="4">4학년</SelectItem>
-                                  <SelectItem value="5">5학년</SelectItem>
-                                  <SelectItem value="6">6학년</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-1">
-                              <Label className="text-[11px] font-bold text-purple-900">반 선택</Label>
-                              <Select value={promoteTemplateClass} onValueChange={setPromoteTemplateClass}>
-                                <SelectTrigger className="h-8 text-xs bg-purple-50/50">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="all">전체 반</SelectItem>
-                                  {promoteTemplateGrade !== 'all' ? (
-                                    (gradeClassTree.find(g => g.grade === promoteTemplateGrade)?.classes || []).map(c => (
-                                      <SelectItem key={c.classNum} value={c.classNum}>{c.classNum}반 ({c.count}명)</SelectItem>
-                                    ))
-                                  ) : (
-                                    ['1', '2', '3', '4', '5', '6', '7', '8'].map(c => (
-                                      <SelectItem key={c} value={c}>{c}반</SelectItem>
-                                    ))
-                                  )}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-
-                          <Button 
-                            type="button" 
-                            size="sm" 
-                            onClick={() => handleDownloadPromoteTemplate()}
-                            className="w-full h-8 text-xs font-bold bg-purple-700 hover:bg-purple-800 text-white shadow-xs"
-                          >
-                            <Download className="w-3.5 h-3.5 mr-1 text-white shrink-0" />
-                            {promoteTemplateGrade === 'all' ? '전체 학년' : `${promoteTemplateGrade}학년`} {promoteTemplateClass === 'all' ? '전체 반' : `${promoteTemplateClass}반`} 진급 서식 (.xlsx) 다운로드
-                          </Button>
-                        </div>
-
-                        <div className="space-y-1 pt-1">
-                          <Label className="text-xs font-bold text-slate-700">작성 완료된 진급 서식 엑셀 파일 업로드</Label>
-                          <Input type="file" ref={promoteFileInputRef} onChange={handlePromoteFileUpload} accept=".xlsx, .xls" className="text-xs h-9 cursor-pointer" />
-                        </div>
-                      </TabsContent>
-
-                      <TabsContent value="auto" className="space-y-3 pt-3">
-                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs space-y-1">
-                          <p className="font-bold text-amber-900">자동 진급 규칙</p>
-                          <p className="text-amber-800">
-                            1학년 ➔ 2학년, 2학년 ➔ 3학년, 3학년 ➔ 4학년, 4학년 ➔ 5학년, 5학년 ➔ 6학년, 6학년 ➔ 졸업으로 전교생 학년이 +1 업데이트됩니다.
-                          </p>
-                        </div>
-                        <Button onClick={handleAutoPromoteAll} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold">
-                          <Sparkles className="mr-1.5 h-4 w-4" /> 전교생 1학년씩 자동 진급 실행
-                        </Button>
-                      </TabsContent>
-                    </Tabs>
-                  </DialogContent>
-                </Dialog>
+                <PromoteStudentsDialog
+                  open={isPromoteDialogOpen}
+                  onOpenChange={setIsPromoteDialogOpen}
+                  gradeClassTree={gradeClassTree}
+                  promoteTemplateGrade={promoteTemplateGrade}
+                  setPromoteTemplateGrade={setPromoteTemplateGrade}
+                  promoteTemplateClass={promoteTemplateClass}
+                  setPromoteTemplateClass={setPromoteTemplateClass}
+                  promoteFileInputRef={promoteFileInputRef}
+                  onDownloadTemplate={() => handleDownloadPromoteTemplate()}
+                  onFileUpload={handlePromoteFileUpload}
+                  onAutoPromoteAll={handleAutoPromoteAll}
+                />
 
                 {/* 2. 개별 계정 추가 */}
-                <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="h-8 text-xs px-2.5 font-bold whitespace-nowrap bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs">
-                      <Plus className="mr-1.5 h-3.5 w-3.5" /> 개별 계정 추가
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-[680px] w-[96vw] max-h-[88vh] overflow-y-auto overflow-x-hidden p-6 sm:p-7 rounded-2xl">
-                    <DialogHeader className="pb-1">
-                      <DialogTitle className="text-lg font-bold">새 학생 마스터 계정 등록</DialogTitle>
-                      <DialogDescription className="text-xs text-slate-500">
-                        학생 이메일 계정(2023kangdongyun@kshcm.net) 기반으로 등록합니다.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-3 py-2 text-sm">
-                      {/* 학생 사진 등록 섹션 (가로세로 2cm 최적화) */}
-                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
-                        <div className="flex items-center justify-between flex-wrap gap-1">
-                          <span className="font-bold text-slate-800 text-xs">학생 사진 등록 (가로세로 2cm 최적화)</span>
-                          <Badge variant="outline" className="text-[10px] bg-indigo-50 border-indigo-200 text-indigo-700 font-medium px-1.5 py-0">
-                            PC 최적 해상도 160x160 자동 압축
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-3.5">
-                          <Avatar className="rounded-2xl border-2 border-indigo-200 shadow-2xs shrink-0 bg-white" style={{ width: '2cm', height: '2cm' }}>
-                            {newStudent.photoUrl ? (
-                              <AvatarImage src={newStudent.photoUrl} alt={newStudent.name || '학생'} className="object-cover rounded-2xl" />
-                            ) : (
-                              <AvatarFallback className="bg-indigo-50 text-indigo-700 font-bold text-xs rounded-2xl">
-                                사진 없음
-                              </AvatarFallback>
-                            )}
-                          </Avatar>
-                          <div className="space-y-1.5 flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <input
-                                type="file"
-                                ref={addPhotoInputRef}
-                                onChange={handleAddPhotoChange}
-                                accept="image/*"
-                                className="hidden"
-                              />
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => addPhotoInputRef.current?.click()}
-                                className="h-7 text-xs px-2.5 bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold cursor-pointer"
-                              >
-                                <Camera className="w-3.5 h-3.5 mr-1" />
-                                사진 선택
-                              </Button>
-                              {newStudent.photoUrl && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setNewStudent(prev => ({ ...prev, photoUrl: '' }))}
-                                  className="h-7 text-xs px-2 text-rose-600 hover:bg-rose-50 cursor-pointer"
-                                >
-                                  삭제
-                                </Button>
-                              )}
-                            </div>
-                            <p className="text-[10.5px] text-slate-500 leading-snug">
-                              선택한 사진을 2cm 정사각형으로 리사이징하여 용량을 최소화합니다.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <Label className="text-xs font-bold">학생 이메일 계정 (학부모 겸용)</Label>
-                        <Input 
-                          placeholder="예: 2023kangdongyun@kshcm.net" 
-                          value={newStudent.studentEmail} 
-                          onChange={e => {
-                            const val = e.target.value;
-                            setNewStudent(prev => ({
-                              ...prev, 
-                              studentEmail: val,
-                              nameEn: prev.nameEn || extractEnglishNameFromEmail(val)
-                            }));
-                          }} 
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs font-bold">학생 이름</Label>
-                          <Input 
-                            placeholder="예: 강동윤" 
-                            value={newStudent.name} 
-                            onChange={e => setNewStudent({...newStudent, name: e.target.value})} 
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs font-bold">학생 영문 이름 (선택)</Label>
-                          <Input 
-                            placeholder="예: Kang Dong-yun" 
-                            value={newStudent.nameEn || ''} 
-                            onChange={e => setNewStudent({...newStudent, nameEn: e.target.value})} 
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-4 gap-2">
-                        <div>
-                          <Label className="text-xs">학년</Label>
-                          <Input value={newStudent.grade} onChange={e => setNewStudent({...newStudent, grade: e.target.value})} />
-                        </div>
-                        <div>
-                          <Label className="text-xs">반</Label>
-                          <Input value={newStudent.classNum} onChange={e => setNewStudent({...newStudent, classNum: e.target.value})} />
-                        </div>
-                        <div>
-                          <Label className="text-xs">번호</Label>
-                          <Input value={newStudent.studentNum || ''} onChange={e => setNewStudent({...newStudent, studentNum: e.target.value})} />
-                        </div>
-                        <div>
-                          <Label className="text-xs">성별</Label>
-                          <Select 
-                            value={newStudent.gender || 'Male'} 
-                            onValueChange={(val: 'Male' | 'Female') => setNewStudent({...newStudent, gender: val})}
-                          >
-                            <SelectTrigger className="h-9 text-xs">
-                              <SelectValue placeholder="성별" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Male">남학생</SelectItem>
-                              <SelectItem value="Female">여학생</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">보호자 연락처</Label>
-                        <Input placeholder="010-0000-0000" value={newStudent.contact} onChange={e => setNewStudent({...newStudent, contact: e.target.value})} />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs text-slate-700 font-bold">등하교 목적지 (스쿨버스 정류장)</Label>
-                          <span className="text-[10px] text-indigo-600 font-medium">📍 정류장 검색 선택</span>
-                        </div>
-                        <Combobox 
-                          options={destinationOptions}
-                          value={newStudent.address || null}
-                          onSelect={(val) => setNewStudent({ ...newStudent, address: val || '' })}
-                          placeholder="스쿨버스 정류장/목적지 검색 (예: Hung Vuong KFC, Sky 1,2...)"
-                        />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button onClick={handleCreateStudent} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold">등록하기</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                <AddStudentDialog
+                  open={isAddDialogOpen}
+                  onOpenChange={setIsAddDialogOpen}
+                  newStudent={newStudent}
+                  setNewStudent={setNewStudent}
+                  addPhotoInputRef={addPhotoInputRef}
+                  onPhotoChange={handleAddPhotoChange}
+                  destinationOptions={destinationOptions}
+                  onCreateStudent={handleCreateStudent}
+                />
 
                 {/* 2-2. 학생 사진 스마트 일괄 등록 */}
-                <Button 
-                  size="sm" 
+                <Button
+                  size="sm"
                   onClick={() => setIsBatchPhotoOpen(true)}
                   className="h-8 text-xs px-2.5 font-bold whitespace-nowrap bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer"
                 >
@@ -1321,72 +1070,12 @@ export default function AdminMasterStudentsPage() {
                 </Button>
 
                 {/* 3. 엑셀 일괄 등록 - 양식 다운로드 + 업로드 Dialog */}
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isExcelPreviewLoading}
-                      className="h-8 text-xs px-2.5 font-bold whitespace-nowrap"
-                    >
-                      <Upload className="mr-1.5 h-3.5 w-3.5" />
-                      {isExcelPreviewLoading ? '분석 중...' : '엑셀 일괄 등록'}
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-md">
-                    <DialogHeader>
-                      <DialogTitle className="text-base font-bold flex items-center gap-2">
-                        <Upload className="h-4 w-4 text-indigo-600" /> 엑셀 학생 일괄 등록
-                      </DialogTitle>
-                      <DialogDescription className="text-xs text-slate-500">
-                        양식을 다운로드하여 작성한 후 업로드하면, 방과후 수강 현황과 스쿨버스 노선 연동 여부를 미리보기로 확인 후 최종 등록합니다.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-2">
-                      {/* Step 1: 양식 다운로드 */}
-                      <div className="p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl space-y-2">
-                        <p className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
-                          <Download className="w-3.5 h-3.5" /> 1단계: 등록 양식 다운로드
-                        </p>
-                        <p className="text-[11px] text-indigo-700 leading-relaxed">
-                          <strong>학년 / 반 / 번호 / 이름 / 영문이름(선택) / 성별 / 계정(이메일) / 학부모 연락처(선택)</strong> 항목으로 구성된 양식입니다.
-                          이메일 계정은 <span className="font-mono bg-indigo-100 px-1 rounded">2023kangdongyun@kshcm.net</span> 형식을 따라야 합니다.
-                        </p>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={handleDownloadStudentTemplate}
-                          className="w-full h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white"
-                        >
-                          <Download className="w-3.5 h-3.5 mr-1.5" /> 학생 일괄 등록 양식 (.xlsx) 다운로드
-                        </Button>
-                      </div>
-
-                      {/* Step 2: 파일 업로드 */}
-                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                        <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                          <Upload className="w-3.5 h-3.5" /> 2단계: 작성된 파일 업로드
-                        </p>
-                        <p className="text-[11px] text-slate-600 leading-relaxed">
-                          파일 업로드 시 방과후 수강 현황 및 스쿨버스 노선 연동 여부를 자동 조회하여 미리보기를 표시합니다.
-                        </p>
-                        <Input
-                          type="file"
-                          ref={fileInputRef}
-                          onChange={handleFileUpload}
-                          accept=".xlsx, .xls"
-                          disabled={isExcelPreviewLoading}
-                          className="text-xs h-9 cursor-pointer"
-                        />
-                        {isExcelPreviewLoading && (
-                          <p className="text-xs text-indigo-600 font-medium animate-pulse">
-                            방과후 및 버스 데이터 연동 조회 중...
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                <ExcelBulkUploadDialog
+                  isLoading={isExcelPreviewLoading}
+                  fileInputRef={fileInputRef}
+                  onDownloadTemplate={handleDownloadStudentTemplate}
+                  onFileUpload={handleFileUpload}
+                />
                 {/* 4. 명단 다운로드 */}
                 <Button 
                   variant="outline" 
@@ -1704,593 +1393,51 @@ export default function AdminMasterStudentsPage() {
         </Card>
 
         {/* 4. 학생 정보 수정 모달 (너비 120% 확대: 680px) */}
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent className="sm:max-w-[680px] w-[96vw] max-h-[88vh] overflow-y-auto overflow-x-hidden p-6 sm:p-7 rounded-2xl">
-            <DialogHeader className="pb-1">
-              <DialogTitle className="text-base font-bold flex items-center gap-2">
-                <Edit3 className="h-4 w-4 text-indigo-600 shrink-0" /> 학생 마스터 정보 수정
-              </DialogTitle>
-              <DialogDescription className="text-xs text-slate-500">
-                {editStudentForm.studentEmail} 학생의 계정 인적사항을 수정합니다.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3 py-1 text-xs">
-              {/* 학생 사진 등록 및 2cm 최적화 섹션 */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <span className="font-bold text-slate-800 text-xs">학생 프로필 사진 (가로세로 2cm 규격)</span>
-                  <Badge variant="outline" className="text-[10px] bg-indigo-50 border-indigo-200 text-indigo-700 font-medium px-2 py-0.5">
-                    PC 최적 해상도 160x160 자동 압축 (초경량)
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-4">
-                  <Avatar className="rounded-2xl border-2 border-indigo-200 shadow-2xs shrink-0 bg-white" style={{ width: '2cm', height: '2cm' }}>
-                    {editStudentForm.photoUrl ? (
-                      <AvatarImage src={editStudentForm.photoUrl} alt={editStudentForm.name || '학생'} className="object-cover rounded-2xl" />
-                    ) : (
-                      <AvatarFallback className="bg-indigo-50 text-indigo-700 font-bold text-xs rounded-2xl">
-                        사진 없음
-                      </AvatarFallback>
-                    )}
-                  </Avatar>
-                  <div className="space-y-1.5 flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <input
-                        type="file"
-                        ref={editPhotoInputRef}
-                        onChange={handleEditPhotoChange}
-                        accept="image/*"
-                        className="hidden"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => editPhotoInputRef.current?.click()}
-                        className="h-8 text-xs px-3 bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold cursor-pointer shadow-2xs"
-                      >
-                        <Camera className="w-3.5 h-3.5 mr-1" />
-                        사진 업로드 / 변경
-                      </Button>
-                      {editStudentForm.photoUrl && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setEditStudentForm(prev => ({ ...prev, photoUrl: '' }))}
-                          className="h-8 text-xs px-2 text-rose-600 hover:bg-rose-50 cursor-pointer"
-                        >
-                          사진 삭제
-                        </Button>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-500 leading-relaxed break-words whitespace-normal">
-                      사진 등록 시 자동으로 가로세로 2cm 정사각형으로 리사이징되며, 최적 해상도로 용량이 최소화됩니다.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">학생 이메일 계정</Label>
-                <Input value={editStudentForm.studentEmail || ''} disabled className="h-8 bg-slate-100 font-mono text-xs text-slate-600" />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-700">학생 이름</Label>
-                  <Input 
-                    value={editStudentForm.name || ''} 
-                    onChange={e => setEditStudentForm({...editStudentForm, name: e.target.value})} 
-                    className="h-8 text-xs font-medium"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-700">학생 영문 이름</Label>
-                  <Input 
-                    value={editStudentForm.nameEn || ''} 
-                    onChange={e => setEditStudentForm({...editStudentForm, nameEn: e.target.value})} 
-                    placeholder="예: Kang Soobin"
-                    className="h-8 text-xs font-medium"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-4 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-xs text-slate-600">학년</Label>
-                  <Input value={editStudentForm.grade || ''} onChange={e => setEditStudentForm({...editStudentForm, grade: e.target.value})} className="h-8 text-xs" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-slate-600">반</Label>
-                  <Input value={editStudentForm.classNum || ''} onChange={e => setEditStudentForm({...editStudentForm, classNum: e.target.value})} className="h-8 text-xs" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-slate-600">번호</Label>
-                  <Input value={editStudentForm.studentNum || ''} onChange={e => setEditStudentForm({...editStudentForm, studentNum: e.target.value})} className="h-8 text-xs" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-slate-600">성별</Label>
-                  <Select 
-                    value={editStudentForm.gender || 'Male'} 
-                    onValueChange={(val: 'Male' | 'Female') => setEditStudentForm({...editStudentForm, gender: val})}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="성별" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Male">남학생</SelectItem>
-                      <SelectItem value="Female">여학생</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-600">보호자 연락처</Label>
-                <Input value={editStudentForm.contact || ''} onChange={e => setEditStudentForm({...editStudentForm, contact: e.target.value})} className="h-8 text-xs" />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-slate-700 font-bold">등하교 목적지 (스쿨버스 정류장)</Label>
-                  <span className="text-[10px] text-indigo-600 font-medium">📍 정류장 검색 선택</span>
-                </div>
-                <Combobox 
-                  options={destinationOptions}
-                  value={editStudentForm.address || null}
-                  onSelect={(val) => setEditStudentForm({ ...editStudentForm, address: val || '' })}
-                  placeholder="스쿨버스 정류장/목적지 검색 (예: Hung Vuong KFC, Sky 1,2...)"
-                  modal={true}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-600 flex items-center justify-between">
-                  <span>배정된 스쿨버스</span>
-                  <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-600 font-normal">수정 불가 (조회 전용)</Badge>
-                </Label>
-                <Input value={editStudentForm.kisbusNo || editStudentForm.busSummary?.assignedBusName || '미배정 (자가 귀가)'} disabled className="h-8 bg-slate-100 font-mono text-xs text-slate-600 cursor-not-allowed" />
-              </div>
-            </div>
-            <DialogFooter className="pt-2 flex items-center justify-between sm:justify-between w-full">
-              <div className="flex items-center gap-1">
-                <Button 
-                  type="button" 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => {
-                    const studentObj = students.find(s => s.studentId === editStudentForm.studentId || s.studentEmail === editStudentForm.studentEmail);
-                    const target = studentObj || editStudentForm.studentId;
-                    if (target) handleDeleteStudent(target);
-                  }}
-                  className="text-xs text-slate-600 hover:bg-slate-100 font-medium"
-                  title="실수 삭제 복구 가능 (휴지통 보관)"
-                >
-                  <Trash2 className="w-3.5 h-3.5 mr-1" /> 삭제(휴지통)
-                </Button>
-                <Button 
-                  type="button" 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => {
-                    const studentObj = students.find(s => s.studentId === editStudentForm.studentId || s.studentEmail === editStudentForm.studentEmail);
-                    const target = studentObj || editStudentForm.studentId;
-                    if (target) handlePurgeStudent(target, editStudentForm.name);
-                  }}
-                  className="text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 font-bold"
-                  title="전학/자퇴: 스쿨버스 좌석 반환, 방과후 취소, 계정 영구 삭제"
-                >
-                  전학 완전삭제
-                </Button>
-              </div>
-              <Button onClick={handleSaveEditStudent} className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs px-5">수정 내용 저장</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <EditStudentDialog
+          open={isEditDialogOpen}
+          onOpenChange={setIsEditDialogOpen}
+          editStudentForm={editStudentForm}
+          setEditStudentForm={setEditStudentForm}
+          editPhotoInputRef={editPhotoInputRef}
+          onPhotoChange={handleEditPhotoChange}
+          destinationOptions={destinationOptions}
+          students={students}
+          onSave={handleSaveEditStudent}
+          onDeleteStudent={handleDeleteStudent}
+          onPurgeStudent={handlePurgeStudent}
+        />
 
         {/* 5. 학생 1인 4-in-1 통합 프로필 상세 모달 (학학년도 아카이브 누적 조회 지원) */}
-        {selectedStudent && (() => {
-          const currentYearNum = new Date().getFullYear();
-          const historyList = selectedStudent.academicHistory || [];
-          const selectedHist = historyList.find(h => h.academicYear === selectedAcademicYear);
-
-          const displayGradeStr = selectedHist ? selectedHist.grade : selectedStudent.grade;
-          const displayClassStr = selectedHist ? selectedHist.classNum : selectedStudent.classNum;
-          const displayNumStr = selectedHist ? selectedHist.studentNum : selectedStudent.studentNum;
-          const isArchivedYear = selectedAcademicYear !== currentYearNum;
-
-          return (
-            <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl">
-                <DialogHeader className="pb-2 border-b border-slate-200">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="rounded-2xl border-2 border-indigo-200 shadow-sm shrink-0 bg-white" style={{ width: '2cm', height: '2cm' }}>
-                        {selectedStudent.photoUrl ? (
-                          <AvatarImage src={selectedStudent.photoUrl} alt={selectedStudent.name} className="object-cover rounded-2xl" />
-                        ) : (
-                          <AvatarFallback className="bg-indigo-100 text-indigo-700 font-extrabold text-sm rounded-2xl">
-                            {selectedStudent.name.slice(0, 2)}
-                          </AvatarFallback>
-                        )}
-                      </Avatar>
-                      <div>
-                        <DialogTitle className="text-xl font-bold text-slate-900 flex items-center gap-2 flex-wrap">
-                          <span>{selectedStudent.name} 학생 통합 마스터 프로필</span>
-                          <Badge className="bg-indigo-600 text-white text-xs font-bold">
-                            {displayGradeStr}학년 {displayClassStr}반 {displayNumStr ? `${displayNumStr}번` : ''}
-                          </Badge>
-                        </DialogTitle>
-                        <DialogDescription className="text-xs text-slate-500 font-mono mt-0.5">
-                          계정 ID: {selectedStudent.studentEmail}
-                        </DialogDescription>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-                      <Button variant="outline" size="sm" onClick={() => handleStartEditStudent(selectedStudent)} className="h-8 text-xs font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50">
-                        <Edit3 className="mr-1 h-3.5 w-3.5" /> 정보 수정
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => handleDeleteStudent(selectedStudent)} className="h-8 text-xs font-bold border-slate-300 text-slate-700 hover:bg-slate-50" title="실수 삭제 복구 가능 (휴지통 보관)">
-                        <Trash2 className="mr-1 h-3.5 w-3.5" /> 삭제(휴지통)
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => handlePurgeStudent(selectedStudent)} className="h-8 text-xs font-bold border-rose-300 text-rose-600 hover:bg-rose-50 hover:border-rose-400" title="전학/자퇴: 스쿨버스 좌석 반환, 방과후 취소, 계정 영구 삭제">
-                        전학 처리
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* ★★★ [학학년도 선택 셀렉터 바 - 누적 이력 아카이브 뷰어] ★★★ */}
-                  <div className="bg-gradient-to-r from-indigo-900 to-slate-900 text-white p-3 rounded-xl mt-3 space-y-1.5 shadow-sm">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-extrabold text-indigo-200 whitespace-nowrap">📅 조회 학학년도 선택:</span>
-                        <Select value={String(selectedAcademicYear)} onValueChange={(val) => setSelectedAcademicYear(parseInt(val, 10))}>
-                          <SelectTrigger className="h-8 text-xs bg-white text-slate-900 font-bold border-0 w-60 shadow-xs focus:ring-2 focus:ring-amber-400">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="bg-white">
-                            <SelectItem value={String(currentYearNum)} className="text-xs font-bold text-indigo-950">
-                              {currentYearNum}학년도 ({selectedStudent.grade}학년 - 현재 학학년도)
-                            </SelectItem>
-                            {historyList.map(h => (
-                              <SelectItem key={h.academicYear} value={String(h.academicYear)} className="text-xs font-semibold text-slate-800">
-                                {h.academicYear}학년도 ({h.grade}학년 {h.classNum}반 - 아카이브 기록)
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {isArchivedYear ? (
-                        <Badge className="bg-amber-400 text-amber-950 font-black text-xs px-2.5 py-0.5 shadow-xs">
-                          {selectedAcademicYear}학년도 과거 아카이브 데이터 세트 조회 중
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-indigo-700/80 text-indigo-100 font-bold text-[11px] px-2 py-0.5">
-                          {currentYearNum}학년도 현재 학적 기준
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-indigo-200/90 font-medium">
-                      💡 <strong>과거 학년도 기록 조회 방법</strong>: 상단 드롭다운에서 원하는 학학년도를 선택하면, 해당 학년도 당시의 <strong>[출결 서류], [교외체험학습 승인서], [방과후 수강이력], [스쿨버스 지정 노선]</strong>이 그대로 전환되어 조회됩니다.
-                    </p>
-                  </div>
-                </DialogHeader>
-
-                {/* 5개 탭 메인 메뉴 */}
-                <Tabs defaultValue="profile" className="w-full mt-3">
-                  <TabsList className="grid grid-cols-5 w-full bg-slate-100 p-1 rounded-xl">
-                    <TabsTrigger value="profile" className="text-xs font-bold whitespace-nowrap">기본 인적사항</TabsTrigger>
-                    <TabsTrigger value="afterschool" className="text-xs font-bold whitespace-nowrap">방과후 & 청구</TabsTrigger>
-                    <TabsTrigger value="bus" className="text-xs font-bold whitespace-nowrap">스쿨버스 노선</TabsTrigger>
-                    <TabsTrigger value="attendance" className="text-xs font-bold whitespace-nowrap">출결 & 체험학습</TabsTrigger>
-                    <TabsTrigger value="history" className="text-xs font-bold whitespace-nowrap text-purple-700">과거 학적 이력 ({historyList.length})</TabsTrigger>
-                  </TabsList>
-
-                  {/* Tab 1: 기본 인적사항 */}
-                  <TabsContent value="profile" className="space-y-3 pt-3">
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                        <span className="text-slate-500 block mb-1">학생 이메일 계정 (학부모 겸용 고유 ID)</span>
-                        <span className="font-mono font-bold text-slate-800 text-sm">{selectedStudent.studentEmail}</span>
-                      </div>
-                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                        <span className="text-slate-500 block mb-1">보호자 연락처</span>
-                        <span className="font-bold text-slate-800 text-sm">{selectedStudent.contact || '미등록'}</span>
-                      </div>
-                      <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200">
-                        <span className="text-indigo-700 block mb-1 font-semibold">현재 선택된 학학년도 학적</span>
-                        <span className="font-bold text-indigo-950 text-sm">
-                          {selectedAcademicYear}학년도 ({displayGradeStr}학년 {displayClassStr}반 {displayNumStr ? `${displayNumStr}번` : ''})
-                          {isArchivedYear && <span className="ml-1.5 text-xs text-amber-700 font-bold">(아카이브 기록)</span>}
-                        </span>
-                      </div>
-                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                        <span className="text-slate-500 block mb-1">성별 / 승차권 카드 번호</span>
-                        <span className="font-bold text-slate-800">
-                          {selectedStudent.gender === 'Male' ? '남성' : '여성'} {selectedStudent.kisbusNo ? `(카드: ${selectedStudent.kisbusNo})` : ''}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                      <span className="text-slate-500 block mb-1">등하교 목적지</span>
-                      <span className="font-medium text-slate-800">{selectedStudent.address || '등록된 목적지 정보가 없습니다.'}</span>
-                    </div>
-
-                    {/* 형제·자매 (가족) 연결 관리 */}
-                    <div className="p-4 rounded-xl bg-purple-50/70 border border-purple-200 text-xs space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h5 className="font-bold text-purple-950 flex items-center gap-1.5 text-sm">
-                          <Users className="h-4 w-4 text-purple-700" /> 형제·자매 연결 관리 (스쿨버스 자동 연동)
-                        </h5>
-                        {currentSiblings.length > 0 && (
-                          <Badge className="bg-purple-600 text-white font-bold text-[10px]">
-                            {currentSiblings.length + 1}남매 (가족 연결됨)
-                          </Badge>
-                        )}
-                      </div>
-
-                      {/* 연결된 형제자매 목록 */}
-                      {currentSiblings.length > 0 ? (
-                        <div className="space-y-1.5">
-                          <span className="text-slate-500 text-[11px] font-semibold block">현재 연결된 형제·자매:</span>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {currentSiblings.map(sib => (
-                              <div key={sib.studentId || sib.id} className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-purple-200/80 shadow-xs">
-                                <div className="flex items-center gap-2">
-                                  <Avatar className="h-7 w-7 rounded-full bg-purple-100 text-purple-800 text-xs font-bold shrink-0">
-                                    <AvatarFallback>{sib.name.slice(0, 2)}</AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <span className="font-bold text-slate-900 block text-xs">{sib.name}</span>
-                                    <span className="text-[10px] text-muted-foreground">{sib.grade}학년 {sib.classNum}반 · {sib.contact}</span>
-                                  </div>
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 px-1.5 text-xs text-destructive hover:bg-destructive/10"
-                                  onClick={async () => {
-                                    if (!confirm(`${sib.name} 학생과의 형제자매 연결을 해제하시겠습니까?`)) return;
-                                    try {
-                                      await unlinkMasterStudentSibling(sib.studentId || sib.id!);
-                                      toast({ title: "형제자매 연결 해제 완료" });
-                                    } catch (e) {
-                                      toast({ title: "해제 실패", variant: "destructive" });
-                                    }
-                                  }}
-                                >
-                                  연결 해제
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-slate-500 text-[11px]">
-                          현재 연결된 형제·자매가 없습니다. 아래에서 학생을 검색하여 가족으로 연결하세요.
-                        </p>
-                      )}
-
-                      {/* 형제자매 검색 및 추가 폼 */}
-                      <div className="pt-2 border-t border-purple-200/60 space-y-1.5">
-                        <div className="relative">
-                          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                          <Input
-                            placeholder="연결할 형제·자매 학생 이름 또는 이메일 검색..."
-                            value={siblingSearchQuery}
-                            onChange={(e) => setSiblingSearchQuery(e.target.value)}
-                            className="h-8 pl-8 text-xs bg-white"
-                          />
-                        </div>
-
-                        {siblingCandidates.length > 0 && (
-                          <div className="bg-white border border-purple-200 rounded-lg p-1 space-y-1 shadow-md">
-                            {siblingCandidates.map(cand => (
-                              <div
-                                key={cand.studentId || cand.id}
-                                className="flex items-center justify-between p-2 hover:bg-purple-50 rounded cursor-pointer transition-colors"
-                                onClick={async () => {
-                                  try {
-                                    await linkMasterStudentSiblings([selectedStudent.studentId || selectedStudent.id!, cand.studentId || cand.id!]);
-                                    setSiblingSearchQuery('');
-                                    toast({ title: "형제자매 연결 완료", description: `${cand.name} 학생과 가족으로 연결되었습니다.` });
-                                  } catch (e: any) {
-                                    toast({ title: "연결 실패", description: e.message, variant: "destructive" });
-                                  }
-                                }}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <span className="font-bold text-slate-900 text-xs">{cand.name}</span>
-                                  <span className="text-[10px] text-muted-foreground">{cand.grade}학년 {cand.classNum}반 · {cand.studentEmail}</span>
-                                </div>
-                                <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 text-purple-700 border-purple-300">
-                                  <Plus className="w-3 h-3 mr-1" /> 연결하기
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </TabsContent>
-
-                {/* Tab 2: 방과후 수강 & 청구 현황 */}
-                <TabsContent value="afterschool" className="space-y-3 pt-4">
-                  <div className="p-4 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs space-y-2">
-                    <h5 className="font-bold text-emerald-900 flex items-center gap-1.5 text-sm">
-                      <GraduationCap className="h-4 w-4" /> 방과후 수강 및 납부 요약
-                    </h5>
-                    <div className="flex justify-between items-center pt-1 border-t border-emerald-200/60">
-                      <span className="text-slate-600">수강 중인 강좌 수:</span>
-                      <span className="font-bold text-emerald-800">{selectedStudent.afterschoolSummary?.enrolledCourseIds?.length || 0}개 강좌</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600">총 청구 수강료:</span>
-                      <span className="font-black text-emerald-900 text-sm">
-                        {(selectedStudent.afterschoolSummary?.totalTuition || 0).toLocaleString()}원
-                      </span>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                {/* Tab 3: 스쿨버스 노선 & 목적지 */}
-                <TabsContent value="bus" className="space-y-3 pt-4">
-                  <div className="p-4 rounded-xl bg-sky-50/80 border border-sky-200 text-xs space-y-2">
-                    <h5 className="font-bold text-sky-900 flex items-center gap-1.5 text-sm">
-                      <Bus className="h-4 w-4" /> 등하교 버스 노선 및 목적지 정보
-                    </h5>
-                    <div className="grid grid-cols-2 gap-2 pt-1">
-                      <div className="bg-white/80 p-2.5 rounded-lg border border-sky-100">
-                        <span className="text-slate-500 block">배정된 스쿨버스</span>
-                        <span className="font-bold text-sky-900">{selectedStudent.busSummary?.assignedBusName || '자가 귀가'}</span>
-                      </div>
-                      <div className="bg-white/80 p-2.5 rounded-lg border border-sky-100">
-                        <span className="text-slate-500 block">좌석 번호</span>
-                        <span className="font-bold text-sky-900">{selectedStudent.busSummary?.assignedSeatNumber ? `${selectedStudent.busSummary.assignedSeatNumber}번` : '미배정'}</span>
-                      </div>
-                      <div className="col-span-2 bg-white/80 p-2.5 rounded-lg border border-sky-100">
-                        <span className="text-slate-500 block">등/하교 목적지 정류장 (거주지 연동)</span>
-                        <span className="font-bold text-sky-900">{selectedStudent.address || selectedStudent.busSummary?.morningDestinationId || '미등록'}</span>
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                {/* Tab 4: 출결 & 체험학습 */}
-                <TabsContent value="attendance" className="space-y-3 pt-4">
-                  <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-200 text-xs space-y-2">
-                    <h5 className="font-bold text-amber-900 flex items-center gap-1.5 text-sm">
-                      <Calendar className="h-4 w-4" /> 출결 및 체험학습 서류 요약
-                    </h5>
-                    <p className="text-slate-600">
-                      누적 결석/지각 기록 및 체험학습 승인 서류가 이 계정과 통합 동기화되어 관리됩니다.
-                    </p>
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </DialogContent>
-          </Dialog>
-          );
-        })()}
+        {selectedStudent && (
+          <StudentDetailDialog
+            open={isDetailDialogOpen}
+            onOpenChange={setIsDetailDialogOpen}
+            selectedStudent={selectedStudent}
+            selectedAcademicYear={selectedAcademicYear}
+            setSelectedAcademicYear={setSelectedAcademicYear}
+            currentSiblings={currentSiblings}
+            siblingCandidates={siblingCandidates}
+            siblingSearchQuery={siblingSearchQuery}
+            setSiblingSearchQuery={setSiblingSearchQuery}
+            onEditStudent={handleStartEditStudent}
+            onDeleteStudent={handleDeleteStudent}
+            onPurgeStudent={handlePurgeStudent}
+          />
+        )}
 
         {/* 6. 엑셀 명단 다운로드 학년/반 선택 팝업 모달 */}
-        <Dialog open={isDownloadDialogOpen} onOpenChange={setIsDownloadDialogOpen}>
-          <DialogContent className="sm:max-w-xl w-[95vw] max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl">
-            <DialogHeader className="pb-2 border-b border-slate-200">
-              <div className="flex items-center justify-between">
-                <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
-                  <Download className="h-5 w-5 text-indigo-600" />
-                  <span>학생 명단 엑셀 다운로드 (학년/반 선택)</span>
-                </DialogTitle>
-              </div>
-              <DialogDescription className="text-xs text-slate-500">
-                다운로드할 학년과 반을 체크박스로 선택해주세요.
-              </DialogDescription>
-            </DialogHeader>
-
-            {/* 빠른 선택 바 */}
-            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
-              <span className="font-bold text-slate-700">
-                선택된 대상: <strong className="text-indigo-600">{
-                  students.filter(s => selectedClassesForDownload.includes(`${s.grade}-${s.classNum || '1'}`)).length
-                }명</strong> / 전체 {students.length}명
-              </span>
-              <div className="flex items-center gap-1.5">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={handleSelectAllClassesForDownload} 
-                  className="h-7 text-xs font-semibold px-2"
-                >
-                  전체 선택
-                </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={handleDeselectAllClassesForDownload} 
-                  className="h-7 text-xs font-semibold px-2 text-slate-500"
-                >
-                  전체 해제
-                </Button>
-              </div>
-            </div>
-
-            {/* 학년별 반 선택 체크박스 그리드 */}
-            <div className="space-y-3 py-1">
-              {gradeClassTree.map((gItem) => {
-                const gradeKeys = gItem.classes.map(c => c.key);
-                const allSelected = gradeKeys.length > 0 && gradeKeys.every(k => selectedClassesForDownload.includes(k));
-                const someSelected = gradeKeys.some(k => selectedClassesForDownload.includes(k));
-
-                return (
-                  <div key={gItem.grade} className="p-3 bg-white border border-slate-200 rounded-xl space-y-2">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox 
-                          id={`grade-all-${gItem.grade}`}
-                          checked={allSelected ? true : (someSelected ? 'indeterminate' : false)}
-                          onCheckedChange={() => handleToggleGradeForDownload(gItem.grade)}
-                          className="h-4 w-4 text-indigo-600 rounded"
-                        />
-                        <Label htmlFor={`grade-all-${gItem.grade}`} className="text-xs font-bold text-slate-800 cursor-pointer flex items-center gap-1.5">
-                          <span>{gItem.grade === '졸업' ? '졸업생' : `${gItem.grade}학년 전체`}</span>
-                          <span className="text-[11px] font-normal text-slate-500">({gItem.totalCount}명)</span>
-                        </Label>
-                      </div>
-                      <button 
-                        type="button" 
-                        onClick={() => handleToggleGradeForDownload(gItem.grade)}
-                        className="text-[11px] text-indigo-600 hover:text-indigo-800 font-medium"
-                      >
-                        {allSelected ? '학년 해제' : '학년 선택'}
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 pt-1">
-                      {gItem.classes.map((c) => {
-                        const isChecked = selectedClassesForDownload.includes(c.key);
-                        return (
-                          <div 
-                            key={c.key} 
-                            onClick={() => handleToggleClassForDownload(c.key)}
-                            className={cn(
-                              "flex items-center space-x-2 p-2 rounded-lg border text-xs cursor-pointer transition select-none",
-                              isChecked 
-                                ? "bg-indigo-50 border-indigo-300 text-indigo-900 font-bold" 
-                                : "bg-slate-50/60 border-slate-200 text-slate-600 hover:bg-slate-100"
-                            )}
-                          >
-                            <Checkbox 
-                              id={c.key}
-                              checked={isChecked}
-                              onCheckedChange={() => handleToggleClassForDownload(c.key)}
-                              className="h-3.5 w-3.5"
-                            />
-                            <span className="truncate">{c.classNum}반 ({c.count}명)</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <DialogFooter className="pt-2 flex items-center justify-between sm:justify-end gap-2 border-t border-slate-100">
-              <Button variant="outline" size="sm" onClick={() => setIsDownloadDialogOpen(false)} className="text-xs font-bold">
-                취소
-              </Button>
-              <Button 
-                onClick={handleDownloadFilteredExcel} 
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs gap-1.5 shadow-xs"
-              >
-                <Download className="h-4 w-4" />
-                <span>선택된 학생 ({
-                  students.filter(s => selectedClassesForDownload.includes(`${s.grade}-${s.classNum || '1'}`)).length
-                }명) 엑셀 다운로드</span>
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <DownloadStudentListDialog
+          open={isDownloadDialogOpen}
+          onOpenChange={setIsDownloadDialogOpen}
+          students={students}
+          gradeClassTree={gradeClassTree}
+          selectedClassesForDownload={selectedClassesForDownload}
+          onSelectAll={handleSelectAllClassesForDownload}
+          onDeselectAll={handleDeselectAllClassesForDownload}
+          onToggleGrade={handleToggleGradeForDownload}
+          onToggleClass={handleToggleClassForDownload}
+          onDownload={handleDownloadFilteredExcel}
+        />
 
         {/* 7. 학생 사진 스마트 일괄 등록 모달 */}
         <BatchPhotoModal
@@ -2301,230 +1448,22 @@ export default function AdminMasterStudentsPage() {
       </div>
 
       {/* 8. 엑셀 일괄 등록 미리보기 모달 */}
-      <Dialog open={isExcelPreviewOpen} onOpenChange={setIsExcelPreviewOpen}>
-        <DialogContent className="max-w-[92vw] w-full max-h-[90vh] flex flex-col p-0 gap-0 rounded-2xl overflow-hidden">
-          <DialogHeader className="px-6 pt-5 pb-3 border-b border-slate-100 shrink-0">
-            <DialogTitle className="text-base font-bold flex items-center gap-2">
-              <CheckCheck className="h-4 w-4 text-indigo-600" /> 엑셀 일괄 등록 미리보기
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
-              총 <strong>{excelPreviewRows.length}명</strong>이 파싱되었습니다.
-              방과후 수강 현황 및 스쿨버스 노선 연동 여부를 확인 후 최종 등록하세요.
-              {excelPreviewRows.filter(r => r.error).length > 0 && (
-                <span className="text-rose-600 font-bold ml-1">
-                  (오류 {excelPreviewRows.filter(r => r.error).length}명 - 등록 제외)
-                </span>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex-1 min-h-0 overflow-auto px-4 py-3">
-            <Table>
-              <TableHeader>
-                <TableRow className="text-xs">
-                  <TableHead className="whitespace-nowrap w-8">#</TableHead>
-                  <TableHead className="whitespace-nowrap">학년/반/번호</TableHead>
-                  <TableHead className="whitespace-nowrap">이름</TableHead>
-                  <TableHead className="whitespace-nowrap">영문이름</TableHead>
-                  <TableHead className="whitespace-nowrap">성별</TableHead>
-                  <TableHead className="whitespace-nowrap">계정(이메일)</TableHead>
-                  <TableHead className="whitespace-nowrap">학부모 연락처</TableHead>
-                  <TableHead className="whitespace-nowrap min-w-[140px]">
-                    <span className="flex items-center gap-1">
-                      <BookOpen className="w-3 h-3 text-emerald-600" /> 방과후 수강
-                    </span>
-                  </TableHead>
-                  <TableHead className="whitespace-nowrap min-w-[140px]">
-                    <span className="flex items-center gap-1">
-                      <Bus className="w-3 h-3 text-sky-600" /> 스쿨버스 노선
-                    </span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {excelPreviewRows.map((row, idx) => (
-                  <TableRow
-                    key={idx}
-                    className={cn('text-xs', row.error ? 'bg-rose-50' : '')}
-                  >
-                    <TableCell className="text-slate-400 font-mono">{idx + 1}</TableCell>
-                    <TableCell className="whitespace-nowrap font-medium">
-                      {row.grade}학년 {row.classNum}반 {row.studentNum ? `${row.studentNum}번` : ''}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap font-bold">{row.name}</TableCell>
-                    <TableCell className="text-slate-500">{row.nameEn || '-'}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={cn('text-[10px] px-1.5 py-0', row.gender === 'Female' ? 'border-rose-200 text-rose-600' : 'border-sky-200 text-sky-600')}>
-                        {row.gender === 'Female' ? '여' : '남'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="max-w-[220px]">
-                      {row.error ? (
-                        <span className="flex items-center gap-1 text-rose-600 font-medium">
-                          <AlertCircle className="w-3 h-3 shrink-0" />
-                          <span className="truncate text-[10px]">{row.error}</span>
-                        </span>
-                      ) : (
-                        <span className="font-mono text-[11px] text-slate-700">{row.studentEmail || <span className="text-amber-500">이메일 없음</span>}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-slate-500">{row.contact || '-'}</TableCell>
-                    <TableCell>
-                      {row.afterschoolStatus === '없음' ? (
-                        <span className="text-slate-400 text-[11px]">없음</span>
-                      ) : (
-                        <Badge className="bg-emerald-100 text-emerald-800 border-0 text-[10px] font-medium max-w-[130px] truncate block">
-                          {row.afterschoolStatus}
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {row.busStatus === '없음' ? (
-                        <span className="text-slate-400 text-[11px]">없음</span>
-                      ) : (
-                        <Badge className="bg-sky-100 text-sky-800 border-0 text-[10px] font-medium max-w-[130px] truncate block">
-                          {row.busStatus}
-                        </Badge>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          <DialogFooter className="px-6 py-4 border-t border-slate-100 shrink-0 flex items-center justify-between sm:justify-between gap-3">
-            <div className="text-xs text-slate-500">
-              유효한 계정: <strong className="text-indigo-700">{excelPreviewRows.filter(r => !r.error && isStudentEmail(r.studentEmail)).length}명</strong>
-              {excelPreviewRows.filter(r => r.error || !isStudentEmail(r.studentEmail)).length > 0 && (
-                <span className="text-rose-500 ml-2">
-                  (제외 {excelPreviewRows.filter(r => r.error || !isStudentEmail(r.studentEmail)).length}명)
-                </span>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => { setIsExcelPreviewOpen(false); setExcelPreviewRows([]); }}
-                className="text-xs font-bold"
-              >
-                취소
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleConfirmExcelImport}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs"
-              >
-                <CheckCheck className="w-3.5 h-3.5 mr-1.5" />
-                {excelPreviewRows.filter(r => !r.error && isStudentEmail(r.studentEmail)).length}명 최종 등록
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ExcelPreviewDialog
+        open={isExcelPreviewOpen}
+        onOpenChange={setIsExcelPreviewOpen}
+        rows={excelPreviewRows}
+        onCancel={() => { setIsExcelPreviewOpen(false); setExcelPreviewRows([]); }}
+        onConfirmImport={handleConfirmExcelImport}
+      />
 
       {/* 7. 휴지통 / 삭제된 학생 복구 모달 */}
-      <Dialog open={isTrashDialogOpen} onOpenChange={setIsTrashDialogOpen}>
-        <DialogContent className="sm:max-w-2xl w-[95vw] max-h-[85vh] flex flex-col p-0 rounded-2xl overflow-hidden">
-          <DialogHeader className="px-6 pt-5 pb-3 border-b border-slate-200 bg-slate-50/80 shrink-0">
-            <div className="flex items-center justify-between">
-              <DialogTitle className="text-base font-bold flex items-center gap-2 text-slate-900">
-                <RotateCcw className="h-4 w-4 text-indigo-600" />
-                <span>학생 계정 휴지통 (삭제 내역 및 복구)</span>
-                <Badge variant="outline" className="text-xs bg-white text-slate-700 font-bold ml-1">
-                  총 {deletedStudents.length}명
-                </Badge>
-              </DialogTitle>
-            </div>
-            <DialogDescription className="text-xs text-slate-500 pt-1 leading-relaxed">
-              실수로 삭제된 학생 계정을 1클릭으로 즉시 복구할 수 있습니다. 
-              <strong className="text-indigo-700 ml-1">스쿨버스 배정 및 방과후 수강 이력은 안전하게 영구 보존</strong>되어 있으므로, 
-              복구 시 기존 노선 및 강좌 데이터와 즉시 다시 100% 자동 재연결됩니다.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-3">
-            {deletedStudents.length > 0 ? (
-              <Table>
-                <TableHeader className="bg-slate-50">
-                  <TableRow className="text-xs">
-                    <TableHead className="whitespace-nowrap">삭제 일시</TableHead>
-                    <TableHead className="whitespace-nowrap">학년/반/번호</TableHead>
-                    <TableHead className="whitespace-nowrap">이름</TableHead>
-                    <TableHead className="whitespace-nowrap">학생 계정</TableHead>
-                    <TableHead className="whitespace-nowrap text-right">작업 (복구 / 전학 완전삭제)</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {deletedStudents.map((ds) => (
-                    <TableRow key={ds.studentId || ds.studentEmail} className="hover:bg-slate-50/80 text-xs">
-                      <TableCell className="whitespace-nowrap text-slate-500 font-mono text-[11px]">
-                        {ds.deletedAt ? new Date(ds.deletedAt).toLocaleString('ko-KR', {
-                          year: 'numeric', month: '2-digit', day: '2-digit',
-                          hour: '2-digit', minute: '2-digit'
-                        }) : '-'}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap font-medium text-slate-700">
-                        {ds.grade}학년 {ds.classNum}반 {ds.studentNum ? `${ds.studentNum}번` : ''}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap font-bold text-slate-900">
-                        {ds.name}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap font-mono text-[11px] text-slate-600">
-                        {ds.studentEmail || '-'}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleRestoreStudent(ds.studentId || ds.studentEmail, ds.name)}
-                            className="h-7 text-xs px-2.5 font-bold border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-800 shadow-2xs"
-                          >
-                            <RotateCcw className="w-3 h-3 mr-1" /> 복구
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handlePurgeStudent(ds, ds.name)}
-                            className="h-7 text-xs px-2 text-rose-600 hover:bg-rose-50 border-rose-200 font-bold"
-                            title="전학/자퇴: 스쿨버스 좌석 반환, 방과후 취소, 모든 데이터 영구 파기"
-                          >
-                            <Trash2 className="w-3 h-3 mr-1" /> 전학 완전삭제
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center text-slate-400 space-y-2">
-                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-                  <Trash2 className="w-5 h-5" />
-                </div>
-                <p className="text-xs font-semibold text-slate-600">휴지통이 비어 있습니다.</p>
-                <p className="text-[11px] text-slate-400">삭제된 학생 계정이 없습니다.</p>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="px-6 py-3 border-t border-slate-200 bg-slate-50/50 shrink-0 flex items-center justify-between sm:justify-between">
-            <span className="text-[11px] text-slate-500">
-              💡 복구 시 학생 계정, 프로필, 스쿨버스 노선, 방과후 정보가 원상태로 복원됩니다.
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsTrashDialogOpen(false)}
-              className="h-8 text-xs font-bold px-4"
-            >
-              닫기
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <TrashDialog
+        open={isTrashDialogOpen}
+        onOpenChange={setIsTrashDialogOpen}
+        deletedStudents={deletedStudents}
+        onRestore={handleRestoreStudent}
+        onPurge={handlePurgeStudent}
+      />
     </MainLayout>
   );
 }

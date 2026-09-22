@@ -3,7 +3,7 @@
 
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Loader2 } from 'lucide-react';
 import { AppHeader } from '@/components/layout/header';
 import AppSidebar from '@/components/layout/sidebar';
@@ -17,6 +17,34 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, profile, profileLoading, isParent } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const appHeaderWrapRef = useRef<HTMLDivElement>(null);
+  const appFooterWrapRef = useRef<HTMLDivElement>(null);
+
+  // 데스크톱 상단 AppHeader / 하단 AppFooter의 실제 렌더링 높이를 CSS 변수로 노출.
+  // MainLayout(페이지별 h-dvh 레이아웃)이 이 두 값을 빼서 자신의 높이를 계산하는 데 쓴다.
+  // (모바일에서는 각 래퍼가 display:none이라 offsetHeight가 0이 되어 자동으로 보정됨)
+  useEffect(() => {
+    const headerEl = appHeaderWrapRef.current;
+    const footerEl = appFooterWrapRef.current;
+    if (!headerEl || !footerEl) return;
+    const updateHeights = () => {
+      document.documentElement.style.setProperty('--app-header-height', `${headerEl.offsetHeight}px`);
+      document.documentElement.style.setProperty('--app-footer-height', `${footerEl.offsetHeight}px`);
+    };
+    updateHeights();
+    const observer = new ResizeObserver(updateHeights);
+    observer.observe(headerEl);
+    observer.observe(footerEl);
+    window.addEventListener('resize', updateHeights);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHeights);
+      document.documentElement.style.removeProperty('--app-header-height');
+      document.documentElement.style.removeProperty('--app-footer-height');
+    };
+    // 인증 로딩 중에는 이 래퍼들이 아직 DOM에 없으므로(로딩 화면만 렌더),
+    // 로딩이 끝나고 실제 레이아웃이 마운트된 뒤에도 다시 시도해야 한다.
+  }, [loading, user, profileLoading]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -51,7 +79,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider>
       <div className="h-screen max-h-screen overflow-hidden flex flex-col bg-background text-foreground font-body w-full max-w-full overscroll-none">
-        <div className="print:hidden w-full max-w-full shrink-0 z-50 hidden sm:block">
+        <div ref={appHeaderWrapRef} className="print:hidden w-full max-w-full shrink-0 z-50 hidden sm:block">
           <AppHeader />
         </div>
         <div className="flex-1 min-h-0 flex print:block print:pt-0 min-w-0 w-full max-w-full overflow-hidden">
@@ -63,7 +91,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {children}
             </div>
             {/* 개인정보처리방침 푸터는 넓은 화면(데스크톱)에서만 바닥에 고정 노출되고, 모바일에서는 하단 네비게이션이 대신하므로 숨김 */}
-            <AppFooter className="shrink-0 hidden lg:block" />
+            <div ref={appFooterWrapRef} className="shrink-0 hidden lg:block">
+              <AppFooter />
+            </div>
           </main>
         </div>
       </div>

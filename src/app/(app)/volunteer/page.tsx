@@ -13,7 +13,7 @@ import {
   createVolunteerBatchDocument,
   rejectVolunteerSubmission
 } from '@/lib/services/documentService';
-import { getVolunteerApprovers } from '@/lib/services/userService';
+import { getVolunteerApprovers, getUserProfileByEmail, getUsersDirectory } from '@/lib/services/userService';
 import { getOrgStructure } from '@/lib/services/settingsService';
 import { onMasterStudentsUpdate } from '@/lib/services/masterStudentService';
 import { ApprovalDoc, VolunteerFormData, VolunteerStudentItem, OrgStructure } from '@/lib/types';
@@ -80,6 +80,7 @@ export default function TeacherVolunteerPage() {
   }, [searchParams]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [org, setOrg] = useState<OrgStructure | null>(null);
+  const [volunteerManagerName, setVolunteerManagerName] = useState<string>('');
 
   // 마스터 학생 목록 (학생 검색용)
   const [masterStudents, setMasterStudents] = useState<MasterStudent[]>([]);
@@ -154,6 +155,46 @@ export default function TeacherVolunteerPage() {
     });
     return () => unsubStudents();
   }, []);
+
+  // 봉사활동 담당자 이름 확인 (이메일 -> 성명)
+  useEffect(() => {
+    const email = org?.volunteerManager?.trim();
+    if (!email) {
+      setVolunteerManagerName('');
+      return;
+    }
+
+    if ((org as any)?.volunteerManagerName) {
+      setVolunteerManagerName((org as any).volunteerManagerName);
+      return;
+    }
+
+    if (email.toLowerCase() === 'yjng05@kshcm.net') {
+      setVolunteerManagerName('양유정');
+    }
+
+    let isMounted = true;
+    getUserProfileByEmail(email)
+      .then((p) => {
+        if (!isMounted) return;
+        if (p?.name) {
+          setVolunteerManagerName(p.name);
+        } else {
+          getUsersDirectory().then((users) => {
+            if (!isMounted) return;
+            const found = users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+            if (found?.name) {
+              setVolunteerManagerName(found.name);
+            }
+          }).catch(() => {});
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [org?.volunteerManager]);
 
   // 업무 담당자 또는 관리자 여부 판별
   const isVolunteerManager = useMemo(() => {
@@ -669,9 +710,9 @@ export default function TeacherVolunteerPage() {
       title="학생 봉사활동 관리"
       rightActions={
         <div className="flex items-center gap-2">
-          {org?.volunteerManager && (
+          {(volunteerManagerName || org?.volunteerManager) && (
             <Badge variant="outline" className="bg-sky-50 text-sky-800 border-sky-200 text-xs py-1">
-              업무 담당: <b>{org.volunteerManager}</b>
+              업무 담당: <b>{volunteerManagerName || org?.volunteerManager}</b>
             </Badge>
           )}
           {isVolunteerManager && (
@@ -690,9 +731,9 @@ export default function TeacherVolunteerPage() {
             학생 봉사활동 계획서 및 확인서 신청·결재, 단체 신청 및 관리대장 업무를 처리합니다.
           </p>
           <div className="flex sm:hidden items-center gap-2">
-            {org?.volunteerManager && (
+            {(volunteerManagerName || org?.volunteerManager) && (
               <Badge variant="outline" className="bg-sky-50 text-sky-800 border-sky-200 text-[11px] py-0.5">
-                담당: {org.volunteerManager}
+                담당: <b>{volunteerManagerName || org?.volunteerManager}</b>
               </Badge>
             )}
             {isVolunteerManager && (
@@ -746,7 +787,7 @@ export default function TeacherVolunteerPage() {
                     봉사활동 계획서 작성 (초등단체)
                   </CardTitle>
                   <CardDescription className="text-xs mt-1">
-                    담당 교사가 학생 단체를 대표하여 계획서를 상신합니다. (결재선: [업무 담당: 양유정] → [담당 부장: 최선미] → [교감: 신선영 전결])
+                    담당 교사가 학생 단체를 대표하여 계획서를 상신합니다. (결재선: [업무 담당: {volunteerManagerName || '양유정'}] → [담당 부장: 최선미] → [교감: 신선영 전결])
                   </CardDescription>
                 </div>
                 <Badge variant="outline" className="text-xs text-blue-700 bg-blue-50 border-blue-200">
