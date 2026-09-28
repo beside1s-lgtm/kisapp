@@ -1330,18 +1330,18 @@ export default function AdminPage() {
                     afterSchoolCourseTitles: [],
                     enrolledCourseTitles: [],
                     afterSchoolCoursesByDay: {},
-                    afterSchoolClassIds: student.afterSchoolClassIds || {},
-                    afterSchoolDestinations: student.afterSchoolDestinations || {},
-                    vacationAfterSchoolClassIds: student.vacationAfterSchoolClassIds || {},
-                    vacationAfterSchoolDestinations: student.vacationAfterSchoolDestinations || {}
+                    afterSchoolClassIds: {},
+                    afterSchoolDestinations: {},
+                    vacationAfterSchoolClassIds: isCurrentVacation ? {} : (student.vacationAfterSchoolClassIds || {}),
+                    vacationAfterSchoolDestinations: isCurrentVacation ? {} : (student.vacationAfterSchoolDestinations || {})
                 };
             }
 
-            const afterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = { ...(student.afterSchoolClassIds || {}) };
-            const afterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = { ...(student.afterSchoolDestinations || {}) };
-            const vacationAfterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = { ...(student.vacationAfterSchoolClassIds || {}) };
-            const vacationAfterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = { ...(student.vacationAfterSchoolDestinations || {}) };
-            const afterSchoolCoursesByDay: Partial<Record<DayOfWeek, { title: string; instructorName?: string; teachersText?: string }>> = { ...(student.afterSchoolCoursesByDay || {}) };
+            const afterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = {};
+            const afterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = {};
+            const vacationAfterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = isCurrentVacation ? {} : { ...(student.vacationAfterSchoolClassIds || {}) };
+            const vacationAfterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = isCurrentVacation ? {} : { ...(student.vacationAfterSchoolDestinations || {}) };
+            const afterSchoolCoursesByDay: Partial<Record<DayOfWeek, { title: string; instructorName?: string; teachersText?: string }>> = {};
             const enrolledCourseTitles: string[] = [];
 
             studentEnrollments.forEach(enrollment => {

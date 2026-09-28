@@ -47,6 +47,8 @@ const absenceSchema = commonSchema.extend({
   }),
   absenceType: z.enum(['병결', '미인정', '기타', '출석인정']),
   absenceReason: z.string().min(1, '결석 사유를 입력해주세요'),
+  diseaseCategory: z.string().optional(),
+  diseaseName: z.string().optional(),
 });
 
 const fieldTripSchema = commonSchema.extend({
@@ -126,6 +128,8 @@ function ApplyForm() {
       absencePeriod: { startDate: '', endDate: '', totalDays: 1 },
       absenceType: '병결',
       absenceReason: '',
+      diseaseCategory: '단순질병',
+      diseaseName: '',
       phone: profile?.parentPhone || '',
       tripPeriod: { startDate: '', endDate: '', totalDays: 1 },
       cumulativeDays: 0,
@@ -144,6 +148,10 @@ function ApplyForm() {
   const [tabType, setTabType] = useState<'absence' | 'field-trip' | 'field-trip-report'>(defaultType);
   const currentType = tabType;
   const { t } = useTranslation();
+
+  // 소견서/진단서 사진 첨부 상태
+  const [medicalCertificateUrl, setMedicalCertificateUrl] = useState<string>('');
+  const [medicalCertificateName, setMedicalCertificateName] = useState<string>('');
 
 
   useEffect(() => {
@@ -604,6 +612,18 @@ function ApplyForm() {
           profile
         );
       } else {
+        const finalAttachments: any[] = [];
+        if (isAbsence && medicalCertificateUrl) {
+          finalAttachments.push({
+            name: medicalCertificateName || '소견서_진료확인서.jpg',
+            data: medicalCertificateUrl
+          });
+          parentFormData.medicalCertificateUrl = medicalCertificateUrl;
+          parentFormData.medicalCertificateName = medicalCertificateName || '소견서_진료확인서.jpg';
+          parentFormData.medicalCertificateSubmitted = true;
+          parentFormData.attachments = finalAttachments;
+        }
+
         res = await createDocument({
           title,
           content,
@@ -611,7 +631,7 @@ function ApplyForm() {
           publishStatus: '비공개',
           parentFormData,
           approvers,
-          attachments: [],
+          attachments: finalAttachments,
         }, user.email!, profile);
       }
 
@@ -742,6 +762,12 @@ function ApplyForm() {
             profile={profile}
             isSubmitting={isSubmitting}
             isOverLimit={isOverLimit}
+            medicalCertificateUrl={medicalCertificateUrl}
+            medicalCertificateName={medicalCertificateName}
+            onCertificateChange={(url, name) => {
+              setMedicalCertificateUrl(url || '');
+              setMedicalCertificateName(name || '');
+            }}
           />
           {/* ========== 모바일 전용 카드 UI 끝 ========== */}
 
@@ -764,6 +790,12 @@ function ApplyForm() {
                 isLoadingLimits={isLoadingLimits}
                 isOverAbsenceLimit={isOverAbsenceLimit}
                 accumulatedAbsenceDays={accumulatedAbsenceDays}
+                medicalCertificateUrl={medicalCertificateUrl}
+                medicalCertificateName={medicalCertificateName}
+                onCertificateChange={(url, name) => {
+                  setMedicalCertificateUrl(url || '');
+                  setMedicalCertificateName(name || '');
+                }}
               />
             ) : currentType === 'field-trip-report' ? (
               <DesktopFieldTripReportForm

@@ -549,6 +549,20 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       await saveAfterschoolEnrollment(updatedTarget);
       await syncCourseStudentCounts(target.courseId, nextEnrollments);
 
+      // 🌟 방과후 수강 취소 시 즉시 스쿨버스 정규 하교 버스로 복귀
+      try {
+        const { revertCancelledStudentToAfternoonBus } = await import('@/lib/kisbus/assignments');
+        await revertCancelledStudentToAfternoonBus({
+          studentId: target.studentId,
+          studentEmail: target.studentEmail || (target as any).email,
+          name: target.name || target.studentName,
+          grade: target.grade,
+          classNum: target.classNum
+        });
+      } catch (busErr) {
+        console.warn('스쿨버스 하교 복귀 처리 실패:', busErr);
+      }
+
       if (firstWaiting) {
         setTimeout(async () => {
           if (confirm(`수강 취소 처리 완료!\n현재 1순위 대기자인 [${firstWaiting.name}] 학생을 자동으로 수강 확정 승격하시겠습니까?`)) {
@@ -620,13 +634,30 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     }
     const label = studentViewTab === 'enrolled' ? '수강 확정생' : '신청 대기자';
     if (confirm(`선택한 ${selectedIds.length}명의 ${label}를 일괄 삭제하시겠습니까?`)) {
-      const affectedCourseIds = Array.from(new Set(enrollments.filter((e) => selectedIds.includes(e.id)).map((e) => e.courseId)));
+      const affectedTargets = enrollments.filter((e) => selectedIds.includes(e.id));
+      const affectedCourseIds = Array.from(new Set(affectedTargets.map((e) => e.courseId)));
       const nextEnrollments = enrollments.filter((e) => !selectedIds.includes(e.id));
       setEnrollments(nextEnrollments);
       await deleteAfterschoolEnrollmentsBatch(selectedIds);
       
       for (const cId of affectedCourseIds) {
         await syncCourseStudentCounts(cId, nextEnrollments);
+      }
+
+      // 🌟 일괄 삭제된 학생들 스쿨버스 정규 하교 버스 복귀 연동
+      try {
+        const { revertCancelledStudentToAfternoonBus } = await import('@/lib/kisbus/assignments');
+        for (const target of affectedTargets) {
+          await revertCancelledStudentToAfternoonBus({
+            studentId: target.studentId,
+            studentEmail: target.studentEmail || (target as any).email,
+            name: target.name || target.studentName,
+            grade: target.grade,
+            classNum: target.classNum
+          });
+        }
+      } catch (busErr) {
+        console.warn('일괄 삭제 학생 스쿨버스 복귀 처리 실패:', busErr);
       }
       setSelectedIds([]);
       alert(`선택한 ${selectedIds.length}명의 수강생 정보가 영구 삭제되었습니다.`);

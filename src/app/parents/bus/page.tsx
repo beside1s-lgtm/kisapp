@@ -14,6 +14,8 @@ import { onStudentsUpdate, onBusesUpdate } from '@/lib/kisbus';
 import type { Bus as BusType, Student as BusStudent } from '@/lib/kisbus/types';
 import { Badge } from '@/components/ui/badge';
 import { useTranslation } from '@/hooks/use-translation';
+import { BusSafetyConsentModal, BUS_SAFETY_CONSENT_STORAGE_KEY } from '@/components/bus/BusSafetyConsentModal';
+import { ShieldCheck } from 'lucide-react';
 
 export default function ParentsBusIndexPage() {
   const router = useRouter();
@@ -23,6 +25,8 @@ export default function ParentsBusIndexPage() {
   const [buses, setBuses] = useState<BusType[]>([]);
   const [busStudents, setBusStudents] = useState<BusStudent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
+  const [hasConsented, setHasConsented] = useState(false);
 
   useEffect(() => {
     getDocConfig().then(cfg => setConfig(cfg));
@@ -31,6 +35,19 @@ export default function ParentsBusIndexPage() {
       setBusStudents(sList || []);
       setIsLoading(false);
     });
+
+    // 스쿨버스 안전수칙 동의 여부 확인
+    try {
+      const storedConsent = localStorage.getItem(BUS_SAFETY_CONSENT_STORAGE_KEY);
+      if (storedConsent) {
+        setHasConsented(true);
+      } else {
+        setHasConsented(false);
+        setIsConsentModalOpen(true);
+      }
+    } catch (e) {
+      setIsConsentModalOpen(true);
+    }
 
     return () => {
       unsubBuses();
@@ -120,6 +137,22 @@ export default function ParentsBusIndexPage() {
         </div>
       </div>
 
+      {/* 스쿨버스 안전수칙 및 생활지도규정 동의 배너 */}
+      <div className="flex items-center justify-between p-2.5 sm:p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-amber-900 text-xs">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+          <span className="font-medium">스쿨버스 안전수칙 및 이용 규정 (학생생활지도규정 제31조 2)</span>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs border-amber-300 text-amber-800 hover:bg-amber-100 bg-white shrink-0"
+          onClick={() => setIsConsentModalOpen(true)}
+        >
+          {hasConsented ? '동의서 확인' : '동의서 작성'}
+        </Button>
+      </div>
+
       <div className="grid gap-3 sm:gap-6 md:grid-cols-2">
         {/* 1. 탑승 신청 카드 */}
         <Card className={`hover:border-amber-400 transition-all ${config?.isBusApplyActive ? 'border-amber-200 bg-card' : 'border-border opacity-90'} w-full min-w-0`}>
@@ -134,15 +167,24 @@ export default function ParentsBusIndexPage() {
           </CardHeader>
           <CardContent className="p-3.5 sm:p-5 pt-0 space-y-2.5">
             {config?.isBusApplyActive ? (
-              <Button className="w-full font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-2xs h-8 sm:h-9 text-xs sm:text-sm" asChild>
-                <Link href="/parents/bus/apply">{t('parents.bus.apply_btn') || '탑승 신청하기'}</Link>
+              <Button 
+                className="w-full font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-2xs h-10 sm:h-11 text-xs sm:text-sm cursor-pointer"
+                onClick={() => {
+                  if (hasConsented) {
+                    router.push('/parents/bus/apply');
+                  } else {
+                    setIsConsentModalOpen(true);
+                  }
+                }}
+              >
+                {t('parents.bus.apply_btn') || '탑승 신청하기'}
               </Button>
             ) : (
               <div className="space-y-2">
-                <Button className="w-full font-bold text-muted-foreground bg-muted hover:bg-muted cursor-not-allowed h-8 sm:h-9 text-xs sm:text-sm" variant="secondary" disabled>
+                <Button className="w-full font-bold text-muted-foreground bg-muted hover:bg-muted cursor-not-allowed h-10 sm:h-11 text-xs sm:text-sm" variant="secondary" disabled>
                   {t('parents.bus.apply_closed') || '탑승 신청 (기간 종료)'}
                 </Button>
-                <p className="text-[11px] text-amber-600 text-center font-medium bg-amber-50/70 border border-amber-200/50 py-1 rounded-md">
+                <p className="text-[11px] text-amber-700 text-center font-medium bg-amber-50/70 border border-amber-200/50 py-1.5 rounded-md">
                   {t('parents.bus.closed_notice') || '※ 현재는 스쿨버스 탑승 신청 기간이 아닙니다.'}
                 </p>
               </div>
@@ -168,7 +210,7 @@ export default function ParentsBusIndexPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-3.5 sm:p-5 pt-0">
-              <Button className="w-full font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-2xs h-8 sm:h-9 text-xs sm:text-sm" asChild>
+              <Button className="w-full font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-2xs h-10 sm:h-11 text-xs sm:text-sm" asChild>
                 <Link href="/parents/bus/student">{t('parents.bus.lookup_btn') || '탑승 정보 조회'}</Link>
               </Button>
             </CardContent>
@@ -204,6 +246,19 @@ export default function ParentsBusIndexPage() {
 
       {/* 스쿨버스 분기 요금 청구서 팝업 (탑승 학생에게만 청구서 모달 활성화) */}
       {isBoarding && <ParentBusFareModal />}
+
+      {/* 스쿨버스 안전수칙 및 생활지도규정 준수 동의서 모달 */}
+      <BusSafetyConsentModal
+        isOpen={isConsentModalOpen}
+        onConsentGranted={() => {
+          setHasConsented(true);
+          setIsConsentModalOpen(false);
+          if (config?.isBusApplyActive) {
+            router.push('/parents/bus/apply');
+          }
+        }}
+        onCancel={() => setIsConsentModalOpen(false)}
+      />
     </div>
   );
 }

@@ -75,60 +75,93 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
             <span className="truncate max-w-[115px] sm:max-w-none">{t('parents.title') || 'KIS 학부모서비스'}</span>
           </Link>
           <nav className="hidden xl:flex items-center gap-2">
-            <Button 
-              variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
-              asChild
-            >
-              <Link href="/parents/apply">{t('nav.apply') || '신청서 제출'}</Link>
-            </Button>
-            <Button 
-              variant={pathname === '/parents/history' ? 'default' : 'ghost'} 
-              asChild
-            >
-              <Link href="/parents/history">{t('nav.history') || '제출 내역'}</Link>
-            </Button>
-            <Button 
-              variant={pathname.startsWith('/parents/bus') ? 'default' : 'ghost'} 
-              asChild
-            >
-              <Link href="/parents/bus">{t('nav.bus') || '스쿨버스'}</Link>
-            </Button>
-            <Button 
-              variant={pathname.startsWith('/parents/afterschool') ? 'default' : 'ghost'} 
-              asChild
-            >
-              <Link href="/parents/afterschool">{t('nav.afterschool') || '방과후학교'}</Link>
-            </Button>
+            {!docConfig?.parentServiceLocks?.apply && (
+              <Button 
+                variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
+                asChild
+              >
+                <Link href="/parents/apply">{t('nav.apply') || '신청서 제출'}</Link>
+              </Button>
+            )}
+            {!docConfig?.parentServiceLocks?.history && (
+              <Button 
+                variant={pathname === '/parents/history' ? 'default' : 'ghost'} 
+                asChild
+              >
+                <Link href="/parents/history">{t('nav.history') || '제출 내역'}</Link>
+              </Button>
+            )}
+            {!docConfig?.parentServiceLocks?.bus && (
+              <Button 
+                variant={pathname.startsWith('/parents/bus') ? 'default' : 'ghost'} 
+                asChild
+              >
+                <Link href="/parents/bus">{t('nav.bus') || '스쿨버스'}</Link>
+              </Button>
+            )}
+            {!docConfig?.parentServiceLocks?.afterschool && (
+              <Button 
+                variant={pathname.startsWith('/parents/afterschool') ? 'default' : 'ghost'} 
+                asChild
+              >
+                <Link href="/parents/afterschool">{t('nav.afterschool') || '방과후학교'}</Link>
+              </Button>
+            )}
+            {!docConfig?.parentServiceLocks?.volunteer && (
+              <Button 
+                variant={pathname.startsWith('/parents/volunteer') ? 'default' : 'ghost'} 
+                asChild
+              >
+                <Link href="/parents/volunteer">{t('nav.volunteer') || '봉사활동'}</Link>
+              </Button>
+            )}
           </nav>
           <nav className="hidden lg:flex xl:hidden items-center gap-1">
-            <Button 
-              variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
-              className="text-xs px-2"
-              asChild
-            >
-              <Link href="/parents/apply">{t('nav.apply_short') || '신청서'}</Link>
-            </Button>
-            <Button 
-              variant={pathname === '/parents/history' ? 'default' : 'ghost'} 
-              className="text-xs px-2"
-              asChild
-            >
-              <Link href="/parents/history">{t('nav.history_short') || '내역'}</Link>
-            </Button>
-            <Button 
-              variant={pathname.startsWith('/parents/bus') ? 'default' : 'ghost'} 
-              className="text-xs px-2"
-              asChild
-            >
-              <Link href="/parents/bus">{t('nav.bus_short') || '스쿨버스'}</Link>
-            </Button>
-            <Button 
-              variant={pathname.startsWith('/parents/afterschool') ? 'default' : 'ghost'} 
-              className="text-xs px-2"
-              asChild
-            >
-              <Link href="/parents/afterschool">{t('nav.afterschool_short') || '방과후'}</Link>
-            </Button>
+            {!docConfig?.parentServiceLocks?.apply && (
+              <Button 
+                variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
+                className="text-xs px-2"
+                asChild
+              >
+                <Link href="/parents/apply">{t('nav.apply_short') || '신청서'}</Link>
+              </Button>
+            )}
+            {!docConfig?.parentServiceLocks?.history && (
+              <Button 
+                variant={pathname === '/parents/history' ? 'default' : 'ghost'} 
+                className="text-xs px-2"
+                asChild
+              >
+                <Link href="/parents/history">{t('nav.history_short') || '내역'}</Link>
+              </Button>
+            )}
+            {!docConfig?.parentServiceLocks?.bus && (
+              <Button 
+                variant={pathname.startsWith('/parents/bus') ? 'default' : 'ghost'} 
+                className="text-xs px-2"
+                asChild
+              >
+                <Link href="/parents/bus">{t('nav.bus_short') || '스쿨버스'}</Link>
+              </Button>
+            )}
+            {!docConfig?.parentServiceLocks?.afterschool && (
+              <Button 
+                variant={pathname.startsWith('/parents/afterschool') ? 'default' : 'ghost'} 
+                className="text-xs px-2"
+                asChild
+              >
+                <Link href="/parents/afterschool">{t('nav.afterschool_short') || '방과후'}</Link>
+              </Button>
+            )}
+            {!docConfig?.parentServiceLocks?.volunteer && (
+              <Button 
+                variant={pathname.startsWith('/parents/volunteer') ? 'default' : 'ghost'} 
+                className="text-xs px-2"
+                asChild
+              >
+                <Link href="/parents/volunteer">{t('nav.volunteer_short') || '봉사'}</Link>
+              </Button>
+            )}
           </nav>
         </div>
         
@@ -144,40 +177,58 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
         </div>
       </header>
       
-      {/* Mobile nav (스크롤 시 상단 고정) */}
-      <div className="lg:hidden sticky top-[41px] sm:top-[64px] z-40 bg-card/95 backdrop-blur-md grid grid-cols-4 gap-1 border-b p-1.5 print:hidden w-full min-w-0 shadow-2xs">
-        <Button 
-          variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
-          size="sm"
-          className="text-[11px] sm:text-xs h-8 px-0.5 font-bold truncate min-w-0"
-          asChild
-        >
-          <Link href="/parents/apply">{t('nav.apply_short') || '신청서'}</Link>
-        </Button>
-        <Button 
-          variant={pathname === '/parents/history' ? 'default' : 'ghost'} 
-          size="sm"
-          className="text-[11px] sm:text-xs h-8 px-0.5 font-bold truncate min-w-0"
-          asChild
-        >
-          <Link href="/parents/history">{t('nav.history_short') || '내역'}</Link>
-        </Button>
-        <Button 
-          variant={pathname.startsWith('/parents/bus') ? 'default' : 'ghost'} 
-          size="sm"
-          className="text-[11px] sm:text-xs h-8 px-0.5 font-bold truncate min-w-0"
-          asChild
-        >
-          <Link href="/parents/bus">{t('nav.bus_short') || '스쿨버스'}</Link>
-        </Button>
-        <Button 
-          variant={pathname.startsWith('/parents/afterschool') ? 'default' : 'ghost'} 
-          size="sm"
-          className="text-[11px] sm:text-xs h-8 px-0.5 font-bold truncate min-w-0"
-          asChild
-        >
-          <Link href="/parents/afterschool">{t('nav.afterschool_short') || '방과후'}</Link>
-        </Button>
+      {/* Mobile nav (스크롤 시 상단 고정, KRDS 5대 핵심 메뉴 그리드) */}
+      <div className="lg:hidden sticky top-[41px] sm:top-[64px] z-40 bg-card/95 backdrop-blur-md flex gap-0.5 border-b p-1 print:hidden w-full min-w-0 shadow-2xs overflow-x-auto">
+        {!docConfig?.parentServiceLocks?.apply && (
+          <Button 
+            variant={pathname === '/parents/apply' ? 'default' : 'ghost'} 
+            size="sm"
+            className="text-[11px] sm:text-xs h-9 px-2 font-bold truncate min-w-0 shrink-0"
+            asChild
+          >
+            <Link href="/parents/apply">{t('nav.apply_short') || '신청서'}</Link>
+          </Button>
+        )}
+        {!docConfig?.parentServiceLocks?.history && (
+          <Button 
+            variant={pathname === '/parents/history' ? 'default' : 'ghost'} 
+            size="sm"
+            className="text-[11px] sm:text-xs h-9 px-2 font-bold truncate min-w-0 shrink-0"
+            asChild
+          >
+            <Link href="/parents/history">{t('nav.history_short') || '내역'}</Link>
+          </Button>
+        )}
+        {!docConfig?.parentServiceLocks?.bus && (
+          <Button 
+            variant={pathname.startsWith('/parents/bus') ? 'default' : 'ghost'} 
+            size="sm"
+            className="text-[11px] sm:text-xs h-9 px-2 font-bold truncate min-w-0 shrink-0"
+            asChild
+          >
+            <Link href="/parents/bus">{t('nav.bus_short') || '스쿨버스'}</Link>
+          </Button>
+        )}
+        {!docConfig?.parentServiceLocks?.afterschool && (
+          <Button 
+            variant={pathname.startsWith('/parents/afterschool') ? 'default' : 'ghost'} 
+            size="sm"
+            className="text-[11px] sm:text-xs h-9 px-2 font-bold truncate min-w-0 shrink-0"
+            asChild
+          >
+            <Link href="/parents/afterschool">{t('nav.afterschool_short') || '방과후'}</Link>
+          </Button>
+        )}
+        {!docConfig?.parentServiceLocks?.volunteer && (
+          <Button 
+            variant={pathname.startsWith('/parents/volunteer') ? 'default' : 'ghost'} 
+            size="sm"
+            className="text-[11px] sm:text-xs h-9 px-2 font-bold truncate min-w-0 shrink-0"
+            asChild
+          >
+            <Link href="/parents/volunteer">{t('nav.volunteer_short') || '봉사'}</Link>
+          </Button>
+        )}
       </div>
 
       <main className="flex-1 p-2.5 sm:p-4 md:p-8 overflow-y-auto print:p-0 print:m-0 print:block print:overflow-visible flex flex-col justify-between">

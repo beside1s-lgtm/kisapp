@@ -1,9 +1,12 @@
 'use client';
 
+import React, { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Send, AlertTriangle } from 'lucide-react';
+import { Loader2, Send, AlertTriangle, Camera, FileImage, X } from 'lucide-react';
 import type { ApprovalDoc, FieldTripBlackoutPeriod } from '@/lib/types';
+import { compressCertificateImage } from '@/lib/imageResize';
+import { AbsenceDiseaseSelector } from '@/components/health/disease-surveillance/AbsenceDiseaseSelector';
 
 export function MobileFormCard({
   currentType,
@@ -30,6 +33,9 @@ export function MobileFormCard({
   profile,
   isSubmitting,
   isOverLimit,
+  medicalCertificateUrl,
+  medicalCertificateName,
+  onCertificateChange,
 }: {
   currentType: 'absence' | 'field-trip' | 'field-trip-report';
   t: (key: string, params?: any) => string;
@@ -55,7 +61,24 @@ export function MobileFormCard({
   profile: any;
   isSubmitting: boolean;
   isOverLimit: boolean;
+  medicalCertificateUrl?: string;
+  medicalCertificateName?: string;
+  onCertificateChange?: (url: string | null, fileName?: string) => void;
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressCertificateImage(file);
+      if (onCertificateChange) {
+        onCertificateChange(compressed, file.name);
+      }
+    } catch (err: any) {
+      alert(err.message || '이미지 처리에 실패했습니다.');
+    }
+  };
   return (
     <div className="sm:hidden p-4 space-y-4">
       {currentType === 'absence' ? (
@@ -113,17 +136,108 @@ export function MobileFormCard({
 
           {/* 결석 사유 */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700">{t('parents.apply.absence_reason') || '결석 사유'} <span className="text-red-500">*</span></label>
-            <textarea
-              value={watch('absenceReason') || ''}
-              onChange={(e) => setValue('absenceReason', e.target.value, { shouldValidate: true })}
-              placeholder={t('parents.apply.absence_reason_ph') || '결석 사유를 자세히 입력해주세요.'}
-              rows={4}
-              className={`w-full border rounded-lg p-3 text-xs focus:outline-none resize-none placeholder:text-slate-400 ${
-                (errors as any).absenceReason ? 'border-destructive bg-destructive/5 focus:ring-2 focus:ring-destructive/20' : 'border-slate-300 focus:border-indigo-400'
-              }`}
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-slate-700">
+                {t('parents.apply.absence_reason') || '결석 사유'} <span className="text-red-500">*</span>
+              </label>
+              {watch('absenceType') === '병결' && (
+                <span className="text-[10px] text-indigo-600 font-semibold">
+                  질병 분류 및 병명 검색
+                </span>
+              )}
+            </div>
+
+            {watch('absenceType') === '병결' ? (
+              <AbsenceDiseaseSelector
+                value={watch('absenceReason') || ''}
+                initialCategory={watch('diseaseCategory')}
+                initialDiseaseName={watch('diseaseName')}
+                onChange={(val, meta) => {
+                  setValue('absenceReason', val, { shouldValidate: true });
+                  if (meta?.category) setValue('diseaseCategory', meta.category);
+                  if (meta?.diseaseName) setValue('diseaseName', meta.diseaseName);
+                }}
+                error={(errors as any).absenceReason?.message}
+              />
+            ) : (
+              <>
+                <textarea
+                  value={watch('absenceReason') || ''}
+                  onChange={(e) => setValue('absenceReason', e.target.value, { shouldValidate: true })}
+                  placeholder={t('parents.apply.absence_reason_ph') || '결석 사유를 자세히 입력해주세요 (예: 집안 사정, 경조사 참석 등)'}
+                  rows={4}
+                  className={`w-full border rounded-lg p-3 text-xs focus:outline-none resize-none placeholder:text-slate-400 ${
+                    (errors as any).absenceReason ? 'border-destructive bg-destructive/5 focus:ring-2 focus:ring-destructive/20' : 'border-slate-300 focus:border-indigo-400'
+                  }`}
+                />
+                {(errors as any).absenceReason && <p className="text-[11px] text-destructive font-medium">{(errors as any).absenceReason.message}</p>}
+              </>
+            )}
+          </div>
+
+          {/* 증빙서류 (소견서/진단서/처방전 사진) */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-slate-700">
+              {t('parents.apply.certificate_photo') || '증빙서류 사진 등록 (선택)'}
+            </label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileSelect}
+              className="hidden"
             />
-            {(errors as any).absenceReason && <p className="text-[11px] text-destructive font-medium">{(errors as any).absenceReason.message}</p>}
+            {medicalCertificateUrl ? (
+              <div className="flex items-center gap-2.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                <img
+                  src={medicalCertificateUrl}
+                  alt="소견서 사진"
+                  className="w-14 h-14 object-cover rounded border border-slate-300 shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1">
+                    <FileImage className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="text-xs font-bold text-slate-800 truncate">
+                      {medicalCertificateName || '소견서_사진.jpg'}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-emerald-600 font-medium mt-0.5">
+                    사진 첨부 완료 (용량 최적화)
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-2 py-1 text-[11px] font-semibold text-slate-600 bg-white border border-slate-300 rounded shadow-2xs"
+                  >
+                    변경
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onCertificateChange && onCertificateChange(null, '')}
+                    className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-50 border border-dashed border-slate-300 rounded-lg p-3 text-center space-y-2">
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  의사소견서, 진단서, 처방전 사진을 첨부할 수 있습니다.<br />
+                  (미첨부 시 추후 담임 교사에게 보완 제출 가능)
+                </p>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center justify-center gap-1.5 w-full py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-bold shadow-2xs hover:bg-slate-50"
+                >
+                  <Camera className="w-4 h-4 text-indigo-600" />
+                  소견서/진료확인서 사진 촬영 또는 선택
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 누적 결석 현황 (연간 누계 기능 활성화 시에만 노출) */}

@@ -807,7 +807,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
                         variant="outline"
                         size="sm"
                         onClick={() => setSelectedSyllabusCourse(course)}
-                        className="text-xs h-8 px-2.5 font-bold text-slate-700 border-slate-300 hover:bg-slate-50 whitespace-nowrap rounded-lg"
+                        className="text-xs h-9 px-3 font-bold text-slate-700 border-slate-300 hover:bg-slate-50 whitespace-nowrap rounded-lg shadow-2xs"
                       >
                         <FileText className="w-3.5 h-3.5 sm:mr-1 text-slate-500" />
                         <span>{t('afterschool.btn_syllabus') || '계획서'}</span>
@@ -821,13 +821,13 @@ export const StudentView: React.FC<StudentViewProps> = ({
                           </span>
                         )}
                         {myRecord ? (
-                          <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap">
+                          <div className="px-3.5 h-9 flex items-center rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap">
                             {myRecord.status === 'ENROLLED' ? (t('afterschool.btn_applied') || '✓ 신청완료') : (t('afterschool.btn_waiting_accepted') || '⏳ 대기접수')}
                           </div>
                         ) : isLocked ? (
                           <button
                             disabled
-                            className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-400 flex items-center gap-1 cursor-not-allowed whitespace-nowrap"
+                            className="px-3 h-9 rounded-lg text-xs font-bold bg-slate-100 text-slate-400 flex items-center gap-1 cursor-not-allowed whitespace-nowrap"
                           >
                             <Lock className="w-3.5 h-3.5" />
                             {isBeforeStart ? formatCountdown(secondsUntilStart) : '잠김'}
@@ -835,7 +835,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
                         ) : (
                           <button
                             onClick={() => handleApplyCourseWithQueue(course)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold shadow-2xs transition flex items-center gap-1 whitespace-nowrap ${
+                            className={`px-3.5 h-9 rounded-lg text-xs font-bold shadow-2xs transition flex items-center gap-1 whitespace-nowrap cursor-pointer ${
                               forceInfo.forceWaiting || isFull
                                 ? 'bg-amber-600 hover:bg-amber-700 text-white'
                                 : 'bg-indigo-600 hover:bg-indigo-700 text-white'

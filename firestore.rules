@@ -79,6 +79,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // health_disease_surveillance 학생 감염병 및 질병 현황 관리 보안 규칙 (전체 하위 문서 포괄)
+    match /health_disease_surveillance/{document=**} {
+      allow read, write: if true;
+    }
+
     // mail 컬렉션 보안 규칙 (Trigger Email 연동)
     match /mail/{mailId} {
       allow create: if isSignedIn();

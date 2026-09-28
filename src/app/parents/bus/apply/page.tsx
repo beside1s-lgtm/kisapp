@@ -15,6 +15,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { useTranslation } from '@/hooks/use-translation';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/hooks/use-auth';
+import { BusSafetyConsentModal, BUS_SAFETY_CONSENT_STORAGE_KEY } from '@/components/bus/BusSafetyConsentModal';
 
 interface SiblingEntry {
     nameKo: string;
@@ -30,6 +31,18 @@ export default function ApplyPage() {
     const { t } = useTranslation();
     const router = useRouter();
     const { profile } = useAuth();
+    const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
+
+    useEffect(() => {
+        try {
+            const storedConsent = localStorage.getItem(BUS_SAFETY_CONSENT_STORAGE_KEY);
+            if (!storedConsent) {
+                setIsConsentModalOpen(true);
+            }
+        } catch (e) {
+            setIsConsentModalOpen(true);
+        }
+    }, []);
 
     const [destinations, setDestinations] = useState<Destination[]>([]);
     const [allStudents, setAllStudents] = useState<Student[]>([]);
@@ -653,6 +666,13 @@ export default function ApplyPage() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* 스쿨버스 안전수칙 및 이용 규정 준수 동의서 모달 */}
+            <BusSafetyConsentModal
+                isOpen={isConsentModalOpen}
+                onConsentGranted={() => setIsConsentModalOpen(false)}
+                onCancel={() => router.back()}
+            />
         </div>
     );
 }

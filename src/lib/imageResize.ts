@@ -50,3 +50,56 @@ export async function resizeStudentPhoto(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+
+/**
+ * 소견서 / 진단서 / 처방전 사진을 문서용 최적 해상도(최대 1200px)로 압축 변환
+ * - 비율 유지 (Aspect ratio 보존)
+ * - 원본 5~10MB 사진을 100~200KB 수준으로 경량화하여 Firestore 및 PDF 출력 최적화
+ */
+export async function compressCertificateImage(file: File, maxDimension: number = 1200): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error('이미지 파일(JPG, PNG, WebP 등)만 업로드할 수 있습니다.'));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('캔버스 처리를 지원하지 않는 환경입니다.'));
+          return;
+        }
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        resolve(compressedDataUrl);
+      };
+      img.onerror = () => reject(new Error('이미지를 불러오지 못했습니다.'));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error('파일을 읽지 못했습니다.'));
+    reader.readAsDataURL(file);
+  });
+}

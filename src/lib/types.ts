@@ -135,8 +135,14 @@ export type ParentFormData = {
   absencePeriod?: { startDate: string; endDate: string; totalDays: number };
   absenceType?: AbsenceType;
   absenceReason?: string;
+  diseaseCategory?: string; // 단순질병 | 감염병 | 식중독
+  diseaseName?: string; // 표준 병명 또는 직접 입력 병명
   teacherConfirmMethod?: string;
   teacherConfirmDate?: string;
+  medicalCertificateUrl?: string; // 소견서/진단서 사진 Data URL
+  medicalCertificateName?: string; // 소견서 파일명
+  medicalCertificateSubmitted?: boolean; // 소견서 제출 여부
+  attachments?: Attachment[]; // 결석계 및 신청서 첨부파일 목록
   
   // 체험학습 전용
   phone?: string;
@@ -321,6 +327,13 @@ export type DocConfig = {
     fieldTripBlackoutPeriods?: FieldTripBlackoutPeriod[]; // 체험학습 불인정(신청 불가) 기간 설정
     enableCumulativeStats?: boolean; // 연간 누계 자동 계산 기능 활성화 여부 (기본값 true, false이면 학부모 대시보드 현황판 및 신청서 누계 숨김)
     requireParentPin?: boolean; // 학부모 PIN 인증 사용 여부 (기본값 true, false이면 학부모 최초 PIN 등록 및 신청서 제출 시 PIN 입력 생략)
+    parentServiceLocks?: {
+      apply?: boolean;       // 신청서 제출 잠금 (true = 잠금, 학부모에게 숨김)
+      history?: boolean;     // 제출 내역 잠금
+      bus?: boolean;         // 스쿨버스 잠금
+      afterschool?: boolean; // 방과후학교 잠금
+      volunteer?: boolean;   // 봉사활동 잠금
+    };
 };
 
 export type DepartmentTaskAssignment = {
@@ -538,6 +551,10 @@ export type ApprovalDoc = ApprovalDocPayload & {
   isVolunteerBatch?: boolean; // 봉사활동 일괄 수합 기안 문서 여부
   aggregatedDocIds?: string[]; // 수합된 하위 계획서 docId 목록
   batchDocId?: string; // 소속된 상위 수합 기안 문서 docId
+  driveArchived?: boolean; // Google Drive 아카이빙 완료 여부
+  driveFileId?: string; // Google Drive 파일 ID
+  driveFileUrl?: string; // Google Drive 웹 열람 URL
+  archivedAt?: any; // Google Drive 아카이빙 시각
 };
 
 // ─── 부서 및 학년 그룹 업무 할당 및 제출 관리 타입 ───────────────────────────

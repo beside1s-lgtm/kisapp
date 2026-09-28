@@ -1,6 +1,7 @@
 'use client';
 
-import { ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
+import React, { useRef } from 'react';
+import { ArrowRight, CheckCircle2, Loader2, Camera, FileImage, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +9,9 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { compressCertificateImage } from '@/lib/imageResize';
+import { AbsenceDiseaseSelector } from '@/components/health/disease-surveillance/AbsenceDiseaseSelector';
+import { DiseaseCategoryType } from '@/components/health/disease-surveillance/types';
 
 /**
  * "대리작성" 탭의 본문(교외체험학습 신청서 / 결석계 서식 + 제출 버튼).
@@ -51,8 +55,17 @@ export interface HomeroomProxyApplyFormProps {
   setAbsType: (value: '병결' | '미인정' | '기타' | '출석인정') => void;
   absReason: string;
   setAbsReason: (value: string) => void;
+  absDiseaseCategory?: DiseaseCategoryType;
+  setAbsDiseaseCategory?: (value: DiseaseCategoryType) => void;
+  absDiseaseName?: string;
+  setAbsDiseaseName?: (value: string) => void;
   teacherConfirmMethod: '전화/문자' | '학부모 내교' | '가정방문' | '기타';
   setTeacherConfirmMethod: (value: '전화/문자' | '학부모 내교' | '가정방문' | '기타') => void;
+
+  // 소견서/진단서 사진
+  medicalCertificateUrl?: string;
+  medicalCertificateName?: string;
+  onCertificateChange?: (url: string | null, fileName?: string) => void;
 }
 
 export function HomeroomProxyApplyForm({
@@ -60,6 +73,9 @@ export function HomeroomProxyApplyForm({
   isSubmitting,
   selectedStudentId,
   onSubmit,
+  medicalCertificateUrl,
+  medicalCertificateName,
+  onCertificateChange,
   ftStartDate,
   setFtStartDate,
   ftEndDate,
@@ -86,9 +102,28 @@ export function HomeroomProxyApplyForm({
   setAbsType,
   absReason,
   setAbsReason,
+  absDiseaseCategory,
+  setAbsDiseaseCategory,
+  absDiseaseName,
+  setAbsDiseaseName,
   teacherConfirmMethod,
   setTeacherConfirmMethod,
 }: HomeroomProxyApplyFormProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressCertificateImage(file);
+      if (onCertificateChange) {
+        onCertificateChange(compressed, file.name);
+      }
+    } catch (err: any) {
+      alert(err.message || '이미지 처리에 실패했습니다.');
+    }
+  };
+
   return (
     <>
       <Card className="flex-1 min-h-0 flex flex-col rounded-xl border border-slate-200/80 shadow-xs bg-white">
@@ -235,15 +270,106 @@ export function HomeroomProxyApplyForm({
               </div>
 
               {/* 결석 사유 */}
-              <div className="space-y-0.5 flex-1 flex flex-col min-h-0">
-                <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">결석 사유 <span className="text-red-500">*</span></Label>
-                <Textarea
-                  placeholder="예: 감기 몸살 및 발열로 인한 가료 요양"
-                  value={absReason}
-                  onChange={(e) => setAbsReason(e.target.value)}
-                  rows={3}
-                  className="text-xs bg-white resize-none flex-1 min-h-[60px]"
+              <div className="space-y-1 flex-1 flex flex-col min-h-0">
+                <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">
+                  결석 사유 <span className="text-red-500">*</span>
+                  {absType === '병결' && (
+                    <span className="text-[10px] font-normal text-indigo-600 ml-1.5">
+                      (질병 분류 선택 및 병명 검색)
+                    </span>
+                  )}
+                </Label>
+                {absType === '병결' ? (
+                  <AbsenceDiseaseSelector
+                    value={absReason}
+                    initialCategory={absDiseaseCategory}
+                    initialDiseaseName={absDiseaseName}
+                    onChange={(val, meta) => {
+                      setAbsReason(val);
+                      if (meta?.category && setAbsDiseaseCategory) setAbsDiseaseCategory(meta.category);
+                      if (meta?.diseaseName && setAbsDiseaseName) setAbsDiseaseName(meta.diseaseName);
+                    }}
+                  />
+                ) : (
+                  <Textarea
+                    placeholder="결석 사유를 입력해 주세요 (예: 집안 사정, 경조사 참석 등)"
+                    value={absReason}
+                    onChange={(e) => setAbsReason(e.target.value)}
+                    rows={3}
+                    className="text-xs bg-white resize-none flex-1 min-h-[60px]"
+                  />
+                )}
+              </div>
+
+              {/* 소견서/진단서 사진 첨부 (선택) */}
+              <div className="space-y-1 pt-1">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">
+                    증빙서류 (의사소견서/진단서/처방전 사진)
+                  </Label>
+                  <span className="text-[10px] text-slate-400">선택</span>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  className="hidden"
                 />
+                {medicalCertificateUrl ? (
+                  <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                    <img
+                      src={medicalCertificateUrl}
+                      alt="소견서 사진"
+                      className="w-12 h-12 object-cover rounded border border-slate-300 shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1">
+                        <FileImage className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span className="text-xs font-bold text-slate-800 truncate">
+                          {medicalCertificateName || '소견서_사진.jpg'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-emerald-600 font-medium">사진 첨부 완료 (문서용 최적화)</p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="h-6 px-1.5 text-[10px]"
+                      >
+                        변경
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onCertificateChange && onCertificateChange(null, '')}
+                        className="h-6 w-6 p-0 text-slate-400 hover:text-rose-600"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between bg-slate-50/70 p-2 rounded-lg border border-dashed border-slate-300">
+                    <span className="text-[11px] text-slate-500">
+                      소견서 또는 진료확인서 사진 첨부
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="h-7 text-xs gap-1 font-semibold"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-indigo-600" />
+                      사진 첨부
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -7,7 +7,7 @@ import { approveDocument, rejectDocument, recallDocument, deleteDocument } from 
 import { getUserProfileByEmail } from '@/lib/services/userService';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { CheckCircle2, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, Paperclip, Trash2, Lock, Download, FileCheck, Printer, ArrowLeft } from 'lucide-react';
+import { CheckCircle2, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, Paperclip, Trash2, Lock, Download, FileCheck, Printer, ArrowLeft, HardDrive } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition, useEffect } from 'react';
 import Link from 'next/link'; 
@@ -571,6 +571,21 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                   >
                       <FileCheck className="mr-1.5 h-3.5 w-3.5 text-indigo-600" />
                       통보서 받기
+                  </Button>
+              )}
+
+              {/* 결석계 구글 드라이브 아카이빙 바로가기 버튼 */}
+              {initialDoc.driveFileUrl && (
+                  <Button
+                      asChild
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs cursor-pointer shadow-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold border-emerald-300"
+                  >
+                      <a href={initialDoc.driveFileUrl} target="_blank" rel="noopener noreferrer">
+                          <HardDrive className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
+                          드라이브 보관본
+                      </a>
                   </Button>
               )}
 

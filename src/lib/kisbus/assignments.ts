@@ -1077,4 +1077,255 @@ export const resyncAllAfterschoolBusDestinations = async (
   };
 };
 
+/**
+ * 🌟 방과후 수강 취소 시 해당 학생을 즉시 원래의 정규 하교 버스(Afternoon)로 복귀
+ * - 학생이 수강 취소한 요일에 다른 유효한 방과후 강좌가 없는 경우
+ * - 학생 문서의 afterSchoolClassIds, afterSchoolDestinations에서 해당 요일 제거
+ * - 학생이 평일 다른 요일에 타고 있는 정규 하교 버스(Afternoon) 노선 탐색
+ * - 해당 하교 버스의 해당 요일(Afternoon) 빈 좌석에 학생 배정 (기존 타 학생 좌석 절대 침범 안함)
+ */
+export async function revertCancelledStudentToAfternoonBus(studentQuery: {
+  studentId?: string;
+  studentEmail?: string;
+  name?: string;
+  grade?: number;
+  classNum?: number;
+}): Promise<{ success: boolean; studentName?: string; restoredDays: string[]; message: string }> {
+  try {
+    const busDbInstance = db();
+    const mainDb = (await import('@/lib/firebase')).getDb();
+
+    // 1. kisbus students에서 대상 학생 조회
+    const studentsSnap = await getDocs(collection(busDbInstance, 'students'));
+    let targetDoc: any = null;
+    let targetData: any = null;
+
+    const clean = (s: any) => String(s || '').replace(/\s+/g, '').toLowerCase();
+    const qId = studentQuery.studentId;
+    const qEmail = studentQuery.studentEmail ? clean(studentQuery.studentEmail) : '';
+    const qName = studentQuery.name ? clean(studentQuery.name) : '';
+    const qGrade = studentQuery.grade !== undefined && studentQuery.grade !== null ? Number(studentQuery.grade) : null;
+    const qClass = studentQuery.classNum !== undefined && studentQuery.classNum !== null ? Number(studentQuery.classNum) : null;
+
+    for (const d of studentsSnap.docs) {
+      const data = d.data();
+      if (qId && d.id === qId) {
+        targetDoc = d;
+        targetData = data;
+        break;
+      }
+      const sEmail = clean(data.studentEmail || (data as any).email);
+      if (qEmail && sEmail && sEmail === qEmail) {
+        targetDoc = d;
+        targetData = data;
+        break;
+      }
+      const sName = clean(data.name || data.nameKo || data.nameEn);
+      const sGrade = Number(data.grade);
+      const sClass = Number(data.class || data.classNum);
+      if (qName && (sName.includes(qName) || qName.includes(sName))) {
+        if (qGrade !== null && qGrade === sGrade && qClass !== null && qClass === sClass) {
+          targetDoc = d;
+          targetData = data;
+          break;
+        }
+      }
+    }
+
+    if (!targetDoc || !targetData) {
+      return {
+        success: false,
+        restoredDays: [],
+        message: '스쿨버스 학생 정보를 찾을 수 없습니다.'
+      };
+    }
+
+    const studentId = targetDoc.id;
+    const studentDisplayName = targetData.nameKo || targetData.name || targetData.nameEn || studentQuery.name || '학생';
+
+    // 2. 메인 DB afterschool_enrollments에서 해당 학생의 현재 유효한(status === 'ENROLLED') 수강신청 목록 조회
+    const enrollSnap = await getDocs(collection(mainDb, 'afterschool_enrollments'));
+    const coursesSnap = await getDocs(collection(mainDb, 'afterschool_courses'));
+    const courseMap = new Map<string, any>();
+    coursesSnap.forEach(d => courseMap.set(d.id, d.data()));
+
+    const dayMap: Record<string, DayOfWeek> = {
+      '월': 'Monday', '화': 'Tuesday', '수': 'Wednesday',
+      '목': 'Thursday', '금': 'Friday', '토': 'Saturday'
+    };
+
+    const activeEnrolledDays = new Set<DayOfWeek>();
+
+    enrollSnap.forEach(d => {
+      const e = d.data();
+      if (e.status !== 'ENROLLED' && e.status !== 'enrolled') return;
+      let match = false;
+      if (e.studentId && e.studentId === studentId) match = true;
+      const eEmail = clean(e.studentEmail || (e as any).email);
+      if (!match && qEmail && eEmail && eEmail === qEmail) match = true;
+      const eName = clean(e.name || e.studentName);
+      const eGrade = Number(e.grade);
+      const eClass = Number(e.classNum);
+      if (!match && eName === clean(targetData.nameKo || targetData.name || targetData.nameEn) && eGrade === Number(targetData.grade) && eClass === Number(targetData.class || targetData.classNum)) {
+        match = true;
+      }
+      if (match) {
+        const course = courseMap.get(e.courseId);
+        if (course) {
+          const days = extractCourseDays(course);
+          days.forEach(dayStr => {
+            if (dayMap[dayStr]) activeEnrolledDays.add(dayMap[dayStr]);
+          });
+        }
+      }
+    });
+
+    // 3. 복귀 대상 평일 요일 판별 (activeEnrolledDays에 없는 평일)
+    const weekdays: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    const currentClassIds = targetData.afterSchoolClassIds || {};
+    const currentDests = targetData.afterSchoolDestinations || {};
+
+    const freedDays = weekdays.filter(day => {
+      if (activeEnrolledDays.has(day)) return false;
+      return Boolean(currentClassIds[day] || currentDests[day]);
+    });
+
+    // 4. 학생이 평일 다른 요일에 탑승 중인 정규 하교 버스(Afternoon) 노선 탐색
+    const routesSnap = await getDocs(collection(busDbInstance, 'routes'));
+    const allRoutes = routesSnap.docs.map(d => ({ id: d.id, ref: d.ref, data: d.data() as Route }));
+
+    const afternoonRoutesWithStudent = allRoutes.filter(r => 
+      r.data.type === 'Afternoon' && (r.data.seating || []).some(s => s.studentId === studentId)
+    );
+
+    let preferredBusId: string | null = null;
+    let preferredSeatNumber: number | null = null;
+
+    if (afternoonRoutesWithStudent.length > 0) {
+      const busCounts = new Map<string, number>();
+      const busSeats = new Map<string, number>();
+      afternoonRoutesWithStudent.forEach(r => {
+        const bId = r.data.busId;
+        busCounts.set(bId, (busCounts.get(bId) || 0) + 1);
+        const seat = (r.data.seating || []).find(s => s.studentId === studentId);
+        if (seat && !busSeats.has(bId)) {
+          busSeats.set(bId, seat.seatNumber);
+        }
+      });
+      let maxCount = 0;
+      busCounts.forEach((cnt, bId) => {
+        if (cnt > maxCount) {
+          maxCount = cnt;
+          preferredBusId = bId;
+          preferredSeatNumber = busSeats.get(bId) || null;
+        }
+      });
+    }
+
+    // 다른 요일 하교 버스가 없다면 등교 버스(Morning)에서 탑승 중인 버스/좌석 참조
+    if (!preferredBusId) {
+      const morningRoutesWithStudent = allRoutes.filter(r => 
+        r.data.type === 'Morning' && (r.data.seating || []).some(s => s.studentId === studentId)
+      );
+      if (morningRoutesWithStudent.length > 0) {
+        preferredBusId = morningRoutesWithStudent[0].data.busId;
+        const seat = (morningRoutesWithStudent[0].data.seating || []).find(s => s.studentId === studentId);
+        preferredSeatNumber = seat ? seat.seatNumber : null;
+      }
+    }
+
+    // 5. 하교 버스 좌석 복귀 배치
+    const batch = writeBatch(busDbInstance);
+    const restoredDays: string[] = [];
+
+    const candidateDays = Array.from(new Set([...freedDays, ...weekdays.filter(d => !activeEnrolledDays.has(d))]));
+
+    if (preferredBusId) {
+      for (const day of candidateDays) {
+        const targetRoute = allRoutes.find(r => 
+          r.data.type === 'Afternoon' && r.data.dayOfWeek === day && r.data.busId === preferredBusId
+        );
+        if (!targetRoute) continue;
+
+        const currentSeating = targetRoute.data.seating || [];
+        const isAlreadySeated = currentSeating.some(s => s.studentId === studentId);
+        if (isAlreadySeated) continue;
+
+        let assignedSeatNumber: number | null = null;
+        const nextSeating = currentSeating.map(seat => {
+          if (assignedSeatNumber === null) {
+            if (preferredSeatNumber !== null && seat.seatNumber === preferredSeatNumber && !seat.studentId) {
+              assignedSeatNumber = seat.seatNumber;
+              return { ...seat, studentId };
+            }
+          }
+          return seat;
+        });
+
+        if (assignedSeatNumber === null) {
+          for (let i = 0; i < nextSeating.length; i++) {
+            if (!nextSeating[i].studentId) {
+              assignedSeatNumber = nextSeating[i].seatNumber;
+              nextSeating[i] = { ...nextSeating[i], studentId };
+              break;
+            }
+          }
+        }
+
+        if (assignedSeatNumber !== null) {
+          batch.update(targetRoute.ref, { seating: nextSeating });
+          restoredDays.push(`${day}(${assignedSeatNumber}번석)`);
+        }
+      }
+    }
+
+    // 6. 학생 문서의 afterSchoolClassIds 및 afterSchoolDestinations에서 freedDays 정리
+    const updatedClassIds = { ...currentClassIds };
+    const updatedDests = { ...currentDests };
+    let studentNeedsUpdate = false;
+
+    freedDays.forEach(day => {
+      if (updatedClassIds[day] !== undefined) {
+        delete updatedClassIds[day];
+        studentNeedsUpdate = true;
+      }
+      if (updatedDests[day] !== undefined) {
+        delete updatedDests[day];
+        studentNeedsUpdate = true;
+      }
+    });
+
+    if (studentNeedsUpdate || targetData.afterSchoolCoursesByDay) {
+      const studentUpdate: Record<string, any> = {
+        afterSchoolClassIds: updatedClassIds,
+        afterSchoolDestinations: updatedDests,
+      };
+      if (targetData.afterSchoolCoursesByDay) {
+        const updatedCoursesByDay = { ...targetData.afterSchoolCoursesByDay };
+        freedDays.forEach(day => {
+          delete updatedCoursesByDay[day];
+        });
+        studentUpdate.afterSchoolCoursesByDay = updatedCoursesByDay;
+      }
+      batch.update(targetDoc.ref, studentUpdate);
+    }
+
+    await batch.commit();
+
+    return {
+      success: true,
+      studentName: studentDisplayName,
+      restoredDays,
+      message: `[${studentDisplayName}] 학생의 방과후 취소 요일 정규화 완료 (복귀 요일: ${restoredDays.length > 0 ? restoredDays.join(', ') : '좌석 배정 완료'})`
+    };
+  } catch (err: any) {
+    console.error('revertCancelledStudentToAfternoonBus error:', err);
+    return {
+      success: false,
+      restoredDays: [],
+      message: err.message || '복귀 처리 중 오류가 발생했습니다.'
+    };
+  }
+}
+
 

@@ -1021,6 +1021,34 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
                 finalData.parentFormData,
                 userProfile.email || 'final_approval_sync'
               );
+
+              // ── 결석계 최종 승인 시: Google Drive 03_결석계(완료) 폴더에 자동 아카이빙 (소견서 포함) ──
+              if (finalData.parentFormData.type === 'absence') {
+                try {
+                  fetch('/api/drive/archive-absence', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      docId,
+                      docData: finalData,
+                    }),
+                  }).then(async (res) => {
+                    const resData = await res.json();
+                    if (resData.success && resData.file?.id) {
+                      await firestoreUpdateDoc(docRef, {
+                        driveArchived: true,
+                        driveFileId: resData.file.id,
+                        driveFileUrl: resData.file.webViewLink,
+                        archivedAt: serverTimestamp(),
+                      });
+                    }
+                  }).catch(arcErr => {
+                    console.warn('[DocService] Google Drive 결석계 자동 아카이빙 비동기 호출 실패:', arcErr);
+                  });
+                } catch (arcErr) {
+                  console.warn('[DocService] Google Drive 결석계 아카이빙 트리거 실패:', arcErr);
+                }
+              }
             }
 
             // ── 봉사활동 수합 기안문 최종 승인 시: 포함된 모든 개별 계획서 자동 승인(approved) 동기화 ──
@@ -2019,6 +2047,65 @@ export async function rejectVolunteerSubmission(docId: string, reason: string, u
   } catch (error: any) {
     console.error("[DocService] rejectVolunteerSubmission Error:", error);
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 결석계 문서에 의사 소견서/진단서 사진을 보완 등록/갱신
+ * - approvals 컬렉션 문서의 parentFormData 및 attachments 갱신
+ * - health_disease_surveillance(보건실 질병대장) 레코드에도 즉시 동기화
+ */
+export async function updateDocumentMedicalCertificate(
+  docId: string,
+  certUrl: string,
+  fileName: string = '소견서_진단서.jpg'
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docRef = doc(getApprovalsCol(), docId);
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) {
+      return { success: false, error: '해당 결석계 문서를 찾을 수 없습니다.' };
+    }
+    const currentData = snap.data() as ApprovalDoc;
+    const existingAttachments = currentData.attachments || [];
+    const newAttachment = {
+      name: fileName,
+      data: certUrl,
+      size: Math.round(certUrl.length * 0.75),
+    };
+
+    const updatedAttachments = [
+      ...existingAttachments.filter(a => !a.name.includes('소견서') && !a.name.includes('진료확인서')),
+      newAttachment
+    ];
+
+    await firestoreUpdateDoc(docRef, {
+      'parentFormData.medicalCertificateUrl': certUrl,
+      'parentFormData.medicalCertificateName': fileName,
+      'parentFormData.medicalCertificateSubmitted': true,
+      'parentFormData.attachments': updatedAttachments,
+      attachments: updatedAttachments,
+      updatedAt: serverTimestamp(),
+    });
+
+    // 보건실 감염병 대장(health_disease_surveillance) 실시간 동기화
+    try {
+      const targetDocId = `doc_${docId}`;
+      const diseaseRef = doc(collection(getDb(), 'health_disease_surveillance'), targetDocId);
+      await setDoc(diseaseRef, {
+        medicalCertificateSubmitted: true,
+        medicalCertificateUrl: certUrl,
+        medicalCertificateName: fileName,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    } catch (dErr) {
+      console.warn('[DocService] 질병대장 소견서 동기화 알림 (비치명적):', dErr);
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('updateDocumentMedicalCertificate error:', err);
+    return { success: false, error: err.message || '소견서 등록 중 오류가 발생했습니다.' };
   }
 }
 

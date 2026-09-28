@@ -267,6 +267,16 @@ export const ALL_FEATURES: FeatureItem[] = [
     description: '결근 교사 보결 수업 배정 및 이력 관리',
   },
   {
+    id: 'teacher-disease',
+    label: '건강/질병 신고',
+    href: '/teacher/disease',
+    iconName: 'Activity',
+    category: 'teacher',
+    categoryLabel: '교원 서비스',
+    description: '교직원 감염병 및 질병(독감, 코로나, 장염 등) 직접 신고 및 이력 조회',
+    keywords: ['감염병', '질병', '독감', '병결', '코로나', '보건실'],
+  },
+  {
     id: 'teacher-registry',
     label: '교원 서비스 조회',
     href: '/teacher/registry',

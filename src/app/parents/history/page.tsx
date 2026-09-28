@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/hooks/use-auth';
-import { getMyParentDocuments, deleteDocument } from '@/lib/services/documentService';
+import { getMyParentDocuments, deleteDocument, updateDocumentMedicalCertificate } from '@/lib/services/documentService';
 import { ApprovalDoc } from '@/lib/types';
 import { format } from 'date-fns';
-import { History, FileText, ChevronRight, Loader2, Edit3, ArrowLeft, Home, FileCheck, Trash2, Calendar, MapPin, User } from 'lucide-react';
+import { History, FileText, ChevronRight, Loader2, Edit3, ArrowLeft, Home, FileCheck, Trash2, Calendar, MapPin, User, Camera, Upload, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { ParentNotificationModal } from '@/components/parent-notification-modal';
 import { useTranslation } from '@/hooks/use-translation';
+import { compressCertificateImage } from '@/lib/imageResize';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 
 export default function ParentHistoryPage() {
   const { user, profile } = useAuth();
@@ -23,6 +25,11 @@ export default function ParentHistoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
   const [selectedDocForNotification, setSelectedDocForNotification] = useState<ApprovalDoc | null>(null);
+  const [uploadingDocForCert, setUploadingDocForCert] = useState<ApprovalDoc | null>(null);
+  const [certPreviewUrl, setCertPreviewUrl] = useState<string>('');
+  const [certFileName, setCertFileName] = useState<string>('');
+  const [isUploadingCert, setIsUploadingCert] = useState(false);
+  const certFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDeleteDoc = async (docId: string) => {
     if (!window.confirm("이 문서를 완전히 삭제하시겠습니까? 삭제된 문서는 복구할 수 없습니다.")) return;
@@ -40,6 +47,63 @@ export default function ParentHistoryPage() {
       toast({ variant: 'destructive', title: '삭제 오류', description: err.message });
     } finally {
       setDeletingDocId(null);
+    }
+  };
+
+  const handleSelectCertFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressCertificateImage(file);
+      setCertPreviewUrl(compressed);
+      setCertFileName(file.name);
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: '사진 변환 오류', description: err.message || '사진 처리에 실패했습니다.' });
+    }
+  };
+
+  const handleSaveSupplementCert = async () => {
+    if (!uploadingDocForCert || !certPreviewUrl) {
+      toast({ variant: 'destructive', title: '사진을 먼저 선택해 주세요.' });
+      return;
+    }
+    setIsUploadingCert(true);
+    try {
+      const res = await updateDocumentMedicalCertificate(
+        uploadingDocForCert.id,
+        certPreviewUrl,
+        certFileName || '소견서_보완제출.jpg'
+      );
+      if (res.success) {
+        toast({ title: '소견서가 제출되었습니다.', description: '담임 교사 및 보건실에 실시간으로 반영되었습니다.' });
+        setDocuments(prev => prev.map(d => {
+          if (d.id === uploadingDocForCert.id) {
+            return {
+              ...d,
+              parentFormData: {
+                ...d.parentFormData,
+                medicalCertificateSubmitted: true,
+                medicalCertificateUrl: certPreviewUrl,
+                medicalCertificateName: certFileName,
+              } as any,
+              attachments: [
+                ...(d.attachments || []),
+                { name: certFileName || '소견서_보완제출.jpg', data: certPreviewUrl }
+              ]
+            };
+          }
+          return d;
+        }));
+        setUploadingDocForCert(null);
+        setCertPreviewUrl('');
+        setCertFileName('');
+      } else {
+        toast({ variant: 'destructive', title: '제출 실패', description: res.error });
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: '오류', description: err.message });
+    } finally {
+      setIsUploadingCert(false);
     }
   };
 
@@ -204,6 +268,19 @@ export default function ParentHistoryPage() {
                         {t('parents.history.badge_has_report') || '보고서 완료'}
                       </Badge>
                     )}
+
+                    {/* 결석계 소견서 제출 배지 */}
+                    {isAbsence && (pfd?.absenceType === '병결' || !pfd?.absenceType) && (
+                      pfd?.medicalCertificateSubmitted || pfd?.medicalCertificateUrl || (doc.attachments && doc.attachments.length > 0) ? (
+                        <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-300 text-[10px] font-bold py-0.5 px-1.5">
+                          소견서 제출완료
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-[10px] font-bold py-0.5 px-1.5">
+                          소견서 미제출
+                        </Badge>
+                      )
+                    )}
                   </div>
                 </div>
 
@@ -239,27 +316,43 @@ export default function ParentHistoryPage() {
                   </div>
                 )}
 
-                {/* 3. 하단 줄: 액션 버튼들 나란히 배치 (모바일 화면 완벽 맞춤) */}
-                <div className="flex items-center gap-1.5 pt-1.5 border-t w-full min-w-0">
+                {/* 3. 하단 줄: 액션 버튼들 나란히 배치 (KRDS 터치 타깃 및 시각적 위계 최적화) */}
+                <div className="flex items-center gap-2 pt-2 border-t w-full min-w-0">
                   <Button
                     size="sm"
                     variant="outline"
-                    className="flex-1 min-w-0 h-8 px-1 sm:px-2 text-[10px] sm:text-xs font-bold bg-background hover:bg-muted text-foreground flex items-center justify-center gap-1 shadow-2xs"
+                    className="flex-1 min-w-0 h-9 sm:h-9.5 px-2 text-xs font-bold bg-background hover:bg-muted text-foreground flex items-center justify-center gap-1.5 shadow-2xs"
                     onClick={() => router.push(`/parents/documents/${doc.id}`)}
                   >
-                    <FileText className="hidden sm:inline-block w-3.5 h-3.5 text-primary shrink-0" />
+                    <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
                     <span className="truncate">{t('parents.history.btn_view_doc') || '신청서 보기'}</span>
                   </Button>
+
+                  {/* 결석계(병결) 소견서 미제출 시 보완 제출 버튼 */}
+                  {isAbsence && (pfd?.absenceType === '병결' || !pfd?.absenceType) && !(pfd?.medicalCertificateSubmitted || pfd?.medicalCertificateUrl || (doc.attachments && doc.attachments.length > 0)) && (
+                    <Button
+                      size="sm"
+                      className="flex-1 min-w-0 h-9 sm:h-9.5 px-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center gap-1.5 shadow-2xs"
+                      onClick={() => {
+                        setUploadingDocForCert(doc);
+                        setCertPreviewUrl('');
+                        setCertFileName('');
+                      }}
+                    >
+                      <Camera className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">소견서 보완 제출</span>
+                    </Button>
+                  )}
 
                   {/* 체험학습 승인 완료시 통보서 받기 버튼 */}
                   {isFieldTrip && doc.status === 'approved' && (
                     <Button
                       size="sm"
                       variant="outline"
-                      className="flex-1 min-w-0 h-8 px-1 sm:px-2 text-[10px] sm:text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 flex items-center justify-center gap-1 shadow-2xs"
+                      className="flex-1 min-w-0 h-9 sm:h-9.5 px-2 text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 flex items-center justify-center gap-1.5 shadow-2xs"
                       onClick={() => setSelectedDocForNotification(doc)}
                     >
-                      <FileCheck className="hidden sm:inline-block w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <FileCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                       <span className="truncate">{t('parents.history.btn_get_notification') || '통보서 받기'}</span>
                     </Button>
                   )}
@@ -268,7 +361,7 @@ export default function ParentHistoryPage() {
                   {needsReport && (
                     <Button
                       size="sm"
-                      className="flex-1 min-w-0 h-8 px-1 sm:px-2 text-[10px] sm:text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white flex items-center justify-center gap-1 shadow-2xs"
+                      className="flex-1 min-w-0 h-9 sm:h-9.5 px-2 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white flex items-center justify-center gap-1.5 shadow-2xs"
                       onClick={() => {
                         if (isVolunteer) {
                           router.push(`/parents/volunteer?type=report&applyId=${doc.id}`);
@@ -277,7 +370,7 @@ export default function ParentHistoryPage() {
                         }
                       }}
                     >
-                      <Edit3 className="hidden sm:inline-block w-3.5 h-3.5 shrink-0" />
+                      <Edit3 className="w-3.5 h-3.5 shrink-0" />
                       <span className="truncate">{isVolunteer ? '확인서 작성' : (t('parents.history.btn_write_report') || '보고서 작성')}</span>
                     </Button>
                   )}
@@ -287,7 +380,7 @@ export default function ParentHistoryPage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-8 px-2 sm:px-2.5 text-[10px] sm:text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 font-bold flex items-center justify-center gap-1 shadow-2xs shrink-0"
+                      className="h-9 sm:h-9.5 px-2.5 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 font-bold flex items-center justify-center gap-1 shadow-2xs shrink-0"
                       onClick={() => handleDeleteDoc(doc.id)}
                       disabled={deletingDocId === doc.id}
                       title={t('parents.history.btn_delete') || '문서 삭제'}
@@ -311,6 +404,100 @@ export default function ParentHistoryPage() {
           if (!open) setSelectedDocForNotification(null);
         }}
       />
+
+      {/* 소견서/진단서 사진 보완 제출 모달 */}
+      <Dialog
+        open={!!uploadingDocForCert}
+        onOpenChange={(open) => {
+          if (!open) {
+            setUploadingDocForCert(null);
+            setCertPreviewUrl('');
+            setCertFileName('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Camera className="w-4 h-4 text-indigo-600" />
+              의사 소견서 / 진단서 사진 보완 제출
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {uploadingDocForCert?.parentFormData?.studentName} 학생의 결석계에 소견서 또는 진료확인서 사진을 등록합니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <input
+              ref={certFileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleSelectCertFile}
+              className="hidden"
+            />
+
+            {certPreviewUrl ? (
+              <div className="space-y-2 text-center">
+                <img
+                  src={certPreviewUrl}
+                  alt="소견서 미리보기"
+                  className="max-h-60 mx-auto object-contain rounded border border-slate-200 shadow-2xs"
+                />
+                <div className="flex items-center justify-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => certFileInputRef.current?.click()}
+                    className="h-8 text-xs font-semibold"
+                  >
+                    사진 다시 선택
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="border border-dashed border-slate-300 rounded-xl p-6 text-center space-y-3 bg-slate-50/50">
+                <p className="text-xs text-slate-600">
+                  스마트폰으로 촬영한 의사 소견서, 진단서, 또는 처방전 사진을 첨부해 주세요.
+                </p>
+                <Button
+                  type="button"
+                  onClick={() => certFileInputRef.current?.click()}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs gap-1.5"
+                >
+                  <Camera className="w-4 h-4" />
+                  사진 촬영 또는 앨범에서 선택
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setUploadingDocForCert(null);
+                setCertPreviewUrl('');
+                setCertFileName('');
+              }}
+              className="h-8 text-xs"
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={isUploadingCert || !certPreviewUrl}
+              onClick={handleSaveSupplementCert}
+              className="h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              {isUploadingCert ? '업로드 중...' : '소견서 제출하기'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

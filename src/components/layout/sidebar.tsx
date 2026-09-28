@@ -359,6 +359,7 @@ export default function AppSidebar() {
       '/teacher/duty',
       '/teacher/overtime',
       '/teacher/substitution',
+      '/teacher/disease',
       '/teacher/registry',
     ].some((p) => pathname === p || pathname?.startsWith(p + '/'));
 
@@ -436,6 +437,11 @@ export default function AppSidebar() {
     return `${shortTitle} 수업 관리`;
   }, [myAfterschoolCourses]);
 
+  // 사용자가 선택한 바로가기 항목 필터링 (Hooks 규칙: early return 이전에 선언)
+  const selectedShortcutItems = useMemo(() => {
+    return ALL_SHORTCUT_ITEMS.filter((item) => userShortcutIds.includes(item.id));
+  }, [userShortcutIds]);
+
   if (!isSidebarOpen) {
     return null;
   }
@@ -457,6 +463,7 @@ export default function AppSidebar() {
     '/teacher/duty',
     '/teacher/overtime',
     '/teacher/substitution',
+    '/teacher/disease',
     '/teacher/registry',
   ].some((p) => pathname === p || pathname?.startsWith(p + '/'));
 
@@ -471,11 +478,6 @@ export default function AppSidebar() {
   ].some((p) => pathname === p || pathname?.startsWith(p + '/'));
 
   const isParentsActive = pathname?.startsWith('/parents');
-
-  // 사용자가 선택한 바로가기 항목 필터링
-  const selectedShortcutItems = useMemo(() => {
-    return ALL_SHORTCUT_ITEMS.filter((item) => userShortcutIds.includes(item.id));
-  }, [userShortcutIds]);
 
   const getShortcutBadge = (badgeKey?: string) => {
     switch (badgeKey) {
@@ -583,7 +585,7 @@ export default function AppSidebar() {
                   <NavItem href="/teacher/duty" label="교원 복무" icon={<Briefcase size={16} />} count={teacherDutyCount} isSubItem badgeColor="bg-emerald-600 text-white" />
                   <NavItem href="/teacher/overtime" label="초과근무" icon={<Clock size={16} />} isSubItem />
                   <NavItem href="/teacher/substitution" label="보결 관리" icon={<UserPlus size={16} />} isSubItem />
-                  <NavItem href="/volunteer" label="봉사활동" icon={<HeartHandshake size={16} />} isSubItem />
+                  <NavItem href="/teacher/disease" label="건강/질병 신고" icon={<Activity size={16} />} isSubItem />
                   <NavItem href="/teacher/registry" label="교원 서비스 조회" icon={<ListFilter size={16} />} isSubItem />
                 </DropdownSection>
 

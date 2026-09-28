@@ -125,7 +125,7 @@ function AfterschoolEnrollment() {
       <PrivacyConsentModal
         isOpen={isConsentModalOpen}
         onConsentGranted={handleConsentGranted}
-        onCancel={hasConsented ? () => setIsConsentModalOpen(false) : undefined}
+        onCancel={() => setIsConsentModalOpen(false)}
       />
 
       {/* 방과후 수강료 & 버스비 합산 청구서 팝업 */}

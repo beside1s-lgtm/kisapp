@@ -356,6 +356,7 @@ export async function cancelAfterschoolEnrollmentTransaction(
   const db = getDb();
   let promotedStudentName: string | undefined = undefined;
   let promotedCourseTitle: string | undefined = undefined;
+  let cancelledEnrollmentData: Enrollment | null = null;
 
   try {
     await runTransaction(db, async (transaction) => {
@@ -367,6 +368,7 @@ export async function cancelAfterschoolEnrollmentTransaction(
       }
 
       const cancellingEnrollment = enrollSnap.data() as Enrollment;
+      cancelledEnrollmentData = cancellingEnrollment;
       const { courseId, status: cancellingStatus } = cancellingEnrollment;
 
       // 1. 대상 신청 내역 삭제
@@ -427,6 +429,22 @@ export async function cancelAfterschoolEnrollmentTransaction(
         waitingStudents: newWaitingStudents,
       });
     });
+
+    // 🌟 방과후 수강 취소 시 스쿨버스 정규 하교 버스로 즉시 복귀 연동
+    if (cancelledEnrollmentData) {
+      try {
+        const { revertCancelledStudentToAfternoonBus } = await import('@/lib/kisbus/assignments');
+        await revertCancelledStudentToAfternoonBus({
+          studentId: (cancelledEnrollmentData as any).studentId,
+          studentEmail: (cancelledEnrollmentData as any).studentEmail || (cancelledEnrollmentData as any).email,
+          name: (cancelledEnrollmentData as any).name || (cancelledEnrollmentData as any).studentName,
+          grade: (cancelledEnrollmentData as any).grade,
+          classNum: (cancelledEnrollmentData as any).classNum
+        });
+      } catch (busErr) {
+        console.warn('스쿨버스 하교 복귀 처리 실패 (방과후 취소는 정상 완료):', busErr);
+      }
+    }
 
     return {
       success: true,

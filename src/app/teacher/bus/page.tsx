@@ -574,15 +574,15 @@ export default function TeacherPage() {
           afterSchoolCourseTitle: '',
           afterSchoolCourseTitles: [],
           enrolledCourseTitles: [],
-          afterSchoolClassIds: student.afterSchoolClassIds || {},
-          afterSchoolDestinations: student.afterSchoolDestinations || {},
+          afterSchoolClassIds: {},
+          afterSchoolDestinations: {},
           vacationAfterSchoolClassIds: student.vacationAfterSchoolClassIds || {},
           vacationAfterSchoolDestinations: student.vacationAfterSchoolDestinations || {}
         };
       }
 
-      const afterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = { ...(student.afterSchoolClassIds || {}) };
-      const afterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = { ...(student.afterSchoolDestinations || {}) };
+      const afterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = {};
+      const afterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = {};
       const vacationAfterSchoolClassIds: Partial<Record<DayOfWeek, string | null>> = { ...(student.vacationAfterSchoolClassIds || {}) };
       const vacationAfterSchoolDestinations: Partial<Record<DayOfWeek, string | null>> = { ...(student.vacationAfterSchoolDestinations || {}) };
       const enrolledCourseTitles: string[] = [];

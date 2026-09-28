@@ -2292,6 +2292,47 @@ export function SettingsModal() {
                   />
                 </div>
 
+                {/* 학부모 서비스 제어 */}
+                <div className="flex flex-col gap-3 p-4 bg-sky-50/80 rounded-xl border border-sky-200 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-sky-700 shrink-0" />
+                    <span className="font-bold text-sky-950 text-sm">학부모 서비스 제어</span>
+                    <span className="text-xs text-sky-700 ml-1">켜짐(잠금 해제) = 학부모에게 노출, 꺼짐(잠금) = 숨김</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {[
+                      { key: 'apply', label: '신청서 제출', desc: '결석계 · 체험학습 신청서' },
+                      { key: 'history', label: '제출 내역', desc: '결재 진행 · 결과 조회' },
+                      { key: 'bus', label: '스쿨버스', desc: '탑승 신청 · 좌석 확인' },
+                      { key: 'afterschool', label: '방과후학교', desc: '수강 신청 · 출결 확인' },
+                      { key: 'volunteer', label: '봉사활동', desc: '신청 및 확인' },
+                    ].map(({ key, label, desc }) => {
+                      const locks = config.parentServiceLocks || {};
+                      const isLocked = (locks as any)[key] === true;
+                      return (
+                        <div key={key} className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border transition-colors ${isLocked ? 'bg-slate-100 border-slate-200 opacity-60' : 'bg-white border-sky-100'}`}>
+                          <div>
+                            <div className="text-xs font-semibold text-slate-800">{label}</div>
+                            <div className="text-[10px] text-slate-500">{desc}</div>
+                          </div>
+                          <Switch
+                            checked={!isLocked}
+                            onCheckedChange={(checked) =>
+                              setConfig((prev: any) => ({
+                                ...prev,
+                                parentServiceLocks: {
+                                  ...(prev.parentServiceLocks || {}),
+                                  [key]: !checked,
+                                },
+                              }))
+                            }
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="nextNumber" className={`font-semibold ${config.enableFaceToFaceApproval ? 'text-slate-400' : 'text-slate-800'}`}>
                     다음 문서 번호

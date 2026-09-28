@@ -58,6 +58,7 @@ import { GradeMaterialsTab } from '@/components/teacher/homeroom/GradeMaterialsT
 import { ParentConsultationTab } from '@/components/teacher/homeroom/ParentConsultationTab';
 import { HomeroomAttendanceTab } from '@/components/teacher/homeroom/HomeroomAttendanceTab';
 import { HomeroomProxyApplyForm } from '@/components/teacher/homeroom/HomeroomProxyApplyForm';
+import type { DiseaseCategoryType } from '@/components/health/disease-surveillance/types';
 import { EditHomeroomStudentDialog } from '@/components/teacher/homeroom/EditHomeroomStudentDialog';
 import { BusUnassignConfirmDialog, type BusUnassignTarget } from '@/components/teacher/homeroom/BusUnassignConfirmDialog';
 import { onRoutesUpdate } from '@/lib/kisbus/routes';
@@ -274,7 +275,11 @@ export default function TeacherHomeroomApplyPage() {
   const [absTotalDays, setAbsTotalDays] = useState<number>(1);
   const [absType, setAbsType] = useState<'병결' | '미인정' | '기타' | '출석인정'>('병결');
   const [absReason, setAbsReason] = useState('');
+  const [absDiseaseCategory, setAbsDiseaseCategory] = useState<DiseaseCategoryType>('단순질병');
+  const [absDiseaseName, setAbsDiseaseName] = useState<string>('');
   const [teacherConfirmMethod, setTeacherConfirmMethod] = useState<'전화/문자' | '학부모 내교' | '가정방문' | '기타'>('전화/문자');
+  const [medicalCertificateUrl, setMedicalCertificateUrl] = useState<string>('');
+  const [medicalCertificateName, setMedicalCertificateName] = useState<string>('');
 
   // 누적 통계
   const [accumulatedFtDays, setAccumulatedFtDays] = useState<number>(0);
@@ -695,6 +700,8 @@ export default function TeacherHomeroomApplyPage() {
         },
         absenceType: absType,
         absenceReason: absReason,
+        diseaseCategory: absType === '병결' ? (absDiseaseCategory || undefined) : undefined,
+        diseaseName: absType === '병결' ? (absDiseaseName || undefined) : undefined,
         teacherConfirmMethod,
         teacherConfirmDate: applyDate,
         applyDate: applyDate, // 소급/수정 지정된 신청일자
@@ -703,6 +710,18 @@ export default function TeacherHomeroomApplyPage() {
         proxyTeacherEmail: profile.email
       };
 
+      const finalAttachments: any[] = [];
+      if (!isFieldTrip && medicalCertificateUrl) {
+        finalAttachments.push({
+          name: medicalCertificateName || '소견서_진료확인서.jpg',
+          data: medicalCertificateUrl
+        });
+        parentFormData.medicalCertificateUrl = medicalCertificateUrl;
+        parentFormData.medicalCertificateName = medicalCertificateName || '소견서_진료확인서.jpg';
+        parentFormData.medicalCertificateSubmitted = true;
+        parentFormData.attachments = finalAttachments;
+      }
+
       // 1. 기안문서 생성 (담임 교사가 작성)
       const createRes = await createDocument({
         title: docTitle,
@@ -710,7 +729,7 @@ export default function TeacherHomeroomApplyPage() {
         docType: 'parent',
         category: 'general',
         approvers: approvers,
-        attachments: [],
+        attachments: finalAttachments,
         parentFormData,
         publishStatus: '비공개'
       }, user.uid, profile);
@@ -808,13 +827,13 @@ export default function TeacherHomeroomApplyPage() {
           ) : null}
         </div>
       } 
-      contentClassName="p-1.5 sm:p-3 font-body flex flex-col"
+      contentClassName="px-1.5 sm:px-3 pb-1.5 sm:pb-3 pt-0 font-body flex flex-col"
     >
       <div className="w-full flex flex-col space-y-1.5 sm:space-y-2">
       {/* 상단 탭 네비게이션 및 고정 헤더 섹션 */}
       <Tabs value={activeMainTab} onValueChange={(val: any) => setActiveMainTab(val)} className="w-full flex flex-col space-y-1.5 sm:space-y-2">
         {/* 상단 고정 영역: 5대 탭 + (출석부 탭일 때) 출석부 카드 헤더 */}
-        <div className="shrink-0 z-20 bg-background/95 backdrop-blur-md pt-0.5 pb-1 sm:pb-2 space-y-1.5 sm:space-y-2 sticky top-0">
+        <div className="shrink-0 z-30 bg-background pt-1.5 sm:pt-3 pb-1 sm:pb-2 space-y-1.5 sm:space-y-2 sticky top-0">
           {/* 5대 탭 네비게이션 */}
           <TabsList className="grid grid-cols-5 w-full bg-slate-100 p-1 rounded-xl gap-0.5 sm:gap-1 h-auto shadow-2xs">
             <TabsTrigger value="student-info" className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2 px-0.5 sm:px-2 text-[10px] sm:text-xs font-bold data-[state=active]:shadow-xs">
@@ -1024,6 +1043,12 @@ export default function TeacherHomeroomApplyPage() {
             isSubmitting={isSubmitting}
             selectedStudentId={selectedStudentId}
             onSubmit={handleSubmitAndApprove}
+            medicalCertificateUrl={medicalCertificateUrl}
+            medicalCertificateName={medicalCertificateName}
+            onCertificateChange={(url, name) => {
+              setMedicalCertificateUrl(url || '');
+              setMedicalCertificateName(name || '');
+            }}
             ftStartDate={ftStartDate}
             setFtStartDate={setFtStartDate}
             ftEndDate={ftEndDate}
@@ -1050,6 +1075,10 @@ export default function TeacherHomeroomApplyPage() {
             setAbsType={setAbsType}
             absReason={absReason}
             setAbsReason={setAbsReason}
+            absDiseaseCategory={absDiseaseCategory}
+            setAbsDiseaseCategory={setAbsDiseaseCategory}
+            absDiseaseName={absDiseaseName}
+            setAbsDiseaseName={setAbsDiseaseName}
             teacherConfirmMethod={teacherConfirmMethod}
             setTeacherConfirmMethod={setTeacherConfirmMethod}
           />

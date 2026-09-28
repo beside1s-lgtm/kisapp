@@ -176,7 +176,7 @@ export function HomeroomAttendanceTab({
         {/* 데스크톱 전용 출석부 테이블 뷰 (hidden sm:block) */}
         <div className="hidden sm:block">
           <Table>
-            <TableHeader className="bg-slate-100 sticky top-0 z-20 shadow-xs">
+            <TableHeader className="bg-slate-100">
               <TableRow>
                 <TableHead className="w-[60px] whitespace-nowrap font-bold text-slate-700">번호</TableHead>
                 <TableHead className="whitespace-nowrap font-bold text-slate-700">학생 이름</TableHead>

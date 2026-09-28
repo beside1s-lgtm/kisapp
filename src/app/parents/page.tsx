@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { FileEdit, History, Info, AlertCircle, Loader2, Bus as BusIcon, GraduationCap, Calendar, UserCheck, CheckCircle2, Clock, MessageSquare, ArrowRight, CalendarPlus, HeartHandshake } from 'lucide-react';
+import { FileEdit, History, Info, AlertCircle, Loader2, Bus as BusIcon, GraduationCap, Calendar, UserCheck, CheckCircle2, Clock, MessageSquare, ArrowRight, CalendarPlus, HeartHandshake, Dumbbell } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 
 // Google Calendar 원클릭 일정 등록 URL 생성 헬퍼
@@ -356,6 +356,97 @@ export default function ParentsDashboard() {
         </p>
       </div>
 
+      {/* ── KRDS 기반 학부모 주요 서비스 바로가기 퀵 네비게이션 ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3.5">
+        {!config?.parentServiceLocks?.apply && (
+          <Link
+            href="/parents/apply"
+            className="group flex flex-col justify-between p-3.5 sm:p-4 rounded-xl border border-border bg-card hover:border-primary/50 hover:shadow-md transition-all min-h-[90px] sm:min-h-[105px]"
+          >
+            <div className="flex items-center justify-between">
+              <div className="p-2 rounded-lg bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+                <FileEdit className="w-4 h-4 sm:w-5 sm:h-5" />
+              </div>
+              <ArrowRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+            </div>
+            <div className="mt-2">
+              <div className="font-bold text-xs sm:text-sm text-foreground group-hover:text-primary transition-colors">
+                {t('nav.apply') || '신청서 제출'}
+              </div>
+              <div className="text-[10px] sm:text-[11px] text-muted-foreground truncate">
+                체험학습 · 결석계
+              </div>
+            </div>
+          </Link>
+        )}
+
+        {!config?.parentServiceLocks?.history && (
+          <Link
+            href="/parents/history"
+            className="group flex flex-col justify-between p-3.5 sm:p-4 rounded-xl border border-border bg-card hover:border-primary/50 hover:shadow-md transition-all min-h-[90px] sm:min-h-[105px]"
+          >
+            <div className="flex items-center justify-between">
+              <div className="p-2 rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                <History className="w-4 h-4 sm:w-5 sm:h-5" />
+              </div>
+              <ArrowRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+            </div>
+            <div className="mt-2">
+              <div className="font-bold text-xs sm:text-sm text-foreground group-hover:text-primary transition-colors">
+                {t('nav.history') || '제출 내역'}
+              </div>
+              <div className="text-[10px] sm:text-[11px] text-muted-foreground truncate">
+                결재 진행 · 결과조회
+              </div>
+            </div>
+          </Link>
+        )}
+
+        {!config?.parentServiceLocks?.bus && (
+          <Link
+            href="/parents/bus"
+            className="group flex flex-col justify-between p-3.5 sm:p-4 rounded-xl border border-border bg-card hover:border-primary/50 hover:shadow-md transition-all min-h-[90px] sm:min-h-[105px]"
+          >
+            <div className="flex items-center justify-between">
+              <div className="p-2 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                <BusIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+              </div>
+              <ArrowRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+            </div>
+            <div className="mt-2">
+              <div className="font-bold text-xs sm:text-sm text-foreground group-hover:text-primary transition-colors">
+                {t('nav.bus') || '스쿨버스'}
+              </div>
+              <div className="text-[10px] sm:text-[11px] text-muted-foreground truncate">
+                탑승 신청 · 좌석 확인
+              </div>
+            </div>
+          </Link>
+        )}
+
+        {!config?.parentServiceLocks?.afterschool && (
+          <Link
+            href="/parents/afterschool"
+            className="group flex flex-col justify-between p-3.5 sm:p-4 rounded-xl border border-border bg-card hover:border-primary/50 hover:shadow-md transition-all min-h-[90px] sm:min-h-[105px]"
+          >
+            <div className="flex items-center justify-between">
+              <div className="p-2 rounded-lg bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300">
+                <GraduationCap className="w-4 h-4 sm:w-5 sm:h-5" />
+              </div>
+              <ArrowRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+            </div>
+            <div className="mt-2">
+              <div className="font-bold text-xs sm:text-sm text-foreground group-hover:text-primary transition-colors">
+                {t('nav.afterschool') || '방과후학교'}
+              </div>
+              <div className="text-[10px] sm:text-[11px] text-muted-foreground truncate">
+                수강 신청 · 출결 확인
+              </div>
+            </div>
+          </Link>
+        )}
+      </div>
+
 
       {/* 미제출 보고서 알림 배너 */}
       {pendingReports.length > 0 && (
@@ -606,94 +697,92 @@ export default function ParentsDashboard() {
         </CardContent>
       </Card>
 
-      {/* ── 연계 교육 서비스 현행 정보 (가로폭 절반 나란히 2열 배치) ── */}
+      {/* ── 연계 교육 서비스 현행 정보 ── */}
       <div className="space-y-2 sm:space-y-3 pt-2 sm:pt-3 border-t">
         <div className="flex items-center justify-between">
           <h3 className="text-base sm:text-lg font-bold text-foreground font-headline">
             {t('parents.connected_services') || '연계 교육 서비스'}
           </h3>
-          <span className="text-[11px] text-muted-foreground">현재 이용 현황</span>
+          <span className="text-[11px] text-muted-foreground">신청 및 확인</span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-4">
-          {/* 스쿨버스 미니멀 카드 */}
+          {/* 학부모 상담 신청 카드 */}
           <Link 
-            href={busInfoText !== '미신청' ? '/parents/bus/student' : (config?.isBusApplyActive ? '/parents/bus/apply' : '/parents/bus')}
-            className="group block p-3 sm:p-4 rounded-2xl border border-amber-200/90 bg-gradient-to-br from-amber-500/10 via-amber-50/40 to-background hover:border-amber-400 hover:shadow-md transition-all duration-200"
+            href="/parents/consultation"
+            className="group block p-3 sm:p-4 rounded-2xl border border-blue-200/90 bg-gradient-to-br from-blue-500/10 via-blue-50/40 to-background hover:border-blue-400 hover:shadow-md transition-all duration-200"
           >
             <div className="flex items-center justify-between mb-1.5 sm:mb-2">
               <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                <div className="p-1 sm:p-1.5 bg-amber-500/15 rounded-lg text-amber-700 shrink-0">
-                  <BusIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <div className="p-1 sm:p-1.5 bg-blue-500/15 rounded-lg text-blue-700 shrink-0">
+                  <MessageSquare className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 </div>
-                <span className="font-extrabold text-xs sm:text-sm text-foreground truncate">스쿨버스</span>
+                <span className="font-extrabold text-xs sm:text-sm text-foreground truncate">상담 신청</span>
               </div>
-              <span className="text-[10px] text-amber-700 font-bold group-hover:translate-x-0.5 transition-transform shrink-0">
+              <span className="text-[10px] text-blue-700 font-bold group-hover:translate-x-0.5 transition-transform shrink-0">
                 &rarr;
               </span>
             </div>
             <div className="flex items-baseline justify-between gap-1 flex-wrap">
-              <span className={`text-xs sm:text-sm font-black truncate ${
-                busInfoText !== '미신청' ? 'text-amber-800' : 'text-slate-500'
-              }`}>
-                {busInfoText}
+              <span className="text-xs sm:text-sm font-black truncate text-blue-800">
+                담임 상담
               </span>
               <span className="text-[10px] text-muted-foreground hidden sm:inline">
-                {busInfoText !== '미신청' ? '탑승 현황' : (config?.isBusApplyActive ? '신청 가능' : '노선 안내')}
+                예약·일정
               </span>
             </div>
           </Link>
 
-          {/* 방과후학교 미니멀 카드 */}
-          <Link 
-            href={afterschoolInfoText !== '미수강' ? '/parents/afterschool?tab=my' : (isAfterschoolActive ? '/parents/afterschool?tab=apply' : '/parents/afterschool')}
-            className="group block p-3 sm:p-4 rounded-2xl border border-violet-200/90 bg-gradient-to-br from-violet-500/10 via-violet-50/40 to-background hover:border-violet-400 hover:shadow-md transition-all duration-200"
-          >
-            <div className="flex items-center justify-between mb-1.5 sm:mb-2">
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                <div className="p-1 sm:p-1.5 bg-violet-500/15 rounded-lg text-violet-700 shrink-0">
-                  <GraduationCap className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          {/* 봉사활동 카드 (잠금 설정 연동) */}
+          {!config?.parentServiceLocks?.volunteer && (
+            <Link 
+              href="/parents/volunteer"
+              className="group block p-3 sm:p-4 rounded-2xl border border-sky-200/90 bg-gradient-to-br from-sky-500/10 via-sky-50/40 to-background hover:border-sky-400 hover:shadow-md transition-all duration-200"
+            >
+              <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                  <div className="p-1 sm:p-1.5 bg-sky-500/15 rounded-lg text-sky-700 shrink-0">
+                    <HeartHandshake className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  </div>
+                  <span className="font-extrabold text-xs sm:text-sm text-foreground truncate">봉사활동</span>
                 </div>
-                <span className="font-extrabold text-xs sm:text-sm text-foreground truncate">방과후학교</span>
+                <span className="text-[10px] text-sky-700 font-bold group-hover:translate-x-0.5 transition-transform shrink-0">
+                  &rarr;
+                </span>
               </div>
-              <span className="text-[10px] text-violet-700 font-bold group-hover:translate-x-0.5 transition-transform shrink-0">
-                &rarr;
-              </span>
-            </div>
-            <div className="flex items-baseline justify-between gap-1 flex-wrap">
-              <span className={`text-xs sm:text-sm font-black truncate ${
-                afterschoolInfoText !== '미수강' ? 'text-violet-800' : 'text-slate-500'
-              }`}>
-                {afterschoolInfoText}
-              </span>
-              <span className="text-[10px] text-muted-foreground hidden sm:inline">
-                {afterschoolInfoText !== '미수강' ? '수강 확인' : (isAfterschoolActive ? '신청 가능' : '강좌 안내')}
-              </span>
-            </div>
-          </Link>
+              <div className="flex items-baseline justify-between gap-1 flex-wrap">
+                <span className="text-xs sm:text-sm font-black truncate text-sky-800">
+                  신청 및 확인
+                </span>
+                <span className="text-[10px] text-muted-foreground hidden sm:inline">
+                  계획서·확인서
+                </span>
+              </div>
+            </Link>
+          )}
 
-          {/* 학생 봉사활동 카드 */}
+          {/* 학생 체력 카드 */}
           <Link 
-            href="/parents/volunteer"
-            className="group block p-3 sm:p-4 rounded-2xl border border-sky-200/90 bg-gradient-to-br from-sky-500/10 via-sky-50/40 to-background hover:border-sky-400 hover:shadow-md transition-all duration-200 col-span-2 sm:col-span-1"
+            href="/parents/fitness"
+            className="group block p-3 sm:p-4 rounded-2xl border border-rose-200/90 bg-gradient-to-br from-rose-500/10 via-rose-50/40 to-background hover:border-rose-400 hover:shadow-md transition-all duration-200 col-span-2 sm:col-span-1"
           >
             <div className="flex items-center justify-between mb-1.5 sm:mb-2">
               <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                <div className="p-1 sm:p-1.5 bg-sky-500/15 rounded-lg text-sky-700 shrink-0">
-                  <HeartHandshake className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <div className="p-1 sm:p-1.5 bg-rose-500/15 rounded-lg text-rose-700 shrink-0">
+                  <Dumbbell className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 </div>
-                <span className="font-extrabold text-xs sm:text-sm text-foreground truncate">봉사활동</span>
+                <span className="font-extrabold text-xs sm:text-sm text-foreground truncate">학생 체력</span>
               </div>
-              <span className="text-[10px] text-sky-700 font-bold group-hover:translate-x-0.5 transition-transform shrink-0">
+              <span className="text-[10px] text-rose-700 font-bold group-hover:translate-x-0.5 transition-transform shrink-0">
                 &rarr;
               </span>
             </div>
             <div className="flex items-baseline justify-between gap-1 flex-wrap">
-              <span className="text-xs sm:text-sm font-black truncate text-sky-800">
-                신청 및 확인
+              <span className="text-xs sm:text-sm font-black truncate text-rose-800">
+                체력 결과 확인
               </span>
               <span className="text-[10px] text-muted-foreground hidden sm:inline">
-                계획서·확인서
+                PAPS 결과
               </span>
             </div>
           </Link>

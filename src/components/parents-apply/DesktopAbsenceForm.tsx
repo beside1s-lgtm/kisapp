@@ -1,7 +1,10 @@
 'use client';
 
+import React, { useRef } from 'react';
 import { format } from 'date-fns';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Upload, X, FileImage, Camera } from 'lucide-react';
+import { compressCertificateImage } from '@/lib/imageResize';
+import { AbsenceDiseaseSelector } from '@/components/health/disease-surveillance/AbsenceDiseaseSelector';
 
 export function DesktopAbsenceForm({
   watchGradeClassNumber,
@@ -19,6 +22,9 @@ export function DesktopAbsenceForm({
   isLoadingLimits,
   isOverAbsenceLimit,
   accumulatedAbsenceDays,
+  medicalCertificateUrl,
+  medicalCertificateName,
+  onCertificateChange,
 }: {
   watchGradeClassNumber: string;
   setValue: any;
@@ -35,7 +41,24 @@ export function DesktopAbsenceForm({
   isLoadingLimits: boolean;
   isOverAbsenceLimit: boolean;
   accumulatedAbsenceDays: number;
+  medicalCertificateUrl?: string;
+  medicalCertificateName?: string;
+  onCertificateChange?: (url: string | null, fileName?: string) => void;
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressCertificateImage(file);
+      if (onCertificateChange) {
+        onCertificateChange(compressed, file.name);
+      }
+    } catch (err: any) {
+      alert(err.message || '이미지 처리에 실패했습니다.');
+    }
+  };
   return (
     <div className="font-serif text-[10pt] sm:text-[11pt] text-black min-w-[280px]">
       {/* 누적 결석 경고 알림 (연간 누계 기능 활성화 시에만 노출) */}
@@ -153,15 +176,109 @@ export function DesktopAbsenceForm({
               </td>
             </tr>
           <tr>
-            <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-center">결석사유</th>
+            <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-center">
+              결석사유
+              {watch('absenceType') === '병결' && (
+                <span className="block text-[9px] font-normal text-indigo-600 mt-0.5">(질병 분류 선택)</span>
+              )}
+            </th>
             <td className="border border-black px-3 py-2.5">
-              <textarea
-                value={watch('absenceReason') || ''}
-                onChange={(e) => setValue('absenceReason', e.target.value, { shouldValidate: true })}
-                placeholder="결석 사유를 자세히 입력해주세요."
-                className={`w-full h-24 bg-transparent focus:outline-none resize-none placeholder:text-gray-400 leading-relaxed ${(errors as any).absenceReason ? 'border-b border-destructive' : ''}`}
+              {watch('absenceType') === '병결' ? (
+                <AbsenceDiseaseSelector
+                  value={watch('absenceReason') || ''}
+                  initialCategory={watch('diseaseCategory')}
+                  initialDiseaseName={watch('diseaseName')}
+                  onChange={(val, meta) => {
+                    setValue('absenceReason', val, { shouldValidate: true });
+                    if (meta?.category) setValue('diseaseCategory', meta.category);
+                    if (meta?.diseaseName) setValue('diseaseName', meta.diseaseName);
+                  }}
+                  error={(errors as any).absenceReason?.message}
+                />
+              ) : (
+                <>
+                  <textarea
+                    value={watch('absenceReason') || ''}
+                    onChange={(e) => setValue('absenceReason', e.target.value, { shouldValidate: true })}
+                    placeholder="결석 사유를 자세히 입력해주세요 (예: 집안 사정, 경조사 참석 등)"
+                    className={`w-full h-24 bg-transparent focus:outline-none resize-none placeholder:text-gray-400 leading-relaxed ${(errors as any).absenceReason ? 'border-b border-destructive' : ''}`}
+                  />
+                  {(errors as any).absenceReason && <p className="text-xs text-destructive mt-1 font-sans font-normal">{(errors as any).absenceReason.message}</p>}
+                </>
+              )}
+            </td>
+          </tr>
+          <tr>
+            <th className="border border-black bg-slate-50/50 py-2.5 font-bold text-center">
+              증빙서류
+              <span className="block text-[9px] font-normal text-slate-500 mt-0.5">(소견서/진단서)</span>
+            </th>
+            <td className="border border-black px-3 py-2.5">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileSelect}
+                className="hidden"
               />
-              {(errors as any).absenceReason && <p className="text-xs text-destructive mt-1 font-sans font-normal">{(errors as any).absenceReason.message}</p>}
+              {medicalCertificateUrl ? (
+                <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  <div className="relative group shrink-0">
+                    <img
+                      src={medicalCertificateUrl}
+                      alt="소견서/진단서 미리보기"
+                      className="w-16 h-16 object-cover rounded border border-slate-300 shadow-2xs"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <FileImage className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="text-xs font-bold text-slate-800 truncate">
+                        {medicalCertificateName || '소견서_진단서_첨부사진.jpg'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-emerald-700 font-medium mt-0.5">
+                      사진이 정상 첨부되었습니다. (문서용 최적화 압축 완료)
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 print:hidden">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-2 py-1 text-[11px] font-semibold text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50"
+                    >
+                      변경
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onCertificateChange && onCertificateChange(null, '')}
+                      className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50"
+                      title="사진 삭제"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 bg-slate-50/60 p-2.5 rounded-lg border border-dashed border-slate-300 print:hidden">
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-bold text-slate-700 block">
+                      의사 소견서, 진단서, 처방전 사진 등록 (선택)
+                    </span>
+                    <span className="text-[10px] text-slate-500 block leading-tight">
+                      ※ 병결 신청 시 스마트폰으로 촬영한 소견서 사진을 첨부해 주세요. (미첨부 시 추후 보완 제출 가능)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-bold shadow-2xs shrink-0"
+                  >
+                    <Camera className="w-3.5 h-3.5 text-indigo-600" />
+                    사진 첨부하기
+                  </button>
+                </div>
+              )}
             </td>
           </tr>
           <tr>

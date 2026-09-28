@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { format } from 'date-fns';
+import { format, addDays } from 'date-fns';
 import { createDocument, getDocumentById, getSentDocuments, submitVolunteerReport } from '@/lib/services/documentService';
 import { getVolunteerApprovers } from '@/lib/services/userService';
 import { ApprovalDoc, VolunteerFormData } from '@/lib/types';
@@ -141,6 +141,11 @@ function VolunteerPortalContent() {
     loadMyDocs();
   }, [user]);
 
+  // 봉사활동 계획서는 무조건 최소 7일 전 제출 (신청일부터 6일 이후까지는 신청 불가)
+  const minSelectableDate = useMemo(() => {
+    return format(addDays(new Date(), 7), 'yyyy-MM-dd');
+  }, []);
+
   // 날짜 변경 시 요일 및 일수 자동 계산
   const handleDateChange = (start: string, end: string) => {
     const days = ['일', '월', '화', '수', '목', '금', '토'];
@@ -148,17 +153,30 @@ function VolunteerPortalContent() {
     let endDayOfWeek = '월';
     let totalDays = 1;
 
+    let adjustedEnd = end;
+    // 시작일이 있고 종료일이 시작일보다 앞서면 시작일로 자동 보정
+    if (start && end && end < start) {
+      adjustedEnd = start;
+    }
+
     if (start) {
       const sDate = new Date(start);
       startDayOfWeek = days[sDate.getDay()];
+      if (start.length === 10 && start < minSelectableDate) {
+        toast({
+          title: '신청 불가 날짜 안내',
+          description: `봉사활동 신청서는 무조건 실시 7일 전 제출해야 합니다. (${minSelectableDate}부터 신청 가능)`,
+          variant: 'destructive',
+        });
+      }
     }
-    if (end) {
-      const eDate = new Date(end);
+    if (adjustedEnd) {
+      const eDate = new Date(adjustedEnd);
       endDayOfWeek = days[eDate.getDay()];
     }
-    if (start && end) {
+    if (start && adjustedEnd) {
       const s = new Date(start).getTime();
-      const e = new Date(end).getTime();
+      const e = new Date(adjustedEnd).getTime();
       if (e >= s) {
         totalDays = Math.round((e - s) / (1000 * 60 * 60 * 24)) + 1;
       }
@@ -166,7 +184,7 @@ function VolunteerPortalContent() {
     setPlanForm(prev => ({
       ...prev,
       startDate: start,
-      endDate: end,
+      endDate: adjustedEnd,
       startDayOfWeek,
       endDayOfWeek,
       totalDays,
@@ -200,6 +218,22 @@ function VolunteerPortalContent() {
     }
     if (!planForm.startDate || !planForm.endDate) {
       toast({ title: '오류', description: '활동 기간을 입력해 주세요.', variant: 'destructive' });
+      return;
+    }
+    if (planForm.startDate < minSelectableDate) {
+      toast({
+        title: '신청 기간 오류',
+        description: `봉사활동 계획서는 무조건 7일 전 제출해야 합니다. (${minSelectableDate}부터 신청 가능하며 신청일로부터 6일 이내는 신청 불가)`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (planForm.endDate < planForm.startDate) {
+      toast({
+        title: '신청 기간 오류',
+        description: '종료일은 시작일 이후여야 합니다.',
+        variant: 'destructive',
+      });
       return;
     }
     if (!planForm.institution || !planForm.location || !planForm.content) {
@@ -391,9 +425,6 @@ function VolunteerPortalContent() {
                     서식 1
                   </Badge>
                 </CardTitle>
-                <CardDescription className="text-xs mt-1">
-                  봉사활동 실시 7일 전까지 계획서를 제출해 주세요.
-                </CardDescription>
               </div>
             </CardHeader>
 
@@ -452,8 +483,8 @@ function VolunteerPortalContent() {
                       <Calendar className="w-3.5 h-3.5 text-primary shrink-0" />
                       활동 기간 및 시간
                     </Label>
-                    <span className="text-[10px] sm:text-[11px] text-red-600 font-medium whitespace-nowrap">
-                      ※ 12월 24일 제출 마감
+                    <span className="text-[10px] sm:text-[11px] text-red-600 font-bold whitespace-nowrap">
+                      ※ 7일 전 제출
                     </span>
                   </div>
 
@@ -462,6 +493,7 @@ function VolunteerPortalContent() {
                       <Label className="text-[10px] sm:text-[11px] text-muted-foreground whitespace-nowrap block">시작일</Label>
                       <Input
                         type="date"
+                        min={minSelectableDate}
                         value={planForm.startDate}
                         onChange={e => handleDateChange(e.target.value, planForm.endDate)}
                         required
@@ -472,6 +504,7 @@ function VolunteerPortalContent() {
                       <Label className="text-[10px] sm:text-[11px] text-muted-foreground whitespace-nowrap block">종료일</Label>
                       <Input
                         type="date"
+                        min={planForm.startDate || minSelectableDate}
                         value={planForm.endDate}
                         onChange={e => handleDateChange(planForm.startDate, e.target.value)}
                         required
@@ -541,20 +574,15 @@ function VolunteerPortalContent() {
                     className="text-xs mt-1 leading-relaxed resize-none"
                   />
                 </div>
-
-                {/* 안내 문구 */}
-                <div className="text-[11px] text-red-600 bg-red-50/50 p-2.5 rounded-lg border border-red-100 leading-normal">
-                  ※ 봉사활동 실시 7일 전까지 계획서 제출, 봉사활동 실시 이후 7일 내 확인서 제출 시 학교생활기록부에 등재됩니다.
-                </div>
               </CardContent>
 
               <CardFooter className="p-4 bg-muted/20 border-t flex justify-end gap-2">
                 <Button
                   type="submit"
                   disabled={isSubmitting}
-                  className="h-9 px-4 font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs"
+                  className="h-10 px-5 font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs text-xs sm:text-sm"
                 >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Send className="w-4 h-4 mr-1.5" />}
+                  {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
                   계획서 제출 및 결재 상신
                 </Button>
               </CardFooter>

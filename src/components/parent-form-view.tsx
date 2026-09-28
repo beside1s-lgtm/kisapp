@@ -870,6 +870,62 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
         </div>
   );
 
+  const certImage = data.medicalCertificateUrl || (Array.isArray(data.attachments) && data.attachments[0]?.data) || (Array.isArray(doc.attachments) && doc.attachments[0]?.data);
+  const hasCertificateSheet = isAbsence && Boolean(certImage);
+
+  const renderAbsenceCertificatePage = () => {
+    if (!certImage) return null;
+    return (
+      <div 
+        className="a4-print-sheet bg-white mx-auto text-black font-serif text-[10pt] shadow-2xl relative flex flex-col justify-between"
+        style={{
+          width: '210mm',
+          minHeight: '297mm',
+          height: '297mm',
+          maxHeight: '297mm',
+          padding: '12mm 15mm 12mm 15mm',
+          boxSizing: 'border-box',
+          overflow: 'hidden',
+          fontFamily: '"Batang", "Nanum Myeongjo", "Apple SD Gothic Neo", "Malgun Gothic", serif',
+        }}
+      >
+        <div>
+          {/* 상단 표제 */}
+          <div className="flex justify-between items-end border-b-2 border-slate-900 pb-2 mb-3">
+            <div>
+              <div className="text-[8.5pt] text-slate-600 mb-0.5 font-medium">{'<서식 3 부속 첨부 증빙>'}</div>
+              <h2 className="text-[15pt] font-black tracking-[0.2em] text-slate-900">
+                결석계 증빙서류 (소견서·진단서)
+              </h2>
+            </div>
+            <div className="text-right text-[8.5pt] text-slate-700 leading-tight">
+              <div><span className="font-semibold">학생명:</span> {data.studentName} ({grade ? `${grade}학년 ${studentClass}반 ${number}번` : data.gradeClassNumber})</div>
+              <div><span className="font-semibold">결석기간:</span> {data.absencePeriod?.startDate} ~ {data.absencePeriod?.endDate} ({data.absencePeriod?.totalDays}일간)</div>
+            </div>
+          </div>
+          <div className="text-[8pt] text-slate-500 mb-2">
+            ※ 본 증빙자료는 학부모(또는 학생)가 제출한 의사소견서/진료확인서/처방전 원본 촬영본입니다.
+          </div>
+        </div>
+
+        {/* 증빙 사진 원본 뷰어 박스 */}
+        <div className="flex-1 min-h-0 flex items-center justify-center border border-slate-300 rounded bg-slate-50/70 p-2 overflow-hidden my-auto">
+          <img 
+            src={certImage} 
+            alt="소견서/진단서 증빙서류" 
+            className="max-w-full max-h-[220mm] object-contain shadow-xs rounded"
+          />
+        </div>
+
+        {/* 하단 바닥글 */}
+        <div className="pt-2 border-t border-slate-300 flex justify-between items-center text-[8pt] text-slate-500">
+          <span>호치민시한국국제학교 학생 결석계 첨부 증빙서류 보관본</span>
+          <span>문서번호: {doc.docNo || '-'}</span>
+        </div>
+      </div>
+    );
+  };
+
   // 모바일 화면 축소(Scale-to-fit)를 지원하는 래퍼
   const wrapWithScale = (content: React.ReactNode, key?: string | number) => {
     const isScaled = scale < 1;
@@ -901,8 +957,11 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
   return (
     <div ref={containerRef} className="parent-form-view-wrapper w-full font-serif text-black overflow-x-hidden print:overflow-visible">
       {isAbsence ? (
-        /* ─────────────── <서식 3> 결석계 ─────────────── */
-        wrapWithScale(renderAbsencePage(), 'absence-page')
+        /* ─────────────── <서식 3> 결석계 + (소견서 첨부 시 2페이지) ─────────────── */
+        <>
+          {wrapWithScale(renderAbsencePage(), 'absence-page')}
+          {hasCertificateSheet && wrapWithScale(renderAbsenceCertificatePage(), 'absence-cert-page')}
+        </>
       ) : isReport ? (
         /* ─────────────── <서식 2> 교외체험학습 결과보고서 (단독 문서 열람) ─────────────── */
         wrapWithScale(renderReportPage(false), 'report-single-page')

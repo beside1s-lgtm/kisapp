@@ -555,10 +555,71 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
       </div>
     );
 
+    const certImage = data.medicalCertificateUrl || (Array.isArray(data.attachments) && data.attachments[0]?.data) || (Array.isArray(doc.attachments) && doc.attachments[0]?.data);
+    const hasCertificateSheet = isAbsence && Boolean(certImage);
+
+    const renderAbsenceCertificatePage = () => {
+      if (!certImage) return null;
+      return (
+        <div
+          className="print-page-wrapper"
+          style={{
+            width: '210mm',
+            height: '297mm',
+            padding: '15mm 15mm 15mm 15mm',
+            boxSizing: 'border-box',
+            backgroundColor: '#ffffff',
+            fontFamily: 'Batang, Noto Serif KR, serif',
+            color: '#000000',
+            margin: '0 auto',
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            pageBreakBefore: 'always',
+          }}
+        >
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid #000000', paddingBottom: '8px', marginBottom: '12px' }}>
+              <div>
+                <div style={{ fontSize: '9pt', color: '#4b5563', marginBottom: '2px' }}>{'<서식 3 부속 첨부 증빙>'}</div>
+                <h2 style={{ fontSize: '16pt', fontWeight: 900, letterSpacing: '0.2em', margin: 0 }}>
+                  결석계 증빙서류 (소견서·진단서)
+                </h2>
+              </div>
+              <div style={{ textAlign: 'right', fontSize: '9pt', color: '#374151', lineHeight: 1.4 }}>
+                <div><b>학생명:</b> {data.studentName} ({grade ? `${grade}학년 ${studentClass}반 ${number}번` : data.gradeClassNumber})</div>
+                <div><b>결석기간:</b> {data.absencePeriod?.startDate} ~ {data.absencePeriod?.endDate} ({data.absencePeriod?.totalDays}일간)</div>
+              </div>
+            </div>
+            <div style={{ fontSize: '8pt', color: '#6b7280', marginBottom: '10px' }}>
+              ※ 본 증빙자료는 학부모(또는 학생)가 제출한 의사소견서/진료확인서/처방전 원본 촬영본입니다.
+            </div>
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #d1d5db', borderRadius: '4px', backgroundColor: '#f9fafb', padding: '10px', overflow: 'hidden' }}>
+            <img 
+              src={certImage} 
+              alt="소견서/진단서 증빙서류" 
+              style={{ maxWidth: '100%', maxHeight: '210mm', objectFit: 'contain' }}
+            />
+          </div>
+
+          <div style={{ paddingTop: '8px', borderTop: '1px solid #d1d5db', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '8pt', color: '#6b7280', marginTop: '10px' }}>
+            <span>호치민시한국국제학교 학생 결석계 첨부 증빙서류 보관본</span>
+            <span>문서번호: {doc.docNo || '-'}</span>
+          </div>
+        </div>
+      );
+    };
+
     return (
       <div ref={ref} className="parent-document-print-root" style={{ width: '210mm', backgroundColor: '#ffffff', margin: '0 auto', display: 'block' }}>
         {isAbsence ? (
-          renderAbsencePage()
+          <>
+            {renderAbsencePage()}
+            {hasCertificateSheet && renderAbsenceCertificatePage()}
+          </>
         ) : isReport ? (
           renderReportPage()
         ) : (
