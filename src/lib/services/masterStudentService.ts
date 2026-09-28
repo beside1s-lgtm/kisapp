@@ -270,15 +270,50 @@ export const onMasterStudentsUpdate = (
 
     // 3. 방과후 수강 신청 및 스쿨버스 학생 & 목적지 & 노선 정보와 양방향 100% 통합 매칭
     map.forEach((master, key) => {
-      // (1) 방과후 수강 신청 실시간 연동 매칭
+      // (1) 방과후 수강 신청 실시간 연동 매칭 (동명이인 오매칭 원천 차단)
       const matchedEnrollments = afterschoolEnrollmentList.filter(e => {
         if (e.status === 'CANCELLED') return false;
-        const idMatches = e.studentId && (e.studentId === master.studentId || e.studentId.toLowerCase() === master.studentEmail.toLowerCase());
-        const nameMatches = (e.name === master.name || e.name === master.nameKo);
-        const gradeClassMatches = String(e.grade) === String(master.grade) && String(e.classNum || e.class) === String(master.classNum);
-        const phoneMatches = master.contact && e.parentPhone && master.contact.replace(/\D/g, '') === e.parentPhone.replace(/\D/g, '');
-        const kisbusNoMatches = master.kisbusNo && e.kisbusNo && master.kisbusNo === e.kisbusNo;
-        return idMatches || (nameMatches && gradeClassMatches) || (nameMatches && phoneMatches) || kisbusNoMatches;
+
+        // 1단계: 고유 ID 또는 이메일 일치 (최우선)
+        const idMatches = e.studentId && (
+          e.studentId === master.studentId || 
+          e.studentId === master.id ||
+          e.studentId.toLowerCase() === master.studentEmail?.toLowerCase()
+        );
+        const emailMatches = (e as any).studentEmail && master.studentEmail && (
+          (e as any).studentEmail.toLowerCase().trim() === master.studentEmail.toLowerCase().trim()
+        );
+        if (idMatches || emailMatches) return true;
+
+        // 이름 일치 확인
+        const nameMatches = (
+          e.name === master.name || 
+          e.name === master.nameKo || 
+          (master.nameEn && e.name === master.nameEn) ||
+          e.studentName === master.name ||
+          e.studentName === master.nameKo
+        );
+        if (!nameMatches) return false;
+
+        const eGrade = String(e.grade || (e as any).studentGrade || '').trim();
+        const eClass = String(e.classNum || e.class || (e as any).studentClass || '').trim();
+        const mGrade = String(master.grade || '').trim();
+        const mClass = String(master.classNum || '').trim();
+
+        // 2단계: 이름 + 학년 + 반 3중 복합 일치 (반이 다르면 전화번호가 같아도 절대 매칭 불가)
+        if (eGrade && eClass && mGrade && mClass) {
+          return eGrade === mGrade && eClass === mClass;
+        }
+
+        // 반 정보가 없거나 비어있는 경우에 한해서만 동일 학년 내 동명이인 부재 시 허용
+        if (eGrade && mGrade && eGrade === mGrade && !eClass) {
+          const sameNameCountInGrade = Array.from(map.values()).filter(m => 
+            (m.name === master.name || m.nameKo === master.name) && String(m.grade).trim() === mGrade
+          ).length;
+          if (sameNameCountInGrade === 1) return true;
+        }
+
+        return false;
       });
 
       const enrolledCourses = matchedEnrollments.map(e => {
@@ -313,13 +348,42 @@ export const onMasterStudentsUpdate = (
         master.address = destMap.get(master.address)!;
       }
 
-      // 스쿨버스 학생 매칭
+      // 스쿨버스 학생 매칭 (동명이인 오매칭 원천 차단: 이름 + 학년 + 반 3중 복합 일치)
       const matchedBusStudent = busStudentList.find(bs => {
-        const nameMatches = bs.name === master.name || bs.nameKo === master.name || (bs.name && bs.name.includes(master.name));
-        const gradeClassMatches = String(bs.grade) === String(master.grade) && String(bs.class) === String(master.classNum);
-        const contactMatches = master.contact && bs.contact && master.contact.replace(/\D/g, '') === bs.contact.replace(/\D/g, '');
-        const kisbusNoMatches = master.kisbusNo && bs.kisbusNo && master.kisbusNo === bs.kisbusNo;
-        return (nameMatches && gradeClassMatches) || (nameMatches && contactMatches) || kisbusNoMatches || nameMatches;
+        // 1단계: 고유 ID 또는 이메일 일치
+        const idMatches = bs.id && (bs.id === master.studentId || bs.id === master.id);
+        const emailMatches = (bs as any).studentEmail && master.studentEmail && (
+          (bs as any).studentEmail.toLowerCase().trim() === master.studentEmail.toLowerCase().trim()
+        );
+        if (idMatches || emailMatches) return true;
+
+        // 이름 일치 확인
+        const nameMatches = (
+          bs.name === master.name || 
+          bs.nameKo === master.name || 
+          (bs.name && bs.name.includes(master.name))
+        );
+        if (!nameMatches) return false;
+
+        const bsGrade = String(bs.grade || '').trim();
+        const bsClass = String(bs.class || '').trim();
+        const mGrade = String(master.grade || '').trim();
+        const mClass = String(master.classNum || '').trim();
+
+        // 2단계: 이름 + 학년 + 반 3중 복합 일치 (반이 다르면 전화번호가 같아도 절대 매칭 불가)
+        if (bsGrade && bsClass && mGrade && mClass) {
+          return bsGrade === mGrade && bsClass === mClass;
+        }
+
+        // 반 정보가 없는 경우에 한해서만 동일 학년 내 동명이인 부재 시 허용
+        if (bsGrade && mGrade && bsGrade === mGrade && !bsClass) {
+          const sameNameCountInGrade = Array.from(map.values()).filter(m => 
+            (m.name === master.name || m.nameKo === master.name) && String(m.grade).trim() === mGrade
+          ).length;
+          if (sameNameCountInGrade === 1) return true;
+        }
+
+        return false;
       });
 
       let morningDestId: string | null = null;

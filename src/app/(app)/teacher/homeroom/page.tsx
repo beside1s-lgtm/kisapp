@@ -38,11 +38,21 @@ import { getDocConfig, onOrgStructureUpdate } from '@/lib/services/settingsServi
 import { checkHomeroomAccessPermission } from '@/lib/services/permissionService';
 import { onMasterStudentsUpdate, updateMasterStudent, extractEnglishNameFromEmail } from '@/lib/services/masterStudentService';
 import { getStudentFieldTripDays, getStudentAbsenceDays, createDocument, approveDocument } from '@/lib/services/documentService';
-import { getApproversByGradeClass } from '@/lib/services/userService';
+import { getApproversByGradeClass, getUserProfileByEmail } from '@/lib/services/userService';
 import { getWorkingDaysCount, cn } from '@/lib/utils';
 import { resizeStudentPhoto } from '@/lib/imageResize';
 import { BatchPhotoModal } from '@/app/(app)/admin/students/batch-photo-modal';
 import { MainLayout } from '@/components/layout/main-layout';
+
+// 법적 기준: 신청서·결석계 대리작성 시에도 신청인/보호자 자리에 학부모 이름과 도장(인) 날인 자동 생성
+function generateParentStampSignature(name: string): string {
+  const cleanName = (name || '학부모').replace(/\s+/g, '');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60" viewBox="0 0 120 60">
+    <rect x="4" y="4" width="112" height="52" rx="10" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="2 1"/>
+    <text x="60" y="36" font-family="'Batang', 'Noto Serif KR', serif" font-size="16" font-weight="bold" fill="#dc2626" text-anchor="middle">${cleanName} (인)</text>
+  </svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
 import {
   onHomeroomAttendanceUpdate,
   getApprovedAbsenceStudentsForDate,
@@ -257,6 +267,7 @@ export default function TeacherHomeroomApplyPage() {
   const [gradeClassNumber, setGradeClassNumber] = useState('');
   const [parentPhone, setParentPhone] = useState('');
   const [parentName, setParentName] = useState('');
+  const [parentSignature, setParentSignature] = useState('');
 
   // 1. 체험학습 신청서 폼 상태
   const [ftStartDate, setFtStartDate] = useState('');
@@ -590,8 +601,25 @@ export default function TeacherHomeroomApplyPage() {
       const gcn = `${s.grade}-${s.classNum}-${s.studentNum || 1}`;
       setGradeClassNumber(gcn);
       setParentPhone(s.emergencyContact || s.contact || '');
-      setParentName(s.parentName || `${s.name} 학부모`);
-      setFtCompanionName(s.parentName || `${s.name} 보호자`);
+      const defaultParentName = s.parentName || `${s.name} 학부모`;
+      setParentName(defaultParentName);
+      setFtCompanionName(defaultParentName);
+      setParentSignature('');
+
+      // 학생 구글 계정 프로필에서 학부모가 설정한 실제 전자서명 및 이름 비동기 조회
+      if (s.studentEmail) {
+        getUserProfileByEmail(s.studentEmail).then(uProfile => {
+          if (uProfile) {
+            if (uProfile.parentName) {
+              setParentName(uProfile.parentName);
+              setFtCompanionName(uProfile.parentName);
+            }
+            if (uProfile.parentSignature) {
+              setParentSignature(uProfile.parentSignature);
+            }
+          }
+        }).catch(err => console.warn('[Homeroom] getUserProfile error:', err));
+      }
 
       // 누적 일수 로드
       const currentYearStr = new Date().getFullYear().toString();
@@ -668,6 +696,10 @@ export default function TeacherHomeroomApplyPage() {
         ? `[대리작성] 교외체험학습 신청서 (${studentName}, ${gradeClassNumber})`
         : `[대리작성] 결석계 (${studentName}, ${gradeClassNumber})`;
 
+      // 법적 기준: 신청서·결석계 서류상 신청인은 무조건 학부모 (담임 교사 서명·이름 원천 차단)
+      const resolvedParentName = parentName?.trim() || `${studentName} 학부모`;
+      const resolvedParentSignature = parentSignature || generateParentStampSignature(resolvedParentName);
+
       const parentFormData: any = isFieldTrip ? {
         type: 'field-trip',
         studentName,
@@ -685,10 +717,13 @@ export default function TeacherHomeroomApplyPage() {
         companionRelation: ftCompanionRelation,
         purpose: ftPurpose || '가족 체험학습 및 문화 탐방',
         detailedPlan: ftDetailedPlan || '일자별 현지 문화 체험 및 학습 활동',
-        applyDate: applyDate, // 소급/수정 지정된 신청일자
+        applyDate: applyDate,
         isProxyByTeacher: true,
         proxyTeacherName: profile.name,
-        proxyTeacherEmail: profile.email
+        proxyTeacherEmail: profile.email,
+        // 법적으로 신청서의 서명자는 학부모 — 학부모 성명 및 서명 날인
+        proxyParentName: resolvedParentName,
+        proxyParentSignature: resolvedParentSignature,
       } : {
         type: 'absence',
         studentName,
@@ -704,10 +739,13 @@ export default function TeacherHomeroomApplyPage() {
         diseaseName: absType === '병결' ? (absDiseaseName || undefined) : undefined,
         teacherConfirmMethod,
         teacherConfirmDate: applyDate,
-        applyDate: applyDate, // 소급/수정 지정된 신청일자
+        applyDate: applyDate,
         isProxyByTeacher: true,
         proxyTeacherName: profile.name,
-        proxyTeacherEmail: profile.email
+        proxyTeacherEmail: profile.email,
+        // 법적으로 결석계의 서명자는 학부모 — 학부모 성명 및 서명 날인
+        proxyParentName: resolvedParentName,
+        proxyParentSignature: resolvedParentSignature,
       };
 
       const finalAttachments: any[] = [];
@@ -722,17 +760,20 @@ export default function TeacherHomeroomApplyPage() {
         parentFormData.attachments = finalAttachments;
       }
 
-      // 1. 기안문서 생성 (담임 교사가 작성)
+      // 1. 기안문서 생성 — 법적 기준에 따라 신청인 명의는 학부모로 등록 (담임 교사는 결재선에서만 승인자로 서명)
       const createRes = await createDocument({
         title: docTitle,
-        content: `<p>담임 교사(${profile.name})가 학생(${studentName})을 대리하여 작성한 신청서입니다.</p>`,
+        content: `<p>담임 교사(${profile.name})가 학생(${studentName})을 대리하여 작성한 신청서입니다. (법적 신청인: ${resolvedParentName})</p>`,
         docType: 'parent',
         category: 'general',
         approvers: approvers,
         attachments: finalAttachments,
         parentFormData,
-        publishStatus: '비공개'
-      }, user.uid, profile);
+        publishStatus: '비공개',
+        // 대리작성 시 서류 상 신청인은 학부모 — 학부모 이름과 서명(날인) 강제 바인딩
+        _overrideRequesterName: resolvedParentName,
+        _overrideRequesterSignature: resolvedParentSignature,
+      } as any, user.uid, profile);
 
       if (!createRes.success || !createRes.docId) {
         throw new Error(createRes.error || '문서 생성에 실패했습니다.');
@@ -1043,6 +1084,9 @@ export default function TeacherHomeroomApplyPage() {
             isSubmitting={isSubmitting}
             selectedStudentId={selectedStudentId}
             onSubmit={handleSubmitAndApprove}
+            parentName={parentName}
+            setParentName={setParentName}
+            parentSignature={parentSignature}
             medicalCertificateUrl={medicalCertificateUrl}
             medicalCertificateName={medicalCertificateName}
             onCertificateChange={(url, name) => {

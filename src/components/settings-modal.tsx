@@ -2306,6 +2306,8 @@ export function SettingsModal() {
                       { key: 'bus', label: '스쿨버스', desc: '탑승 신청 · 좌석 확인' },
                       { key: 'afterschool', label: '방과후학교', desc: '수강 신청 · 출결 확인' },
                       { key: 'volunteer', label: '봉사활동', desc: '신청 및 확인' },
+                      { key: 'consultation', label: '상담 신청', desc: '담임 상담 예약·일정' },
+                      { key: 'fitness', label: '학생 체력', desc: '체력 결과 확인(PAPS)' },
                     ].map(({ key, label, desc }) => {
                       const locks = config.parentServiceLocks || {};
                       const isLocked = (locks as any)[key] === true;

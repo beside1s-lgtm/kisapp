@@ -212,14 +212,24 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       (targetEmail ? studentsList.find(s => (s.studentEmail || '').toLowerCase().trim() === targetEmail) : null) ||
       (enrollment.studentId ? studentsList.find(s => s.id === enrollment.studentId) : null) ||
       studentsList.find(s => 
-        s.name === enrollment.name && 
+        (s.name === enrollment.name || s.nameKo === enrollment.name) && 
         Number(s.grade) === Number(enrollment.grade) && 
         Number(s.class) === Number(enrollment.classNum)
       ) ||
-      studentsList.find(s => 
-        (s.name === enrollment.name || s.nameKo === enrollment.name) && 
-        Number(s.grade) === Number(enrollment.grade)
-      );
+      studentsList.find(s => {
+        const nameMatches = s.name === enrollment.name || s.nameKo === enrollment.name;
+        const gradeMatches = Number(s.grade) === Number(enrollment.grade);
+        if (!nameMatches || !gradeMatches) return false;
+        // 반 정보가 수강신청에 있다면 반드시 반이 일치해야 함 (다른 반 학생 오매칭 원천 차단)
+        if (enrollment.classNum) {
+          return Number(s.class) === Number(enrollment.classNum);
+        }
+        // 반 정보가 누락된 경우에 한해서만 동일 학년 내 동명이인 부재 시 허용
+        const sameNameCount = studentsList.filter(o => 
+          (o.name === enrollment.name || o.nameKo === enrollment.name) && Number(o.grade) === Number(enrollment.grade)
+        ).length;
+        return sameNameCount === 1;
+      });
 
     // 목적지 및 Zone 판별
     let destinationName = '목적지 미지정';

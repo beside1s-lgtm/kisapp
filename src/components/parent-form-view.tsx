@@ -228,8 +228,13 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
     );
   };
 
-  const parentName = doc.requesterName || "설정에서 학부모 이름을 등록해주세요";
-  const parentSignature = doc.requesterSignature;
+  const isProxyByTeacher = doc.parentFormData?.isProxyByTeacher === true;
+  const parentName = isProxyByTeacher
+    ? (doc.parentFormData?.proxyParentName || doc.parentFormData?.studentName + ' 학부모' || doc.requesterName || '학부모')
+    : (doc.requesterName || "설정에서 학부모 이름을 등록해주세요");
+  const parentSignature = isProxyByTeacher
+    ? (doc.parentFormData?.proxyParentSignature || doc.requesterSignature || null)
+    : (doc.requesterSignature || doc.parentFormData?.proxyParentSignature || null);
   const tripTypes = ['가족동반여행', '친·인척 방문', '답사·견학 활동', '체험활동', '기타'];
 
   // ─────────────── <서식 2> 교외체험학습 결과보고서 (A4 1페이지 독립 서식) ───────────────

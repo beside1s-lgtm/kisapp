@@ -236,9 +236,8 @@ export default function ParentsDashboard() {
       const isSameName = busName === sName;
       const isSameClass = (!sGrade || busGrade === sGrade) && (!sClass || busClass === sClass);
       const isSameEmail = s.studentEmail && user?.email && s.studentEmail.toLowerCase() === user.email.toLowerCase();
-      const isSamePhone = s.contact && profile.parentPhone && s.contact.replace(/\D/g, '') === profile.parentPhone.replace(/\D/g, '');
 
-      return (isSameName && isSameClass) || isSameEmail || (isSameName && isSamePhone);
+      return isSameEmail || (isSameName && isSameClass);
     });
 
     if (matchedStudent?.assignedBusId) {
@@ -267,7 +266,7 @@ export default function ParentsDashboard() {
       if (e.status === 'CANCELLED') return false;
       const st = String(e.status || '').toUpperCase();
       const isEnrolled = st === 'ENROLLED' || st === 'CONFIRMED' || st === 'APPROVED' || !e.status;
-      return (isSameName || isSameEmail) && isEnrolled;
+      return (isSameEmail || (isSameName && isSameClass)) && isEnrolled;
     });
 
     const courseTitles = studentEnrollments.map(e => {
@@ -708,30 +707,32 @@ export default function ParentsDashboard() {
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-4">
           {/* 학부모 상담 신청 카드 */}
-          <Link 
-            href="/parents/consultation"
-            className="group block p-3 sm:p-4 rounded-2xl border border-blue-200/90 bg-gradient-to-br from-blue-500/10 via-blue-50/40 to-background hover:border-blue-400 hover:shadow-md transition-all duration-200"
-          >
-            <div className="flex items-center justify-between mb-1.5 sm:mb-2">
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                <div className="p-1 sm:p-1.5 bg-blue-500/15 rounded-lg text-blue-700 shrink-0">
-                  <MessageSquare className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          {!config?.parentServiceLocks?.consultation && (
+            <Link 
+              href="/parents/consultation"
+              className="group block p-3 sm:p-4 rounded-2xl border border-blue-200/90 bg-gradient-to-br from-blue-500/10 via-blue-50/40 to-background hover:border-blue-400 hover:shadow-md transition-all duration-200"
+            >
+              <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                  <div className="p-1 sm:p-1.5 bg-blue-500/15 rounded-lg text-blue-700 shrink-0">
+                    <MessageSquare className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  </div>
+                  <span className="font-extrabold text-xs sm:text-sm text-foreground truncate">상담 신청</span>
                 </div>
-                <span className="font-extrabold text-xs sm:text-sm text-foreground truncate">상담 신청</span>
+                <span className="text-[10px] text-blue-700 font-bold group-hover:translate-x-0.5 transition-transform shrink-0">
+                  &rarr;
+                </span>
               </div>
-              <span className="text-[10px] text-blue-700 font-bold group-hover:translate-x-0.5 transition-transform shrink-0">
-                &rarr;
-              </span>
-            </div>
-            <div className="flex items-baseline justify-between gap-1 flex-wrap">
-              <span className="text-xs sm:text-sm font-black truncate text-blue-800">
-                담임 상담
-              </span>
-              <span className="text-[10px] text-muted-foreground hidden sm:inline">
-                예약·일정
-              </span>
-            </div>
-          </Link>
+              <div className="flex items-baseline justify-between gap-1 flex-wrap">
+                <span className="text-xs sm:text-sm font-black truncate text-blue-800">
+                  담임 상담
+                </span>
+                <span className="text-[10px] text-muted-foreground hidden sm:inline">
+                  예약·일정
+                </span>
+              </div>
+            </Link>
+          )}
 
           {/* 봉사활동 카드 (잠금 설정 연동) */}
           {!config?.parentServiceLocks?.volunteer && (
@@ -762,30 +763,32 @@ export default function ParentsDashboard() {
           )}
 
           {/* 학생 체력 카드 */}
-          <Link 
-            href="/parents/fitness"
-            className="group block p-3 sm:p-4 rounded-2xl border border-rose-200/90 bg-gradient-to-br from-rose-500/10 via-rose-50/40 to-background hover:border-rose-400 hover:shadow-md transition-all duration-200 col-span-2 sm:col-span-1"
-          >
-            <div className="flex items-center justify-between mb-1.5 sm:mb-2">
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                <div className="p-1 sm:p-1.5 bg-rose-500/15 rounded-lg text-rose-700 shrink-0">
-                  <Dumbbell className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          {!config?.parentServiceLocks?.fitness && (
+            <Link 
+              href="/parents/fitness"
+              className="group block p-3 sm:p-4 rounded-2xl border border-rose-200/90 bg-gradient-to-br from-rose-500/10 via-rose-50/40 to-background hover:border-rose-400 hover:shadow-md transition-all duration-200 col-span-2 sm:col-span-1"
+            >
+              <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                  <div className="p-1 sm:p-1.5 bg-rose-500/15 rounded-lg text-rose-700 shrink-0">
+                    <Dumbbell className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  </div>
+                  <span className="font-extrabold text-xs sm:text-sm text-foreground truncate">학생 체력</span>
                 </div>
-                <span className="font-extrabold text-xs sm:text-sm text-foreground truncate">학생 체력</span>
+                <span className="text-[10px] text-rose-700 font-bold group-hover:translate-x-0.5 transition-transform shrink-0">
+                  &rarr;
+                </span>
               </div>
-              <span className="text-[10px] text-rose-700 font-bold group-hover:translate-x-0.5 transition-transform shrink-0">
-                &rarr;
-              </span>
-            </div>
-            <div className="flex items-baseline justify-between gap-1 flex-wrap">
-              <span className="text-xs sm:text-sm font-black truncate text-rose-800">
-                체력 결과 확인
-              </span>
-              <span className="text-[10px] text-muted-foreground hidden sm:inline">
-                PAPS 결과
-              </span>
-            </div>
-          </Link>
+              <div className="flex items-baseline justify-between gap-1 flex-wrap">
+                <span className="text-xs sm:text-sm font-black truncate text-rose-800">
+                  체력 결과 확인
+                </span>
+                <span className="text-[10px] text-muted-foreground hidden sm:inline">
+                  PAPS 결과
+                </span>
+              </div>
+            </Link>
+          )}
         </div>
       </div>
 

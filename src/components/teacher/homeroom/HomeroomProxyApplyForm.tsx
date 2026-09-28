@@ -62,6 +62,11 @@ export interface HomeroomProxyApplyFormProps {
   teacherConfirmMethod: '전화/문자' | '학부모 내교' | '가정방문' | '기타';
   setTeacherConfirmMethod: (value: '전화/문자' | '학부모 내교' | '가정방문' | '기타') => void;
 
+  // 법적 신청인(학부모) 정보
+  parentName?: string;
+  setParentName?: (value: string) => void;
+  parentSignature?: string;
+
   // 소견서/진단서 사진
   medicalCertificateUrl?: string;
   medicalCertificateName?: string;
@@ -73,6 +78,9 @@ export function HomeroomProxyApplyForm({
   isSubmitting,
   selectedStudentId,
   onSubmit,
+  parentName,
+  setParentName,
+  parentSignature,
   medicalCertificateUrl,
   medicalCertificateName,
   onCertificateChange,
@@ -376,10 +384,26 @@ export function HomeroomProxyApplyForm({
         </CardContent>
       </Card>
 
+      {/* 법적 기준: 신청인(학부모) 명의 및 서명 표기 안내 패널 */}
+      <div className="bg-amber-50/90 border border-amber-200/90 rounded-xl p-2 sm:p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs text-amber-900 shadow-2xs">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="font-bold text-[11px] text-amber-950">법적 신청인(보호자):</span>
+          <span className="font-bold text-blue-900 bg-white px-2 py-0.5 rounded border border-blue-200 text-xs">
+            {parentName || '학부모 성명'}
+          </span>
+          <span className="text-[11px] text-amber-800 font-medium">
+            {parentSignature ? '(등록된 학부모 서명 날인)' : '(학부모 성명 도장(인) 자동 생성 날인)'}
+          </span>
+        </div>
+        <span className="text-[10px] text-amber-700 font-normal">
+          ※ 신청서·결석계에는 담임 교사가 아닌 학부모 성명과 서명만 기재됩니다.
+        </span>
+      </div>
+
       {/* 제출 액션 버튼 */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 pt-1.5 shrink-0">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 pt-1 shrink-0">
         <p className="text-[10px] text-muted-foreground hidden sm:block">
-          * '작성 및 담임 결재 완료' 시 문서가 즉시 승인되어 상신됩니다.
+          * '작성 및 담임 결재 완료' 시 학부모 명의로 문서가 등록되며, 담임 결재가 즉시 처리됩니다.
         </p>
         <Button
           size="default"

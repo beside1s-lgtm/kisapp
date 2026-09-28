@@ -162,6 +162,13 @@ export type ParentFormData = {
   reportSubmitted?: boolean;
   reportSubmittedAt?: string;
   applyDate?: string; // 신청일자
+
+  // 담임 대리작성 전용 메타데이터 (법적 신청인은 학부모)
+  isProxyByTeacher?: boolean;
+  proxyTeacherName?: string;
+  proxyTeacherEmail?: string;
+  proxyParentName?: string;
+  proxyParentSignature?: string;
 };
 
 export type Approver = {
@@ -328,11 +335,13 @@ export type DocConfig = {
     enableCumulativeStats?: boolean; // 연간 누계 자동 계산 기능 활성화 여부 (기본값 true, false이면 학부모 대시보드 현황판 및 신청서 누계 숨김)
     requireParentPin?: boolean; // 학부모 PIN 인증 사용 여부 (기본값 true, false이면 학부모 최초 PIN 등록 및 신청서 제출 시 PIN 입력 생략)
     parentServiceLocks?: {
-      apply?: boolean;       // 신청서 제출 잠금 (true = 잠금, 학부모에게 숨김)
-      history?: boolean;     // 제출 내역 잠금
-      bus?: boolean;         // 스쿨버스 잠금
-      afterschool?: boolean; // 방과후학교 잠금
-      volunteer?: boolean;   // 봉사활동 잠금
+      apply?: boolean;        // 신청서 제출 잠금 (true = 잠금, 학부모에게 숨김)
+      history?: boolean;      // 제출 내역 잠금
+      bus?: boolean;          // 스쿨버스 잠금
+      afterschool?: boolean;  // 방과후학교 잠금
+      volunteer?: boolean;    // 봉사활동 잠금
+      consultation?: boolean; // 상담 신청 잠금
+      fitness?: boolean;      // 학생 체력 잠금
     };
 };
 

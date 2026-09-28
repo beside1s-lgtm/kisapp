@@ -752,14 +752,22 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
 
     const hasApprovers = payload.approvers && payload.approvers.length > 0;
     const initialStatus = (payload as any).status || (hasApprovers ? 'pending' : 'approved');
+
+    // 대리작성 시 법적 서명자는 학부모 — _override 필드 우선 적용
+    const resolvedRequesterName = (payload as any)._overrideRequesterName
+      ?? (payload.docType === 'parent' ? (userProfile.parentName || userProfile.name) : userProfile.name);
+    const resolvedRequesterSignature = Object.prototype.hasOwnProperty.call(payload, '_overrideRequesterSignature')
+      ? (payload as any)._overrideRequesterSignature
+      : (userProfile.parentSignature || userProfile.signature || '');
+
     const newDocData: any = {
       ...payload,
       docNo: finalDocNoStr,
       requesterId: userProfile.uid,
-      requesterName: payload.docType === 'parent' ? (userProfile.parentName || userProfile.name) : userProfile.name,
+      requesterName: resolvedRequesterName,
       requesterEmail: userProfile.email?.toLowerCase() || '',
       requesterRole: userProfile.role,
-      requesterSignature: userProfile.parentSignature || userProfile.signature || '',
+      requesterSignature: resolvedRequesterSignature,
       currentStep: 0,
       status: initialStatus,
       createdAt: serverTimestamp(),
@@ -767,7 +775,11 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       approverEmails: payload.approvers?.map(a => a.email?.toLowerCase()?.trim()).filter(Boolean) || [],
       circularEmails: payload.circulars?.map(c => c.email?.toLowerCase()?.trim()).filter(Boolean) || [],
     };
+    // 내부 제어용 _override 필드는 Firestore에 저장하지 않음
+    delete newDocData._overrideRequesterName;
+    delete newDocData._overrideRequesterSignature;
     await setDoc(newDocRef, newDocData);
+
 
     // 감사 로그 기록
     createAuditLog(

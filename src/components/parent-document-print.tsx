@@ -156,8 +156,17 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
       );
     };
 
-    const parentName = doc.requesterName || "학부모";
-    const parentSignature = doc.requesterSignature;
+    // 대리작성 시 서류상 신청인은 학부모 (법적 근거: 신청인 명의 일치 원칙)
+    // proxyParentName > requesterName 순으로 우선 적용
+    const isProxyByTeacher = doc.parentFormData?.isProxyByTeacher === true;
+    const parentName = isProxyByTeacher
+      ? (doc.parentFormData?.proxyParentName || doc.parentFormData?.studentName + ' 학부모' || doc.requesterName || '학부모')
+      : (doc.requesterName || '학부모');
+    // 대리작성 시에도 학부모 서명(등록된 서명 또는 학부모 날인) 출력 — 교사 서명은 원천 배제
+    const parentSignature = isProxyByTeacher
+      ? (doc.parentFormData?.proxyParentSignature || doc.requesterSignature || null)
+      : (doc.requesterSignature || doc.parentFormData?.proxyParentSignature || null);
+
     const tripTypes = ['가족동반여행', '친·인척 방문', '답사·견학 활동', '체험활동', '기타'];
 
     // ─────────────── <서식 1> 교외체험학습 신청서 (A4 1장 고정 틀) ───────────────
