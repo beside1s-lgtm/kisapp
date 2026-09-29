@@ -95,20 +95,28 @@ function buildDutyVEvent(slot: TeacherDutySlotDetail, teacherName: string): stri
   return [
     'BEGIN:VEVENT',
     `UID:gateduty-${cleanDate}-${teacherName}@kshcm.school`,
-    `SUMMARY:[등교지도] ${teacherName} 선생님 교문 등교 지도 (07:40~08:20)${roundLabel}`,
+    `SUMMARY:[등교지도 필수근무] ${teacherName} 선생님 교문 등교 지도 (07:40~08:20)${roundLabel}`,
     `DTSTART;TZID=Asia/Ho_Chi_Minh:${cleanDate}T${startTime}`,
     `DTEND;TZID=Asia/Ho_Chi_Minh:${cleanDate}T${endTime}`,
-    `DESCRIPTION:호치민시한국국제학교 오전 교문 등교지도 근무 시간입니다.\\n· 담당 교사: ${teacherName} 선생님\\n· 일자: ${slot.dateStr} (${slot.dayOfWeekName || ''})${roundLabel}\\n· 근무 시간: 오전 07:40 ~ 08:20 (40분간)\\n· 위치: 정문 교문 및 중앙현관`,
+    `DESCRIPTION:호치민시한국국제학교 오전 교문 등교지도 필수 근무 시간입니다.\\n· 담당 교사: ${teacherName} 선생님\\n· 일자: ${slot.dateStr} (${slot.dayOfWeekName || ''})${roundLabel}\\n· 근무 시간: 오전 07:40 ~ 08:20 (시간엄수: 07:35까지 현장 도착)\\n· 위치: 정문 교문 및 중앙현관\\n· 긴급상황 시 학생생활안전부/보건실 즉시 연락`,
     'STATUS:CONFIRMED',
+    // 1. 하루 전 사전 알림
     'BEGIN:VALARM',
     'ACTION:DISPLAY',
-    `DESCRIPTION:[등교지도 사전알림] 내일(${slot.dateStr}) 오전 07:40 교문 등교지도 근무가 있습니다!`,
+    `DESCRIPTION:[등교지도 전일알림] 내일(${slot.dateStr}) 오전 07:40 교문 등교 지도 필수 근무일입니다! 늦지 않도록 사전 준비 바랍니다.`,
     'TRIGGER:-P1D',
     'END:VALARM',
+    // 2. 1시간 전 준비 알림
     'BEGIN:VALARM',
     'ACTION:DISPLAY',
-    `DESCRIPTION:[등교지도 30분 전] 곧 교문 등교지도(07:40~08:20)가 시작됩니다!`,
-    'TRIGGER:-PT30M',
+    `DESCRIPTION:[등교지도 1시간 전] 오늘 오전 07:40 등교 지도가 있습니다! 07:35까지 정문 교문/중앙현관에 도착해 주세요.`,
+    'TRIGGER:-PT1H',
+    'END:VALARM',
+    // 3. 10분 전 긴급 알림
+    'BEGIN:VALARM',
+    'ACTION:DISPLAY',
+    `DESCRIPTION:[긴급! 등교지도 10분 전] 곧 07:40 등교 지도가 시작됩니다! 즉시 교문/중앙현관으로 이동 바랍니다.`,
+    'TRIGGER:-PT10M',
     'END:VALARM',
     'END:VEVENT',
   ];
@@ -397,7 +405,7 @@ export function AcademicCalendarSyncModal() {
                   <div className="flex items-center justify-between text-[11px] text-amber-900 font-semibold">
                     <span>
                       <Bell className="w-3 h-3 text-amber-600 inline mr-1" />
-                      07:40~08:20 · 총 {myDutySlots.length}회 ({futureDutySlots.length}회 남음)
+                      07:40~08:20 (07:35까지 현장도착) · {futureDutySlots.length}회 남음 · 1일 전/1시간 전/10분 전 3중 알림
                     </span>
                     {futureDutySlots.length > 0 && (
                       <button
@@ -422,11 +430,11 @@ export function AcademicCalendarSyncModal() {
                         const isPast = new Date(slot.dateStr) < today;
                         const slotKey = slot.dateStr;
                         const googleUrl = buildGoogleCalendarUrl({
-                          title: `[등교지도] ${selectedTeacherName} 선생님 교문 등교 지도 (07:40~08:20)${slot.roundNumber ? ` (${slot.roundNumber}회차)` : ''}`,
+                          title: `[등교지도 필수근무] ${selectedTeacherName} 선생님 교문 등교 지도 (07:40~08:20)${slot.roundNumber ? ` (${slot.roundNumber}회차)` : ''}`,
                           startDateStr: slot.dateStr,
                           startTime: slot.startTime || '07:40',
                           endTime: slot.endTime || '08:20',
-                          description: `호치민시한국국제학교 오전 교문 등교지도 근무 시간입니다.\n· 담당 교사: ${selectedTeacherName} 선생님\n· 일자: ${slot.dateStr} (${slot.dayOfWeekName || ''})\n· 위치: 정문 교문 및 중앙현관`,
+                          description: `호치민시한국국제학교 오전 교문 등교지도 필수 근무 시간입니다.\n· 담당 교사: ${selectedTeacherName} 선생님\n· 일자: ${slot.dateStr} (${slot.dayOfWeekName || ''})\n· 근무 시간: 07:40 ~ 08:20 (시간 엄수: 07:35까지 현장 도착 필수)\n· 위치: 정문 교문 및 중앙현관\n· 긴급상황 시 학생생활안전부/보건실 즉시 연락`,
                           location: '호치민시한국국제학교 교문/중앙현관',
                         });
 
