@@ -362,3 +362,64 @@ export function formatStandardBusNo(raw?: any): string {
 
   return str.endsWith('호차') ? str : (str.endsWith('호') ? `${str}차` : `${str}호차`);
 }
+
+/**
+ * 등교지도 근무일정 전용 ICS 파일 생성
+ * 미래 근무일만 필터된 슬롯을 받아 단독 캘린더 파일을 생성한다.
+ */
+export function generateGateDutyIcsFile(
+  teacherName: string,
+  dutySlots: Array<{ dateStr: string; dayOfWeekName?: string; startTime?: string; endTime?: string; roundNumber?: number }>
+): string {
+  const lines: string[] = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//KSHCM//Gate Duty Calendar//KO',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    `X-WR-CALNAME:${teacherName} 선생님 등교지도 근무 일정`,
+    'X-WR-TIMEZONE:Asia/Ho_Chi_Minh',
+    'BEGIN:VTIMEZONE',
+    'TZID:Asia/Ho_Chi_Minh',
+    'X-LIC-LOCATION:Asia/Ho_Chi_Minh',
+    'BEGIN:STANDARD',
+    'TZOFFSETFROM:+0700',
+    'TZOFFSETTO:+0700',
+    'TZNAME:+07',
+    'DTSTART:19700101T000000',
+    'END:STANDARD',
+    'END:VTIMEZONE'
+  ];
+
+  dutySlots.forEach((slot) => {
+    if (!slot.dateStr) return;
+    const cleanDate = slot.dateStr.replace(/-/g, '');
+    const startTime = (slot.startTime || '07:40').replace(':', '') + '00';
+    const endTime = (slot.endTime || '08:20').replace(':', '') + '00';
+    const roundLabel = slot.roundNumber ? ` (${slot.roundNumber}회차)` : '';
+
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:gateduty-${cleanDate}-${teacherName}@kshcm.school`,
+      `SUMMARY:[등교지도] ${teacherName} 선생님 교문 등교 지도 (07:40~08:20)${roundLabel}`,
+      `DTSTART;TZID=Asia/Ho_Chi_Minh:${cleanDate}T${startTime}`,
+      `DTEND;TZID=Asia/Ho_Chi_Minh:${cleanDate}T${endTime}`,
+      `DESCRIPTION:호치민시한국국제학교 오전 교문 등교지도 근무 시간입니다.\\n· 담당 교사: ${teacherName} 선생님\\n· 일자: ${slot.dateStr} (${slot.dayOfWeekName || ''})${roundLabel}\\n· 근무 시간: 오전 07:40 ~ 08:20 (40분간)\\n· 위치: 정문 교문 및 중앙현관`,
+      'STATUS:CONFIRMED',
+      'BEGIN:VALARM',
+      'ACTION:DISPLAY',
+      `DESCRIPTION:[등교지도 사전알림] 내일(${slot.dateStr}) 오전 07:40 교문 등교지도 근무가 있습니다!`,
+      'TRIGGER:-P1D',
+      'END:VALARM',
+      'BEGIN:VALARM',
+      'ACTION:DISPLAY',
+      `DESCRIPTION:[등교지도 30분 전] 곧 교문 등교지도(07:40~08:20)가 시작됩니다!`,
+      'TRIGGER:-PT30M',
+      'END:VALARM',
+      'END:VEVENT'
+    );
+  });
+
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}

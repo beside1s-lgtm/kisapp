@@ -232,10 +232,10 @@ export function ScheduleCalendarSyncModal({
           <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-200 text-[11px] text-blue-900 leading-relaxed space-y-1">
             <div className="font-bold flex items-center gap-1 text-blue-950">
               <ExternalLink className="w-3 h-3 text-blue-600" />
-              <span>구글 캘린더 바로 등록 지원</span>
+              <span>개별 일정 구글 캘린더 등록 지원</span>
             </div>
             <p>
-              하단의 <strong>[구글 캘린더 바로 열기]</strong>를 누르면 다운로드 없이 캘린더 창이 바로 열립니다. 전체 일정 일괄 등록을 원하실 경우 <strong>[.ics 다운로드]</strong>를 이용하세요.
+              각 일정 목록 우측의 <strong>[+등록]</strong> 버튼을 누르면 해당 일정만 구글 캘린더에 즉시 등록됩니다. 전체 일정을 한 번에 저장하려면 <strong>[.ics 다운로드]</strong>를 이용하세요.
             </p>
           </div>
 
@@ -310,36 +310,14 @@ export function ScheduleCalendarSyncModal({
             .ics 다운로드
           </Button>
 
-          <div className="flex items-center gap-1.5 justify-end">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => onOpenChange(false)}
-              className="h-8 text-xs font-semibold"
-            >
-              닫기
-            </Button>
-            {/* 첫 번째 일정 구글 캘린더 바로 열기 버튼 */}
-            {totalEventCount > 0 && (() => {
-              const firstSchedule = filteredWeeklySchedules[0];
-              const firstEvent = filteredAcademicEvents[0];
-              const targetUrl = firstSchedule 
-                ? buildWeeklyScheduleGoogleCalendarUrl(firstSchedule)
-                : (firstEvent ? buildAcademicEventGoogleCalendarUrl(firstEvent) : '');
-
-              return (
-                <a
-                  href={targetUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="h-8 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 inline-flex items-center gap-1 shadow-xs transition-colors"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>구글 캘린더 바로 열기</span>
-                </a>
-              );
-            })()}
-          </div>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => onOpenChange(false)}
+            className="h-8 text-xs font-semibold"
+          >
+            닫기
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

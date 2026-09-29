@@ -5,8 +5,8 @@ import { useAuth } from '@/hooks/use-auth';
 import { onDocConfigUpdate, getDocConfig } from '@/lib/services/settingsService';
 import { updateUserCalendarAck } from '@/lib/services/userService';
 import type { AcademicCalendarConfig, AcademicEvent } from '@/lib/types';
-import { generateAcademicIcsFile } from '@/lib/utils';
-import { buildGoogleCalendarUrl, buildAcademicEventGoogleCalendarUrl } from '@/lib/services/calendarExportService';
+import { generateAcademicIcsFile, generateGateDutyIcsFile } from '@/lib/utils';
+import { buildAcademicEventGoogleCalendarUrl } from '@/lib/services/calendarExportService';
 import { onMorningGateDutyUpdate, extractTeacherDutySlots, type MultiSemesterMorningGateDutyConfig } from '@/lib/kisbus/morning-gate-duty';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Calendar, Globe, Check, Lock, Sun, Clock, Bell, BellOff, UserCheck, Sparkles, AlertCircle } from 'lucide-react';
+import { Calendar, Globe, Check, Lock, Sun, Clock, Bell, BellOff, UserCheck, Sparkles, AlertCircle, Download } from 'lucide-react';
 
 import { usePathname } from 'next/navigation';
 
@@ -223,9 +223,30 @@ export function AcademicCalendarSyncModal() {
     }
   };
 
-  const handleGoogleCalendarSync = () => {
-    handleDownloadIcs();
-    window.open('https://calendar.google.com/calendar/r/settings/export', '_blank');
+  // 오늘 이후 미래 근무일만 필터하여 일괄 ICS 다운로드
+  const handleDownloadGateDutyIcs = () => {
+    if (!gateDutyConfig || !selectedTeacherName) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const futureSlots = myDutySlots.filter(slot => {
+      const d = new Date(slot.dateStr);
+      return d >= today;
+    });
+    if (futureSlots.length === 0) return;
+    try {
+      const icsContent = generateGateDutyIcsFile(selectedTeacherName, futureSlots);
+      const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `등교지도_${selectedTeacherName}_근무일정.ics`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   // 로그인되지 않았거나, 대시보드 외 경로(로그인/초기화면 등)에 있거나 로딩 중이면 모달을 렌더링하지 않음 (로그인 전 노출 원천 차단)
@@ -323,49 +344,48 @@ export function AcademicCalendarSyncModal() {
                     </div>
                   </div>
 
-                      {/* 배정된 근무일 미리보기 */}
-                  {myDutySlots.length > 0 ? (
-                    <div className="space-y-1.5">
-                      <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 bg-white/90 rounded-lg border border-amber-100">
-                        {myDutySlots.map((slot, idx) => {
-                          const dutyUrl = buildGoogleCalendarUrl({
-                            title: `[등교지도] ${selectedTeacherName || '선생님'} 교문 등교 지도 (07:40~08:20)`,
-                            startDateStr: slot.dateStr,
-                            startTime: slot.startTime || '07:40',
-                            endTime: slot.endTime || '08:20',
-                            description: `호치민시한국국제학교 오전 교문 등교지도 근무 시간입니다.\n· 담당 교사: ${selectedTeacherName} 선생님\n· 일자: ${slot.dateStr} (${slot.dayOfWeekName || ''}) ${slot.roundNumber ? `${slot.roundNumber}회차` : ''}\n· 근무 시간: 07:40 ~ 08:20\n· 위치: 정문 교문 및 중앙현관`,
-                            location: '호치민시한국국제학교 교문/중앙현관'
-                          });
 
-                          return (
-                            <div 
-                              key={`${slot.dateStr}-${idx}`}
-                              className="inline-flex items-center gap-1.5 px-2 py-1 bg-amber-50 border border-amber-200 rounded-md text-[10px] font-semibold text-amber-900 group"
-                            >
-                              <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                              <span>{slot.dateStr} ({slot.dayOfWeekName})</span>
-                              {slot.roundNumber && (
-                                <span className="text-amber-600 font-normal">[{slot.roundNumber}회차]</span>
-                              )}
-                              <a
-                                href={dutyUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="ml-1 text-[9px] font-bold bg-amber-200 hover:bg-amber-300 text-amber-900 px-1 py-0.5 rounded transition-colors"
-                                title="이 근무일 구글 캘린더에 바로 등록"
+                      {/* 배정된 근무일 미리보기 */}
+                  {myDutySlots.length > 0 ? (() => {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const futureCount = myDutySlots.filter(s => new Date(s.dateStr) >= today).length;
+                    return (
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 bg-white/90 rounded-lg border border-amber-100">
+                          {myDutySlots.map((slot, idx) => {
+                            const isPast = new Date(slot.dateStr) < today;
+                            return (
+                              <div
+                                key={`${slot.dateStr}-${idx}`}
+                                className={`inline-flex items-center gap-1.5 px-2 py-1 border rounded-md text-[10px] font-semibold ${isPast ? 'bg-slate-100 border-slate-200 text-slate-400 line-through' : 'bg-amber-50 border-amber-200 text-amber-900'}`}
                               >
-                                +캘린더
-                              </a>
-                            </div>
-                          );
-                        })}
+                                <Clock className="w-3 h-3 shrink-0" />
+                                <span>{slot.dateStr} ({slot.dayOfWeekName})</span>
+                                {slot.roundNumber && (
+                                  <span className="font-normal">[{slot.roundNumber}회차]</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-[10px] text-amber-700/90">⏰ 근무: 07:40 ~ 08:20 (40분) · 지난 날짜는 취소선 표시</span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={futureCount === 0}
+                            onClick={handleDownloadGateDutyIcs}
+                            className="h-7 text-[10px] font-bold bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100 px-2 shrink-0"
+                          >
+                            <Download className="w-3 h-3 mr-1" />
+                            앞으로 {futureCount}회 일괄 등록 (.ics)
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between text-[10px] text-amber-700/90 px-0.5">
-                        <span>⏰ 근무: 07:40 ~ 08:20 (40분)</span>
-                        <span>🔔 [+캘린더] 클릭 시 구글 캘린더에 즉시 등록</span>
-                      </div>
-                    </div>
-                  ) : (
+                    );
+                  })() : (
                     <div className="p-2 bg-white/80 rounded-lg border border-amber-100 text-center text-slate-500 text-[11px]">
                       {selectedTeacherName} 선생님으로 배정된 등교지도 일정이 없습니다.
                     </div>
@@ -500,18 +520,6 @@ export function AcademicCalendarSyncModal() {
             >
               전체 .ics 다운로드
             </Button>
-            {visibleEvents.length > 0 && (
-              <a
-                href={buildAcademicEventGoogleCalendarUrl(visibleEvents[0])}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={handleAcknowledge}
-                className="h-9 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs px-4 inline-flex items-center justify-center transition-colors"
-              >
-                <Globe className="w-3.5 h-3.5 mr-1.5" />
-                구글 캘린더에 바로 등록
-              </a>
-            )}
           </div>
         </DialogFooter>
       </DialogContent>
