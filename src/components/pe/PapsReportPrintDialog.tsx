@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Printer, X, Award, CheckCircle2, User, Sparkles } from 'lucide-react';
 import type { Student, MeasurementItem, MeasurementRecord } from '@/lib/pe/types';
 import { buildPapsStudentReport, type PapsStudentReportData } from '@/lib/pe/papsReportCommentEngine';
+import { getDocConfig, onDocConfigUpdate } from '@/lib/services/settingsService';
 
 interface PapsReportPrintDialogProps {
   open: boolean;
@@ -30,6 +31,24 @@ export default function PapsReportPrintDialog({
   const [selectedGrade, setSelectedGrade] = useState<string>(initialGrade);
   const [selectedClassNum, setSelectedClassNum] = useState<string>(initialClassNum);
   const [selectedStudentId, setSelectedStudentId] = useState<string>('all');
+  const [headerImage, setHeaderImage] = useState<string>('');
+
+  // 시스템 설정의 헤더 이미지 (학교 이름 이미지) 동적 바인딩
+  useEffect(() => {
+    getDocConfig().then(cfg => {
+      if (cfg?.headerImage) {
+        setHeaderImage(cfg.headerImage);
+      }
+    });
+
+    const unsub = onDocConfigUpdate(cfg => {
+      if (cfg?.headerImage !== undefined) {
+        setHeaderImage(cfg.headerImage || '');
+      }
+    });
+
+    return () => unsub();
+  }, []);
 
   // 사용 가능한 학년 및 반 목록
   const { grades, classNumsByGrade } = useMemo(() => {
@@ -153,6 +172,14 @@ export default function PapsReportPrintDialog({
               page-break-after: auto !important;
               break-after: auto !important;
             }
+            .paps-school-logo {
+              height: 24px !important;
+              max-height: 24px !important;
+              max-width: 200px !important;
+              object-fit: contain !important;
+              display: inline-block !important;
+              vertical-align: middle !important;
+            }
             @media screen {
               body {
                 background: #f1f5f9 !important;
@@ -172,7 +199,7 @@ export default function PapsReportPrintDialog({
               setTimeout(function() {
                 window.focus();
                 window.print();
-              }, 400);
+              }, 500);
             };
           </script>
         </body>
@@ -285,6 +312,7 @@ export default function PapsReportPrintDialog({
                 key={report.student.id || idx}
                 report={report}
                 isLast={idx === reportsData.length - 1}
+                headerImage={headerImage}
               />
             ))
           )}
@@ -297,7 +325,15 @@ export default function PapsReportPrintDialog({
 /**
  * 개별 학생 PAPS 맞춤형 체력평가 보고서 A4 1페이지 서식
  */
-function SingleStudentPapsSheet({ report, isLast }: { report: PapsStudentReportData; isLast: boolean }) {
+function SingleStudentPapsSheet({
+  report,
+  isLast,
+  headerImage,
+}: {
+  report: PapsStudentReportData;
+  isLast: boolean;
+  headerImage?: string;
+}) {
   const { student, academicYear, evaluations, totalScore, finalGrade, measuredDate } = report;
 
   return (
@@ -521,10 +557,26 @@ function SingleStudentPapsSheet({ report, isLast }: { report: PapsStudentReportD
             발행일자: {measuredDate}
           </div>
 
-          <div className="text-right">
-            <span className="text-sm font-black tracking-widest text-slate-900">
-              호치민시한국국제학교
-            </span>
+          <div className="text-right flex items-center justify-end h-6 sm:h-7 min-w-[120px]">
+            {headerImage ? (
+              <img
+                src={headerImage}
+                alt="호치민시한국국제학교"
+                className="paps-school-logo object-contain"
+                style={{
+                  height: '24px',
+                  maxHeight: '24px',
+                  maxWidth: '190px',
+                  objectFit: 'contain',
+                  display: 'inline-block',
+                  verticalAlign: 'middle',
+                }}
+              />
+            ) : (
+              <span className="text-sm font-black tracking-widest text-slate-900">
+                호치민시한국국제학교
+              </span>
+            )}
           </div>
         </div>
       </div>
