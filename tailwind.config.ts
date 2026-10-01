@@ -54,6 +54,25 @@ const config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // 학교 공식 테마 브랜드 색상 토큰 (School Brand Color Tokens)
+        brand: {
+          DEFAULT: "var(--primary-color, #2471B2)",
+          blue: {
+            DEFAULT: "var(--primary-color, #2471B2)",
+            hover: "var(--brand-blue-hover, #1e5e95)",
+            light: "var(--brand-blue-light, #eef6fc)",
+          },
+          red: {
+            DEFAULT: "var(--secondary-color, #B01E23)",
+            hover: "var(--brand-red-hover, #93181d)",
+            light: "var(--brand-red-light, #fdf2f2)",
+          },
+          gold: {
+            DEFAULT: "var(--accent-color, #C49832)",
+            hover: "var(--brand-gold-hover, #a88127)",
+            light: "var(--brand-gold-light, #fcf8ee)",
+          },
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

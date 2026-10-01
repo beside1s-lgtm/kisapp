@@ -195,7 +195,7 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
               <h1 style={{ fontSize: '17pt', fontWeight: 900, letterSpacing: '-0.02em', whiteSpace: 'nowrap', lineHeight: 1.2, margin: 0 }}>
                 「학교장허가 교외체험학습」 신청서
               </h1>
-              <p style={{ color: '#dc2626', fontWeight: 'bold', fontSize: '8.5pt', marginTop: '3px', marginBottom: 0, textAlign: 'center' }}>
+              <p style={{ color: '#b01e23', fontWeight: 'bold', fontSize: '8.5pt', marginTop: '3px', marginBottom: 0, textAlign: 'center' }}>
                 (체험학습 실시 7일전 제출)
               </p>
             </div>
@@ -225,9 +225,9 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
               <td style={{ border: '1px solid #000', whiteSpace: 'nowrap', padding: '0 4px', fontWeight: 500 }}>{data.phone}</td>
             </tr>
             <tr style={{ height: '42px' }}>
-              <th rowSpan={2} style={{ border: '1px solid #000', backgroundColor: '#f8fafc', color: '#dc2626', fontWeight: 'bold', fontSize: '8pt', lineHeight: 1.15, padding: '2px', wordBreak: 'keep-all' }}>
+              <th rowSpan={2} style={{ border: '1px solid #000', backgroundColor: '#f8fafc', color: '#b01e23', fontWeight: 'bold', fontSize: '8pt', lineHeight: 1.15, padding: '2px', wordBreak: 'keep-all' }}>
                 본교 출석인정기간<br/>
-                <span style={{ fontSize: '7pt', fontWeight: 600, color: '#ef4444' }}>(휴일 제외, 학기당 7일,<br/>연간 14일)</span>
+                <span style={{ fontSize: '7pt', fontWeight: 600, color: '#b01e23' }}>(휴일 제외, 학기당 7일,<br/>연간 14일)</span>
               </th>
               <th style={{ border: '1px solid #000', backgroundColor: '#f8fafc', fontWeight: 'bold', fontSize: '9pt', whiteSpace: 'nowrap' }}>신청 기간</th>
               <td colSpan={4} style={{ border: '1px solid #000', textAlign: 'left', padding: '0 10px', fontSize: '9pt' }}>
@@ -345,7 +345,7 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
               <h1 style={{ fontSize: '17pt', fontWeight: 900, letterSpacing: '-0.02em', whiteSpace: 'nowrap', lineHeight: 1.2, margin: 0 }}>
                 「학교장허가 교외체험학습」 결과보고서
               </h1>
-              <p style={{ color: '#dc2626', fontWeight: 'bold', fontSize: '8.5pt', marginTop: '3px', marginBottom: 0, textAlign: 'center' }}>
+              <p style={{ color: '#b01e23', fontWeight: 'bold', fontSize: '8.5pt', marginTop: '3px', marginBottom: 0, textAlign: 'center' }}>
                 (체험학습 실시 후 7일 이내 제출)
               </p>
             </div>

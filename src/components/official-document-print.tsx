@@ -124,7 +124,7 @@ export const OfficialDocumentPrint = React.forwardRef<HTMLDivElement, OfficialDo
                   <div style={{ display: 'flex' as const, flexDirection: 'column' as const, alignItems: 'flex-start' as const, lineHeight: 1.2 }}>
                     <span style={{ fontWeight: 'bold' }}>{ap.role}</span>
                     {ap.type !== 'normal' && getTypeText(ap.type, ap.role) && (
-                      <span style={{ fontSize: '9pt', color: '#4338ca', fontWeight: 'bold' }}>{getTypeText(ap.type, ap.role)}</span>
+                      <span style={{ fontSize: '9pt', color: '#2471b2', fontWeight: 'bold' }}>{getTypeText(ap.type, ap.role)}</span>
                     )}
                   </div>
                   <div style={{ display: 'flex' as const, alignItems: 'center' as const, gap: '4px' }}>

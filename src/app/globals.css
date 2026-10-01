@@ -7,25 +7,65 @@
 @layer base {
   :root {
     color-scheme: light;
+    
+    /* ============================================================
+       [학교 공식 브랜드 테마 색상 (School Brand Colors - CMYK 변환)]
+       - Color 1 (메인 블루): C:86%, M:55%, Y:7%, K:0% -> #2471B2 (RGB: 36, 113, 178)
+       - Color 2 (포인트 레드·버건디): C:30%, M:100%, Y:97%, K:1% -> #B01E23 (RGB: 176, 30, 35)
+       - Color 3 (서브 골드·올리브 옐로우): C:26%, M:40%, Y:93%, K:0% -> #C49832 (RGB: 196, 152, 50)
+       ============================================================ */
+    --primary-color: #2471b2;
+    --primary-color-rgb: 36, 113, 178;
+    --primary-color-hsl: 207 66% 42%;
+
+    --secondary-color: #b01e23;
+    --secondary-color-rgb: 176, 30, 35;
+    --secondary-color-hsl: 358 71% 40%;
+
+    --accent-color: #c49832;
+    --accent-color-rgb: 196, 152, 50;
+    --accent-color-hsl: 42 59% 48%;
+
+    /* 브랜드 디자인 토큰 별칭 */
+    --brand-blue: #2471b2;
+    --brand-blue-hover: #1e5e95;
+    --brand-blue-light: #eef6fc;
+    --brand-red: #b01e23;
+    --brand-red-hover: #93181d;
+    --brand-red-light: #fdf2f2;
+    --brand-gold: #c49832;
+    --brand-gold-hover: #a88127;
+    --brand-gold-light: #fcf8ee;
+
+    /* 기본 레이아웃 및 텍스트 (가독성을 위한 기본 흑색 계열 #111111/#222222 유지) */
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 0 0% 13%; /* #222222 가독성 최우선 본문 흑색 */
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 0 0% 13%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --popover-foreground: 0 0% 13%;
+
+    /* ShadCN UI 시맨틱 매핑: Color 1 (메인 블루) -> primary */
+    --primary: 207 66% 42%; /* #2471b2 */
+    --primary-foreground: 0 0% 100%; /* White */
+
+    /* ShadCN UI 시맨틱 매핑: Color 3 (서브 골드) -> secondary */
+    --secondary: 42 59% 48%; /* #c49832 */
+    --secondary-foreground: 0 0% 100%; /* White */
+
+    /* ShadCN UI 시맨틱 매핑: Color 2 (포인트 레드·버건디) -> destructive */
+    --destructive: 358 71% 40%; /* #b01e23 */
+    --destructive-foreground: 0 0% 100%; /* White */
+
+    /* 보조 및 액센트 */
+    --muted: 210 20% 96.1%;
+    --muted-foreground: 215 16% 45%;
+    --accent: 207 60% 96%; /* 메인 블루 틴트 배경 */
+    --accent-foreground: 207 66% 30%;
+    
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --ring: 207 66% 42%; /* 메인 블루 포커스 링 */
     --radius: 0.5rem;
     --font-noto-sans-kr: 'Noto Sans KR', sans-serif;
   }

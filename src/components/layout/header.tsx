@@ -132,14 +132,14 @@ export function AppHeader() {
 
   return (
     <>
-      <header className="flex h-14 sm:h-16 items-center justify-between border-b bg-card px-2.5 sm:px-4 lg:px-6 w-full max-w-full overflow-hidden min-w-0">
+      <header className="flex h-14 sm:h-16 items-center justify-between border-b border-border/80 border-t-2 border-t-primary bg-card px-2.5 sm:px-4 lg:px-6 w-full max-w-full overflow-hidden min-w-0 shadow-2xs">
         {/* 좌측: 로고 및 사이드바 토글 버튼 (절대 찌그러지거나 우측 요소와 겹치지 않도록 shrink-0) */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <Link 
             href={profile?.role === '강사' ? "/teacher/afterschool" : "/inbox"} 
             className="hidden sm:flex items-center gap-2 sm:gap-4 cursor-pointer hover:opacity-80 transition-opacity shrink-0"
           >
-            <div className="bg-primary p-1.5 sm:p-2 rounded-lg text-primary-foreground">
+            <div className="bg-primary p-1.5 sm:p-2 rounded-lg text-primary-foreground shadow-xs shadow-primary/20">
               <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <h1 className="font-headline text-sm sm:text-lg font-bold tracking-tight text-foreground uppercase hidden sm:block whitespace-nowrap">
@@ -171,7 +171,7 @@ export function AppHeader() {
               <span className="text-slate-300 shrink-0">|</span>
               <div className="flex items-center gap-1 min-w-0 truncate">
                 <span className="text-slate-400 shrink-0">담당:</span>
-                <span className="text-blue-600 font-semibold truncate">{info.managers}</span>
+                <span className="text-primary font-semibold truncate">{info.managers}</span>
               </div>
               <span className="text-slate-300 shrink-0">|</span>
               <div className="flex items-center gap-1 shrink-0">
@@ -194,7 +194,7 @@ export function AppHeader() {
             >
               <Bell className="h-5 w-5" />
               {pendingApprovalCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-rose-600 text-[10px] font-extrabold text-white animate-pulse shadow-xs">
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-destructive text-[10px] font-extrabold text-white animate-pulse shadow-xs">
                   {pendingApprovalCount > 99 ? '99+' : pendingApprovalCount}
                 </span>
               )}
@@ -238,10 +238,10 @@ export function AppHeader() {
                 </ProfileModal>
 
                 <DropdownMenuItem onSelect={() => setIsNotifModalOpen(true)}>
-                  <BellRing className="mr-2 h-4 w-4 text-indigo-600" />
+                  <BellRing className="mr-2 h-4 w-4 text-primary" />
                   <span>알림 & 배지 설정</span>
                   {pendingApprovalCount > 0 && (
-                    <Badge className="ml-auto bg-rose-500 text-white text-[10px] h-4 px-1.5 font-bold">
+                    <Badge className="ml-auto bg-destructive text-white text-[10px] h-4 px-1.5 font-bold">
                       {pendingApprovalCount}
                     </Badge>
                   )}

@@ -77,6 +77,7 @@ export function AppFooter({ className }: { className?: string }) {
       >
         <div className="flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-6 px-3 max-w-4xl mx-auto">
           {/* 전용 앱으로 접속하지 않은 경우 개인정보처리방침 바로 위에 전용 앱 설치 버튼 노출 */}
+          {/* 전용 앱으로 접속하지 않은 경우 개인정보처리방침 바로 위에 전용 앱 설치 버튼 노출 */}
           {isMounted && !isStandalone && (
             <div className="flex items-center justify-center">
               <Button
@@ -84,11 +85,11 @@ export function AppFooter({ className }: { className?: string }) {
                 variant="outline"
                 size="sm"
                 onClick={handleInstallClick}
-                className="h-7 px-3 rounded-full border-indigo-200 hover:border-indigo-400 bg-indigo-50/70 hover:bg-indigo-100/80 text-indigo-900 font-bold text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                className="h-7 px-3 rounded-full border-primary/30 hover:border-primary/60 bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
               >
-                <Download className="w-3 h-3 text-indigo-600 stroke-[2.2]" />
+                <Download className="w-3 h-3 text-primary stroke-[2.2]" />
                 <span>전용 앱 설치하기</span>
-                <span className="text-[9px] bg-indigo-600 text-white font-extrabold px-1.5 py-0.2 rounded-full ml-0.5">
+                <span className="text-[9px] bg-primary text-primary-foreground font-extrabold px-1.5 py-0.2 rounded-full ml-0.5">
                   설치
                 </span>
               </Button>
@@ -117,7 +118,7 @@ export function AppFooter({ className }: { className?: string }) {
           <div className="bg-white text-slate-900 w-full max-w-sm rounded-3xl p-5 shadow-2xl border flex flex-col gap-4 animate-in slide-in-from-bottom-4 duration-300">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold shadow-xs">
+                <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center text-primary-foreground font-bold shadow-xs">
                   <Smartphone className="w-4 h-4" />
                 </div>
                 <div>
@@ -139,31 +140,31 @@ export function AppFooter({ className }: { className?: string }) {
 
             {isIos ? (
               <div className="space-y-2.5 text-xs text-slate-700 bg-slate-50 p-3.5 rounded-2xl border">
-                <div className="font-bold text-indigo-700 pb-1 border-b text-xs flex items-center gap-1.5">
+                <div className="font-bold text-primary pb-1 border-b text-xs flex items-center gap-1.5">
                   <span>아이폰 / 아이패드 (Safari)</span>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="w-4.5 h-4.5 rounded-full bg-indigo-100 text-indigo-700 font-extrabold flex items-center justify-center shrink-0 text-[11px]">
+                  <span className="w-4.5 h-4.5 rounded-full bg-primary/10 text-primary font-extrabold flex items-center justify-center shrink-0 text-[11px]">
                     1
                   </span>
                   <p>
                     Safari 브라우저 하단의 <strong>공유 버튼</strong>(
-                    <Share className="inline w-3 h-3 text-indigo-600 mx-0.5" />
+                    <Share className="inline w-3 h-3 text-primary mx-0.5" />
                     )을 누릅니다.
                   </p>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="w-4.5 h-4.5 rounded-full bg-indigo-100 text-indigo-700 font-extrabold flex items-center justify-center shrink-0 text-[11px]">
+                  <span className="w-4.5 h-4.5 rounded-full bg-primary/10 text-primary font-extrabold flex items-center justify-center shrink-0 text-[11px]">
                     2
                   </span>
                   <p>
                     메뉴에서 <strong>[홈 화면에 추가]</strong>(
-                    <PlusSquare className="inline w-3 h-3 text-indigo-600 mx-0.5" />
+                    <PlusSquare className="inline w-3 h-3 text-primary mx-0.5" />
                     ) 항목을 선택합니다.
                   </p>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="w-4.5 h-4.5 rounded-full bg-indigo-100 text-indigo-700 font-extrabold flex items-center justify-center shrink-0 text-[11px]">
+                  <span className="w-4.5 h-4.5 rounded-full bg-primary/10 text-primary font-extrabold flex items-center justify-center shrink-0 text-[11px]">
                     3
                   </span>
                   <p>우측 상단의 <strong>[추가]</strong>를 누르면 홈 화면에 앱 아이콘이 생성됩니다.</p>
@@ -171,11 +172,11 @@ export function AppFooter({ className }: { className?: string }) {
               </div>
             ) : (
               <div className="space-y-2.5 text-xs text-slate-700 bg-slate-50 p-3.5 rounded-2xl border">
-                <div className="font-bold text-indigo-700 pb-1 border-b text-xs flex items-center gap-1.5">
+                <div className="font-bold text-primary pb-1 border-b text-xs flex items-center gap-1.5">
                   <span>안드로이드 (Chrome / 삼성인터넷) & PC</span>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="w-4.5 h-4.5 rounded-full bg-indigo-100 text-indigo-700 font-extrabold flex items-center justify-center shrink-0 text-[11px]">
+                  <span className="w-4.5 h-4.5 rounded-full bg-primary/10 text-primary font-extrabold flex items-center justify-center shrink-0 text-[11px]">
                     1
                   </span>
                   <p>
@@ -183,7 +184,7 @@ export function AppFooter({ className }: { className?: string }) {
                   </p>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="w-4.5 h-4.5 rounded-full bg-indigo-100 text-indigo-700 font-extrabold flex items-center justify-center shrink-0 text-[11px]">
+                  <span className="w-4.5 h-4.5 rounded-full bg-primary/10 text-primary font-extrabold flex items-center justify-center shrink-0 text-[11px]">
                     2
                   </span>
                   <p>
@@ -191,7 +192,7 @@ export function AppFooter({ className }: { className?: string }) {
                   </p>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="w-4.5 h-4.5 rounded-full bg-indigo-100 text-indigo-700 font-extrabold flex items-center justify-center shrink-0 text-[11px]">
+                  <span className="w-4.5 h-4.5 rounded-full bg-primary/10 text-primary font-extrabold flex items-center justify-center shrink-0 text-[11px]">
                     3
                   </span>
                   <p>확인을 누르면 홈 화면에 KIS 통합 포털 앱이 즉시 추가됩니다.</p>
@@ -201,7 +202,7 @@ export function AppFooter({ className }: { className?: string }) {
 
             <Button
               type="button"
-              className="w-full bg-indigo-600 hover:bg-indigo-700 font-bold text-xs h-9 rounded-xl text-white cursor-pointer"
+              className="w-full bg-primary hover:bg-primary/90 font-bold text-xs h-9 rounded-xl text-primary-foreground cursor-pointer shadow-xs shadow-primary/20"
               onClick={() => setShowGuideModal(false)}
             >
               확인했습니다

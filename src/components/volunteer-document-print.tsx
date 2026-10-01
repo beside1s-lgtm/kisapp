@@ -199,7 +199,7 @@ export const VolunteerDocumentPrint = React.forwardRef<HTMLDivElement, Volunteer
           <div className="flex flex-col justify-between" style={{ minHeight: '275mm', height: '100%' }}>
             <div>
               <div className="flex justify-between items-start mb-1.5">
-                <div className="text-xs text-blue-700 font-bold">&lt;서식1&gt;</div>
+                <div className="text-xs text-[#2471b2] font-bold">&lt;서식1&gt;</div>
                 
                 {/* 상단 3인 결재란 */}
                 <table style={{ borderCollapse: 'collapse', border: '1px solid black', textAlign: 'center', fontSize: '10px' }}>
@@ -248,13 +248,13 @@ export const VolunteerDocumentPrint = React.forwardRef<HTMLDivElement, Volunteer
                       <div className="mb-1 text-[12px]">
                         {startYear}년 {startMonth}월 {startDay}일 ({period.startDayOfWeek || ''})요일 ~ {endYear}년 {endMonth}월 {endDay}일 ({period.endDayOfWeek || ''})요일 ({totalDays})일간
                       </div>
-                      <div className="text-[10.5px] text-red-600 font-bold mb-1">
+                      <div className="text-[10.5px] text-[#b01e23] font-bold mb-1">
                         ※ 2026년 12월 24일 봉사활동 계획서 제출 마감
                       </div>
                       <div className="mb-1 text-[12px]">
                         봉사활동 계획 시간: 총 ( <b>{totalHours}</b> )시간
                       </div>
-                      <div className="text-[10.5px] text-red-600">
+                      <div className="text-[10.5px] text-[#b01e23]">
                         ※ 휴일, 공휴일 8시간 이내 인정 (학기 중 등교 시간은 미인정)
                       </div>
                     </td>
@@ -329,7 +329,7 @@ export const VolunteerDocumentPrint = React.forwardRef<HTMLDivElement, Volunteer
         {!isGroup && isReport && (
           <div className="flex flex-col justify-between" style={{ minHeight: '275mm', height: '100%' }}>
             <div>
-              <div className="text-xs text-blue-700 font-bold mb-1">&lt;서식2&gt;</div>
+              <div className="text-xs text-[#2471b2] font-bold mb-1">&lt;서식2&gt;</div>
               <h1 className="text-center font-bold text-2xl mb-1 tracking-wider">
                 봉사활동 확인서(초등)
               </h1>
@@ -376,7 +376,7 @@ export const VolunteerDocumentPrint = React.forwardRef<HTMLDivElement, Volunteer
                         <div>◎ {period.startTime || '09:00'} ~ {period.endTime || '13:00'}</div>
                         <div className="font-bold">({totalHours}) 시간</div>
                       </div>
-                      <div className="text-[10px] text-red-600 font-bold">
+                      <div className="text-[10px] text-[#b01e23] font-bold">
                         ※ 봉사활동 실적은 시간 단위로 기록 권장 &nbsp;&nbsp;|&nbsp;&nbsp; ※ 2026년 12월 31일 봉사활동 확인서 제출 마감
                       </div>
                       <div className="flex justify-between items-center text-[9.5px] text-muted-foreground mt-0.5 border-t pt-0.5">
@@ -470,7 +470,7 @@ export const VolunteerDocumentPrint = React.forwardRef<HTMLDivElement, Volunteer
           <div className="flex flex-col justify-between" style={{ minHeight: '275mm', height: '100%' }}>
             <div>
               <div className="flex justify-between items-start mb-1.5">
-                <div className="text-[11px] text-blue-700 font-bold italic">&lt;서식3&gt; 담당 선생님께서 파일 제출도 함께 부탁드립니다.</div>
+                <div className="text-[11px] text-[#2471b2] font-bold italic">&lt;서식3&gt; 담당 선생님께서 파일 제출도 함께 부탁드립니다.</div>
                 
                 {/* 상단 3인 결재란 */}
                 <table style={{ borderCollapse: 'collapse', border: '1px solid black', textAlign: 'center', fontSize: '10px' }}>
@@ -546,18 +546,18 @@ export const VolunteerDocumentPrint = React.forwardRef<HTMLDivElement, Volunteer
                   })}
 
                   <tr>
-                    <th style={{ border: '1px solid black', padding: '6px 5px', textAlign: 'center', backgroundColor: '#f8fafc', fontWeight: 'bold' }}>활동 기간</th>
+                    <th style={{ border: '1px solid black', padding: '5px', textAlign: 'center', backgroundColor: '#f8fafc', fontWeight: 'bold' }}>활동 기간</th>
                     <td colSpan={10} style={{ border: '1px solid black', padding: '6px 5px' }}>
                       <div className="mb-0.5 text-[11px]">
                         {startYear}년 {startMonth}월 {startDay}일 ({period.startDayOfWeek || ''})요일 ~ {endYear}년 {endMonth}월 {endDay}일 ({period.endDayOfWeek || ''})요일 ({totalDays})일간
                       </div>
-                      <div className="text-[10px] text-red-600 font-bold mb-0.5">
+                      <div className="text-[10px] text-[#b01e23] font-bold mb-0.5">
                         ※ 2026년 12월 24일 봉사활동 계획서 제출 마감
                       </div>
                       <div className="mb-0.5 text-[11px]">
                         봉사활동 계획 시간: 총 ( <b>{totalHours}</b> )시간
                       </div>
-                      <div className="text-[10px] text-red-600">
+                      <div className="text-[10px] text-[#b01e23]">
                         ※ 휴일, 공휴일 8시간 이내 인정 (학기 중 등교 시간은 미인정)
                       </div>
                     </td>
@@ -606,7 +606,7 @@ export const VolunteerDocumentPrint = React.forwardRef<HTMLDivElement, Volunteer
                 </div>
               </div>
 
-              <div className="mt-2.5 text-[10px] text-red-600 leading-normal pl-1">
+              <div className="mt-2.5 text-[10px] text-[#b01e23] leading-normal pl-1">
                 ※ 봉사활동 실시 7일 전까지 계획서 제출, 봉사활동 실시 이후 7일 내 확인서 제출 시 학교생활기록부에 등재
               </div>
 
@@ -623,7 +623,7 @@ export const VolunteerDocumentPrint = React.forwardRef<HTMLDivElement, Volunteer
         {isGroup && isReport && (
           <div className="flex flex-col justify-between" style={{ minHeight: '275mm', height: '100%' }}>
             <div>
-              <div className="text-[11px] text-blue-700 font-bold italic mb-1">&lt;서식4&gt; 담당 선생님께서 파일 제출도 함께 부탁드립니다.</div>
+              <div className="text-[11px] text-[#2471b2] font-bold italic mb-1">&lt;서식4&gt; 담당 선생님께서 파일 제출도 함께 부탁드립니다.</div>
               <h1 className="text-center font-bold text-xl mb-0.5 tracking-wider">
                 봉사활동 확인서(초등단체)
               </h1>
@@ -686,7 +686,7 @@ export const VolunteerDocumentPrint = React.forwardRef<HTMLDivElement, Volunteer
                         <div>◎ {startYear}년 {startMonth}월 {startDay}일 ~ {endYear}년 {endMonth}월 {endDay}일 &nbsp;&nbsp; ◎ {period.startTime || '09:00'} ~ {period.endTime || '13:00'}</div>
                         <div className="font-bold">({totalDays}) 일간 &nbsp; ({totalHours}) 시간</div>
                       </div>
-                      <div className="text-[9px] text-red-600 font-bold mt-0.5">
+                      <div className="text-[9px] text-[#b01e23] font-bold mt-0.5">
                         ※ 봉사활동 실적은 시간 단위로 기록 권장 &nbsp;&nbsp;|&nbsp;&nbsp; ※ 2026년 12월 31일 봉사활동 확인서 제출 마감
                       </div>
                       <div className="flex justify-between items-center text-[8.5px] text-muted-foreground mt-0.5 border-t pt-0.5">

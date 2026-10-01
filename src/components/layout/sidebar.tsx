@@ -151,7 +151,7 @@ const DropdownSection = ({
           <div className="flex items-center gap-2 shrink-0">
             {/* 드롭다운이 닫혀 있을 때 빨간색 동그라미 안의 'N' 배지 표시 */}
             {!isOpen && showNewBadge && (
-              <span className="w-5 h-5 rounded-full bg-red-600 text-white font-black text-[11px] flex items-center justify-center shadow-xs animate-pulse">
+              <span className="w-5 h-5 rounded-full bg-[#b01e23] text-white font-black text-[11px] flex items-center justify-center shadow-xs animate-pulse">
                 N
               </span>
             )}
@@ -556,16 +556,16 @@ export default function AppSidebar() {
                   onToggle={() => toggleSection('approval')}
                   hasActiveChild={isApprovalActive}
                 >
-                  <NavItem href="/inbox" label="미결재함" icon={<Inbox size={16} />} count={inboxCount} isSubItem badgeColor="bg-red-500 text-white" />
+                  <NavItem href="/inbox" label="미결재함" icon={<Inbox size={16} />} count={inboxCount} isSubItem badgeColor="bg-[#b01e23] text-white" />
                   <NavItem href="/sent" label="상신함" icon={<Send size={16} />} isSubItem />
-                  <NavItem href="/pending" label="진행 문서함" icon={<FileClock size={16} />} count={pendingCount} isSubItem badgeColor="bg-amber-500 text-white" />
+                  <NavItem href="/pending" label="진행 문서함" icon={<FileClock size={16} />} count={pendingCount} isSubItem badgeColor="bg-[#c49832] text-white" />
                   <NavItem href="/circular" label="공람 문서함" icon={<Eye size={16} />} isSubItem />
                   <NavItem href="/recalled" label="회수 문서함" icon={<Undo2 size={16} />} isSubItem />
-                  <NavItem href="/rejected" label="반려 문서함" icon={<XCircle size={16} className="text-red-500" />} isSubItem />
+                  <NavItem href="/rejected" label="반려 문서함" icon={<XCircle size={16} className="text-[#b01e23]" />} isSubItem />
                   <div className="h-px bg-border/60 my-1"></div>
                   <NavItem href="/registry" label="문서등록대장" icon={<ListFilter size={16} />} isSubItem />
-                  <NavItem href="/attendance-registry" label="결석계 보관함" icon={<CalendarCheck size={16} />} count={parentAbsenceCount} isSubItem badgeColor="bg-purple-600 text-white" />
-                  <NavItem href="/field-trip-registry" label="체험학습 문서함" icon={<FileText size={16} />} count={parentFieldTripCount} isSubItem badgeColor="bg-purple-600 text-white" />
+                  <NavItem href="/attendance-registry" label="결석계 보관함" icon={<CalendarCheck size={16} />} count={parentAbsenceCount} isSubItem badgeColor="bg-primary text-primary-foreground" />
+                  <NavItem href="/field-trip-registry" label="체험학습 문서함" icon={<FileText size={16} />} count={parentFieldTripCount} isSubItem badgeColor="bg-primary text-primary-foreground" />
                   <NavItem href="/volunteer?tab=registry" label="봉사활동 대장" icon={<HeartHandshake size={16} />} isSubItem />
                 </DropdownSection>
 

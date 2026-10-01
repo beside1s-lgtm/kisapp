@@ -242,6 +242,11 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
 * `src/lib/afterschool/schedule.ts` : 방과후 수업 요일/시간 스케줄 유틸
 * `src/lib/afterschool/fareCalculator.ts` : 방과후 수강료 및 버스 요금 계산
 
+### 라. 전역 디자인 시스템 및 학교 공식 브랜드 컬러
+* `src/app/globals.css` : 학교 공식 브랜드 컬러 3종(:root `--primary-color: #2471B2`, `--secondary-color: #B01E23`, `--accent-color: #C49832`) 및 ShadCN UI 시맨틱 HSL 토큰 정의
+* `tailwind.config.ts` : Tailwind CSS 설정 및 `brand` 확장 팔레트(brand.blue, brand.red, brand.gold) 토큰 등록
+* `src/components/ui/` : Button, Badge, Tabs, Alert 등 브랜드 테마와 동기화된 기본 원자 컴포넌트
+
 ---
 
 ## 5. 파일맵 유지 및 개발 원칙
