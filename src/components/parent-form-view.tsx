@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ApprovalDoc, ParentFormData, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, FieldTripBlackoutPeriod } from '@/lib/types';
 import { format } from 'date-fns';
+import { ExternalLink } from 'lucide-react';
 
 type ParentFormViewProps = {
   doc: ApprovalDoc;
@@ -909,17 +910,66 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
             </div>
           </div>
           <div className="text-[8pt] text-slate-500 mb-2">
-            ※ 본 증빙자료는 학부모(또는 학생)가 제출한 의사소견서/진료확인서/처방전 원본 촬영본입니다.
+            ※ 본 증빙자료는 학부모(또는 학생)가 제출한 의사소견서/진료확인서/처방전 원본 촬영본 또는 PDF 문서입니다.
           </div>
         </div>
 
-        {/* 증빙 사진 원본 뷰어 박스 */}
-        <div className="flex-1 min-h-0 flex items-center justify-center border border-slate-300 rounded bg-slate-50/70 p-2 overflow-hidden my-auto">
-          <img 
-            src={certImage} 
-            alt="소견서/진단서 증빙서류" 
-            className="max-w-full max-h-[220mm] object-contain shadow-xs rounded"
-          />
+        {/* 증빙 사진/PDF 원본 뷰어 박스 */}
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center border border-slate-300 rounded bg-slate-50/70 p-2 overflow-hidden my-auto relative">
+          {(() => {
+            const isPdf = typeof certImage === 'string' && (
+              certImage.startsWith('data:application/pdf') ||
+              certImage.includes('application/pdf') ||
+              (data.medicalCertificateName && data.medicalCertificateName.toLowerCase().endsWith('.pdf'))
+            );
+
+            if (isPdf) {
+              return (
+                <div className="w-full h-full flex flex-col items-center justify-between p-2">
+                  <div className="flex items-center justify-between w-full pb-2 mb-1.5 border-b border-slate-200">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 font-bold text-xs font-sans">
+                        PDF
+                      </div>
+                      <div>
+                        <span className="font-sans font-bold text-xs text-slate-800">
+                          {data.medicalCertificateName || '결석계_증빙서류.pdf'}
+                        </span>
+                        <span className="text-[10px] text-slate-500 block font-sans">
+                          의사소견서 / 진단서 PDF 원본 문서
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const w = window.open();
+                        if (w) w.location.href = certImage;
+                      }}
+                      className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs font-sans font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs inline-flex items-center gap-1 cursor-pointer print:hidden"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                      새 창에서 열기
+                    </button>
+                  </div>
+                  <iframe 
+                    src={certImage} 
+                    title="소견서/진단서 PDF"
+                    className="w-full flex-1 rounded border border-slate-200 bg-white"
+                    style={{ minHeight: '190mm' }}
+                  />
+                </div>
+              );
+            }
+
+            return (
+              <img 
+                src={certImage} 
+                alt="소견서/진단서 증빙서류" 
+                className="max-w-full max-h-[220mm] object-contain shadow-xs rounded"
+              />
+            );
+          })()}
         </div>
 
         {/* 하단 바닥글 */}

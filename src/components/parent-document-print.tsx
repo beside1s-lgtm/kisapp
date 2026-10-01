@@ -602,16 +602,36 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
               </div>
             </div>
             <div style={{ fontSize: '8pt', color: '#6b7280', marginBottom: '10px' }}>
-              ※ 본 증빙자료는 학부모(또는 학생)가 제출한 의사소견서/진료확인서/처방전 원본 촬영본입니다.
+              ※ 본 증빙자료는 학부모(또는 학생)가 제출한 의사소견서/진료확인서/처방전 원본 촬영본 또는 PDF 문서입니다.
             </div>
           </div>
 
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #d1d5db', borderRadius: '4px', backgroundColor: '#f9fafb', padding: '10px', overflow: 'hidden' }}>
-            <img 
-              src={certImage} 
-              alt="소견서/진단서 증빙서류" 
-              style={{ maxWidth: '100%', maxHeight: '210mm', objectFit: 'contain' }}
-            />
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '1px solid #d1d5db', borderRadius: '4px', backgroundColor: '#f9fafb', padding: '10px', overflow: 'hidden' }}>
+            {(() => {
+              const isPdf = typeof certImage === 'string' && (
+                certImage.startsWith('data:application/pdf') ||
+                certImage.includes('application/pdf') ||
+                (data.medicalCertificateName && data.medicalCertificateName.toLowerCase().endsWith('.pdf'))
+              );
+
+              if (isPdf) {
+                return (
+                  <iframe 
+                    src={certImage} 
+                    title="소견서/진단서 증빙서류 PDF" 
+                    style={{ width: '100%', height: '210mm', border: 'none' }}
+                  />
+                );
+              }
+
+              return (
+                <img 
+                  src={certImage} 
+                  alt="소견서/진단서 증빙서류" 
+                  style={{ maxWidth: '100%', maxHeight: '210mm', objectFit: 'contain' }}
+                />
+              );
+            })()}
           </div>
 
           <div style={{ paddingTop: '8px', borderTop: '1px solid #d1d5db', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '8pt', color: '#6b7280', marginTop: '10px' }}>

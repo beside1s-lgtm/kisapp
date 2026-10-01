@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { getMyParentDocuments, deleteDocument, updateDocumentMedicalCertificate } from '@/lib/services/documentService';
 import { ApprovalDoc } from '@/lib/types';
 import { format } from 'date-fns';
-import { History, FileText, ChevronRight, Loader2, Edit3, ArrowLeft, Home, FileCheck, Trash2, Calendar, MapPin, User, Camera, Upload, X } from 'lucide-react';
+import { History, FileText, ChevronRight, Loader2, Edit3, ArrowLeft, Home, FileCheck, Trash2, Calendar, MapPin, User, Camera, Upload, X, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
@@ -58,7 +58,7 @@ export default function ParentHistoryPage() {
       setCertPreviewUrl(compressed);
       setCertFileName(file.name);
     } catch (err: any) {
-      toast({ variant: 'destructive', title: '사진 변환 오류', description: err.message || '사진 처리에 실패했습니다.' });
+      toast({ variant: 'destructive', title: '파일 변환 오류', description: err.message || '파일 처리에 실패했습니다.' });
     }
   };
 
@@ -419,11 +419,11 @@ export default function ParentHistoryPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base font-bold">
-              <Camera className="w-4 h-4 text-indigo-600" />
-              의사 소견서 / 진단서 사진 보완 제출
+              <FileCheck className="w-4 h-4 text-indigo-600" />
+              의사 소견서 / 진단서 (사진 또는 PDF) 보완 제출
             </DialogTitle>
             <DialogDescription className="text-xs">
-              {uploadingDocForCert?.parentFormData?.studentName} 학생의 결석계에 소견서 또는 진료확인서 사진을 등록합니다.
+              {uploadingDocForCert?.parentFormData?.studentName} 학생의 결석계에 소견서 또는 진료확인서(사진/PDF)를 등록합니다.
             </DialogDescription>
           </DialogHeader>
 
@@ -431,34 +431,77 @@ export default function ParentHistoryPage() {
             <input
               ref={certFileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,application/pdf"
               onChange={handleSelectCertFile}
               className="hidden"
             />
 
-            {certPreviewUrl ? (
-              <div className="space-y-2 text-center">
-                <img
-                  src={certPreviewUrl}
-                  alt="소견서 미리보기"
-                  className="max-h-60 mx-auto object-contain rounded border border-slate-200 shadow-2xs"
-                />
-                <div className="flex items-center justify-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => certFileInputRef.current?.click()}
-                    className="h-8 text-xs font-semibold"
-                  >
-                    사진 다시 선택
-                  </Button>
+            {certPreviewUrl ? (() => {
+              const isCertPdf = certPreviewUrl.startsWith('data:application/pdf') || certFileName?.toLowerCase().endsWith('.pdf');
+              return (
+                <div className="space-y-2 text-center">
+                  {isCertPdf ? (
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col items-center justify-center gap-2">
+                      <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600">
+                        <FileText className="w-6 h-6" />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs font-bold text-slate-800 break-all">{certFileName || '소견서_진단서.pdf'}</p>
+                        <Badge variant="outline" className="mt-1 text-[10px] bg-rose-50 text-rose-700 border-rose-200 font-bold">
+                          PDF 첨부 문서
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const w = window.open();
+                            if (w) w.location.href = certPreviewUrl;
+                          }}
+                          className="h-7 text-[11px] gap-1 text-slate-700 font-semibold"
+                        >
+                          <ExternalLink className="w-3 h-3 text-slate-500" />
+                          새 탭에서 보기
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => certFileInputRef.current?.click()}
+                          className="h-7 text-[11px] font-semibold"
+                        >
+                          파일 변경
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <img
+                        src={certPreviewUrl}
+                        alt="소견서 미리보기"
+                        className="max-h-60 mx-auto object-contain rounded border border-slate-200 shadow-2xs"
+                      />
+                      <div className="flex items-center justify-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => certFileInputRef.current?.click()}
+                          className="h-8 text-xs font-semibold"
+                        >
+                          사진 다시 선택
+                        </Button>
+                      </div>
+                    </>
+                  )}
                 </div>
-              </div>
-            ) : (
+              );
+            })() : (
               <div className="border border-dashed border-slate-300 rounded-xl p-6 text-center space-y-3 bg-slate-50/50">
                 <p className="text-xs text-slate-600">
-                  스마트폰으로 촬영한 의사 소견서, 진단서, 또는 처방전 사진을 첨부해 주세요.
+                  의사 소견서, 진단서, 처방전 사진 또는 PDF 문서를 첨부해 주세요.
                 </p>
                 <Button
                   type="button"
@@ -466,7 +509,7 @@ export default function ParentHistoryPage() {
                   className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs gap-1.5"
                 >
                   <Camera className="w-4 h-4" />
-                  사진 촬영 또는 앨범에서 선택
+                  사진 촬영 또는 파일(PDF/사진) 선택
                 </Button>
               </div>
             )}

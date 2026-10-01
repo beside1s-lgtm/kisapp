@@ -58,8 +58,24 @@ export async function resizeStudentPhoto(file: File): Promise<string> {
  */
 export async function compressCertificateImage(file: File, maxDimension: number = 1200): Promise<string> {
   return new Promise((resolve, reject) => {
+    // PDF 파일 처리 (소견서/진단서 PDF 문서 직접 첨부 지원)
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      if (file.size > 8 * 1024 * 1024) {
+        reject(new Error('PDF 파일 용량은 8MB 이하로 첨부해 주세요.'));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        resolve(result);
+      };
+      reader.onerror = () => reject(new Error('PDF 파일을 읽지 못했습니다.'));
+      reader.readAsDataURL(file);
+      return;
+    }
+
     if (!file.type.startsWith('image/')) {
-      reject(new Error('이미지 파일(JPG, PNG, WebP 등)만 업로드할 수 있습니다.'));
+      reject(new Error('이미지 파일(JPG, PNG, WebP 등) 또는 PDF 파일만 업로드할 수 있습니다.'));
       return;
     }
 

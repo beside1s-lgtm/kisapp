@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef } from 'react';
-import { ArrowRight, CheckCircle2, Loader2, Camera, FileImage, X } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Loader2, Camera, FileImage, X, FileText, ExternalLink } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -309,62 +309,91 @@ export function HomeroomProxyApplyForm({
                 )}
               </div>
 
-              {/* 소견서/진단서 사진 첨부 (선택) */}
+              {/* 소견서/진단서 사진/PDF 첨부 (선택) */}
               <div className="space-y-1 pt-1">
                 <div className="flex items-center justify-between">
                   <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">
-                    증빙서류 (의사소견서/진단서/처방전 사진)
+                    증빙서류 (의사소견서/진단서/처방전 사진 또는 PDF)
                   </Label>
                   <span className="text-[10px] text-slate-400">선택</span>
                 </div>
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf"
                   onChange={handleFileSelect}
                   className="hidden"
                 />
-                {medicalCertificateUrl ? (
-                  <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                    <img
-                      src={medicalCertificateUrl}
-                      alt="소견서 사진"
-                      className="w-12 h-12 object-cover rounded border border-slate-300 shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1">
-                        <FileImage className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span className="text-xs font-bold text-slate-800 truncate">
-                          {medicalCertificateName || '소견서_사진.jpg'}
-                        </span>
+                {medicalCertificateUrl ? (() => {
+                  const isPdf = medicalCertificateUrl?.startsWith('data:application/pdf') || medicalCertificateName?.toLowerCase().endsWith('.pdf');
+                  return (
+                    <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                      {isPdf ? (
+                        <div className="w-12 h-12 rounded-lg bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-600 shrink-0 shadow-2xs">
+                          <FileText className="w-5 h-5" />
+                          <span className="text-[7px] font-black uppercase tracking-tighter">PDF</span>
+                        </div>
+                      ) : (
+                        <img
+                          src={medicalCertificateUrl}
+                          alt="소견서 사진"
+                          className="w-12 h-12 object-cover rounded border border-slate-300 shrink-0"
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1">
+                          {isPdf ? (
+                            <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          ) : (
+                            <FileImage className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          )}
+                          <span className="text-xs font-bold text-slate-800 truncate">
+                            {medicalCertificateName || (isPdf ? '소견서_진단서_첨부파일.pdf' : '소견서_사진.jpg')}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-emerald-600 font-medium">
+                          {isPdf ? 'PDF 문서 첨부 완료' : '사진 첨부 완료 (문서용 최적화)'}
+                        </p>
+                        {isPdf && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const w = window.open();
+                              if (w) w.location.href = medicalCertificateUrl;
+                            }}
+                            className="text-[10px] text-blue-600 hover:underline font-semibold inline-flex items-center gap-0.5 mt-0.5"
+                          >
+                            <ExternalLink className="w-2.5 h-2.5" />
+                            새 탭에서 열기
+                          </button>
+                        )}
                       </div>
-                      <p className="text-[10px] text-emerald-600 font-medium">사진 첨부 완료 (문서용 최적화)</p>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="h-6 px-1.5 text-[10px]"
+                        >
+                          변경
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onCertificateChange && onCertificateChange(null, '')}
+                          className="h-6 w-6 p-0 text-slate-400 hover:text-rose-600"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="h-6 px-1.5 text-[10px]"
-                      >
-                        변경
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onCertificateChange && onCertificateChange(null, '')}
-                        className="h-6 w-6 p-0 text-slate-400 hover:text-rose-600"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
+                  );
+                })() : (
                   <div className="flex items-center justify-between bg-slate-50/70 p-2 rounded-lg border border-dashed border-slate-300">
                     <span className="text-[11px] text-slate-500">
-                      소견서 또는 진료확인서 사진 첨부
+                      소견서 또는 진료확인서 사진/PDF 첨부
                     </span>
                     <Button
                       type="button"
@@ -374,7 +403,7 @@ export function HomeroomProxyApplyForm({
                       className="h-7 text-xs gap-1 font-semibold"
                     >
                       <Camera className="w-3.5 h-3.5 text-indigo-600" />
-                      사진 첨부
+                      파일 첨부
                     </Button>
                   </div>
                 )}
