@@ -7,7 +7,7 @@ import { approveDocument, rejectDocument, recallDocument, deleteDocument } from 
 import { getUserProfileByEmail } from '@/lib/services/userService';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { CheckCircle2, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, Paperclip, Trash2, Lock, Download, FileCheck, Printer, ArrowLeft, HardDrive } from 'lucide-react';
+import { CheckCircle2, Loader2, XCircle, Undo2, Edit, CopyPlus, AlertTriangle, Paperclip, Trash2, Lock, Download, FileCheck, Printer, ArrowLeft, HardDrive, FileEdit } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useTransition, useEffect } from 'react';
 import Link from 'next/link'; 
@@ -28,6 +28,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ParentFormView } from './parent-form-view';
 import { ParentNotificationModal } from './parent-notification-modal';
+import { AbsenceEditDialog } from '@/components/parents-apply/AbsenceEditDialog';
 import { TeacherDutyView } from './teacher-duty-view';
 import { TeacherOvertimeView } from './teacher-overtime-view';
 import { AfterschoolFormView } from './afterschool-form-view';
@@ -76,6 +77,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   });
 
   const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [showAbsenceEditModal, setShowAbsenceEditModal] = useState(false);
   const [approverSignatures, setApproverSignatures] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -560,6 +562,20 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                   </Button>
               )}
 
+              {/* 결석계 수정 버튼 (학부모/담임교사/관리자 수정 지원: 독감 등 감염병 전환, 기간 변경, 증빙서류 보완) */}
+              {initialDoc.docType === 'parent' && initialDoc.parentFormData?.type === 'absence' && (
+                  <Button 
+                      variant="outline" 
+                      size="sm"
+                      type="button" 
+                      onClick={() => setShowAbsenceEditModal(true)}
+                      className="h-8 text-xs cursor-pointer shadow-xs bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold border-amber-300"
+                  >
+                      <FileEdit className="mr-1.5 h-3.5 w-3.5 text-amber-700" />
+                      결석계 내용 수정
+                  </Button>
+              )}
+
               {/* 체험학습 승인 완료시 통보서 받기 버튼 */}
               {initialDoc.docType === 'parent' && initialDoc.parentFormData?.type === 'field-trip' && initialDoc.status === 'approved' && (
                   <Button 
@@ -906,6 +922,19 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             doc={initialDoc}
             open={showNotificationModal}
             onOpenChange={setShowNotificationModal}
+        />
+
+        {/* 결석계 수정 다이얼로그 (담임교사/학부모 직접 수정 지원: 독감 등 감염병 전환, 기간 변경, 증빙서류 최대 5개) */}
+        <AbsenceEditDialog
+            open={showAbsenceEditModal}
+            onOpenChange={setShowAbsenceEditModal}
+            doc={initialDoc}
+            onSuccess={() => {
+                setShowAbsenceEditModal(false);
+                window.location.reload();
+            }}
+            userEmail={user?.email || profile?.email || ''}
+            role={initialDoc.approvers?.some(a => a.email?.toLowerCase() === user?.email?.toLowerCase() && a.role?.includes('담임')) ? 'teacher' : 'parent'}
         />
     </div>
   );

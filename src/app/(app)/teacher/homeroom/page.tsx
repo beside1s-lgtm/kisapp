@@ -62,7 +62,7 @@ import {
   type HomeroomAttendanceStatus,
 } from '@/lib/services/homeroomAttendanceSync';
 import type { MasterStudent } from '@/lib/types/masterStudent';
-import type { OrgStructure, DocConfig } from '@/lib/types';
+import type { OrgStructure, DocConfig, Attachment } from '@/lib/types';
 import { ClassManagementTab } from '@/components/teacher/homeroom/ClassManagementTab';
 import { GradeMaterialsTab } from '@/components/teacher/homeroom/GradeMaterialsTab';
 import { ParentConsultationTab } from '@/components/teacher/homeroom/ParentConsultationTab';
@@ -291,6 +291,7 @@ export default function TeacherHomeroomApplyPage() {
   const [teacherConfirmMethod, setTeacherConfirmMethod] = useState<'전화/문자' | '학부모 내교' | '가정방문' | '기타'>('전화/문자');
   const [medicalCertificateUrl, setMedicalCertificateUrl] = useState<string>('');
   const [medicalCertificateName, setMedicalCertificateName] = useState<string>('');
+  const [proxyAttachments, setProxyAttachments] = useState<Attachment[]>([]);
 
   // 누적 통계
   const [accumulatedFtDays, setAccumulatedFtDays] = useState<number>(0);
@@ -748,14 +749,16 @@ export default function TeacherHomeroomApplyPage() {
         proxyParentSignature: resolvedParentSignature,
       };
 
-      const finalAttachments: any[] = [];
-      if (!isFieldTrip && medicalCertificateUrl) {
+      const finalAttachments: any[] = [...proxyAttachments];
+      if (finalAttachments.length === 0 && medicalCertificateUrl) {
         finalAttachments.push({
           name: medicalCertificateName || '소견서_진료확인서.jpg',
           data: medicalCertificateUrl
         });
-        parentFormData.medicalCertificateUrl = medicalCertificateUrl;
-        parentFormData.medicalCertificateName = medicalCertificateName || '소견서_진료확인서.jpg';
+      }
+      if (!isFieldTrip && finalAttachments.length > 0) {
+        parentFormData.medicalCertificateUrl = finalAttachments[0].data;
+        parentFormData.medicalCertificateName = finalAttachments[0].name;
         parentFormData.medicalCertificateSubmitted = true;
         parentFormData.attachments = finalAttachments;
       }
@@ -1093,6 +1096,8 @@ export default function TeacherHomeroomApplyPage() {
               setMedicalCertificateUrl(url || '');
               setMedicalCertificateName(name || '');
             }}
+            attachments={proxyAttachments}
+            onAttachmentsChange={setProxyAttachments}
             ftStartDate={ftStartDate}
             setFtStartDate={setFtStartDate}
             ftEndDate={ftEndDate}

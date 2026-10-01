@@ -5,15 +5,17 @@ import { useAuth } from '@/hooks/use-auth';
 import { getMyParentDocuments, deleteDocument, updateDocumentMedicalCertificate } from '@/lib/services/documentService';
 import { ApprovalDoc } from '@/lib/types';
 import { format } from 'date-fns';
-import { History, FileText, ChevronRight, Loader2, Edit3, ArrowLeft, Home, FileCheck, Trash2, Calendar, MapPin, User, Camera, Upload, X, ExternalLink } from 'lucide-react';
+import { History, FileText, ChevronRight, Loader2, Edit3, ArrowLeft, Home, FileCheck, Trash2, Calendar, MapPin, User, Camera, Upload, X, ExternalLink, FileEdit } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { ParentNotificationModal } from '@/components/parent-notification-modal';
+import { AbsenceEditDialog } from '@/components/parents-apply/AbsenceEditDialog';
 import { useTranslation } from '@/hooks/use-translation';
 import { compressCertificateImage } from '@/lib/imageResize';
+import { openFileInNewTab } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 
 export default function ParentHistoryPage() {
@@ -26,6 +28,7 @@ export default function ParentHistoryPage() {
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
   const [selectedDocForNotification, setSelectedDocForNotification] = useState<ApprovalDoc | null>(null);
   const [uploadingDocForCert, setUploadingDocForCert] = useState<ApprovalDoc | null>(null);
+  const [editingDocForAbsence, setEditingDocForAbsence] = useState<ApprovalDoc | null>(null);
   const [certPreviewUrl, setCertPreviewUrl] = useState<string>('');
   const [certFileName, setCertFileName] = useState<string>('');
   const [isUploadingCert, setIsUploadingCert] = useState(false);
@@ -340,7 +343,20 @@ export default function ParentHistoryPage() {
                       }}
                     >
                       <Camera className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">소견서 보완 제출</span>
+                      <span className="truncate">소견서 보완</span>
+                    </Button>
+                  )}
+
+                  {/* 결석계 내용 수정 (병결->감염병 전환, 기간 연장, 첨부 증빙 보완 등) */}
+                  {isAbsence && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 min-w-0 h-9 sm:h-9.5 px-2 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300 flex items-center justify-center gap-1.5 shadow-2xs"
+                      onClick={() => setEditingDocForAbsence(doc)}
+                    >
+                      <FileEdit className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                      <span className="truncate">결석계 수정</span>
                     </Button>
                   )}
 
@@ -456,10 +472,7 @@ export default function ParentHistoryPage() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() => {
-                            const w = window.open();
-                            if (w) w.location.href = certPreviewUrl;
-                          }}
+                          onClick={() => openFileInNewTab(certPreviewUrl, certFileName)}
                           className="h-7 text-[11px] gap-1 text-slate-700 font-semibold"
                         >
                           <ExternalLink className="w-3 h-3 text-slate-500" />
@@ -541,6 +554,29 @@ export default function ParentHistoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 결석계 수정 다이얼로그 (학부모 직접 수정: 감염병 전환, 기간 변경, 증빙서류 최대 5개) */}
+      <AbsenceEditDialog
+        open={!!editingDocForAbsence}
+        onOpenChange={(open) => {
+          if (!open) setEditingDocForAbsence(null);
+        }}
+        doc={editingDocForAbsence}
+        onSuccess={(updatedDocId) => {
+          setEditingDocForAbsence(null);
+          // 목록 갱신
+          if (user?.email) {
+            getMyParentDocuments(user.email).then((docs) => {
+              const filteredDocs = docs.filter(
+                (d) => !(d.docType === 'parent' && d.parentFormData?.type === 'field-trip-report')
+              );
+              setDocuments(filteredDocs);
+            });
+          }
+        }}
+        userEmail={user?.email || profile?.email || ''}
+        role="parent"
+      />
     </div>
   );
 }

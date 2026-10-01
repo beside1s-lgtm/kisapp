@@ -1,0 +1,18 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // 결석계 및 학부모 제출 증빙서류 (소견서, 진단서, 처방전 PDF 및 사진)
+    // 학부모 비로그인 업로드 및 교사/학부모 열람 허용 (최대 50MB)
+    match /attachments/certificates/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.resource.size < 50 * 1024 * 1024;
+    }
+
+    // 일반 첨부파일: 로그인 사용자 허용
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

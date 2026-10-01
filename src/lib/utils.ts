@@ -439,3 +439,61 @@ export function generateGateDutyIcsFile(
   lines.push('END:VCALENDAR');
   return lines.join('\r\n');
 }
+
+/**
+ * 브라우저의 data: URL 최상위 네비게이션 차단(about:blank#blocked) 문제를 방지하고
+ * 새 탭에서 안전하게 PDF/이미지 문서를 여는 표준 헬퍼 함수
+ */
+export function openFileInNewTab(dataOrUrl: string, fileName?: string) {
+  if (!dataOrUrl) return;
+
+  // 1. Base64 Data URL인 경우 Blob 객체로 변환하여 Blob URL로 열람 (about:blank#blocked 방지)
+  if (dataOrUrl.startsWith('data:')) {
+    try {
+      const parts = dataOrUrl.split(';base64,');
+      const contentType = parts[0].replace('data:', '') || 'application/pdf';
+      const base64Data = parts[1];
+      if (!base64Data) return;
+
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: contentType });
+      const blobUrl = URL.createObjectURL(blob);
+
+      const newWin = window.open(blobUrl, '_blank');
+      if (!newWin) {
+        // 팝업 차단된 경우 임시 a 태그로 fallback
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+
+      // 60초 후 메모리 해제
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      return;
+    } catch (e) {
+      console.error('Blob URL creation error:', e);
+    }
+  }
+
+  // 2. 일반 HTTP/HTTPS URL인 경우 직접 새 창 열기
+  const w = window.open(dataOrUrl, '_blank', 'noopener,noreferrer');
+  if (!w) {
+    const a = document.createElement('a');
+    a.href = dataOrUrl;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+}
+

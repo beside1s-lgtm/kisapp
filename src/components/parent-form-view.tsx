@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ApprovalDoc, ParentFormData, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, FieldTripBlackoutPeriod } from '@/lib/types';
 import { format } from 'date-fns';
 import { ExternalLink } from 'lucide-react';
+import { openFileInNewTab } from '@/lib/utils';
 
 type ParentFormViewProps = {
   doc: ApprovalDoc;
@@ -876,13 +877,37 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
         </div>
   );
 
-  const certImage = data.medicalCertificateUrl || (Array.isArray(data.attachments) && data.attachments[0]?.data) || (Array.isArray(doc.attachments) && doc.attachments[0]?.data);
-  const hasCertificateSheet = isAbsence && Boolean(certImage);
+  // 모든 첨부 증빙서류 수집 (최대 5개)
+  const allAttachments: { name: string; data: string }[] = [];
+  if (Array.isArray(doc.attachments) && doc.attachments.length > 0) {
+    doc.attachments.forEach((att) => {
+      if (att?.data) allAttachments.push({ name: att.name || '증빙서류', data: att.data });
+    });
+  } else if (Array.isArray(data.attachments) && data.attachments.length > 0) {
+    data.attachments.forEach((att) => {
+      if (att?.data) allAttachments.push({ name: att.name || '증빙서류', data: att.data });
+    });
+  }
+  if (allAttachments.length === 0 && data.medicalCertificateUrl) {
+    allAttachments.push({
+      name: data.medicalCertificateName || '소견서_진단서.jpg',
+      data: data.medicalCertificateUrl,
+    });
+  }
 
-  const renderAbsenceCertificatePage = () => {
-    if (!certImage) return null;
+  const hasCertificateSheet = isAbsence && allAttachments.length > 0;
+
+  const renderAbsenceCertificatePage = (att: { name: string; data: string }, index: number, total: number) => {
+    if (!att || !att.data) return null;
+    const isPdf = typeof att.data === 'string' && (
+      att.data.startsWith('data:application/pdf') ||
+      att.data.includes('application/pdf') ||
+      (att.name && att.name.toLowerCase().endsWith('.pdf'))
+    );
+
     return (
       <div 
+        key={`cert-sheet-${index}`}
         className="a4-print-sheet bg-white mx-auto text-black font-serif text-[10pt] shadow-2xl relative flex flex-col justify-between"
         style={{
           width: '210mm',
@@ -893,6 +918,8 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
           boxSizing: 'border-box',
           overflow: 'hidden',
           fontFamily: '"Batang", "Nanum Myeongjo", "Apple SD Gothic Neo", "Malgun Gothic", serif',
+          pageBreakBefore: 'always',
+          breakBefore: 'page',
         }}
       >
         <div>
@@ -901,7 +928,7 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
             <div>
               <div className="text-[8.5pt] text-slate-600 mb-0.5 font-medium">{'<서식 3 부속 첨부 증빙>'}</div>
               <h2 className="text-[15pt] font-black tracking-[0.2em] text-slate-900">
-                결석계 증빙서류 (소견서·진단서)
+                결석계 증빙서류 (소견서·진단서) {total > 1 ? `[${index + 1}/${total}]` : ''}
               </h2>
             </div>
             <div className="text-right text-[8.5pt] text-slate-700 leading-tight">
@@ -909,73 +936,59 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
               <div><span className="font-semibold">결석기간:</span> {data.absencePeriod?.startDate} ~ {data.absencePeriod?.endDate} ({data.absencePeriod?.totalDays}일간)</div>
             </div>
           </div>
-          <div className="text-[8pt] text-slate-500 mb-2">
-            ※ 본 증빙자료는 학부모(또는 학생)가 제출한 의사소견서/진료확인서/처방전 원본 촬영본 또는 PDF 문서입니다.
+          <div className="flex justify-between items-center text-[8pt] text-slate-500 mb-2">
+            <span>※ 본 증빙자료는 학부모(또는 학생)가 제출한 의사소견서/진료확인서/처방전 원본 촬영본 또는 PDF 문서입니다.</span>
+            <span className="font-sans font-bold text-slate-700 truncate max-w-[200px]">첨부: {att.name}</span>
           </div>
         </div>
 
         {/* 증빙 사진/PDF 원본 뷰어 박스 */}
         <div className="flex-1 min-h-0 flex flex-col items-center justify-center border border-slate-300 rounded bg-slate-50/70 p-2 overflow-hidden my-auto relative">
-          {(() => {
-            const isPdf = typeof certImage === 'string' && (
-              certImage.startsWith('data:application/pdf') ||
-              certImage.includes('application/pdf') ||
-              (data.medicalCertificateName && data.medicalCertificateName.toLowerCase().endsWith('.pdf'))
-            );
-
-            if (isPdf) {
-              return (
-                <div className="w-full h-full flex flex-col items-center justify-between p-2">
-                  <div className="flex items-center justify-between w-full pb-2 mb-1.5 border-b border-slate-200">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 font-bold text-xs font-sans">
-                        PDF
-                      </div>
-                      <div>
-                        <span className="font-sans font-bold text-xs text-slate-800">
-                          {data.medicalCertificateName || '결석계_증빙서류.pdf'}
-                        </span>
-                        <span className="text-[10px] text-slate-500 block font-sans">
-                          의사소견서 / 진단서 PDF 원본 문서
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const w = window.open();
-                        if (w) w.location.href = certImage;
-                      }}
-                      className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs font-sans font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs inline-flex items-center gap-1 cursor-pointer print:hidden"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                      새 창에서 열기
-                    </button>
+          {isPdf ? (
+            <div className="w-full h-full flex flex-col items-center justify-between p-2">
+              <div className="flex items-center justify-between w-full pb-2 mb-1.5 border-b border-slate-200">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 font-bold text-xs font-sans">
+                    PDF
                   </div>
-                  <iframe 
-                    src={certImage} 
-                    title="소견서/진단서 PDF"
-                    className="w-full flex-1 rounded border border-slate-200 bg-white"
-                    style={{ minHeight: '190mm' }}
-                  />
+                  <div>
+                    <span className="font-sans font-bold text-xs text-slate-800">
+                      {att.name || '결석계_증빙서류.pdf'}
+                    </span>
+                    <span className="text-[10px] text-slate-500 block font-sans">
+                      의사소견서 / 진단서 PDF 원본 문서 ({index + 1}/{total})
+                    </span>
+                  </div>
                 </div>
-              );
-            }
-
-            return (
-              <img 
-                src={certImage} 
-                alt="소견서/진단서 증빙서류" 
-                className="max-w-full max-h-[220mm] object-contain shadow-xs rounded"
+                <button
+                  type="button"
+                  onClick={() => openFileInNewTab(att.data, att.name)}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs font-sans font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs inline-flex items-center gap-1 cursor-pointer print:hidden"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                  새 창에서 열기
+                </button>
+              </div>
+              <iframe 
+                src={att.data} 
+                title={`소견서/진단서 PDF ${index + 1}`}
+                className="w-full flex-1 rounded border border-slate-200 bg-white"
+                style={{ minHeight: '190mm' }}
               />
-            );
-          })()}
+            </div>
+          ) : (
+            <img 
+              src={att.data} 
+              alt={`소견서/진단서 증빙서류 ${index + 1}`} 
+              className="max-w-full max-h-[220mm] object-contain shadow-xs rounded"
+            />
+          )}
         </div>
 
         {/* 하단 바닥글 */}
         <div className="pt-2 border-t border-slate-300 flex justify-between items-center text-[8pt] text-slate-500">
           <span>호치민시한국국제학교 학생 결석계 첨부 증빙서류 보관본</span>
-          <span>문서번호: {doc.docNo || '-'}</span>
+          <span>문서번호: {doc.docNo || '-'} (첨부 {index + 1}/{total})</span>
         </div>
       </div>
     );
@@ -1012,10 +1025,12 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
   return (
     <div ref={containerRef} className="parent-form-view-wrapper w-full font-serif text-black overflow-x-hidden print:overflow-visible">
       {isAbsence ? (
-        /* ─────────────── <서식 3> 결석계 + (소견서 첨부 시 2페이지) ─────────────── */
+        /* ─────────────── <서식 3> 결석계 + (증빙 첨부 시 각 파일별 독립 A4 페이지) ─────────────── */
         <>
           {wrapWithScale(renderAbsencePage(), 'absence-page')}
-          {hasCertificateSheet && wrapWithScale(renderAbsenceCertificatePage(), 'absence-cert-page')}
+          {hasCertificateSheet && allAttachments.map((att, idx) => 
+            wrapWithScale(renderAbsenceCertificatePage(att, idx, allAttachments.length), `absence-cert-page-${idx}`)
+          )}
         </>
       ) : isReport ? (
         /* ─────────────── <서식 2> 교외체험학습 결과보고서 (단독 문서 열람) ─────────────── */

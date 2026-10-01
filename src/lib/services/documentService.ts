@@ -27,6 +27,7 @@ import type {
   OrgStructure,
   DutyRolePermission,
   VolunteerFormData,
+  Attachment,
 } from '@/lib/types';
 import { getUserProfileByEmail, saveUserProfile } from '@/lib/services/userService';
 import { syncParentApplicationDatesToAttendance } from '@/lib/services/homeroomAttendanceSync';
@@ -2118,6 +2119,168 @@ export async function updateDocumentMedicalCertificate(
   } catch (err: any) {
     console.error('updateDocumentMedicalCertificate error:', err);
     return { success: false, error: err.message || '소견서 등록 중 오류가 발생했습니다.' };
+  }
+}
+
+/**
+ * 결석계 문서에 첨부파일 목록(최대 5개)을 일괄 등록/갱신
+ */
+export async function updateDocumentMedicalCertificates(
+  docId: string,
+  attachments: Attachment[]
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docRef = doc(getApprovalsCol(), docId);
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) {
+      return { success: false, error: '해당 결석계 문서를 찾을 수 없습니다.' };
+    }
+
+    const validAttachments = (attachments || []).slice(0, 5);
+    const primaryUrl = validAttachments[0]?.data || '';
+    const primaryName = validAttachments[0]?.name || '';
+    const isSubmitted = validAttachments.length > 0;
+
+    await firestoreUpdateDoc(docRef, {
+      'parentFormData.medicalCertificateUrl': primaryUrl,
+      'parentFormData.medicalCertificateName': primaryName,
+      'parentFormData.medicalCertificateSubmitted': isSubmitted,
+      'parentFormData.attachments': validAttachments,
+      attachments: validAttachments,
+      updatedAt: serverTimestamp(),
+    });
+
+    // 보건실 감염병 대장(health_disease_surveillance) 실시간 동기화
+    try {
+      const targetDocId = `doc_${docId}`;
+      const diseaseRef = doc(collection(getDb(), 'health_disease_surveillance'), targetDocId);
+      await setDoc(diseaseRef, {
+        medicalCertificateSubmitted: isSubmitted,
+        medicalCertificateUrl: primaryUrl,
+        medicalCertificateName: primaryName,
+        attachments: validAttachments,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    } catch (dErr) {
+      console.warn('[DocService] 질병대장 소견서 동기화 알림 (비치명적):', dErr);
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('updateDocumentMedicalCertificates error:', err);
+    return { success: false, error: err.message || '소견서 등록 중 오류가 발생했습니다.' };
+  }
+}
+
+/**
+ * 결석계 문서 내용 수정 (학부모 또는 담임교사)
+ * - 사유 변경, 일반감기 -> 독감(감염병/출석인정) 변경 및 등교중지 기간 연장 지원
+ * - approvals 컬렉션 문서 갱신
+ * - 보건실 질병대장(health_disease_surveillance) 실시간 재동기화
+ * - 담임 출석부 및 방과후/스쿨버스 전교 3중 재동기화
+ */
+export async function updateAbsenceApplication(
+  docId: string,
+  payload: {
+    absencePeriod: { startDate: string; endDate: string; totalDays: number };
+    absenceType: '병결' | '출석인정' | '기타' | '미인정';
+    absenceReason: string;
+    diseaseCategory?: string; // '단순질병' | '감염병' | '식중독'
+    diseaseName?: string;
+    attachments: Attachment[]; // 최대 5개
+    modifiedBy: string;
+    modifiedRole?: 'parent' | 'teacher';
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docRef = doc(getApprovalsCol(), docId);
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) {
+      return { success: false, error: '해당 결석계 문서를 찾을 수 없습니다.' };
+    }
+
+    const currentDoc = snap.data() as ApprovalDoc;
+    const prevParentData = currentDoc.parentFormData || ({} as any);
+
+    const validAttachments = (payload.attachments || []).slice(0, 5);
+    const primaryUrl = validAttachments[0]?.data || '';
+    const primaryName = validAttachments[0]?.name || '';
+    const isCertSubmitted = validAttachments.length > 0;
+
+    const updatedParentFormData = {
+      ...prevParentData,
+      absencePeriod: payload.absencePeriod,
+      absenceType: payload.absenceType,
+      absenceReason: payload.absenceReason,
+      diseaseCategory: payload.diseaseCategory || prevParentData.diseaseCategory || '',
+      diseaseName: payload.diseaseName || prevParentData.diseaseName || '',
+      medicalCertificateUrl: primaryUrl,
+      medicalCertificateName: primaryName,
+      medicalCertificateSubmitted: isCertSubmitted,
+      attachments: validAttachments,
+      lastModifiedAt: new Date().toISOString(),
+      lastModifiedBy: payload.modifiedBy,
+      lastModifiedRole: payload.modifiedRole || 'parent',
+    };
+
+    // 결재 문서 업데이트
+    await firestoreUpdateDoc(docRef, {
+      parentFormData: updatedParentFormData,
+      attachments: validAttachments,
+      updatedAt: serverTimestamp(),
+    });
+
+    // 1. 담임 출석부 및 전교 3중 연동 재동기화
+    try {
+      await syncParentApplicationDatesToAttendance(
+        updatedParentFormData,
+        payload.modifiedBy,
+        currentDoc.requesterId
+      );
+    } catch (syncErr) {
+      console.warn('[DocService] 출석부 재동기화 알림 (비치명적):', syncErr);
+    }
+
+    // 2. 보건실 감염병/질병대장(health_disease_surveillance) 재동기화
+    try {
+      const targetDocId = `doc_${docId}`;
+      const diseaseRef = doc(collection(getDb(), 'health_disease_surveillance'), targetDocId);
+      
+      const isInfectious = payload.diseaseCategory === '감염병';
+      const isFoodPoisoning = payload.diseaseCategory === '식중독';
+      const isNonDisease = payload.absenceType === '기타' || payload.absenceType === '미인정';
+
+      if (!isNonDisease) {
+        await setDoc(diseaseRef, {
+          docId,
+          studentName: prevParentData.studentName || currentDoc.title,
+          gradeClass: prevParentData.gradeClassNumber || '',
+          startDate: payload.absencePeriod.startDate,
+          endDate: payload.absencePeriod.endDate,
+          totalDays: payload.absencePeriod.totalDays,
+          absenceType: payload.absenceType,
+          diseaseCategory: payload.diseaseCategory || '단순질병',
+          diseaseName: payload.diseaseName || payload.absenceReason || '병결',
+          reason: payload.absenceReason,
+          medicalCertificateSubmitted: isCertSubmitted,
+          medicalCertificateUrl: primaryUrl,
+          medicalCertificateName: primaryName,
+          attachments: validAttachments,
+          isInfectious,
+          isFoodPoisoning,
+          status: isInfectious ? 'SUSPENDED' : 'OBSERVING', // 독감/감염병인 경우 등교중지(SUSPENDED)로 자동 승격
+          updatedAt: serverTimestamp(),
+          updatedBy: payload.modifiedBy,
+        }, { merge: true });
+      }
+    } catch (dErr) {
+      console.warn('[DocService] 질병대장 재동기화 알림 (비치명적):', dErr);
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('updateAbsenceApplication error:', err);
+    return { success: false, error: err.message || '결석계 수정 중 오류가 발생했습니다.' };
   }
 }
 

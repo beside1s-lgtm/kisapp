@@ -5,6 +5,9 @@ import { format } from 'date-fns';
 import { AlertTriangle, Upload, X, FileImage, Camera, FileText, ExternalLink } from 'lucide-react';
 import { compressCertificateImage } from '@/lib/imageResize';
 import { AbsenceDiseaseSelector } from '@/components/health/disease-surveillance/AbsenceDiseaseSelector';
+import { openFileInNewTab } from '@/lib/utils';
+
+import type { Attachment } from '@/lib/types';
 
 export function DesktopAbsenceForm({
   watchGradeClassNumber,
@@ -25,6 +28,8 @@ export function DesktopAbsenceForm({
   medicalCertificateUrl,
   medicalCertificateName,
   onCertificateChange,
+  attachments,
+  onAttachmentsChange,
 }: {
   watchGradeClassNumber: string;
   setValue: any;
@@ -44,19 +49,61 @@ export function DesktopAbsenceForm({
   medicalCertificateUrl?: string;
   medicalCertificateName?: string;
   onCertificateChange?: (url: string | null, fileName?: string) => void;
+  attachments?: Attachment[];
+  onAttachmentsChange?: (attachments: Attachment[]) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 통합 첨부파일 목록 (attachments 우선, 없으면 medicalCertificateUrl)
+  const currentAttachments: Attachment[] = attachments !== undefined
+    ? attachments
+    : medicalCertificateUrl
+    ? [{ name: medicalCertificateName || '소견서_진단서.jpg', data: medicalCertificateUrl }]
+    : [];
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const availableSlots = 5 - currentAttachments.length;
+    if (availableSlots <= 0) {
+      alert('첨부파일은 최대 5개까지만 등록할 수 있습니다.');
+      return;
+    }
+
+    const filesToProcess = Array.from(files).slice(0, availableSlots);
     try {
-      const compressed = await compressCertificateImage(file);
-      if (onCertificateChange) {
-        onCertificateChange(compressed, file.name);
+      const newItems: Attachment[] = [];
+      for (const file of filesToProcess) {
+        const compressed = await compressCertificateImage(file);
+        newItems.push({ name: file.name, data: compressed });
+      }
+
+      const merged = [...currentAttachments, ...newItems].slice(0, 5);
+      if (onAttachmentsChange) {
+        onAttachmentsChange(merged);
+      }
+      if (onCertificateChange && merged[0]) {
+        onCertificateChange(merged[0].data, merged[0].name);
       }
     } catch (err: any) {
       alert(err.message || '파일 처리에 실패했습니다.');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveAttachment = (index: number) => {
+    const updated = currentAttachments.filter((_, i) => i !== index);
+    if (onAttachmentsChange) {
+      onAttachmentsChange(updated);
+    }
+    if (onCertificateChange) {
+      if (updated.length > 0) {
+        onCertificateChange(updated[0].data, updated[0].name);
+      } else {
+        onCertificateChange(null, '');
+      }
     }
   };
   return (
@@ -217,83 +264,93 @@ export function DesktopAbsenceForm({
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 accept="image/*,application/pdf"
                 onChange={handleFileSelect}
                 className="hidden"
               />
-              {medicalCertificateUrl ? (() => {
-                const isPdf = medicalCertificateUrl?.startsWith('data:application/pdf') || medicalCertificateName?.toLowerCase().endsWith('.pdf');
-                return (
-                  <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                    <div className="relative group shrink-0">
-                      {isPdf ? (
-                        <div className="w-14 h-14 rounded-lg bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-600 shadow-2xs">
-                          <FileText className="w-6 h-6" />
-                          <span className="text-[8px] font-black uppercase tracking-tighter">PDF</span>
-                        </div>
-                      ) : (
-                        <img
-                          src={medicalCertificateUrl}
-                          alt="소견서/진단서 미리보기"
-                          className="w-14 h-14 object-cover rounded border border-slate-300 shadow-2xs"
-                        />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        {isPdf ? (
-                          <FileText className="w-4 h-4 text-rose-600 shrink-0" />
-                        ) : (
-                          <FileImage className="w-4 h-4 text-emerald-600 shrink-0" />
-                        )}
-                        <span className="text-xs font-bold text-slate-800 truncate">
-                          {medicalCertificateName || (isPdf ? '소견서_진단서_첨부파일.pdf' : '소견서_진단서_첨부사진.jpg')}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-emerald-700 font-medium mt-0.5">
-                        {isPdf ? 'PDF 문서가 첨부되었습니다.' : '사진이 정상 첨부되었습니다. (문서용 최적화 압축 완료)'}
-                      </p>
-                      {isPdf && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const w = window.open();
-                            if (w) w.location.href = medicalCertificateUrl;
-                          }}
-                          className="text-[10px] text-blue-600 hover:underline font-semibold inline-flex items-center gap-0.5 mt-0.5"
-                        >
-                          <ExternalLink className="w-2.5 h-2.5" />
-                          새 탭에서 문서 열기
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0 print:hidden">
+              {currentAttachments.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">
+                      첨부된 증빙서류 ({currentAttachments.length}/5)
+                    </span>
+                    {currentAttachments.length < 5 && (
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        className="px-2 py-1 text-[11px] font-semibold text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded text-[11px] font-bold shadow-2xs"
                       >
-                        변경
+                        <Camera className="w-3 h-3 text-indigo-600" />
+                        추가 첨부 (+{5 - currentAttachments.length})
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => onCertificateChange && onCertificateChange(null, '')}
-                        className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50"
-                        title="파일 삭제"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
+                    )}
                   </div>
-                );
-              })() : (
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {currentAttachments.map((att, idx) => {
+                      const isPdf = att.data?.startsWith('data:application/pdf') || att.name?.toLowerCase().endsWith('.pdf');
+                      return (
+                        <div key={idx} className="flex items-center gap-2.5 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                          <div className="relative group shrink-0">
+                            {isPdf ? (
+                              <div className="w-10 h-10 rounded bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-600 shadow-2xs">
+                                <FileText className="w-4 h-4" />
+                                <span className="text-[7px] font-black uppercase">PDF</span>
+                              </div>
+                            ) : (
+                              <img
+                                src={att.data}
+                                alt={`증빙 ${idx + 1}`}
+                                className="w-10 h-10 object-cover rounded border border-slate-300 shadow-2xs"
+                              />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              {isPdf ? (
+                                <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                              ) : (
+                                <FileImage className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              )}
+                              <span className="text-xs font-bold text-slate-800 truncate">
+                                {att.name || `증빙서류_${idx + 1}`}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[10px] text-slate-500 font-sans">
+                                {isPdf ? 'PDF 문서' : '이미지 사진'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => openFileInNewTab(att.data, att.name)}
+                                className="text-[10px] text-blue-600 hover:underline font-semibold inline-flex items-center gap-0.5"
+                              >
+                                <ExternalLink className="w-2.5 h-2.5" />
+                                새 탭 열기
+                              </button>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAttachment(idx)}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 shrink-0 print:hidden"
+                            title="파일 삭제"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 bg-slate-50/60 p-2.5 rounded-lg border border-dashed border-slate-300 print:hidden">
                   <div className="space-y-0.5">
                     <span className="text-xs font-bold text-slate-700 block">
-                      의사 소견서, 진단서, 처방전 사진 또는 PDF 등록 (선택)
+                      의사 소견서, 진단서, 처방전 사진 또는 PDF 등록 (최대 5개)
                     </span>
                     <span className="text-[10px] text-slate-500 block leading-tight">
-                      ※ 병결 신청 시 소견서 사진 또는 PDF 파일을 첨부해 주세요. (미첨부 시 추후 보완 제출 가능)
+                      ※ 병결 신청 시 소견서 사진 또는 PDF를 첨부해 주세요. (미첨부 시 추후 보완 제출 가능)
                     </span>
                   </div>
                   <button
@@ -302,7 +359,7 @@ export function DesktopAbsenceForm({
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-bold shadow-2xs shrink-0"
                   >
                     <Camera className="w-3.5 h-3.5 text-indigo-600" />
-                    사진/PDF 파일 첨부
+                    사진/PDF 파일 첨부 (최대 5개)
                   </button>
                 </div>
               )}

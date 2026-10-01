@@ -12,7 +12,7 @@ import { getDocConfig, onDocConfigUpdate } from '@/lib/services/settingsService'
 import { getWorkingDaysCount, getExcludedDaysInRange } from '@/lib/utils';
 import { useAcademicCalendar } from '@/lib/services/academicCalendarService';
 import { getApproversByGradeClass } from '@/lib/services/userService';
-import { ParentFormData, ApprovalDoc, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, FieldTripBlackoutPeriod, DocConfig } from '@/lib/types';
+import { ParentFormData, ApprovalDoc, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, FieldTripBlackoutPeriod, DocConfig, Attachment } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Send, ArrowLeft, Home } from 'lucide-react';
@@ -149,7 +149,8 @@ function ApplyForm() {
   const currentType = tabType;
   const { t } = useTranslation();
 
-  // 소견서/진단서 사진 첨부 상태
+  // 소견서/진단서 사진 첨부 상태 (최대 5개 지원)
+  const [absenceAttachments, setAbsenceAttachments] = useState<Attachment[]>([]);
   const [medicalCertificateUrl, setMedicalCertificateUrl] = useState<string>('');
   const [medicalCertificateName, setMedicalCertificateName] = useState<string>('');
 
@@ -612,16 +613,18 @@ function ApplyForm() {
           profile
         );
       } else {
-        const finalAttachments: any[] = [];
-        if (isAbsence && medicalCertificateUrl) {
+        const finalAttachments: any[] = [...absenceAttachments];
+        if (finalAttachments.length === 0 && medicalCertificateUrl) {
           finalAttachments.push({
             name: medicalCertificateName || '소견서_진료확인서.jpg',
             data: medicalCertificateUrl
           });
-          parentFormData.medicalCertificateUrl = medicalCertificateUrl;
-          parentFormData.medicalCertificateName = medicalCertificateName || '소견서_진료확인서.jpg';
-          parentFormData.medicalCertificateSubmitted = true;
+        }
+        if (isAbsence && finalAttachments.length > 0) {
           parentFormData.attachments = finalAttachments;
+          parentFormData.medicalCertificateUrl = finalAttachments[0].data;
+          parentFormData.medicalCertificateName = finalAttachments[0].name;
+          parentFormData.medicalCertificateSubmitted = true;
         }
 
         res = await createDocument({
@@ -768,6 +771,8 @@ function ApplyForm() {
               setMedicalCertificateUrl(url || '');
               setMedicalCertificateName(name || '');
             }}
+            attachments={absenceAttachments}
+            onAttachmentsChange={setAbsenceAttachments}
           />
           {/* ========== 모바일 전용 카드 UI 끝 ========== */}
 
@@ -796,6 +801,8 @@ function ApplyForm() {
                   setMedicalCertificateUrl(url || '');
                   setMedicalCertificateName(name || '');
                 }}
+                attachments={absenceAttachments}
+                onAttachmentsChange={setAbsenceAttachments}
               />
             ) : currentType === 'field-trip-report' ? (
               <DesktopFieldTripReportForm

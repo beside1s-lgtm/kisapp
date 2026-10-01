@@ -41,6 +41,9 @@ src/
 ├── contexts/             # 전역 React Context (다국어 등)
 ├── hooks/                # 커스텀 React Hooks (인증, 토스트, 모바일 등)
 └── locales/              # 다국어 리소스 (ko, en, vi)
+firestore.rules           # Cloud Firestore 보안 규칙
+storage.rules             # Firebase Storage 보안 규칙 (결석계 증빙 최대 50MB)
+firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배포 설정
 ```
 
 ---
@@ -181,10 +184,11 @@ src/
 * `TournamentManagement.tsx` : 대진표 및 토너먼트 관리
 
 ### 바. 학부모 신청서 모바일/데스크탑 서식 (`src/components/parents-apply/`)
-* `MobileFormCard.tsx` : 결석계/체험학습/결과보고서 3종 모바일 통합 카드 UI
-* `DesktopAbsenceForm.tsx` : 데스크탑 결석계 A4 공식 서식
+* `MobileFormCard.tsx` : 결석계/체험학습/결과보고서 3종 모바일 통합 카드 UI (최대 5개 첨부 지원)
+* `DesktopAbsenceForm.tsx` : 데스크탑 결석계 A4 공식 서식 (최대 5개 첨부 지원)
 * `DesktopFieldTripForm.tsx` : 데스크탑 교외체험학습 신청서 A4 서식
 * `DesktopFieldTripReportForm.tsx` : 데스크탑 교외체험학습 결과보고서 A4 서식
+* `AbsenceEditDialog.tsx` : 결석계 직접 수정 다이얼로그 (학부모/담임교사 수정, 독감/감염병 전환, 기간/사유 변경, 최대 5개 첨부 및 전교 4대 시스템 실시간 재동기화)
 * `PinModal.tsx` : 학부모 2차 인증 PIN 입력 모달
 * `ConfirmSubmitModal.tsx` : 신청서 최종 제출 확인 다이얼로그
 

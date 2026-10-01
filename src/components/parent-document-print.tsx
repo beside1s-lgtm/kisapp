@@ -564,13 +564,37 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
       </div>
     );
 
-    const certImage = data.medicalCertificateUrl || (Array.isArray(data.attachments) && data.attachments[0]?.data) || (Array.isArray(doc.attachments) && doc.attachments[0]?.data);
-    const hasCertificateSheet = isAbsence && Boolean(certImage);
+    // 모든 첨부 증빙서류 수집 (최대 5개)
+    const allAttachments: { name: string; data: string }[] = [];
+    if (Array.isArray(doc.attachments) && doc.attachments.length > 0) {
+      doc.attachments.forEach((att) => {
+        if (att?.data) allAttachments.push({ name: att.name || '증빙서류', data: att.data });
+      });
+    } else if (Array.isArray(data.attachments) && data.attachments.length > 0) {
+      data.attachments.forEach((att) => {
+        if (att?.data) allAttachments.push({ name: att.name || '증빙서류', data: att.data });
+      });
+    }
+    if (allAttachments.length === 0 && data.medicalCertificateUrl) {
+      allAttachments.push({
+        name: data.medicalCertificateName || '소견서_진단서.jpg',
+        data: data.medicalCertificateUrl,
+      });
+    }
 
-    const renderAbsenceCertificatePage = () => {
-      if (!certImage) return null;
+    const hasCertificateSheet = isAbsence && allAttachments.length > 0;
+
+    const renderAbsenceCertificatePage = (att: { name: string; data: string }, index: number, total: number) => {
+      if (!att || !att.data) return null;
+      const isPdf = typeof att.data === 'string' && (
+        att.data.startsWith('data:application/pdf') ||
+        att.data.includes('application/pdf') ||
+        (att.name && att.name.toLowerCase().endsWith('.pdf'))
+      );
+
       return (
         <div
+          key={`print-cert-${index}`}
           className="print-page-wrapper"
           style={{
             width: '210mm',
@@ -593,7 +617,7 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
               <div>
                 <div style={{ fontSize: '9pt', color: '#4b5563', marginBottom: '2px' }}>{'<서식 3 부속 첨부 증빙>'}</div>
                 <h2 style={{ fontSize: '16pt', fontWeight: 900, letterSpacing: '0.2em', margin: 0 }}>
-                  결석계 증빙서류 (소견서·진단서)
+                  결석계 증빙서류 (소견서·진단서) {total > 1 ? `[${index + 1}/${total}]` : ''}
                 </h2>
               </div>
               <div style={{ textAlign: 'right', fontSize: '9pt', color: '#374151', lineHeight: 1.4 }}>
@@ -601,42 +625,31 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
                 <div><b>결석기간:</b> {data.absencePeriod?.startDate} ~ {data.absencePeriod?.endDate} ({data.absencePeriod?.totalDays}일간)</div>
               </div>
             </div>
-            <div style={{ fontSize: '8pt', color: '#6b7280', marginBottom: '10px' }}>
-              ※ 본 증빙자료는 학부모(또는 학생)가 제출한 의사소견서/진료확인서/처방전 원본 촬영본 또는 PDF 문서입니다.
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '8pt', color: '#6b7280', marginBottom: '10px' }}>
+              <span>※ 본 증빙자료는 학부모(또는 학생)가 제출한 의사소견서/진료확인서/처방전 원본 촬영본 또는 PDF 문서입니다.</span>
+              <span style={{ fontWeight: 'bold', color: '#374151' }}>첨부: {att.name}</span>
             </div>
           </div>
 
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '1px solid #d1d5db', borderRadius: '4px', backgroundColor: '#f9fafb', padding: '10px', overflow: 'hidden' }}>
-            {(() => {
-              const isPdf = typeof certImage === 'string' && (
-                certImage.startsWith('data:application/pdf') ||
-                certImage.includes('application/pdf') ||
-                (data.medicalCertificateName && data.medicalCertificateName.toLowerCase().endsWith('.pdf'))
-              );
-
-              if (isPdf) {
-                return (
-                  <iframe 
-                    src={certImage} 
-                    title="소견서/진단서 증빙서류 PDF" 
-                    style={{ width: '100%', height: '210mm', border: 'none' }}
-                  />
-                );
-              }
-
-              return (
-                <img 
-                  src={certImage} 
-                  alt="소견서/진단서 증빙서류" 
-                  style={{ maxWidth: '100%', maxHeight: '210mm', objectFit: 'contain' }}
-                />
-              );
-            })()}
+            {isPdf ? (
+              <iframe 
+                src={att.data} 
+                title={`소견서/진단서 증빙서류 PDF ${index + 1}`} 
+                style={{ width: '100%', height: '210mm', border: 'none' }}
+              />
+            ) : (
+              <img 
+                src={att.data} 
+                alt={`소견서/진단서 증빙서류 ${index + 1}`} 
+                style={{ maxWidth: '100%', maxHeight: '210mm', objectFit: 'contain' }}
+              />
+            )}
           </div>
 
           <div style={{ paddingTop: '8px', borderTop: '1px solid #d1d5db', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '8pt', color: '#6b7280', marginTop: '10px' }}>
             <span>호치민시한국국제학교 학생 결석계 첨부 증빙서류 보관본</span>
-            <span>문서번호: {doc.docNo || '-'}</span>
+            <span>문서번호: {doc.docNo || '-'} (첨부 {index + 1}/{total})</span>
           </div>
         </div>
       );
@@ -647,7 +660,9 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
         {isAbsence ? (
           <>
             {renderAbsencePage()}
-            {hasCertificateSheet && renderAbsenceCertificatePage()}
+            {hasCertificateSheet && allAttachments.map((att, idx) => 
+              renderAbsenceCertificatePage(att, idx, allAttachments.length)
+            )}
           </>
         ) : isReport ? (
           renderReportPage()

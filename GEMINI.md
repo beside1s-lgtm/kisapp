@@ -160,11 +160,16 @@ UI 스크롤 덜컹거림, 상단 틈새 내용 비침, 테이블 헤더 겹침 
      - 목록에 없는 질병일 경우 `[목록에 없음 (직접 입력)]`을 통해 임의 병명을 직접 입력할 수 있으며, '상세 증상 및 사유(선택)'를 병기하여 문서에 `병명 - 상세사유` 형태로 조합 기록한다.
      - 제출 문서(`approvals`)의 `parentFormData`에 `diseaseCategory`와 `diseaseName`을 구조화하여 영구 저장함으로써 보건실 감염병/질병대장 집계 시 오분류 없이 100% 정합성을 보장한다.
 
-5. **결석계 소견서/진단서 증빙 연동(사진 및 PDF 지원) 및 구글 드라이브 완결 PDF 아카이빙 표준**:
-   - **소견서 업로드 및 사후 보완 제출 (사진 및 PDF 파일 지원)**: 학부모 신청서(`DesktopAbsenceForm`, `MobileFormCard`), 담임 대리작성(`HomeroomProxyApplyForm`) 및 학부모 신청내역(`/parents/history`)에서 스마트폰 촬영 사진뿐만 아니라 병원 전자문서인 **PDF 파일(`application/pdf`)**도 동시 첨부(`accept="image/*,application/pdf"`)할 수 있어야 한다.
-   - **하이브리드 미디어 파이프라인**: `compressCertificateImage`에서 PDF 감지 시 캔버스 리사이징을 건너뛰고 8MB 이하 용량 검증 후 즉시 Base64 DataURL로 변환한다. 뷰어(`parent-form-view`) 및 인쇄 서식(`parent-document-print`)에서는 `isPdf` 분기를 통해 이미지는 `<img>`로, PDF는 `<iframe>` 임베드 및 `[새 창에서 열기]` 버튼을 제공하여 문서 엑박이나 깨짐을 원천 차단한다.
+5. **결석계 소견서/진단서 증빙 연동(사진/PDF 최대 5개 첨부) 및 결석계 직접 수정·전교 동기화 표준**:
+   - **소견서 업로드 및 사후 보완 제출 (사진 및 PDF 파일 최대 5개 지원, 최대 50MB Storage 연동)**: 학부모 신청서(`DesktopAbsenceForm`, `MobileFormCard`), 담임 대리작성(`HomeroomProxyApplyForm`) 및 학부모 신청내역(`/parents/history`), 수정 모달(`AbsenceEditDialog`)에서 스마트폰 촬영 사진뿐만 아니라 병원 전자문서인 **PDF 파일(`application/pdf`)**을 포함하여 **최대 5개까지 복수 첨부(`accept="image/*,application/pdf"`, `multiple`)**할 수 있어야 한다.
+   - **대용량 파일 Firebase Storage 분리 저장 및 Firestore 1MB 한도 원천 차단**: 600KB 이상 또는 PDF 파일은 Base64 대신 Firebase Storage(`attachments/certificates/`)에 직접 업로드하여 HTTPS 다운로드 URL을 발급받아 저장한다. `storage.rules`에서 비로그인 학부모도 최대 50MB까지 증빙서류 업로드/열람이 허용되도록 설정하여 Firestore 1MB 문서 한도 오류(`Document exceeds maximum allowed size`)를 원천 차단하고 원본 파일을 온전히 보존한다.
+   - **브라우저 최상위 네비게이션 차단(`about:blank#blocked`) 원천 방어 (`openFileInNewTab`)**: 최신 크롬/Edge 브라우저의 data URL 새 탭 열기 보안 차단 문제를 해결하기 위해, 모든 [새 탭/창에서 열기] 버튼은 `window.open` 대신 `openFileInNewTab` 유틸리티를 호출한다. Base64 Data URL은 `Blob`으로 변환 후 `URL.createObjectURL(blob)`로 열람하고, HTTPS Storage URL은 다이렉트로 새 창을 띄워 브라우저 기본 PDF 뷰어로 즉시 열람되도록 보장한다.
+   - **하이브리드 미디어 파이프라인 및 다중 인쇄 표준**: 뷰어(`parent-form-view`) 및 인쇄 서식(`parent-document-print`)에서는 `allAttachments`(최대 5개)를 수집하여 각각 독립된 A4 1페이지로 연속 출력(`pageBreakBefore: 'always'`)하며, PDF는 `<iframe>` 임베드 및 `openFileInNewTab` 기반 `[새 창에서 열기]` 버튼을 제공하여 문서 엑박이나 깨짐을 원천 차단한다.
+   - **학부모 및 담임교사 결석계 직접 수정 표준 (`updateAbsenceApplication`, `AbsenceEditDialog`)**:
+     - 일반 감기 등 단순질병으로 결석계를 제출한 후 병원 진단에서 독감·코로나 등 감염병(등교중지)으로 판정되거나 기간이 연장되는 경우, 문서를 신규 재작성할 필요 없이 학부모 포털(`/parents/history`) 및 교원 결재 상세 화면(`document-view`)에서 **[결석계 수정]** 모달을 통해 기간, 결석구분(병결 -> 출석인정), 질병분류/병명, 첨부 증빙(최대 5개)을 즉시 직접 수정할 수 있도록 한다.
+     - 수정 즉시 원본 결재 문서의 `parentFormData` 및 `attachments`가 갱신되며, 담임 출석부(`homeroom_daily_attendance`), 방과후(`afterschool_attendance`), 스쿨버스(`kisbusDb`), 보건실 감염병 대장(`health_disease_surveillance`)의 **전교 4대 연동 시스템이 실시간 재동기화**된다. 특히 감염병으로 전환 시 보건실 대장 상태가 `등교중지(SUSPENDED)`로 자동 승격된다.
    - **보건교사 직권 제출완료 권한 보장**: 증빙 첨부 유무와 관계없이 보건실 질병대장(`DiseaseTable`, `DiseaseCertificateDialog`)에서 1클릭 토글 또는 팝업 모달을 통해 보건교사 직권으로 '제출완료/미제출' 상태를 즉시 전환할 수 있어야 하며, 수정 내역은 Firestore 대장 및 결재 문서에 영구 보존된다.
-   - **구글 드라이브 완결 PDF 자동 아카이빙**: 결석계 최종 승인(`isFinal === true`) 시 중앙 저장소 학년도 폴더 내 `03_결석계(완료)` (`absenceDoneId`) 폴더에 결재란 직인과 소견서 사진/PDF(부속 2페이지)가 포함된 완결 PDF 문서를 자동 생성/아카이빙하고 문서에 `driveArchived`, `driveFileUrl`을 기록한다.
+   - **구글 드라이브 완결 PDF 자동 아카이빙**: 결석계 최종 승인(`isFinal === true`) 시 중앙 저장소 학년도 폴더 내 `03_결석계(완료)` (`absenceDoneId`) 폴더에 결재란 직인과 소견서 사진/PDF(부속 페이지들)가 포함된 완결 PDF 문서를 자동 생성/아카이빙하고 문서에 `driveArchived`, `driveFileUrl`을 기록한다.
 
 6. **[법적 표준] 담임 대리작성 시 신청인(학부모) 명의·서명 일치 및 교사 서명 원천 배제 표준**:
    - **신청서/결석계 신청인 명의 원칙**: 초·중등교육법 및 학교 학사운영 지침상 체험학습 신청서와 결석계의 법적 제출 주체는 학부모(보호자)이다. 따라서 담임 교사가 시스템에서 대리 작성하더라도 서식의 신청인/보호자란에는 **절대 담임 교사의 이름과 서명이 들어가서는 안 되며, 학부모의 성명과 서명(등록 서명 또는 학부모 날인)만 기재**되어야 한다.

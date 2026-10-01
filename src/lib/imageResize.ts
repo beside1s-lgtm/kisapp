@@ -1,3 +1,6 @@
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from './firebase';
+
 /**
  * 학생 사진을 가로세로 2cm 최적 해상도(160x160px)로 리사이징 및 압축 변환
  * - 가로세로 2cm (96 DPI 기준 약 76px, 2x 고해상도 선명도 지원 160px)
@@ -57,13 +60,27 @@ export async function resizeStudentPhoto(file: File): Promise<string> {
  * - 원본 5~10MB 사진을 100~200KB 수준으로 경량화하여 Firestore 및 PDF 출력 최적화
  */
 export async function compressCertificateImage(file: File, maxDimension: number = 1200): Promise<string> {
-  return new Promise((resolve, reject) => {
-    // PDF 파일 처리 (소견서/진단서 PDF 문서 직접 첨부 지원)
-    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-      if (file.size > 8 * 1024 * 1024) {
-        reject(new Error('PDF 파일 용량은 8MB 이하로 첨부해 주세요.'));
-        return;
+  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+  
+  // PDF이거나 600KB 이상인 대용량 파일은 Firebase Storage에 업로드하여 다운로드 URL 발급 (Firestore 1MB 한도 방지)
+  if (isPdf || file.size > 600 * 1024) {
+    try {
+      const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const fileRef = ref(storage, `attachments/certificates/${Date.now()}_${safeFileName}`);
+      await uploadBytes(fileRef, file);
+      const downloadUrl = await getDownloadURL(fileRef);
+      return downloadUrl;
+    } catch (storageErr) {
+      console.warn('Firebase Storage upload failed, falling back to local data URL:', storageErr);
+      if (file.size > 50 * 1024 * 1024) {
+        throw new Error('파일 용량은 최대 50MB 이하로 첨부해 주세요.');
       }
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    // PDF 파일 처리
+    if (isPdf) {
       const reader = new FileReader();
       reader.onload = (e) => {
         const result = e.target?.result as string;
@@ -119,3 +136,29 @@ export async function compressCertificateImage(file: File, maxDimension: number 
     reader.readAsDataURL(file);
   });
 }
+
+/**
+ * 소견서 / 진단서 / 처방전 사진 및 PDF 파일을 업로드 및 처리
+ * - Firebase Storage 업로드 우선 (최대 50MB) -> HTTPS 다운로드 URL 반환
+ * - Firestore 1MB 단일 문서 제한을 100% 회피하고 구글 드라이브 완결본에 원본 보존
+ */
+export async function uploadCertificateAttachment(file: File): Promise<{ url: string; size: number }> {
+  if (file.size > 50 * 1024 * 1024) {
+    throw new Error('파일 용량은 최대 50MB까지 첨부할 수 있습니다.');
+  }
+
+  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+  
+  try {
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const fileRef = ref(storage, `attachments/certificates/${Date.now()}_${safeFileName}`);
+    await uploadBytes(fileRef, file);
+    const downloadUrl = await getDownloadURL(fileRef);
+    return { url: downloadUrl, size: file.size };
+  } catch (storageErr) {
+    console.warn('Storage direct upload failed, trying image compression/DataURL:', storageErr);
+    const dataUrl = await compressCertificateImage(file);
+    return { url: dataUrl, size: file.size };
+  }
+}
+
