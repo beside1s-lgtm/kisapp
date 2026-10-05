@@ -71,12 +71,24 @@ export default function DocumentPage({ params }: DocumentPageProps) {
                     } as ApprovalDoc;
 
                     if (serializedDoc.docType === 'parent') {
-                        const userEmail = profile?.email?.toLowerCase();
+                        const userEmail = (profile?.email || user?.email || '').trim().toLowerCase();
+                        const userName = (profile?.name || user?.displayName || '').trim();
                         const isAdmin = profile?.isAdmin === true;
-                        const isRequester = serializedDoc.requesterEmail?.toLowerCase() === userEmail;
-                        const isApprover = serializedDoc.approvers?.some((a: any) => a.email?.toLowerCase() === userEmail);
+                        const isRequester = serializedDoc.requesterEmail?.toLowerCase()?.trim() === userEmail;
+                        const isApprover = serializedDoc.approvers?.some((a: any) => {
+                            const apEmail = a.email?.toLowerCase()?.trim();
+                            const apName = a.name?.trim() || a.approverName?.trim();
+                            return (userEmail && apEmail === userEmail) || (userName && apName === userName);
+                        });
+                        // 교직원(교원, 담임교사, 출결담당자, 행정실 등) 계정 판정
+                        const isStaff = Boolean(
+                            profile?.isFaculty || 
+                            profile?.dept || 
+                            (profile?.role && !['학부모', '학생', 'parent', 'student'].includes(profile.role))
+                        );
 
-                        if (!isAdmin && !isRequester && !isApprover) {
+                        // 학생/학부모 타인 문서 접근만 차단하고, 교직원·결재자·기안자·관리자는 열람 보장
+                        if (!isAdmin && !isRequester && !isApprover && !isStaff) {
                             setError("이 문서의 열람 권한이 없습니다. (결재권자 및 관리자만 조회 가능)");
                             return;
                         }

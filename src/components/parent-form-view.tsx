@@ -5,6 +5,7 @@ import { ApprovalDoc, ParentFormData, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, Field
 import { format } from 'date-fns';
 import { ExternalLink } from 'lucide-react';
 import { openFileInNewTab } from '@/lib/utils';
+import { extractAllEvidenceAttachments } from './document-view/EvidenceAttachmentSection';
 
 type ParentFormViewProps = {
   doc: ApprovalDoc;
@@ -877,23 +878,11 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
         </div>
   );
 
-  // 모든 첨부 증빙서류 수집 (최대 5개)
-  const allAttachments: { name: string; data: string }[] = [];
-  if (Array.isArray(doc.attachments) && doc.attachments.length > 0) {
-    doc.attachments.forEach((att) => {
-      if (att?.data) allAttachments.push({ name: att.name || '증빙서류', data: att.data });
-    });
-  } else if (Array.isArray(data.attachments) && data.attachments.length > 0) {
-    data.attachments.forEach((att) => {
-      if (att?.data) allAttachments.push({ name: att.name || '증빙서류', data: att.data });
-    });
-  }
-  if (allAttachments.length === 0 && data.medicalCertificateUrl) {
-    allAttachments.push({
-      name: data.medicalCertificateName || '소견서_진단서.jpg',
-      data: data.medicalCertificateUrl,
-    });
-  }
+  // 모든 첨부 증빙서류 수집 (최대 5개, 전수 통합 추출)
+  const allAttachments = extractAllEvidenceAttachments(doc).map(att => ({
+    name: att.name,
+    data: att.data
+  }));
 
   const hasCertificateSheet = isAbsence && allAttachments.length > 0;
 

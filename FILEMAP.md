@@ -211,6 +211,8 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
 * `inbox/OvertimeBarChart.tsx` : 부서/개인별 초과근무 시간대별 시각화 차트
 * `official-document-print.tsx` : 표준 기안문 인쇄 서식
 * `parent-document-print.tsx` : 학부모 결석계/체험학습 A4 인쇄 서식
+* `document-view/AttachmentViewerModal.tsx` : 결석계 증빙서류(진단서/소견서/처방전) 이미지 및 PDF 원본 모달 뷰어
+* `document-view/EvidenceAttachmentSection.tsx` : 결재 상세 화면 내 첨부 증빙서류 전용 카드, 용량/확장자 표시 및 미리보기/새창/다운로드 연동
 
 ---
 

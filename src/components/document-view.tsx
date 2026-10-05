@@ -33,6 +33,7 @@ import { TeacherDutyView } from './teacher-duty-view';
 import { TeacherOvertimeView } from './teacher-overtime-view';
 import { AfterschoolFormView } from './afterschool-form-view';
 import { VolunteerFormView } from './volunteer-form-view';
+import { EvidenceAttachmentSection } from './document-view/EvidenceAttachmentSection';
 import { formatOfficialDocumentHtml } from '@/lib/documentFormatter';
 import { useRef } from 'react';
 type DocumentViewProps = {
@@ -120,7 +121,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   
   const isApprover = initialDoc.approvers?.some(ap => {
       const apEmail = ap.email?.trim().toLowerCase();
-      const apName = ap.name?.trim();
+      const apName = ap.name?.trim() || ap.approverName?.trim();
       return (normalizedUserEmail && apEmail && apEmail === normalizedUserEmail) ||
              (normalizedProfileEmail && apEmail && apEmail === normalizedProfileEmail) ||
              (userName && apName && apName === userName);
@@ -133,13 +134,19 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
              (userName && cName && cName === userName);
   }) ?? false;
 
+  const isStaff = Boolean(
+    profile.isFaculty || 
+    profile.dept || 
+    (profile.role && !['학부모', '학생', 'parent', 'student'].includes(profile.role))
+  );
+
   const isParentPortal = Boolean(
     pathname?.startsWith('/parents') || 
     (profile?.role === '학부모' && !pathname?.startsWith('/documents'))
   );
 
   let hasViewPermission = false;
-  if (profile.isAdmin) hasViewPermission = true;
+  if (profile.isAdmin || isStaff) hasViewPermission = true;
   else if (initialDoc.docType === 'parent') hasViewPermission = true;
   else if (initialDoc.status === 'recalled') hasViewPermission = isRequester;
   else if (initialDoc.status === 'approved') {
@@ -152,7 +159,9 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     isRequester || 
     isApprover || 
     isCircular || 
-    profile.isAdmin
+    profile.isAdmin ||
+    isStaff ||
+    initialDoc.docType === 'parent'
   );
   
   if (!hasViewPermission) {
@@ -314,14 +323,19 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     });
   };
 
-  const downloadFile = async (file: { data: string; name: string }) => {
+  const downloadFile = async (file: { data?: string; url?: string; name: string }) => {
     if (!hasAttachmentPermission) {
       toast({ variant: 'destructive', title: '권한 없음', description: '첨부파일을 다운로드할 권한이 없습니다.' });
       return;
     }
+    const fileSrc = file.data || file.url;
+    if (!fileSrc) {
+      toast({ variant: 'destructive', title: '오류', description: '파일 다운로드 주소가 올바르지 않습니다.' });
+      return;
+    }
     try {
-      if (file.data && file.data.startsWith('data:')) {
-        const res = await fetch(file.data);
+      if (fileSrc.startsWith('data:')) {
+        const res = await fetch(fileSrc);
         const blob = await res.blob();
         const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -332,18 +346,31 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
         document.body.removeChild(link);
         setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
       } else {
-        const link = document.createElement('a');
-        link.href = file.data;
-        link.download = file.name;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        try {
+          const res = await fetch(fileSrc);
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = file.name;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+        } catch {
+          const link = document.createElement('a');
+          link.href = fileSrc;
+          link.download = file.name;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
       }
     } catch (e) {
       console.error("Download Error:", e);
-      window.open(file.data, '_blank');
+      window.open(fileSrc, '_blank');
     }
   };
 
@@ -661,22 +688,14 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             </div>
         )}
 
-        {/* [수정] 본문 밖으로 분리된 첨부파일 다운로드 영역 (화면 전용, 인쇄시 숨김) */}
-        {initialDoc.attachments && initialDoc.attachments.length > 0 && hasAttachmentPermission && (
-            <div className={`print:hidden ${containerMaxWidth} mx-auto px-4 mb-4`}>
-                <div className="flex flex-col gap-3 p-4 bg-white rounded-lg shadow-sm border border-gray-200">
-                    <h3 className="font-bold text-sm text-gray-700">첨부파일 다운로드</h3>
-                    <div className="flex flex-wrap gap-2">
-                        {initialDoc.attachments.map((file, idx) => (
-                            <Button key={idx} variant="outline" size="sm" onClick={() => downloadFile(file)}>
-                                <Paperclip className="h-4 w-4 mr-2" />
-                                {file.name}
-                            </Button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        )}
+        {/* 첨부 증빙서류 (소견서·진단서·처방전 등) 및 일반 첨부파일 통합 뷰어 영역 (화면 전용, 인쇄시 숨김) */}
+        <div className={`print:hidden ${containerMaxWidth} mx-auto px-4 mb-4`}>
+          <EvidenceAttachmentSection 
+            doc={initialDoc} 
+            hasPermission={hasAttachmentPermission} 
+            onDownload={downloadFile} 
+          />
+        </div>
 
         {/* 부분공개 문서에서 첨부파일 비권한자 안내 */}
         {initialDoc.publishStatus === '부분공개' && !hasAttachmentPermission && initialDoc.attachments && initialDoc.attachments.length > 0 && (
