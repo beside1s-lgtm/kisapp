@@ -36,9 +36,10 @@ export default function ParentsLayout({ children }: { children: React.ReactNode 
     } else if (!loading && user && isParent && profile) {
       const requirePin = docConfig ? docConfig.requireParentPin !== false : true;
       const hasSetup = (requirePin ? !!profile.hashedPin : true) && !!profile.parentSignature;
+      const isEditMode = typeof window !== 'undefined' && window.location.search.includes('mode=edit');
       if (!hasSetup && pathname !== '/parents/setup' && pathname !== '/parents/login') {
         router.push('/parents/setup');
-      } else if (hasSetup && pathname === '/parents/setup') {
+      } else if (hasSetup && pathname === '/parents/setup' && !isEditMode) {
         router.push('/parents');
       }
     }

@@ -8,11 +8,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Eraser, Save, Upload, Pencil, MapPin } from 'lucide-react';
-import SignatureCanvas from 'react-signature-canvas';
+import { SignaturePad, type SignaturePadRef } from '@/components/ui/signature-pad';
 import { storage } from '@/lib/firebase';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { saveUserProfile } from '@/lib/services/userService';
 import { getDestinations } from '@/lib/kisbus';
+import { syncParentResidenceToKisbus } from '@/lib/kisbus/students';
 import type { Destination } from '@/lib/kisbus/types';
 import { Combobox } from '@/components/ui/combobox';
 import { onDocConfigUpdate } from '@/lib/services/settingsService';
@@ -56,6 +57,8 @@ export default function ParentsSetupPage() {
   const [studentClass, setStudentClass] = useState('');
   const [studentNumber, setStudentNumber] = useState('');
   const [address, setAddress] = useState('');
+  const [residenceDestinationId, setResidenceDestinationId] = useState<string | null>(null);
+  const [isCustomAddress, setIsCustomAddress] = useState(false);
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [docConfig, setDocConfig] = useState<DocConfig | null>(null);
 
@@ -77,12 +80,50 @@ export default function ParentsSetupPage() {
 
   const destinationOptions = useMemo(() => {
     return destinations.map(d => ({
-      value: d.name,
+      value: d.id,
       label: d.name
     }));
   }, [destinations]);
+
+  const handleSelectDestination = (destId: string | null) => {
+    setResidenceDestinationId(destId);
+    if (destId) {
+      const selected = destinations.find(d => d.id === destId);
+      if (selected) {
+        setAddress(selected.name);
+      }
+    } else {
+      setAddress('');
+    }
+  };
   
-  const sigCanvas = useRef<SignatureCanvas>(null);
+  useEffect(() => {
+    if (profile) {
+      if (profile.parentName && !parentName) setParentName(profile.parentName);
+      if ((profile as any).parentRelation && !parentRelation) setParentRelation((profile as any).parentRelation);
+      if (profile.parentPhone && !phone) setPhone(profile.parentPhone);
+      if (profile.studentName && !studentName) setStudentName(profile.studentName);
+      if (profile.studentGrade && !studentGrade) setStudentGrade(profile.studentGrade);
+      if (profile.studentClass && !studentClass) setStudentClass(profile.studentClass);
+      if (profile.studentNumber && !studentNumber) setStudentNumber(profile.studentNumber);
+      if (profile.residenceDestinationId && !residenceDestinationId) {
+        setResidenceDestinationId(profile.residenceDestinationId);
+        setIsCustomAddress(false);
+      }
+      if (profile.address && !address) {
+        setAddress(profile.address);
+        if (!profile.residenceDestinationId) {
+          setIsCustomAddress(true);
+        }
+      }
+      if (profile.parentSignature && !uploadedSignatureUrl) {
+        setUploadedSignatureUrl(profile.parentSignature);
+        setSignatureMode('upload');
+      }
+    }
+  }, [profile]);
+
+  const sigCanvas = useRef<SignaturePadRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [signatureMode, setSignatureMode] = useState<'draw' | 'upload'>('draw');
   const [uploadedSignatureUrl, setUploadedSignatureUrl] = useState<string | null>(null);
@@ -148,20 +189,32 @@ export default function ParentsSetupPage() {
       return;
     }
 
+    if (!parentRelation) {
+      toast({ variant: 'destructive', title: '입력 오류', description: '학생과의 관계를 선택해주세요.' });
+      return;
+    }
+
+    if (!studentName.trim()) {
+      toast({ variant: 'destructive', title: '입력 오류', description: '학생 이름을 입력해주세요.' });
+      return;
+    }
+
     if (!studentGrade || !studentClass || !studentNumber) {
       toast({ variant: 'destructive', title: '입력 오류', description: '자녀의 학년, 반, 번호를 모두 입력해주세요.' });
       return;
     }
     
     if (requirePin) {
-      if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
-        toast({ variant: 'destructive', title: '입력 오류', description: 'PIN은 숫자 4자리여야 합니다.' });
-        return;
-      }
-      
-      if (pin !== confirmPin) {
-        toast({ variant: 'destructive', title: '입력 오류', description: 'PIN 번호가 일치하지 않습니다.' });
-        return;
+      if (!profile.hashedPin || pin) {
+        if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+          toast({ variant: 'destructive', title: '입력 오류', description: 'PIN은 숫자 4자리여야 합니다.' });
+          return;
+        }
+        
+        if (pin !== confirmPin) {
+          toast({ variant: 'destructive', title: '입력 오류', description: 'PIN 번호가 일치하지 않습니다.' });
+          return;
+        }
       }
     }
 
@@ -177,17 +230,23 @@ export default function ParentsSetupPage() {
 
     setIsSaving(true);
     try {
-      // 1. PIN 해싱 (requirePin이 false이면 undefined)
-      const hashedPin = requirePin ? await hashPIN(pin) : undefined;
+      // 1. PIN 해싱 (requirePin이 false이면 undefined, 신규 입력 없으면 기존 값 유지)
+      const hashedPin = requirePin 
+        ? (pin ? await hashPIN(pin) : profile.hashedPin) 
+        : undefined;
       
-      // 2. 서명 업로드 (Firebase Storage 대신 Base64로 직접 Firestore에 저장)
+      // 2. 서명 데이터 추출 (SignaturePad 자체 트림 toDataURL 사용으로 p is not a function 원천 방지)
       const signatureDataUrl = signatureMode === 'draw' 
-        ? sigCanvas.current!.getTrimmedCanvas().toDataURL('image/png')
+        ? sigCanvas.current!.toDataURL('image/png')
         : uploadedSignatureUrl!;
       
       const signatureUrl = signatureDataUrl;
       
-      // 3. 프로필 저장
+      // 3. 목적지 및 주소 처리 (미입력 허용)
+      const finalDestId = !isCustomAddress && residenceDestinationId ? residenceDestinationId : undefined;
+      const finalAddress = address.trim() || undefined;
+
+      // 4. 프로필 저장
       const res = await saveUserProfile(user.uid, user.email!, {
         parentPhone: phone,
         hashedPin,
@@ -198,12 +257,26 @@ export default function ParentsSetupPage() {
         studentGrade,
         studentClass,
         studentNumber,
-        address: address.trim(),
-        residenceDestinationId: address.trim(),
+        address: finalAddress,
+        residenceDestinationId: finalDestId,
       });
 
       if (res.success) {
-        toast({ title: '등록 완료', description: '인증 정보가 성공적으로 등록되었습니다.' });
+        // 5. 스쿨버스 목적지 및 학생 레코드 실시간 동기화 (논블로킹)
+        if (finalDestId || finalAddress) {
+          syncParentResidenceToKisbus({
+            studentName: studentName.trim(),
+            studentGrade,
+            studentClass,
+            studentNumber,
+            phone,
+            parentEmail: user.email || undefined,
+            residenceDestinationId: finalDestId,
+            address: finalAddress,
+          }).catch((syncErr) => console.warn('[SetupPage] kisbus sync warning:', syncErr));
+        }
+
+        toast({ title: '등록 완료', description: '학부모 프로필 및 인증 정보가 성공적으로 등록되었습니다.' });
         await fetchProfile(user);
         router.push('/parents');
       } else {
@@ -319,24 +392,66 @@ export default function ParentsSetupPage() {
             </div>
           </div>
 
-          {/* 등하교 목적지 및 스쿨버스 정류장 */}
-          <div className="space-y-1.5 bg-indigo-50/50 p-3.5 rounded-xl border border-indigo-100">
+          {/* 등하교 목적지 및 스쿨버스 정류장 (선택 입력) */}
+          <div className="space-y-2 bg-indigo-50/50 p-3.5 sm:p-4 rounded-xl border border-indigo-100">
             <div className="flex items-center justify-between">
               <Label className="text-xs sm:text-sm font-bold text-indigo-950 flex items-center gap-1.5">
                 <MapPin className="w-4 h-4 text-indigo-600" />
                 <span>등하교 목적지 (스쿨버스 정류장)</span>
+                <span className="text-[11px] font-normal text-slate-500">(선택)</span>
               </Label>
-              <span className="text-[11px] text-indigo-700 font-medium">정류장 검색 선택</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextState = !isCustomAddress;
+                  setIsCustomAddress(nextState);
+                  if (nextState) {
+                    setResidenceDestinationId(null);
+                  }
+                }}
+                className="text-[11px] text-indigo-700 hover:text-indigo-900 font-semibold underline"
+              >
+                {isCustomAddress ? '정류장 검색으로 변경' : '직접 주소 입력'}
+              </button>
             </div>
-            <Combobox 
-              options={destinationOptions}
-              value={address || null}
-              onSelect={(val) => setAddress(val || '')}
-              placeholder="스쿨버스 정류장 및 목적지 검색 (예: Hung Vuong KFC, Sky 1,2...)"
-            />
-            <p className="text-[11px] text-slate-500">
-              세부 동/호수를 입력할 필요 없이 등록된 정류장을 선택하시면 등하교 목적지와 스쿨버스가 통합 연동됩니다.
-            </p>
+
+            {!isCustomAddress ? (
+              <div className="space-y-1.5">
+                <Combobox 
+                  options={destinationOptions}
+                  value={residenceDestinationId}
+                  onSelect={handleSelectDestination}
+                  placeholder="스쿨버스 정류장 검색 (예: Hung Vuong KFC, Sky...)"
+                />
+                {residenceDestinationId && (
+                  <div className="flex items-center justify-between px-1 text-xs text-emerald-700 font-medium bg-emerald-50/80 py-1 rounded">
+                    <span>선택된 정류장: <b>{address}</b></span>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectDestination(null)}
+                      className="text-slate-400 hover:text-slate-600 text-[11px] underline"
+                    >
+                      선택 취소
+                    </button>
+                  </div>
+                )}
+                <p className="text-[11px] text-slate-500">
+                  정류장을 검색하여 선택하시면 스쿨버스 노선 배차와 실시간 연동됩니다. (미입력 시에도 등록 가능)
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Input
+                  placeholder="직접 거주지 주소 또는 아파트명 입력 (예: Happy Valley B동)"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  className="h-9 sm:h-10 text-sm bg-white"
+                />
+                <p className="text-[11px] text-slate-500">
+                  목록에 없는 정류장이나 주소를 직접 입력합니다.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* PIN (PIN 인증이 활성화된 경우에만 표시) */}
@@ -395,15 +510,16 @@ export default function ParentsSetupPage() {
             {signatureMode === 'draw' ? (
               <>
                 <div className="flex justify-end mb-2">
-                  <Button variant="ghost" size="sm" onClick={clearSignature} className="h-8 px-2 text-muted-foreground">
+                  <Button variant="ghost" size="sm" onClick={clearSignature} className="h-8 px-2 text-muted-foreground text-xs">
                     <Eraser className="h-4 w-4 mr-1" /> 다시 쓰기
                   </Button>
                 </div>
-                <div className="border-2 border-dashed rounded-lg bg-white overflow-hidden touch-none relative" style={{ height: '200px' }}>
-                  <SignatureCanvas 
+                <div className="border-2 border-dashed rounded-lg bg-white overflow-hidden relative shadow-inner" style={{ height: '200px', touchAction: 'none' }}>
+                  <SignaturePad 
                     ref={sigCanvas}
-                    canvasProps={{ className: 'w-full h-full' }}
-                    penColor="black"
+                    penColor="#000000"
+                    lineWidth={2.5}
+                    className="w-full h-full cursor-crosshair"
                   />
                 </div>
                 <p className="text-xs text-muted-foreground text-center mt-2">

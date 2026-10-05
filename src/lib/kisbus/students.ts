@@ -238,3 +238,163 @@ export const restoreAfternoonBusForStudent = async (studentId: string): Promise<
     });
 };
 
+/**
+ * 학부모 초기 등록 또는 프로필 설정에서 지정한 등하교 목적지(스쿨버스 정류장/주소)를
+ * 스쿨버스 학생(students) 및 마스터 학생(master_students)에 실시간 연동/동기화합니다.
+ */
+export async function syncParentResidenceToKisbus(params: {
+  studentName: string;
+  studentGrade: string;
+  studentClass: string;
+  studentNumber?: string;
+  phone?: string;
+  parentEmail?: string;
+  residenceDestinationId?: string | null;
+  address?: string | null;
+}): Promise<void> {
+  const {
+    studentName,
+    studentGrade,
+    studentClass,
+    studentNumber,
+    phone,
+    parentEmail,
+    residenceDestinationId,
+    address,
+  } = params;
+
+  if (!studentName) return;
+
+  try {
+    const busDb = db();
+    const mainDb = getDb();
+
+    const cleanName = studentName.trim();
+    const cleanGrade = String(studentGrade || '').trim();
+    const cleanClass = String(studentClass || '').trim();
+    const cleanPhone = phone ? phone.replace(/\D/g, '') : null;
+    const cleanEmail = parentEmail ? parentEmail.toLowerCase().trim() : null;
+
+    // 1. 정류장 이름 조회 (ID가 주어졌을 때)
+    let destName = address ? address.trim() : null;
+    let destId = residenceDestinationId || null;
+
+    if (destId && !destName) {
+      try {
+        const destSnap = await getDoc(doc(busDb, 'destinations', destId));
+        if (destSnap.exists()) {
+          destName = (destSnap.data() as Destination).name || destId;
+        }
+      } catch (err) {
+        console.warn('[syncParentResidence] Failed to fetch destination name:', err);
+      }
+    } else if (!destId && destName) {
+      // 거꾸로 이름만 있는 경우 목적지 ID 역조회
+      try {
+        const allDestSnap = await getDocs(collection(busDb, 'destinations'));
+        const found = allDestSnap.docs.find(d => (d.data() as Destination).name === destName);
+        if (found) {
+          destId = found.id;
+        }
+      } catch (err) {
+        console.warn('[syncParentResidence] Failed to reverse-match destination id:', err);
+      }
+    }
+
+    // 2. kisbus students 컬렉션에서 학생 매칭
+    const busStudentsSnap = await getDocs(collection(busDb, 'students'));
+    let matchedBusStudent: { id: string; data: Student } | null = null;
+
+    for (const d of busStudentsSnap.docs) {
+      const s = d.data() as Student;
+      const sName = (s.nameKo || s.name || '').trim();
+      const sGrade = String(s.grade || '').trim();
+      const sClass = String(s.class || s.classNum || '').trim();
+      const sContact = (s.contact || '').replace(/\D/g, '');
+      const sParentEmail = (s.parentEmail || '').toLowerCase().trim();
+
+      // 조건 1: 이름 + 학년 + 반 일치 (최우선)
+      if (sName === cleanName && sGrade === cleanGrade && (!cleanClass || sClass === cleanClass)) {
+        matchedBusStudent = { id: d.id, data: s };
+        break;
+      }
+      // 조건 2: 이름 + 학부모 이메일 일치
+      if (cleanEmail && sParentEmail === cleanEmail && sName === cleanName) {
+        matchedBusStudent = { id: d.id, data: s };
+        break;
+      }
+      // 조건 3: 이름 + 연락처 일치
+      if (cleanPhone && sContact && sContact === cleanPhone && sName === cleanName) {
+        matchedBusStudent = { id: d.id, data: s };
+        break;
+      }
+    }
+
+    if (matchedBusStudent) {
+      // 기존 스쿨버스 학생 레코드 업데이트
+      const updatePayload: Record<string, any> = {
+        updatedAt: new Date().toISOString(),
+      };
+      if (destId) {
+        updatePayload.morningDestinationId = destId;
+        updatePayload.afternoonDestinationId = destId;
+      }
+      if (destName) {
+        updatePayload.suggestedMorningDestination = destName;
+        updatePayload.suggestedAfternoonDestination = destName;
+      }
+      if (cleanPhone) updatePayload.contact = cleanPhone;
+      if (cleanEmail) updatePayload.parentEmail = cleanEmail;
+      if (studentNumber) updatePayload.number = String(studentNumber);
+
+      await updateDoc(doc(busDb, 'students', matchedBusStudent.id), updatePayload).catch(err => {
+        console.warn('[syncParentResidence] update bus student failed:', err);
+      });
+    } else if (destId || destName) {
+      // 스쿨버스 학생 목록에 없으나 목적지를 등록한 경우 새 학생 레코드 등록
+      const newStudentPayload: any = {
+        name: cleanName,
+        nameKo: cleanName,
+        grade: cleanGrade,
+        class: cleanClass,
+        number: studentNumber ? String(studentNumber) : null,
+        contact: cleanPhone,
+        parentEmail: cleanEmail,
+        morningDestinationId: destId,
+        afternoonDestinationId: destId,
+        suggestedMorningDestination: destName,
+        suggestedAfternoonDestination: destName,
+        afterSchoolDestinations: {},
+        gender: 'Male',
+        applicationStatus: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+      await addDocument('students', newStudentPayload).catch(err => {
+        console.warn('[syncParentResidence] add new bus student failed:', err);
+      });
+    }
+
+    // 3. master_students 컬렉션 동기화
+    if (destName || cleanPhone) {
+      const masterSnap = await getDocs(collection(mainDb, 'master_students'));
+      for (const mDoc of masterSnap.docs) {
+        const mData = mDoc.data();
+        const mName = (mData.name || mData.nameKo || '').trim();
+        const mGrade = String(mData.grade || '').trim();
+        const mClass = String(mData.classNum || '').trim();
+
+        if (mName === cleanName && mGrade === cleanGrade && (!cleanClass || mClass === cleanClass)) {
+          const mUpdates: any = { updatedAt: new Date().toISOString() };
+          if (destName) mUpdates.address = destName;
+          if (cleanPhone) mUpdates.contact = cleanPhone;
+          if (studentNumber) mUpdates.studentNum = String(studentNumber);
+          await updateDoc(doc(mainDb, 'master_students', mDoc.id), mUpdates).catch(() => {});
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[syncParentResidenceToKisbus] 전체 동기화 오류 (논블로킹):', err);
+  }
+}
+
+

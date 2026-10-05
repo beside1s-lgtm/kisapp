@@ -31,6 +31,7 @@ import type {
 } from '@/lib/types';
 import { getUserProfileByEmail, saveUserProfile } from '@/lib/services/userService';
 import { syncParentApplicationDatesToAttendance } from '@/lib/services/homeroomAttendanceSync';
+import { getTeacherHomeroom } from '@/lib/services/permissionService';
 
 const getApprovalsCol = () => collection(getDb(), 'approvals');
 const getSettingsCol = () => collection(getDb(), 'settings');
@@ -404,6 +405,7 @@ export async function getAttendanceDocuments(
   options?: {
     permissions?: DutyRolePermission[];
     orgStructure?: OrgStructure | null;
+    userProfile?: UserProfile | null;
   }
 ) {
   if (!userEmail) return [];
@@ -412,6 +414,7 @@ export async function getAttendanceDocuments(
   try {
     const org = options?.orgStructure;
     const permissions = options?.permissions || [];
+    const profile = options?.userProfile;
 
     // 1. 최고 결재권자 판정: 관리자, 학교장, 교감, 교무부장
     const isLeadership = !!(
@@ -460,6 +463,12 @@ export async function getAttendanceDocuments(
       });
     }
 
+    // (2-1) getTeacherHomeroom을 통한 담임 교사 정보 2중 안전 보강 (profile 포함)
+    const teacherHomeroom = getTeacherHomeroom(userEmail, org, profile);
+    if (teacherHomeroom) {
+      allowedClasses.add(teacherHomeroom.gradeClassKey);
+    }
+
     // (3) 부여된 업무 권한(attendanceScope) 해석
     permissions.forEach(p => {
       if (p.attendanceScope) {
@@ -475,6 +484,9 @@ export async function getAttendanceDocuments(
               if (email && email.toLowerCase() === normalizedEmail) allowedGrades.add(gc.split('-')[0]);
             });
           }
+          if (teacherHomeroom) {
+            allowedGrades.add(teacherHomeroom.grade);
+          }
         } else if (p.attendanceScope.type === 'specific_grades' && p.attendanceScope.grades) {
           p.attendanceScope.grades.forEach(g => allowedGrades.add(String(g)));
         } else if (p.attendanceScope.type === 'assigned_class') {
@@ -482,6 +494,9 @@ export async function getAttendanceDocuments(
             Object.entries(org.homerooms).forEach(([gc, email]) => {
               if (email && email.toLowerCase() === normalizedEmail) allowedClasses.add(gc);
             });
+          }
+          if (teacherHomeroom) {
+            allowedClasses.add(teacherHomeroom.gradeClassKey);
           }
         }
       }
@@ -526,12 +541,18 @@ export async function getAttendanceDocuments(
 
       allDocs.forEach(d => {
         const gcStr = d.parentFormData?.gradeClassNumber || d.gradeClass || '';
-        const parts = gcStr.split('-');
-        const grade = parts[0] || (d.studentGrade ? String(d.studentGrade) : '');
-        const gradeClass = parts.length >= 2 ? `${parts[0]}-${parts[1]}` : (d.studentGrade && d.studentClass ? `${d.studentGrade}-${d.studentClass}` : '');
+        const parts = gcStr.replace(/[^0-9-]/g, '-').split('-').filter(Boolean);
+        const grade = parts[0] || (d.studentGrade ? String(d.studentGrade) : (d.parentFormData?.studentGrade ? String(d.parentFormData.studentGrade) : ''));
+        const gradeClass = parts.length >= 2 
+          ? `${parts[0]}-${parts[1]}` 
+          : (d.studentGrade && d.studentClass 
+              ? `${d.studentGrade}-${d.studentClass}` 
+              : (d.parentFormData?.studentGrade && d.parentFormData?.studentClass 
+                  ? `${d.parentFormData.studentGrade}-${d.parentFormData.studentClass}` 
+                  : ''));
 
-        const isAllowedGrade = grade && allowedGrades.has(grade);
-        const isAllowedClass = gradeClass && allowedClasses.has(gradeClass);
+        const isAllowedGrade = Boolean(grade && allowedGrades.has(grade));
+        const isAllowedClass = Boolean(gradeClass && allowedClasses.has(gradeClass));
 
         if (isAllowedGrade || isAllowedClass) {
           docMap.set(d.id, d);

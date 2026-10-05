@@ -8,6 +8,7 @@ import { Printer, X, Award, CheckCircle2, User, Sparkles } from 'lucide-react';
 import type { Student, MeasurementItem, MeasurementRecord } from '@/lib/pe/types';
 import { buildPapsStudentReport, type PapsStudentReportData, type PapsFactorEvaluation } from '@/lib/pe/papsReportCommentEngine';
 import { getDocConfig, onDocConfigUpdate } from '@/lib/services/settingsService';
+import { KIS_SYMBOL_BASE64 } from './kisSymbolBase64';
 
 type PapsFactorEval = PapsFactorEvaluation;
 
@@ -70,7 +71,7 @@ export const PAPS_REPORT_STYLES = `
   .sheet-head {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
+    align-items: center;
     margin-bottom: 8px;
     border-bottom: 1.2px solid #E1DACB;
     padding-bottom: 6px;
@@ -102,12 +103,25 @@ export const PAPS_REPORT_STYLES = `
   .mt-value {
     font-weight: 700;
   }
-  .stamp img {
-    height: 38px;
+  .sheet-logo, .stamp {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-shrink: 0;
+  }
+  .sheet-logo img, .stamp img {
+    height: 48px;
+    max-width: 72px;
     object-fit: contain;
+    aspect-ratio: 320 / 231;
+    display: block;
   }
   .section {
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+  }
+  .section[data-section="cert"],
+  .section[data-section="library"] {
+    margin-top: 10mm !important;
   }
   .section-head {
     display: flex;
@@ -129,7 +143,7 @@ export const PAPS_REPORT_STYLES = `
     flex-shrink: 0;
   }
   .sec-title {
-    font-size: 12.5px;
+    font-size: 13px;
     font-weight: 800;
     color: #272320;
   }
@@ -159,12 +173,13 @@ export const PAPS_REPORT_STYLES = `
     width: 100%;
   }
   .tri-caption {
-    font-size: 8.5px;
+    font-size: 9px;
     color: #5B554C;
     text-align: center;
-    margin-top: 2px;
-    line-height: 1.35;
+    margin-top: 3px;
+    line-height: 1.4;
     word-break: keep-all;
+    overflow-wrap: break-word;
   }
   .tri-legend {
     flex: 1;
@@ -188,7 +203,7 @@ export const PAPS_REPORT_STYLES = `
     width: 72px;
     flex-shrink: 0;
     color: #272320;
-    font-size: 10px;
+    font-size: 10.5px;
   }
   .legend-bar-track {
     flex: 1;
@@ -208,7 +223,7 @@ export const PAPS_REPORT_STYLES = `
     text-align: right;
     font-weight: 600;
     color: #5B554C;
-    font-size: 9.5px;
+    font-size: 10px;
     flex-shrink: 0;
   }
   .legend-pct {
@@ -225,26 +240,32 @@ export const PAPS_REPORT_STYLES = `
     border: 1px solid #DDD5BF;
     border-left: 3px solid #C7972A;
     border-radius: 6px;
-    padding: 5px 8px;
-    font-size: 9.5px;
-    line-height: 1.45;
+    padding: 6px 9px;
+    font-size: 10.5px;
+    line-height: 1.55;
     color: #272320;
     text-align: justify;
+    word-break: keep-all;
+    overflow-wrap: break-word;
   }
   .skill-chart-foot {
-    margin-top: 3px;
-    padding-top: 3px;
+    margin-top: 4px;
+    padding-top: 4px;
     border-top: 1px dashed #E1DACB;
-    font-size: 9px;
-    line-height: 1.4;
+    font-size: 10px;
+    line-height: 1.45;
+    word-break: keep-all;
+    overflow-wrap: break-word;
   }
   .scf-gray {
     color: #9A9382;
     margin: 0;
+    word-break: keep-all;
   }
   .scf-ink {
     color: #272320;
     margin: 1px 0 0 0;
+    word-break: keep-all;
   }
   .cert-official-wrap {
     position: relative;
@@ -277,10 +298,10 @@ export const PAPS_REPORT_STYLES = `
   .cert-card-official {
     position: relative;
     border-radius: 8px;
-    padding: 8px 9px;
+    padding: 9px 10px;
     background: #fff;
     border: 1px solid #E1DACB;
-    min-height: 68px;
+    min-height: 70px;
   }
   .cert-card-official.achieved {
     border: 1.4px solid #C7972A;
@@ -290,41 +311,37 @@ export const PAPS_REPORT_STYLES = `
     align-items: center;
     gap: 4px;
     margin-bottom: 3px;
-    font-size: 10.5px;
+    font-size: 11.5px;
     color: #5B554C;
     font-weight: 600;
   }
   .cco-sub {
-    font-size: 9px;
+    font-size: 9.5px;
     color: #A79F88;
   }
   .cco-value {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 800;
     color: #272320;
-    margin-bottom: 3px;
+    margin-bottom: 4px;
+    word-break: keep-all;
   }
   .cco-value small {
-    font-size: 10px;
+    font-size: 11px;
     color: #5B554C;
     font-weight: 500;
   }
   .cco-note {
-    font-size: 9px;
+    font-size: 10px;
     color: #5B554C;
-    line-height: 1.35;
+    line-height: 1.45;
+    word-break: keep-all;
+    overflow-wrap: break-word;
   }
-  .cert-stamp {
-    position: absolute;
-    top: -10px;
-    right: -10px;
-    width: 66px;
-    height: 66px;
-    pointer-events: none;
-  }
-  .cert-card-official.achieved .cco-head,
-  .cert-card-official.achieved .cco-value {
-    padding-right: 48px;
+  .cco-line {
+    word-break: keep-all;
+    overflow-wrap: break-word;
+    display: block;
   }
   .library-wrap {
     display: flex;
@@ -346,18 +363,18 @@ export const PAPS_REPORT_STYLES = `
     line-height: 1;
   }
   .lib-value {
-    font-size: 17px;
+    font-size: 18px;
     font-weight: 800;
     color: #272320;
   }
   .lib-value small {
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: 500;
     color: #5B554C;
     margin-left: 2px;
   }
   .lib-label {
-    font-size: 9.5px;
+    font-size: 10px;
     color: #A87618;
     font-weight: 700;
     margin-top: 1px;
@@ -375,9 +392,9 @@ export const PAPS_REPORT_STYLES = `
     gap: 8px;
   }
   .lib-compare-label {
-    font-size: 10px;
+    font-size: 10.5px;
     color: #5B554C;
-    width: 48px;
+    width: 52px;
     flex-shrink: 0;
     font-weight: 600;
   }
@@ -389,16 +406,16 @@ export const PAPS_REPORT_STYLES = `
     position: relative;
   }
   .lib-compare-num {
-    font-size: 10px;
+    font-size: 11px;
     color: #272320;
-    width: 46px;
+    width: 52px;
     text-align: right;
     flex-shrink: 0;
   }
   .lib-legend {
     display: flex;
     gap: 10px;
-    font-size: 9px;
+    font-size: 9.5px;
     color: #5B554C;
   }
   .lib-legend i {
@@ -410,10 +427,12 @@ export const PAPS_REPORT_STYLES = `
     vertical-align: -1px;
   }
   .lib-note {
-    font-size: 9.5px;
+    font-size: 10.5px;
     color: #272320;
-    line-height: 1.4;
+    line-height: 1.5;
     text-align: justify;
+    word-break: keep-all;
+    overflow-wrap: break-word;
   }
   .doc-end {
     margin-top: 6px;
@@ -565,6 +584,7 @@ export default function PapsReportPrintDialog({
         <html lang="ko">
         <head>
           <meta charset="UTF-8">
+          <base href="${window.location.origin}/">
           <title>${printTitle}</title>
           ${styleTags}
           <style>
@@ -1126,10 +1146,7 @@ export default function PapsReportPrintDialog({
   );
 }
 
-/**
- * KIS 날개 로고 에셋 (GloNaCal 원본 Base64 PNG)
- */
-const KIS_LOGO_BASE64 = "data:image/png;base64,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";
+
 
 /**
  * 5대 요인별 시그니처 테마 색상 (GloNaCal 감성 컬러 매핑)
@@ -1141,74 +1158,6 @@ const FACTOR_THEME_COLORS: Record<string, string> = {
   '순발력': '#2E7D32',     // Green
   '체질량지수(BMI)': '#8E24AA', // Purple
 };
-
-/**
- * 공식 인증 도장 SVG (1~2등급 학생 날인용)
- */
-function renderCertStampSVG(uid: string) {
-  const G = '#A87618';
-  return (
-    <svg
-      width="82"
-      height="82"
-      viewBox="0 0 120 120"
-      className="cert-stamp"
-      aria-label="호치민시한국국제학교 공식 인증"
-    >
-      <g transform="rotate(-6 60 60)">
-        <circle cx="60" cy="60" r="57" fill="#fff" stroke={G} strokeWidth="3.2" />
-        <circle cx="60" cy="60" r="52.5" fill="none" stroke={G} strokeWidth="0.9" />
-        <circle cx="60" cy="60" r="36.5" fill="none" stroke={G} strokeWidth="1.3" />
-        <path id={`sTop${uid}`} d="M 26,83.8 A 41.5,41.5 0 1 1 94,83.8" fill="none" />
-        <text
-          fontFamily="Georgia,'Times New Roman',serif"
-          fontSize="8.4"
-          fontWeight="700"
-          letterSpacing="0.35"
-          fill={G}
-        >
-          <textPath href={`#sTop${uid}`} startOffset="50%" textAnchor="middle">
-            KOREAN INTERNATIONAL SCHOOL
-          </textPath>
-        </text>
-        <path id={`sBot${uid}`} d="M 21.1,87.3 A 47.5,47.5 0 0 0 98.9,87.3" fill="none" />
-        <text
-          fontFamily="Georgia,'Times New Roman',serif"
-          fontSize="8.4"
-          fontWeight="700"
-          letterSpacing="1.6"
-          fill={G}
-        >
-          <textPath href={`#sBot${uid}`} startOffset="50%" textAnchor="middle">
-            ★ HCMC ★
-          </textPath>
-        </text>
-        <g fill={G} fontFamily="Georgia,serif" textAnchor="middle">
-          <text x="48" y="45" fontSize="6.5">★</text>
-          <text x="60" y="42" fontSize="8">★</text>
-          <text x="72" y="45" fontSize="6.5">★</text>
-        </g>
-        <path d="M 22,52 L 98,52 L 94.5,60 L 98,68 L 22,68 L 25.5,60 Z" fill={G} />
-        <text
-          x="60"
-          y="63.9"
-          textAnchor="middle"
-          fontFamily="Georgia,'Times New Roman',serif"
-          fontSize="11"
-          fontWeight="700"
-          letterSpacing="0.6"
-          fill="#fff"
-          textLength="58"
-          lengthAdjust="spacingAndGlyphs"
-        >
-          CERTIFIED
-        </text>
-        <line x1="44" y1="77" x2="76" y2="77" stroke={G} strokeWidth="1" />
-        <line x1="50" y1="80.5" x2="70" y2="80.5" stroke={G} strokeWidth="0.7" />
-      </g>
-    </svg>
-  );
-}
 
 /**
  * 5대 체력 요인 5각형 레이더 차트 SVG 렌더러
@@ -1444,11 +1393,11 @@ function SingleStudentPapsSheet({
               </div>
             </div>
           </div>
-          <div className="stamp shrink-0">
+          <div className="sheet-logo shrink-0">
             <img
-              src={KIS_LOGO_BASE64}
+              src={KIS_SYMBOL_BASE64}
               alt="호치민시한국국제학교 심볼"
-              className="h-[38px] object-contain"
+              className="h-[48px] max-w-[72px] object-contain"
             />
           </div>
         </div>
@@ -1554,7 +1503,6 @@ function SingleStudentPapsSheet({
             <div className="cert-official-grid">
               {/* 카드 1: 종합 체력 등급 PAPS 인증 */}
               <div className={`cert-card-official ${isCertified ? 'achieved' : ''}`}>
-                {isCertified && renderCertStampSVG(uidBase)}
                 <div className="cco-head">
                   <span>🏆</span> <span>종합 체력 등급<span className="cco-sub">_PAPS</span></span>
                 </div>

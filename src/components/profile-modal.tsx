@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/utils';
 import { useEffect, useState, useRef } from 'react';
-import SignatureCanvas from 'react-signature-canvas';
+import { SignaturePad, type SignaturePadRef } from './ui/signature-pad';
 import {
   Dialog,
   DialogContent,
@@ -37,7 +37,7 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState('');
   const [sigPreview, setSigPreview] = useState('');
   const [signatureMode, setSignatureMode] = useState<'draw' | 'upload'>('draw');
-  const sigCanvas = useRef<SignatureCanvas>(null);
+  const sigCanvas = useRef<SignaturePadRef>(null);
   const [canvasEmpty, setCanvasEmpty] = useState(true);
 
   const clearSignature = () => {
@@ -87,7 +87,7 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
       
       if (signatureMode === 'draw') {
         if (sigCanvas.current && !sigCanvas.current.isEmpty()) {
-          const canvasData = sigCanvas.current.getTrimmedCanvas().toDataURL('image/png');
+          const canvasData = sigCanvas.current.toDataURL('image/png');
           finalSignature = await compressImage(canvasData);
         } else {
           finalSignature = sigPreview || profile.signature || '';
@@ -128,12 +128,12 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
 
       setIsOpen(false);
     } catch (error: any) {
+       console.error('[ProfileModal] save failed:', error);
        toast({
           variant: 'destructive',
           title: '업데이트 안내',
-          description: error.message || '프로필 설정이 적용되었습니다.',
+          description: error?.message || '프로필 설정 저장 중 오류가 발생했습니다.',
         });
-       setIsOpen(false);
     } finally {
       setIsSaving(false);
     }
@@ -292,17 +292,13 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
                         <Eraser className="h-3 w-3 mr-1" /> 다시 그리기
                       </Button>
                     </div>
-                    <div className="border-2 border-dashed border-slate-300 rounded-xl bg-white overflow-hidden touch-none relative h-32 w-full flex items-center justify-center shadow-inner">
-                      <SignatureCanvas 
+                    <div className="border-2 border-dashed border-slate-300 rounded-xl bg-white overflow-hidden relative h-32 w-full shadow-inner" style={{ touchAction: 'none' }}>
+                      <SignaturePad 
                         ref={sigCanvas}
-                        canvasProps={{ 
-                          className: 'w-full h-full cursor-crosshair touch-none' 
-                        }}
-                        penColor="black"
-                        minWidth={1.5}
-                        maxWidth={3.5}
-                        dotSize={2}
-                        onEnd={() => setCanvasEmpty(sigCanvas.current?.isEmpty() ?? true)}
+                        penColor="#000000"
+                        lineWidth={2.5}
+                        className="w-full h-full cursor-crosshair"
+                        onChange={(empty) => setCanvasEmpty(empty)}
                       />
                     </div>
                   </div>

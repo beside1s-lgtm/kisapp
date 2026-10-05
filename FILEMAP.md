@@ -177,6 +177,8 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
   * `StudentMoveDialog.tsx` : 수동 학생 팀 맞교환/이동 모달
   * `ScoutingReportDialog.tsx` : AI 전력 분석 리포트 모달
 * `MeasurementManagement.tsx` : PAPS 측정 관리 메인
+* `PapsReportPrintDialog.tsx` : PAPS 학생 체육 성장 리포트 A4 인쇄 다이얼로그 (GloNaCal 테마, 5대 요인 레이더 차트, 학교 심볼 로고 탑재)
+* `kisSymbolBase64.ts` : PAPS 성장 리포트 전용 호치민시한국국제학교 공식 심볼 로고 Base64 에셋
 * `RecordInput.tsx` : PAPS 종목별 수기 기록 입력
 * `ClassAnalytics.tsx` : 학급별 체력 분석 통계
 * `Ranking.tsx` : 학년/전교 PAPS 랭킹
@@ -246,6 +248,7 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
 * `src/app/globals.css` : 학교 공식 브랜드 컬러 3종(:root `--primary-color: #2471B2`, `--secondary-color: #B01E23`, `--accent-color: #C49832`) 및 ShadCN UI 시맨틱 HSL 토큰 정의
 * `tailwind.config.ts` : Tailwind CSS 설정 및 `brand` 확장 팔레트(brand.blue, brand.red, brand.gold) 토큰 등록
 * `src/components/ui/` : Button, Badge, Tabs, Alert 등 브랜드 테마와 동기화된 기본 원자 컴포넌트
+* `src/components/ui/signature-pad.tsx` : Pointer Events 기반 High-DPI(레티나) 지원, 무오차 좌표 보정 및 자체 트림(Trim) 알고리즘을 내장한 전자 서명 컴포넌트
 
 ---
 

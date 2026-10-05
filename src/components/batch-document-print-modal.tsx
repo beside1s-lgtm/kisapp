@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { ApprovalDoc } from '@/lib/types';
 import { ParentFormView } from '@/components/parent-form-view';
 import { getUserProfileByEmail } from '@/lib/services/userService';
@@ -22,6 +22,7 @@ export function BatchDocumentPrintModal({
 }: BatchDocumentPrintModalProps) {
   const [approverSignatures, setApproverSignatures] = useState<Record<string, string>>({});
   const [loadingSignatures, setLoadingSignatures] = useState(true);
+  const printContainerRef = useRef<HTMLDivElement>(null);
 
   // 모든 선택된 문서의 결재자 서명 일괄 수집
   useEffect(() => {
@@ -60,8 +61,93 @@ export function BatchDocumentPrintModal({
 
   if (!isOpen) return null;
 
+  // [전역 표준] 독립 팝업 창 일괄 인쇄 (부모 레이아웃 간섭 0% 차단 & @media print page-break 보장)
   const handlePrint = () => {
-    window.print();
+    if (!printContainerRef.current) {
+      window.print();
+      return;
+    }
+
+    // 스타일 태그 수집
+    let styleTags = '';
+    document.querySelectorAll('style, link[rel="stylesheet"]').forEach((el) => {
+      styleTags += el.outerHTML + '\n';
+    });
+
+    const printHtml = printContainerRef.current.innerHTML;
+    const printWin = window.open('', '_blank', 'width=900,height=1000');
+
+    if (printWin) {
+      printWin.document.open();
+      printWin.document.write(`
+        <!DOCTYPE html>
+        <html lang="ko">
+        <head>
+          <meta charset="UTF-8">
+          <base href="${window.location.origin}/">
+          <title>${title} (총 ${documents.length}건)</title>
+          ${styleTags}
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 8mm 10mm 8mm 10mm;
+            }
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", Roboto, sans-serif;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+              color: #000000;
+            }
+            .batch-doc-item {
+              box-sizing: border-box !important;
+              width: 100% !important;
+              page-break-after: always !important;
+              break-after: page !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+            }
+            .batch-doc-item:last-child {
+              page-break-after: auto !important;
+              break-after: auto !important;
+            }
+            @media print {
+              body {
+                background: #ffffff !important;
+              }
+              .batch-doc-item {
+                page-break-after: always !important;
+                break-after: page !important;
+              }
+              .batch-doc-item:last-child {
+                page-break-after: auto !important;
+                break-after: auto !important;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          ${printHtml}
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.focus();
+                window.print();
+                setTimeout(function() { window.close(); }, 500);
+              }, 400);
+            };
+          </script>
+        </body>
+        </html>
+      `);
+      printWin.document.close();
+    } else {
+      // 팝업 차단 시 화면 인쇄 fallback
+      window.print();
+    }
   };
 
   return (
@@ -75,7 +161,7 @@ export function BatchDocumentPrintModal({
               {title} (총 {documents.length}건 선택)
             </h2>
             <p className="text-xs text-slate-500 hidden sm:block">
-              A4 규격에 맞추어 각 문서가 순서대로 인쇄됩니다.
+              각 문서 사이에 독립 페이지 구분이 적용되어 A4 단위로 깔끔하게 분리 인쇄됩니다.
             </p>
           </div>
         </div>
@@ -92,7 +178,7 @@ export function BatchDocumentPrintModal({
             ) : (
               <Printer className="w-4 h-4" />
             )}
-            <span>인쇄 실행</span>
+            <span>일괄 인쇄 실행 ({documents.length}건)</span>
           </Button>
 
           <Button
@@ -115,13 +201,13 @@ export function BatchDocumentPrintModal({
             <p className="text-sm font-medium">직인 및 서명 정보를 불러오는 중입니다...</p>
           </div>
         ) : (
-          <div className="space-y-6 print:space-y-0 max-w-[220mm] mx-auto print:max-w-none print:w-[210mm]">
+          <div ref={printContainerRef} className="space-y-6 print:space-y-0 max-w-[220mm] mx-auto print:max-w-none print:w-[210mm]">
             {documents.map((doc, index) => {
               const isLast = index === documents.length - 1;
               return (
                 <div
                   key={doc.id}
-                  className="bg-white shadow-md rounded-xl p-2 sm:p-4 print:shadow-none print:p-0 print:rounded-none"
+                  className="batch-doc-item bg-white shadow-md rounded-xl p-2 sm:p-4 print:shadow-none print:p-0 print:rounded-none"
                   style={{
                     breakAfter: isLast ? 'auto' : 'page',
                     pageBreakAfter: isLast ? 'auto' : 'always',

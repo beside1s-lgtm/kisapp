@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { getAttendanceDocuments } from "@/lib/services/documentService";
 import { getOrgStructure } from "@/lib/services/settingsService";
+import { getTeacherHomeroom } from "@/lib/services/permissionService";
 import { DocumentList } from "@/components/document-list";
 import { useAuth } from "@/hooks/use-auth";
 import { ApprovalDoc, OrgStructure, DutyRolePermission } from "@/lib/types";
@@ -25,6 +26,10 @@ export default function AttendanceRegistryPage() {
     // 다중 선택 및 일괄 인쇄 상태
     const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
     const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+
+    // 담임 교사 및 권한 상태
+    const [homeroomInfo, setHomeroomInfo] = useState<{ grade: string; classNum: string; gradeClassKey: string } | null>(null);
+    const [isLeadershipOrAdmin, setIsLeadershipOrAdmin] = useState(false);
 
     // 필터 상태
     const [selectedYear, setSelectedYear] = useState<string>('전체');
@@ -62,15 +67,35 @@ export default function AttendanceRegistryPage() {
                     });
                 }
 
+                const isLeadership = !!(
+                    profile.isAdmin ||
+                    (org?.principal && org.principal.toLowerCase() === normalizedEmail) ||
+                    (org?.vicePrincipal && org.vicePrincipal.toLowerCase() === normalizedEmail) ||
+                    (org?.academicHead && org.academicHead.toLowerCase() === normalizedEmail) ||
+                    userPerms.some(p => p.features?.includes('student_admin') || p.attendanceScope?.type === 'all')
+                );
+                setIsLeadershipOrAdmin(isLeadership);
+
+                const hr = getTeacherHomeroom(profile.email, org, profile);
+                setHomeroomInfo(hr);
+
+                // 일반 담임 교사인 경우 본인 담당 학년으로 자동 필터링
+                if (hr && !isLeadership) {
+                    setSelectedGrade(hr.grade);
+                }
+
                 getAttendanceDocuments(profile.email, !!profile.isAdmin, {
                     orgStructure: org,
                     permissions: userPerms,
+                    userProfile: profile,
                 }).then(data => {
                     setDocs(data);
                     setLoading(false);
                 });
             }).catch(() => {
-                getAttendanceDocuments(profile.email, !!profile.isAdmin).then(data => {
+                getAttendanceDocuments(profile.email, !!profile.isAdmin, {
+                    userProfile: profile,
+                }).then(data => {
                     setDocs(data);
                     setLoading(false);
                 });
@@ -100,6 +125,18 @@ export default function AttendanceRegistryPage() {
         return Array.from(years).sort((a, b) => b.localeCompare(a));
     }, [docs]);
 
+    // 문서의 학년 정규화 추출 함수
+    const getDocGrade = (doc: ApprovalDoc): string => {
+        const pfd = doc.parentFormData as any;
+        const anyDoc = doc as any;
+        if (pfd?.studentGrade) return String(pfd.studentGrade).trim();
+        if (anyDoc.studentGrade) return String(anyDoc.studentGrade).trim();
+        const gcStr = pfd?.gradeClassNumber || anyDoc.gradeClass || '';
+        const parts = gcStr.replace(/[^0-9-]/g, '-').split('-').filter(Boolean);
+        if (parts.length > 0) return parts[0];
+        return '';
+    };
+
     // 필터링 적용 로직
     const filteredDocs = useMemo(() => {
         return docs.filter(doc => {
@@ -113,12 +150,10 @@ export default function AttendanceRegistryPage() {
                 if (!dateStr || !dateStr.startsWith(selectedYear)) return false;
             }
 
-            // 3. 학년 필터링 (parentFormData.gradeClassNumber 또는 studentGrade 사용)
+            // 3. 학년 필터링 (정규화된 학년으로 정확히 비교)
             if (selectedGrade !== '전체') {
-                const gradeClass = doc.parentFormData?.gradeClassNumber || '';
-                // '4-4-2' 에서 첫 번째 숫자가 학년
-                const firstChar = gradeClass.trim().charAt(0);
-                if (firstChar !== selectedGrade) return false;
+                const docGrade = getDocGrade(doc);
+                if (docGrade !== selectedGrade) return false;
             }
 
             // 4. 학생명 필터링
@@ -133,7 +168,12 @@ export default function AttendanceRegistryPage() {
 
     const handleResetFilters = () => {
         setSelectedYear('전체');
-        setSelectedGrade('전체');
+        // 담임교사이면 본인 담당 학년으로 복원, 아니면 전체
+        if (homeroomInfo && !isLeadershipOrAdmin) {
+            setSelectedGrade(homeroomInfo.grade);
+        } else {
+            setSelectedGrade('전체');
+        }
         setStudentNameQuery('');
         setSelectedDocIds([]);
     };
@@ -169,12 +209,19 @@ export default function AttendanceRegistryPage() {
 
     return (
         <MainLayout title="결석계 보관함" contentClassName="p-4 md:p-8 space-y-6 overflow-y-auto overscroll-contain">
-            <div className="flex items-center gap-3 border-b pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4">
                 <div>
-                    <h1 className="font-headline text-2xl sm:text-3xl font-bold flex items-center gap-2.5 text-slate-900">
-                        <CalendarCheck className="h-6 w-6 text-primary" />
-                        결석계 보관함
-                    </h1>
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                        <h1 className="font-headline text-2xl sm:text-3xl font-bold flex items-center gap-2.5 text-slate-900">
+                            <CalendarCheck className="h-6 w-6 text-primary" />
+                            결석계 보관함
+                        </h1>
+                        {homeroomInfo && !isLeadershipOrAdmin && (
+                            <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 text-xs font-semibold py-1 px-2.5">
+                                {homeroomInfo.grade}학년 {homeroomInfo.classNum}반 담임 자동 조회
+                            </Badge>
+                        )}
+                    </div>
                     <p className="text-muted-foreground mt-0.5 text-xs sm:text-sm">결재가 완료된 학부모 출결 문서(결석계) 기록입니다.</p>
                 </div>
             </div>
