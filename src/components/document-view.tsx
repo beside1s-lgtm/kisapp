@@ -28,6 +28,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ParentFormView } from './parent-form-view';
 import { ParentNotificationModal } from './parent-notification-modal';
+import { ProfileModal } from './profile-modal';
 import { AbsenceEditDialog } from '@/components/parents-apply/AbsenceEditDialog';
 import { TeacherDutyView } from './teacher-duty-view';
 import { TeacherOvertimeView } from './teacher-overtime-view';
@@ -48,6 +49,7 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const { toast } = useToast();
   const [isApproving, startApproveTransition] = useTransition();
   const [isRejecting, startRejectTransition] = useTransition();
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isRecalling, startRecallTransition] = useTransition();
   const [isDeleting, startDeleteTransition] = useTransition();
   
@@ -215,10 +217,10 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   const executeApprove = (overrideDate?: string) => {
     if (!profile?.signature) {
       toast({
-        variant: 'destructive',
-        title: '결재 불가',
-        description: '서명이 등록되어 있지 않습니다. 우측 상단 프로필에서 서명을 먼저 등록해 주세요.'
+        title: '서명 등록 안내',
+        description: '결재를 진행하려면 전자 서명이 필요합니다. 서명을 등록해 주세요.'
       });
+      setIsProfileModalOpen(true);
       return;
     }
     
@@ -264,6 +266,14 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
   };
 
   const handleApprove = () => {
+    if (!profile?.signature) {
+      toast({
+        title: '서명 등록 안내',
+        description: '결재를 진행하려면 전자 서명이 필요합니다. 서명을 등록해 주세요.'
+      });
+      setIsProfileModalOpen(true);
+      return;
+    }
     if (isTeacherParentTurn) {
       setShowTeacherApproveModal(true);
       return;
@@ -954,6 +964,18 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
             }}
             userEmail={user?.email || profile?.email || ''}
             role={initialDoc.approvers?.some(a => a.email?.toLowerCase() === user?.email?.toLowerCase() && a.role?.includes('담임')) ? 'teacher' : 'parent'}
+        />
+
+        {/* 서명 미등록 교사를 위한 프로필 및 서명 설정 모달 */}
+        <ProfileModal
+            open={isProfileModalOpen}
+            onOpenChange={setIsProfileModalOpen}
+            onSaved={() => {
+                toast({
+                    title: '서명 등록 완료',
+                    description: '서명이 등록되었습니다. 이제 결재 승인을 진행할 수 있습니다.'
+                });
+            }}
         />
     </div>
   );

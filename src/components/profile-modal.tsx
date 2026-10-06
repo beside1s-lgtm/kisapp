@@ -26,12 +26,28 @@ import { saveUserProfile } from '@/lib/services/userService';
 const ROLES = ['교사', '교감', '교장', '행정실장', '주무관', '담당', '강사'];
 const ADMIN_EMAIL = 'beside1s@kshcm.net';
 
-export function ProfileModal({ children }: { children: React.ReactNode }) {
+interface ProfileModalProps {
+  children?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onSaved?: () => void;
+}
+
+export function ProfileModal({ children, open: controlledOpen, onOpenChange: setControlledOpen, onSaved }: ProfileModalProps) {
   const { user, profile, profileLoading, fetchProfile, updateProfile } = useAuth();
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
 
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const isOpen = isControlled ? controlledOpen : internalOpen;
+  const setIsOpen = (open: boolean) => {
+    if (isControlled) {
+      setControlledOpen?.(open);
+    } else {
+      setInternalOpen(open);
+    }
+  };
   
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
@@ -127,6 +143,7 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
       }
 
       setIsOpen(false);
+      onSaved?.();
     } catch (error: any) {
        console.error('[ProfileModal] save failed:', error);
        toast({
@@ -148,7 +165,7 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
   };
 
   const handleOpenChange = (open: boolean) => {
-    if (isProfileIncomplete && !open) {
+    if (isProfileIncomplete && !open && !isControlled) {
       toast({
         variant: "destructive",
         title: "프로필 미완성",
@@ -161,9 +178,11 @@ export function ProfileModal({ children }: { children: React.ReactNode }) {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        {children}
-      </DialogTrigger>
+      {children && (
+        <DialogTrigger asChild>
+          {children}
+        </DialogTrigger>
+      )}
       <DialogContent className="max-w-lg sm:max-w-xl max-h-[92vh] flex flex-col p-0 overflow-hidden rounded-2xl border shadow-2xl">
         {/* 고정 헤더 */}
         <DialogHeader className="p-5 sm:p-6 pb-3 border-b bg-card shrink-0">

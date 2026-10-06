@@ -3,8 +3,10 @@
 import type { FC, ReactNode } from 'react';
 import React from 'react';
 import Link from 'next/link';
-import { Home, LogOut, ArrowLeft, Bus, ShieldAlert, Loader2 } from 'lucide-react';
+import { Home, LogOut, ArrowLeft, Bus, ShieldAlert, Loader2, User as UserIcon } from 'lucide-react';
 import { Button } from '../ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
+import { ProfileModal } from '../profile-modal';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -50,6 +52,13 @@ export const MainLayout: FC<MainLayoutProps> = ({
     const currentPath = pathname.split('/')[1];
     return t(`page.title.${currentPath || 'home'}`);
   }
+
+  const renderMobileTitle = () => {
+    if (typeof title === 'string' && title.includes('전자결재 대시보드')) {
+      return '대시보드';
+    }
+    return title || getPageTitle();
+  };
 
   const handleLogout = async () => {
       try {
@@ -219,16 +228,33 @@ export const MainLayout: FC<MainLayoutProps> = ({
                             mobileHeaderRow1
                           ) : (
                             <div className="text-sm font-bold font-headline text-slate-800 dark:text-slate-100 truncate">
-                              {title || getPageTitle()}
+                              {renderMobileTitle()}
                             </div>
                           )}
                         </div>
                       )}
                   </div>
 
-                  {/* Row 1 우측: rightActions(mobileSubHeader 없을 때만) + LanguageSwitcher + 로그아웃 */}
-                  <div className="flex items-center gap-1 shrink-0">
+                  {/* Row 1 우측: rightActions(mobileSubHeader 없을 때만) + 모바일 프로필(서명) 버튼 + LanguageSwitcher + 로그아웃 */}
+                  <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                       {!mobileSubHeader && rightActions}
+                      {user && profile && (
+                        <ProfileModal>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 rounded-full p-0 shrink-0 hover:bg-muted"
+                            title="내 프로필 및 서명 설정"
+                          >
+                            <Avatar className="h-8 w-8 shrink-0 border border-slate-200">
+                              <AvatarImage src={user?.photoURL || ''} alt={profile?.name || ''} />
+                              <AvatarFallback className="bg-slate-100 text-slate-800 text-xs font-bold">
+                                {profile?.name?.charAt(0).toUpperCase() || <UserIcon className="h-4 w-4" />}
+                              </AvatarFallback>
+                            </Avatar>
+                          </Button>
+                        </ProfileModal>
+                      )}
                       <LanguageSwitcher />
                       {user && (
                           <Button variant="outline" size="sm" onClick={handleLogout} className="h-8 px-2 text-xs text-rose-600 border-rose-200 hover:bg-rose-50" title={t('logout.button')}>

@@ -668,7 +668,14 @@ export default function InboxPage() {
     }
 
     return (
-        <MainLayout title="전자결재 대시보드" contentClassName="p-2 sm:p-3 lg:p-3.5 lg:h-full lg:max-h-full flex flex-col gap-2.5 lg:gap-3 font-body">
+        <MainLayout 
+            title={
+                <>
+                    <span className="hidden sm:inline">전자결재 </span>대시보드
+                </>
+            } 
+            contentClassName="p-2 sm:p-3 lg:p-3.5 lg:h-full lg:max-h-full flex flex-col gap-2.5 lg:gap-3 font-body"
+        >
             {/* ── 2열 50:50 나란한 배치: [결재 대기 문서 + 주요 학교 일정] (좌) & [나의 업무] (우) ── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-3.5 lg:flex-1 lg:min-h-0 items-stretch overflow-visible lg:overflow-hidden">
                 {/* 1. 좌측 (50%): [결재 대기 문서 목록] (상단) + [주요 학교 일정] (하단) */}
