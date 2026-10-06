@@ -393,7 +393,7 @@ export const onMasterStudentsUpdate = (
       let assignedSeatNumber: number | null = null;
 
       if (matchedBusStudent) {
-        if (matchedBusStudent.gender) {
+        if (!master.gender && matchedBusStudent.gender) {
           const bg = String(matchedBusStudent.gender).toLowerCase().trim();
           master.gender = bg === 'female' || bg === '여' || bg === '여자' || bg === 'f' || bg === 'w' ? 'Female' : 'Male';
         }

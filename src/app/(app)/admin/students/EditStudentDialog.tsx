@@ -161,11 +161,11 @@ export function EditStudentDialog({
             <div className="space-y-1">
               <Label className="text-xs text-slate-600">성별</Label>
               <Select
-                value={editStudentForm.gender || 'Male'}
+                value={editStudentForm.gender === 'Female' ? 'Female' : 'Male'}
                 onValueChange={(val: 'Male' | 'Female') => setEditStudentForm(prev => ({ ...prev, gender: val }))}
               >
                 <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="성별" />
+                  <SelectValue placeholder="성별 선택" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Male">남학생</SelectItem>

@@ -167,15 +167,44 @@ export function StudentDetailDialog({
                 </span>
               </div>
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                <span className="text-slate-500 block mb-1">성별 / 승차권 카드 번호</span>
-                <span className="font-bold text-slate-800">
-                  {selectedStudent.gender === 'Male' ? '남성' : '여성'} {selectedStudent.kisbusNo ? `(카드: ${selectedStudent.kisbusNo})` : ''}
-                </span>
+                <span className="text-slate-500 block mb-1">성별</span>
+                {(() => {
+                  const raw = selectedStudent.gender;
+                  const lower = String(raw || '').trim().toLowerCase();
+                  const isMale = lower === 'male' || lower === '남' || lower === '남학생' || lower === '남자' || lower === 'm';
+                  const isFemale = lower === 'female' || lower === '여' || lower === '여학생' || lower === '여자' || lower === 'f' || lower === 'w';
+                  if (isMale) {
+                    return (
+                      <span className="inline-flex items-center gap-1.5 font-bold text-sky-800 bg-sky-50 border border-sky-200 px-2.5 py-0.5 rounded-lg text-xs">
+                        남학생
+                      </span>
+                    );
+                  }
+                  if (isFemale) {
+                    return (
+                      <span className="inline-flex items-center gap-1.5 font-bold text-rose-800 bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-lg text-xs">
+                        여학생
+                      </span>
+                    );
+                  }
+                  return <span className="font-bold text-slate-500 text-xs">미등록</span>;
+                })()}
               </div>
             </div>
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-              <span className="text-slate-500 block mb-1">등하교 목적지</span>
-              <span className="font-medium text-slate-800">{selectedStudent.address || '등록된 목적지 정보가 없습니다.'}</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <span className="text-slate-500 block mb-1">등하교 목적지 (스쿨버스 정류장)</span>
+                <span className="font-medium text-slate-800">{selectedStudent.address || '등록된 목적지 정보가 없습니다.'}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-slate-500 block">스쿨버스 승차권 카드 번호</span>
+                  <span className="text-[10px] text-slate-400">버스 태그용 학생 카드 ID</span>
+                </div>
+                <span className="font-medium text-slate-800 font-mono">
+                  {selectedStudent.kisbusNo ? `카드 번호: ${selectedStudent.kisbusNo}` : '미발급 / 미등록 (스쿨버스 미이용 시 불필요)'}
+                </span>
+              </div>
             </div>
 
             {/* 형제·자매 (가족) 연결 관리 */}

@@ -169,6 +169,18 @@ export default function AdminMasterStudentsPage() {
     return () => unsubTrash();
   }, []);
 
+  // 열려있는 학생 프로필(selectedStudent)이 있는 경우, 최신 students 데이터로 실시간 자동 동기화
+  useEffect(() => {
+    if (!selectedStudent || !isDetailDialogOpen) return;
+    const latest = students.find(s => 
+      s.studentId === selectedStudent.studentId || 
+      (s.studentEmail && selectedStudent.studentEmail && s.studentEmail.toLowerCase() === selectedStudent.studentEmail.toLowerCase())
+    );
+    if (latest) {
+      setSelectedStudent(latest);
+    }
+  }, [students, isDetailDialogOpen]);
+
   const destinationOptions = useMemo(() => {
     return destinations.map(d => ({
       value: d.name,
@@ -337,11 +349,14 @@ export default function AdminMasterStudentsPage() {
     }
   };
 
-  // 학생 정보 수정 저장
+  // 학생 정보 수정 시작
   const handleStartEditStudent = (student: MasterStudent) => {
     const defaultEnName = student.nameEn || extractEnglishNameFromEmail(student.studentEmail || '');
+    const rawG = String(student.gender || '').trim().toLowerCase();
+    const normalizedGender: 'Male' | 'Female' = (rawG === 'female' || rawG === '여' || rawG === '여학생' || rawG === '여자' || rawG === 'f') ? 'Female' : 'Male';
     setEditStudentForm({
       ...student,
+      gender: normalizedGender,
       nameEn: defaultEnName,
     });
     setIsEditDialogOpen(true);
@@ -349,23 +364,31 @@ export default function AdminMasterStudentsPage() {
 
   const handleSaveEditStudent = async () => {
     if (!editStudentForm.studentId || !editStudentForm.name) return;
+    const finalGender: 'Male' | 'Female' = editStudentForm.gender === 'Female' ? 'Female' : 'Male';
+    const payloadToSave = {
+      name: editStudentForm.name,
+      nameEn: editStudentForm.nameEn || '',
+      studentEmail: editStudentForm.studentEmail || '',
+      grade: String(editStudentForm.grade || '1'),
+      classNum: String(editStudentForm.classNum || '1'),
+      studentNum: String(editStudentForm.studentNum || ''),
+      gender: finalGender,
+      contact: editStudentForm.contact || '',
+      address: editStudentForm.address || '',
+      kisbusNo: editStudentForm.kisbusNo || '',
+      photoUrl: editStudentForm.photoUrl || ''
+    };
+
     try {
-      await updateMasterStudent(editStudentForm.studentId, {
-        name: editStudentForm.name,
-        nameEn: editStudentForm.nameEn || '',
-        studentEmail: editStudentForm.studentEmail || '',
-        grade: String(editStudentForm.grade || '1'),
-        classNum: String(editStudentForm.classNum || '1'),
-        studentNum: String(editStudentForm.studentNum || ''),
-        gender: editStudentForm.gender || 'Male',
-        contact: editStudentForm.contact || '',
-        address: editStudentForm.address || '',
-        kisbusNo: editStudentForm.kisbusNo || '',
-        photoUrl: editStudentForm.photoUrl || ''
-      });
+      await updateMasterStudent(editStudentForm.studentId, payloadToSave);
       setIsEditDialogOpen(false);
-      if (selectedStudent?.studentId === editStudentForm.studentId) {
-        setSelectedStudent(prev => prev ? ({ ...prev, ...editStudentForm } as MasterStudent) : null);
+      
+      // 모달이 열려있는 selectedStudent 상태 즉시 최신 반영
+      if (
+        selectedStudent?.studentId === editStudentForm.studentId ||
+        (selectedStudent?.studentEmail && editStudentForm.studentEmail && selectedStudent.studentEmail.toLowerCase() === editStudentForm.studentEmail.toLowerCase())
+      ) {
+        setSelectedStudent(prev => prev ? ({ ...prev, ...editStudentForm, ...payloadToSave } as MasterStudent) : null);
       }
       toast({ title: '수정 완료', description: '학생 정보가 성공적으로 업데이트되었습니다.' });
     } catch (err) {
