@@ -14,6 +14,7 @@ type ParentFormViewProps = {
     absenceType?: '병결' | '미인정' | '기타' | '출석인정';
     confirmMethod?: '전화/문자' | '학부모 내교' | '가정방문' | '기타';
     confirmDate?: string;
+    confirmationContent?: string;
   };
   onTeacherDataChange?: (data: any) => void;
   approverSignatures?: Record<string, string>;
@@ -124,6 +125,15 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
       return cleanRole.includes(targetRole);
     });
   };
+
+  // 담임교사 결재/확인 실제 처리일자 (우선순위: teacherConfirmedAt -> 담임 approver.approvedAt -> teacherConfirmDate -> applyDate/createdAt)
+  const homeroomApprover = matchApprover('담임');
+  const rawTeacherConfirmDate = data.teacherConfirmedAt || 
+    homeroomApprover?.approvedAt || 
+    data.teacherConfirmDate || 
+    data.applyDate || 
+    (doc.createdAt as string);
+  const teacherConfirmDisplayDate = rawTeacherConfirmDate ? new Date(rawTeacherConfirmDate) : null;
 
   // 승인자 목록 매핑 (직책 1줄 고정, 깔끔한 4칸 담임, 부장, 교감, 교장)
   const renderApprovers = () => {
@@ -843,7 +853,16 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
                             <label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="confirmMethod" checked={teacherData?.confirmMethod === '가정방문'} onChange={() => onTeacherDataChange?.({ ...teacherData, confirmMethod: '가정방문' })} /> 가정방문</label>
                             <label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="confirmMethod" checked={teacherData?.confirmMethod === '기타'} onChange={() => onTeacherDataChange?.({ ...teacherData, confirmMethod: '기타' })} /> 기타</label>
                           </div>
-                          <p>2. 확인내용: 결석 사유와 동일함을 확인합니다.</p>
+                          <div className="flex items-start gap-2 pt-0.5">
+                            <span className="shrink-0 pt-0.5">2. 확인내용:</span>
+                            <input 
+                              type="text" 
+                              className="border px-2 py-0.5 rounded text-xs flex-1 bg-white" 
+                              value={teacherData?.confirmationContent ?? '결석 사유와 동일함을 확인합니다.'} 
+                              onChange={(e) => onTeacherDataChange?.({ ...teacherData, confirmationContent: e.target.value })} 
+                              placeholder="확인내용을 입력해 주세요"
+                            />
+                          </div>
                           <div className="flex items-center gap-2 pt-0.5">
                             <span>3. 확인일시:</span>
                             <input type="date" className="border px-2 py-0.5 rounded text-xs" value={teacherData?.confirmDate || ''} onChange={(e) => onTeacherDataChange?.({ ...teacherData, confirmDate: e.target.value })} />
@@ -852,14 +871,14 @@ export function ParentFormView({ doc, teacherMode, teacherData, onTeacherDataCha
                       ) : (
                         <>
                           <p>1. 확인방법: 전화/문자({data.teacherConfirmMethod === '전화/문자' ? 'O' : ' '}), 학부모 내교({data.teacherConfirmMethod === '학부모 내교' ? 'O' : ' '}), 가정방문({data.teacherConfirmMethod === '가정방문' ? 'O' : ' '}), 기타({data.teacherConfirmMethod === '기타' ? 'O' : ' '})</p>
-                          <p>2. 확인내용: 결석 사유와 동일함을 확인합니다.</p>
-                          <p>3. 확인일시: {data.teacherConfirmDate ? format(new Date(data.teacherConfirmDate), 'yyyy 년 MM 월 dd 일') : '20   년   월   일'}</p>
+                          <p>2. 확인내용: {data.confirmationContent || '결석 사유와 동일함을 확인합니다.'}</p>
+                          <p>3. 확인일시: {teacherConfirmDisplayDate ? format(teacherConfirmDisplayDate, 'yyyy 년 MM 월 dd 일') : '20   년   월   일'}</p>
                         </>
                       )}
                     </div>
                     {!teacherMode && (
                       <div className="text-center mt-5 text-[9.5pt] font-medium">
-                        {data.teacherConfirmDate ? format(new Date(data.teacherConfirmDate), 'yyyy 년 MM 월 dd 일') : '20   년   월   일'}
+                        {teacherConfirmDisplayDate ? format(teacherConfirmDisplayDate, 'yyyy 년 MM 월 dd 일') : '20   년   월   일'}
                       </div>
                     )}
                   </td>

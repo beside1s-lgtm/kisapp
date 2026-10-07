@@ -64,6 +64,8 @@ export interface HomeroomProxyApplyFormProps {
   setAbsDiseaseName?: (value: string) => void;
   teacherConfirmMethod: '전화/문자' | '학부모 내교' | '가정방문' | '기타';
   setTeacherConfirmMethod: (value: '전화/문자' | '학부모 내교' | '가정방문' | '기타') => void;
+  teacherConfirmationContent?: string;
+  setTeacherConfirmationContent?: (value: string) => void;
 
   // 법적 신청인(학부모) 정보
   parentName?: string;
@@ -123,6 +125,8 @@ export function HomeroomProxyApplyForm({
   setAbsDiseaseName,
   teacherConfirmMethod,
   setTeacherConfirmMethod,
+  teacherConfirmationContent = '결석 사유와 동일함을 확인합니다.',
+  setTeacherConfirmationContent,
 }: HomeroomProxyApplyFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -322,6 +326,19 @@ export function HomeroomProxyApplyForm({
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              {/* 담임 확인 내용 (확인서 2번 항목) */}
+              <div className="space-y-0.5">
+                <Label className="text-[10px] sm:text-[11px] font-bold text-slate-600">
+                  담임 확인 내용 <span className="text-slate-400 font-normal">(확인서 2번 항목)</span>
+                </Label>
+                <Input
+                  value={teacherConfirmationContent}
+                  onChange={(e) => setTeacherConfirmationContent?.(e.target.value)}
+                  placeholder="확인내용을 입력해 주세요 (예: 결석 사유와 동일함을 확인합니다.)"
+                  className="h-7 sm:h-8 text-xs bg-white px-2.5"
+                />
               </div>
 
               {/* 결석 사유 */}

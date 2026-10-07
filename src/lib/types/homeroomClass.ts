@@ -12,6 +12,8 @@ export interface HomeroomHomework {
   dateWithDay?: string; // YYYY-MM-DD (요일)
   createdAt: string;
   createdBy?: string;
+  isTeacherConfirmed?: boolean; // 담임교사 확인/아카이브 여부 (기본값 false)
+  confirmedAt?: string; // 담임교사 확인 일시 (ISO String)
 }
 
 export interface HomeroomHomeworkCheck {

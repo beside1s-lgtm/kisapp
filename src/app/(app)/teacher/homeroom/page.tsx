@@ -289,6 +289,7 @@ export default function TeacherHomeroomApplyPage() {
   const [absDiseaseCategory, setAbsDiseaseCategory] = useState<DiseaseCategoryType>('단순질병');
   const [absDiseaseName, setAbsDiseaseName] = useState<string>('');
   const [teacherConfirmMethod, setTeacherConfirmMethod] = useState<'전화/문자' | '학부모 내교' | '가정방문' | '기타'>('전화/문자');
+  const [teacherConfirmationContent, setTeacherConfirmationContent] = useState<string>('결석 사유와 동일함을 확인합니다.');
   const [medicalCertificateUrl, setMedicalCertificateUrl] = useState<string>('');
   const [medicalCertificateName, setMedicalCertificateName] = useState<string>('');
   const [proxyAttachments, setProxyAttachments] = useState<Attachment[]>([]);
@@ -740,6 +741,8 @@ export default function TeacherHomeroomApplyPage() {
         diseaseName: absType === '병결' ? (absDiseaseName || undefined) : undefined,
         teacherConfirmMethod,
         teacherConfirmDate: applyDate,
+        confirmationContent: teacherConfirmationContent.trim() || '결석 사유와 동일함을 확인합니다.',
+        teacherConfirmedAt: new Date().toISOString(),
         applyDate: applyDate,
         isProxyByTeacher: true,
         proxyTeacherName: profile.name,
@@ -792,6 +795,8 @@ export default function TeacherHomeroomApplyPage() {
         updateData.absenceType = absType;
         updateData.teacherConfirmMethod = teacherConfirmMethod;
         updateData.teacherConfirmDate = applyDate;
+        updateData.confirmationContent = teacherConfirmationContent.trim() || '결석 사유와 동일함을 확인합니다.';
+        updateData.teacherConfirmedAt = new Date().toISOString();
       }
 
       const approveRes = await approveDocument(docId, profile, updateData, applyDate);
@@ -1130,6 +1135,8 @@ export default function TeacherHomeroomApplyPage() {
             setAbsDiseaseName={setAbsDiseaseName}
             teacherConfirmMethod={teacherConfirmMethod}
             setTeacherConfirmMethod={setTeacherConfirmMethod}
+            teacherConfirmationContent={teacherConfirmationContent}
+            setTeacherConfirmationContent={setTeacherConfirmationContent}
           />
         </TabsContent>
 

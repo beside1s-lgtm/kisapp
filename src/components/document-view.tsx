@@ -73,10 +73,12 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
     absenceType?: '병결' | '미인정' | '기타' | '출석인정';
     confirmMethod?: '전화/문자' | '학부모 내교' | '가정방문' | '기타';
     confirmDate?: string;
+    confirmationContent?: string;
   }>({
     absenceType: (initialDoc.parentFormData?.absenceType as any) || '병결',
     confirmMethod: (initialDoc.parentFormData?.teacherConfirmMethod as any) || '전화/문자',
-    confirmDate: initialDoc.parentFormData?.teacherConfirmDate || defaultApplyDateStr
+    confirmDate: initialDoc.parentFormData?.teacherConfirmDate || defaultApplyDateStr,
+    confirmationContent: initialDoc.parentFormData?.confirmationContent || '결석 사유와 동일함을 확인합니다.'
   });
 
   const [showNotificationModal, setShowNotificationModal] = useState(false);
@@ -242,6 +244,8 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
         parentUpdateData.absenceType = teacherConfirmData.absenceType;
         parentUpdateData.teacherConfirmMethod = teacherConfirmData.confirmMethod;
         parentUpdateData.teacherConfirmDate = teacherConfirmData.confirmDate || finalDate;
+        parentUpdateData.confirmationContent = teacherConfirmData.confirmationContent?.trim() || '결석 사유와 동일함을 확인합니다.';
+        parentUpdateData.teacherConfirmedAt = new Date().toISOString();
       }
       if (isTeacherParentTurn && finalDate) {
         parentUpdateData.applyDate = finalDate;
@@ -404,7 +408,9 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
       const parentUpdateData = activeApprover.role === '담임' && initialDoc.parentFormData?.type === 'absence' ? {
         absenceType: teacherConfirmData.absenceType,
         teacherConfirmMethod: teacherConfirmData.confirmMethod || '유선연락',
-        teacherConfirmDate: teacherConfirmData.confirmDate || format(new Date(), 'yyyy-MM-dd')
+        teacherConfirmDate: teacherConfirmData.confirmDate || format(new Date(), 'yyyy-MM-dd'),
+        confirmationContent: teacherConfirmData.confirmationContent?.trim() || '결석 사유와 동일함을 확인합니다.',
+        teacherConfirmedAt: new Date().toISOString(),
       } : undefined;
 
       const result = await approveDocument(initialDoc.id, mockProfile as any, parentUpdateData);
@@ -929,6 +935,19 @@ export default function DocumentView({ initialDoc, initialConfig }: DocumentView
                         <option value="가정방문">가정방문</option>
                         <option value="기타">기타</option>
                       </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-bold text-slate-700 block">확인 내용 (확인서 2번 항목)</label>
+                      <Textarea
+                        value={teacherConfirmData.confirmationContent ?? '결석 사유와 동일함을 확인합니다.'}
+                        onChange={(e) => setTeacherConfirmData(prev => ({ ...prev, confirmationContent: e.target.value }))}
+                        placeholder="확인내용을 입력해 주세요 (예: 결석 사유와 동일함을 확인합니다.)"
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs min-h-[60px] resize-y leading-relaxed"
+                      />
+                      <span className="text-[11px] text-muted-foreground block">
+                        * 기본 문구 외 필요한 확인 메모나 특이사항으로 직접 수정할 수 있습니다.
+                      </span>
                     </div>
                   </>
                 )}

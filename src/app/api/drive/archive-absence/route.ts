@@ -135,10 +135,18 @@ export async function POST(req: NextRequest) {
     const applyDate = pData.applyDate || format(new Date(), 'yyyy-MM-dd');
     const absenceType = pData.absenceType || '병결';
     const teacherConfirmMethod = pData.teacherConfirmMethod || '전화/문자';
-    const teacherConfirmDate = pData.teacherConfirmDate || applyDate;
-
-    // 결재선 테이블 생성
+    const confirmationContent = pData.confirmationContent || '결석 사유와 동일함을 확인합니다.';
+    
+    // 결재선 테이블 생성 및 담임 승인일자 추출
     const approvers = Array.isArray(docData.approvers) ? docData.approvers : [];
+    const homeroomAp = approvers.find((a: any) => (a.role || '').includes('담임'));
+    const rawTeacherConfirmDate = pData.teacherConfirmedAt || 
+      homeroomAp?.approvedAt || 
+      pData.teacherConfirmDate || 
+      applyDate;
+    const teacherConfirmDate = rawTeacherConfirmDate
+      ? format(new Date(rawTeacherConfirmDate), 'yyyy년 MM월 dd일')
+      : applyDate;
     const approverSlots = ['담임', '부장', '교감', '교장'];
     const approverTds = approverSlots.map(slot => {
       const ap = approvers.find((a: any) => (a.role || '').includes(slot));
@@ -273,7 +281,7 @@ export async function POST(req: NextRequest) {
               <td colspan="2" style="vertical-align: top; padding: 10px; font-size: 9pt; line-height: 1.7;">
                 <div style="text-align: center; font-weight: bold; margin-bottom: 8px;">위 제출 내용이 사실과 다름없음을 확인함.</div>
                 <div>1. 확인방법: 전화/문자(${teacherConfirmMethod === '전화/문자' ? 'O' : ' '}), 학부모 내교(${teacherConfirmMethod === '학부모 내교' ? 'O' : ' '}), 가정방문(${teacherConfirmMethod === '가정방문' ? 'O' : ' '}), 기타(${teacherConfirmMethod === '기타' ? 'O' : ' '})</div>
-                <div>2. 확인내용: 결석 사유와 동일함을 확인합니다.</div>
+                <div>2. 확인내용: ${confirmationContent}</div>
                 <div>3. 확인일시: ${teacherConfirmDate}</div>
                 <div style="text-align: center; margin-top: 12px; font-weight: bold;">${teacherConfirmDate}</div>
               </td>

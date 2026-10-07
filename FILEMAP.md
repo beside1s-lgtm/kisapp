@@ -134,7 +134,8 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
 * `HomeroomAttendanceTab.tsx` : 담임 일일 출석부 탭
 * `ClassManagementTab.tsx` : 학급 관리 종합 탭 (아래 하위 컴포넌트 호출)
 * **`class-management/` 서브 모듈**:
-  * `HomeworkTabContent.tsx` : 과제 출제 및 제출 관리
+  * `HomeworkTabContent.tsx` : 미확인 과제 통합 피드, 시간순 정렬 및 담임 확인 처리
+  * `HomeworkArchiveView.tsx` : 확인된 숙제 아카이브 보관함, 학생별 제출 통계/4단계 평가 산출 및 XLSX 다운로드
   * `BehaviorTabContent.tsx` : 학생 행동특성 및 종합의견 기록
   * `MemoTabContent.tsx` : 일일 메모 및 특이사항 관리
   * `MatrixTabContent.tsx` : 학생 평가 매트릭스 뷰

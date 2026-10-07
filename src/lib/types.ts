@@ -139,6 +139,8 @@ export type ParentFormData = {
   diseaseName?: string; // 표준 병명 또는 직접 입력 병명
   teacherConfirmMethod?: string;
   teacherConfirmDate?: string;
+  confirmationContent?: string; // 담임 확인 내용 (기본값: '결석 사유와 동일함을 확인합니다.')
+  teacherConfirmedAt?: string; // 담임 승인/확인 처리 일시 (ISO 문자열)
   medicalCertificateUrl?: string; // 소견서/진단서 사진 Data URL
   medicalCertificateName?: string; // 소견서 파일명
   medicalCertificateSubmitted?: boolean; // 소견서 제출 여부

@@ -22,6 +22,7 @@ import {
   addHomework,
   updateHomework,
   deleteHomework,
+  toggleHomeworkConfirmation,
   onHomeworkChecksUpdate,
   setHomeworkCheck,
   batchSetHomeworkCheck,
@@ -148,6 +149,11 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
     return map;
   }, [behaviors]);
 
+  // 담임교사 미확인 활성 숙제 개수
+  const activeHwCount = useMemo(() => {
+    return homeworks.filter((h) => !h.isTeacherConfirmed).length;
+  }, [homeworks]);
+
   // ─── 일일 알림 메모 핸들러 ──────────────────────────────────────────
   const [isMemoHistoryOpen, setIsMemoHistoryOpen] = useState(false);
   const [memoHistoryList, setMemoHistoryList] = useState<HomeroomDailyMemo[]>([]);
@@ -250,6 +256,25 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
     } catch (err) {
       console.error(err);
       toast({ title: '삭제 실패', variant: 'destructive' });
+    }
+  };
+
+  const handleToggleHwConfirmation = async (hwId: string, isConfirmed: boolean) => {
+    try {
+      await toggleHomeworkConfirmation(classKey, hwId, isConfirmed);
+      if (isConfirmed && selectedHwId === hwId) {
+        const nextActive = homeworks.find((h) => h.id !== hwId && !h.isTeacherConfirmed);
+        setSelectedHwId(nextActive ? nextActive.id : null);
+      }
+      toast({
+        title: isConfirmed ? '숙제 확인(아카이브) 완료' : '숙제 복원 완료',
+        description: isConfirmed
+          ? '해당 숙제가 확인 완료되어 보관함(아카이브)으로 이동했습니다.'
+          : '해당 숙제가 다시 활성 숙제 목록으로 복원되었습니다.',
+      });
+    } catch (err) {
+      console.error(err);
+      toast({ title: '처리 실패', variant: 'destructive' });
     }
   };
 
@@ -643,7 +668,7 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
             <span>숙제 확인</span>
             {homeworks.length > 0 && (
               <span className="ml-0.5 px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] rounded-full">
-                {homeworks.length}
+                {activeHwCount}
               </span>
             )}
           </Button>
@@ -738,6 +763,8 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
           handleToggleHwCheck={handleToggleHwCheck}
           handleBatchToggleHw={handleBatchToggleHw}
           calendarDays={calendarDays}
+          classLabel={classLabel}
+          onToggleConfirm={handleToggleHwConfirmation}
         />
       )}
 
@@ -824,6 +851,10 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
         students={students}
         checks={homeworkChecks}
         onCheckStudent={(hwId, sid, sname) => handleToggleHwCheck(hwId, sid, sname)}
+        onSelectHw={(hw) => {
+          setPresTargetHw(hw);
+          setSelectedHwId(hw.id);
+        }}
       />
 
       {/* ─── 일일 알림장 칠판 전체화면 모달 ─── */}

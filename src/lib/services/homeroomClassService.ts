@@ -148,6 +148,24 @@ export async function updateHomework(
   await setDoc(hwDocRef, { title, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
+export async function toggleHomeworkConfirmation(
+  classKey: string,
+  hwId: string,
+  isConfirmed: boolean
+): Promise<void> {
+  const db = getDb();
+  const hwDocRef = doc(db, 'homeroom_classes', classKey, 'homeworks', hwId);
+  await setDoc(
+    hwDocRef,
+    {
+      isTeacherConfirmed: isConfirmed,
+      confirmedAt: isConfirmed ? new Date().toISOString() : null,
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true }
+  );
+}
+
 export async function deleteHomework(classKey: string, hwId: string): Promise<void> {
   const db = getDb();
   // 1. 숙제 문서 삭제

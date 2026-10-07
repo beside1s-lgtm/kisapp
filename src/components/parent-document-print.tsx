@@ -10,6 +10,7 @@ type ParentDocumentPrintProps = {
     absenceType?: '병결' | '미인정' | '기타' | '출석인정';
     confirmMethod?: '전화/문자' | '학부모 내교' | '가정방문' | '기타';
     confirmDate?: string;
+    confirmationContent?: string;
   };
   approverSignatures?: Record<string, string>;
 };
@@ -74,29 +75,31 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
       }
     }
 
+    // 결재자 역할 매칭 함수 (컴포넌트 전역)
+    const matchApprover = (targetRole: string) => {
+      return doc.approvers?.find(a => {
+        if (!a.role) return false;
+        const cleanRole = a.role.trim();
+        if (cleanRole === targetRole) return true;
+        if (targetRole === '부장') {
+          return cleanRole.includes('부장') || cleanRole === '교무부장' || cleanRole === '학년부장' || cleanRole === '연구부장' || cleanRole === '학생부장' || cleanRole === '부장교사';
+        }
+        if (targetRole === '담임') {
+          return cleanRole.includes('담임') || cleanRole.toLowerCase().includes('homeroom');
+        }
+        if (targetRole === '교감') {
+          return cleanRole.includes('교감') || cleanRole.toLowerCase().includes('vice') || cleanRole.toLowerCase().includes('vp');
+        }
+        if (targetRole === '교장') {
+          return (cleanRole.includes('교장') && !cleanRole.includes('교감')) || cleanRole.toLowerCase().includes('principal');
+        }
+        return cleanRole.includes(targetRole);
+      });
+    };
+
     // 4칸 직책 결재란
     const renderApprovers = () => {
       const slots = ['담임', '부장', '교감', '교장'];
-      const matchApprover = (targetRole: string) => {
-        return doc.approvers?.find(a => {
-          if (!a.role) return false;
-          const cleanRole = a.role.trim();
-          if (cleanRole === targetRole) return true;
-          if (targetRole === '부장') {
-            return cleanRole.includes('부장') || cleanRole === '교무부장' || cleanRole === '학년부장' || cleanRole === '연구부장' || cleanRole === '학생부장' || cleanRole === '부장교사';
-          }
-          if (targetRole === '담임') {
-            return cleanRole.includes('담임') || cleanRole.toLowerCase().includes('homeroom');
-          }
-          if (targetRole === '교감') {
-            return cleanRole.includes('교감') || cleanRole.toLowerCase().includes('vice') || cleanRole.toLowerCase().includes('vp');
-          }
-          if (targetRole === '교장') {
-            return (cleanRole.includes('교장') && !cleanRole.includes('교감')) || cleanRole.toLowerCase().includes('principal');
-          }
-          return cleanRole.includes(targetRole);
-        });
-      };
 
       return (
         <table style={{ borderCollapse: 'collapse', border: '1px solid #000', width: '240px', fontSize: '8.5pt', marginLeft: 'auto' }}>
@@ -166,6 +169,17 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
     const parentSignature = isProxyByTeacher
       ? (doc.parentFormData?.proxyParentSignature || doc.requesterSignature || null)
       : (doc.requesterSignature || doc.parentFormData?.proxyParentSignature || null);
+
+    // 담임교사 결재/확인 실제 처리일자 (우선순위: teacherConfirmData.confirmDate -> data.teacherConfirmedAt -> 담임 approver.approvedAt -> data.teacherConfirmDate -> data.applyDate -> doc.createdAt)
+    const homeroomApprover = matchApprover('담임');
+    const rawTeacherConfirmDate = teacherConfirmData?.confirmDate ||
+      data.teacherConfirmedAt ||
+      homeroomApprover?.approvedAt ||
+      data.teacherConfirmDate ||
+      data.applyDate ||
+      (doc.createdAt as string);
+    const teacherConfirmDisplayDate = rawTeacherConfirmDate ? new Date(rawTeacherConfirmDate) : null;
+    const confirmationContentText = teacherConfirmData?.confirmationContent || data.confirmationContent || '결석 사유와 동일함을 확인합니다.';
 
     const tripTypes = ['가족동반여행', '친·인척 방문', '답사·견학 활동', '체험활동', '기타'];
 
@@ -550,12 +564,12 @@ export const ParentDocumentPrint = React.forwardRef<HTMLDivElement, ParentDocume
               <td colSpan={2} style={{ border: '1px solid #000', padding: '14px 12px', verticalAlign: 'top' }}>
                 <div style={{ textAlign: 'center', marginBottom: '10px', fontWeight: 500, fontSize: '10pt' }}>위 제출 내용이 사실과 다름없음을 확인함.</div>
                 <div style={{ fontSize: '9pt', lineHeight: 1.8 }}>
-                  <p style={{ margin: '2px 0' }}>1. 확인방법: 전화/문자({data.teacherConfirmMethod === '전화/문자' ? 'O' : ' '}), 학부모 내교({data.teacherConfirmMethod === '학부모 내교' ? 'O' : ' '}), 가정방문({data.teacherConfirmMethod === '가정방문' ? 'O' : ' '}), 기타({data.teacherConfirmMethod === '기타' ? 'O' : ' '})</p>
-                  <p style={{ margin: '2px 0' }}>2. 확인내용: 결석 사유와 동일함을 확인합니다.</p>
-                  <p style={{ margin: '2px 0' }}>3. 확인일시: {data.teacherConfirmDate ? format(new Date(data.teacherConfirmDate), 'yyyy 년 MM 월 dd 일') : '20   년   월   일'}</p>
+                  <p style={{ margin: '2px 0' }}>1. 확인방법: 전화/문자({(teacherConfirmData?.confirmMethod || data.teacherConfirmMethod) === '전화/문자' ? 'O' : ' '}), 학부모 내교({(teacherConfirmData?.confirmMethod || data.teacherConfirmMethod) === '학부모 내교' ? 'O' : ' '}), 가정방문({(teacherConfirmData?.confirmMethod || data.teacherConfirmMethod) === '가정방문' ? 'O' : ' '}), 기타({(teacherConfirmData?.confirmMethod || data.teacherConfirmMethod) === '기타' ? 'O' : ' '})</p>
+                  <p style={{ margin: '2px 0' }}>2. 확인내용: {confirmationContentText}</p>
+                  <p style={{ margin: '2px 0' }}>3. 확인일시: {teacherConfirmDisplayDate ? format(teacherConfirmDisplayDate, 'yyyy 년 MM 월 dd 일') : '20   년   월   일'}</p>
                 </div>
                 <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '10pt' }}>
-                  {data.teacherConfirmDate ? format(new Date(data.teacherConfirmDate), 'yyyy 년 MM 월 dd 일') : '20   년   월   일'}
+                  {teacherConfirmDisplayDate ? format(teacherConfirmDisplayDate, 'yyyy 년 MM 월 dd 일') : '20   년   월   일'}
                 </div>
               </td>
             </tr>
