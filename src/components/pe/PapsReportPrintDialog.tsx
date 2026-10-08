@@ -8,6 +8,7 @@ import { Printer, X, Award, CheckCircle2, User, Sparkles } from 'lucide-react';
 import type { Student, MeasurementItem, MeasurementRecord } from '@/lib/pe/types';
 import { buildPapsStudentReport, type PapsStudentReportData, type PapsFactorEvaluation } from '@/lib/pe/papsReportCommentEngine';
 import { getDocConfig, onDocConfigUpdate } from '@/lib/services/settingsService';
+import { getBmiStatusText, getBmiGrade, BMI_EVALUATION_STANDARDS } from '@/lib/pe/paps';
 import { KIS_SYMBOL_BASE64 } from './kisSymbolBase64';
 
 type PapsFactorEval = PapsFactorEvaluation;
@@ -1328,24 +1329,23 @@ function SingleStudentPapsSheet({
   const topFactor = sortedEvals[0];
   const lowFactor = sortedEvals[sortedEvals.length - 1];
 
-  // BMI 수치 및 상태 계산
+  // BMI 수치 및 상태 계산 (사진 공식 기준표 1:1 연동)
   const bmiEval = evaluations.find(e => e.factor === '체질량지수(BMI)');
   const bmiValue = bmiEval?.value || 0;
 
-  // BMI 게이지 바 위치 계산 (12 ~ 32 스케일)
-  const bmiMin = 13;
-  const bmiMax = 31;
+  const bmiGradeKey = ['1', '2', '3', '4'].includes(String(student.grade)) ? '4' : (String(student.grade) === '5' ? '5' : '6');
+  const bmiStudentStandards = BMI_EVALUATION_STANDARDS[bmiGradeKey]?.[student.gender === '여' ? 'female' : 'male'] || BMI_EVALUATION_STANDARDS['5'].male;
+
+  // BMI 게이지 바 위치 계산 (12 ~ 36 스케일)
+  const bmiMin = 12;
+  const bmiMax = 36;
   const bmiMarkerPct = bmiValue > 0
     ? Math.min(100, Math.max(0, ((bmiValue - bmiMin) / (bmiMax - bmiMin)) * 100))
     : null;
 
-  let bmiStatusText = '표준 체형';
-  if (bmiValue > 0) {
-    if (bmiValue < 18.5) bmiStatusText = '저체중 구간';
-    else if (bmiValue < 23) bmiStatusText = '표준 체형';
-    else if (bmiValue < 25) bmiStatusText = '과체중 구간';
-    else bmiStatusText = '비만 구간';
-  }
+  const bmiStatusCategory = bmiValue > 0 ? getBmiStatusText(student.grade, student.gender, bmiValue) : '정상';
+  const bmiGradeNum = bmiValue > 0 ? getBmiGrade(student.grade, student.gender, bmiValue) : 1;
+  const bmiStatusText = bmiValue > 0 ? `${bmiStatusCategory} (${bmiGradeNum}등급)` : '미측정';
 
   return (
     <div
@@ -1575,12 +1575,13 @@ function SingleStudentPapsSheet({
               <div className="lib-compare-row">
                 <span className="lib-compare-label">체형 구간</span>
                 <div className="lib-compare-track">
-                  {/* 4구간 트랙 */}
+                  {/* 5구간 트랙 (마름, 정상, 과체중, 경도비만, 고도비만) */}
                   <div className="h-full flex w-full rounded-[4px] overflow-hidden">
-                    <span className="h-full bg-sky-400" style={{ width: '25%' }} title="저체중" />
-                    <span className="h-full bg-emerald-500" style={{ width: '35%' }} title="표준" />
-                    <span className="h-full bg-amber-500" style={{ width: '20%' }} title="과체중" />
-                    <span className="h-full bg-rose-500" style={{ width: '20%' }} title="비만" />
+                    <span className="h-full bg-sky-400" style={{ width: '20%' }} title="마름" />
+                    <span className="h-full bg-emerald-500" style={{ width: '35%' }} title="정상" />
+                    <span className="h-full bg-amber-500" style={{ width: '15%' }} title="과체중" />
+                    <span className="h-full bg-orange-500" style={{ width: '15%' }} title="경도비만" />
+                    <span className="h-full bg-rose-500" style={{ width: '15%' }} title="고도비만" />
                   </div>
                   {/* 내 BMI 마커 */}
                   {bmiMarkerPct !== null && (
@@ -1594,11 +1595,12 @@ function SingleStudentPapsSheet({
                 <span className="lib-compare-num font-bold">{bmiStatusText}</span>
               </div>
 
-              <div className="lib-legend">
-                <span><i style={{ background: '#38BDF8' }} />저체중 (&lt;18.5)</span>
-                <span><i style={{ background: '#22C55E' }} />표준 (18.5~23)</span>
-                <span><i style={{ background: '#F97316' }} />과체중 (23~25)</span>
-                <span><i style={{ background: '#EF4444' }} />비만 (25 이상)</span>
+              <div className="lib-legend flex flex-wrap gap-x-2 gap-y-1 text-[10px]">
+                <span><i style={{ background: '#38BDF8' }} />마름 (≤{bmiStudentStandards.underweightMax.toFixed(1)})</span>
+                <span><i style={{ background: '#22C55E' }} />정상 ({bmiStudentStandards.normalMin.toFixed(1)}~{bmiStudentStandards.normalMax.toFixed(1)})</span>
+                <span><i style={{ background: '#F59E0B' }} />과체중 ({bmiStudentStandards.overweightMin.toFixed(1)}~{bmiStudentStandards.overweightMax.toFixed(1)})</span>
+                <span><i style={{ background: '#F97316' }} />경도비만 ({bmiStudentStandards.mildObeseMin.toFixed(1)}~{bmiStudentStandards.mildObeseMax.toFixed(1)})</span>
+                <span><i style={{ background: '#EF4444' }} />고도비만 (≥{bmiStudentStandards.severeObeseMin.toFixed(1)})</span>
               </div>
 
               <div className="lib-note">{report.bmiHealthGuide}</div>

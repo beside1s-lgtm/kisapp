@@ -242,7 +242,8 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
 * `firebase.ts` : 보조 Firebase 앱(`kisbusDb`) 초기화
 
 ### 다. 체육 및 방과후 로직
-* `src/lib/pe/paps.ts` : PAPS 등급 계산 공식 및 체력 등급 산출
+* `src/lib/pe/paps.ts` : PAPS 등급 계산 공식, 4~6학년 남/여 BMI 공식 기준표 및 체력 등급 산출
+* `src/lib/pe/papsReportCommentEngine.ts` : PAPS 학생 성장 리포트 맞춤형 4대 총평/칭찬/처방 및 BMI 가이드 생성 엔진
 * `src/lib/pe/peReportEngine.ts` : 체육 평가 보고서 텍스트 생성
 * `src/lib/afterschool/schedule.ts` : 방과후 수업 요일/시간 스케줄 유틸
 * `src/lib/afterschool/fareCalculator.ts` : 방과후 수강료 및 버스 요금 계산

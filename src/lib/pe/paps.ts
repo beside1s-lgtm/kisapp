@@ -1,6 +1,143 @@
 
 import type { MeasurementItem, Student } from './types';
 
+/**
+ * 학생건강체력평가(PAPS) 학교 체육 성장 기록 공식 체질량지수(BMI) 평가 기준표
+ * 사진 1 (남학생 평가 기준표), 사진 2 (여학생 평가 기준표) 1:1 완벽 반영
+ *
+ * 평가 등급 (PAPS 5단계 등급):
+ * 1등급: 정상 (가장 이상적인 표준 체중)
+ * 2등급: 과체중
+ * 3등급: 마름 (저체중)
+ * 4등급: 경도비만
+ * 5등급: 고도비만
+ */
+export interface BmiStandardRow {
+  underweightMax: number; // 마름 (이하)
+  normalMin: number;      // 정상 시작
+  normalMax: number;      // 정상 끝
+  overweightMin: number;  // 과체중 시작
+  overweightMax: number;  // 과체중 끝
+  mildObeseMin: number;   // 경도비만 시작
+  mildObeseMax: number;   // 경도비만 끝
+  severeObeseMin: number; // 고도비만 (이상)
+}
+
+export const BMI_EVALUATION_STANDARDS: Record<
+  string, // '4' | '5' | '6'
+  {
+    male: BmiStandardRow;
+    female: BmiStandardRow;
+  }
+> = {
+  '4': {
+    male: {
+      underweightMax: 14.0,
+      normalMin: 14.1, normalMax: 20.1,
+      overweightMin: 20.2, overweightMax: 22.3,
+      mildObeseMin: 22.4, mildObeseMax: 32.3,
+      severeObeseMin: 32.4,
+    },
+    female: {
+      underweightMax: 13.8,
+      normalMin: 13.9, normalMax: 20.7,
+      overweightMin: 20.8, overweightMax: 22.8,
+      mildObeseMin: 22.9, mildObeseMax: 32.8,
+      severeObeseMin: 32.9,
+    },
+  },
+  '5': {
+    male: {
+      underweightMax: 14.3,
+      normalMin: 14.4, normalMax: 20.9,
+      overweightMin: 21.0, overweightMax: 23.3,
+      mildObeseMin: 23.4, mildObeseMax: 33.3,
+      severeObeseMin: 33.4,
+    },
+    female: {
+      underweightMax: 14.2,
+      normalMin: 14.3, normalMax: 21.6,
+      overweightMin: 21.7, overweightMax: 23.9,
+      mildObeseMin: 24.0, mildObeseMax: 33.9,
+      severeObeseMin: 34.0,
+    },
+  },
+  '6': {
+    male: {
+      underweightMax: 14.7,
+      normalMin: 14.8, normalMax: 21.8,
+      overweightMin: 21.9, overweightMax: 24.3,
+      mildObeseMin: 24.4, mildObeseMax: 34.3,
+      severeObeseMin: 34.4,
+    },
+    female: {
+      underweightMax: 14.7,
+      normalMin: 14.8, normalMax: 22.5,
+      overweightMin: 22.6, overweightMax: 24.9,
+      mildObeseMin: 25.0, mildObeseMax: 34.9,
+      severeObeseMin: 35.0,
+    },
+  },
+};
+
+/**
+ * 학년, 성별, BMI 수치에 따른 등급 판정 (1~5등급)
+ * - 1등급: 정상
+ * - 2등급: 과체중
+ * - 3등급: 마름 (저체중)
+ * - 4등급: 경도비만
+ * - 5등급: 고도비만
+ */
+export function getBmiGrade(grade: string | number | undefined, gender: string | undefined, value: number): number {
+  if (value === undefined || value === null || isNaN(value) || value <= 0) return 1;
+  const gStr = String(grade || '5');
+  const gradeKey = ['1', '2', '3', '4'].includes(gStr) ? '4' : (gStr === '5' ? '5' : '6');
+  const isFemale = gender === '여';
+  const standards = BMI_EVALUATION_STANDARDS[gradeKey]?.[isFemale ? 'female' : 'male'] || BMI_EVALUATION_STANDARDS['5'].male;
+
+  // 소수점 첫째자리 반올림하여 비교
+  const val = Math.round(value * 10) / 10;
+
+  if (val <= standards.underweightMax) return 3; // 마름 (3등급)
+  if (val <= standards.normalMax) return 1;      // 정상 (1등급)
+  if (val <= standards.overweightMax) return 2;  // 과체중 (2등급)
+  if (val <= standards.mildObeseMax) return 4;   // 경도비만 (4등급)
+  return 5;                                      // 고도비만 (5등급)
+}
+
+/**
+ * 학년, 성별, BMI 수치에 따른 체형 상태 텍스트 판정
+ */
+export function getBmiStatusText(grade: string | number | undefined, gender: string | undefined, value: number): '마름' | '정상' | '과체중' | '경도비만' | '고도비만' {
+  const gradeNum = getBmiGrade(grade, gender, value);
+  switch (gradeNum) {
+    case 1: return '정상';
+    case 2: return '과체중';
+    case 3: return '마름';
+    case 4: return '경도비만';
+    case 5: return '고도비만';
+    default: return '정상';
+  }
+}
+
+const defaultBmiStandardItem = {
+  male: [
+    { grade: 1, min: 14.8, max: 21.8 },
+    { grade: 2, min: 21.9, max: 24.3 },
+    { grade: 3, min: 0, max: 14.7 },
+    { grade: 4, min: 24.4, max: 34.3 },
+    { grade: 5, min: 34.4, max: Infinity },
+  ],
+  female: [
+    { grade: 1, min: 14.8, max: 22.5 },
+    { grade: 2, min: 22.6, max: 24.9 },
+    { grade: 3, min: 0, max: 14.7 },
+    { grade: 4, min: 25.0, max: 34.9 },
+    { grade: 5, min: 35.0, max: Infinity },
+  ],
+  type: 'compound' as const
+};
+
 // 1. PAPS 등급 기준표 (기존 유지)
 export const papsGradeStandards: Record<
   string, // 학년
@@ -46,8 +183,20 @@ export const papsGradeStandards: Record<
       type: 'weight'
     },
     '체질량지수(BMI)': {
-        male: [ { grade: 1, min: 14.1, max: 18.0 }, { grade: 2, min: 18.1, max: 19.9 }, { grade: 3, min: 12.8, max: 14.0 }, { grade: 4, min: 20.0, max: 21.6 }, { grade: 5, min: 0, max: 12.7 }, { grade: 5, min: 21.7, max: Infinity } ],
-        female: [ { grade: 1, min: 14.0, max: 18.2 }, { grade: 2, min: 18.3, max: 20.3 }, { grade: 3, min: 12.7, max: 13.9 }, { grade: 4, min: 20.4, max: 22.1 }, { grade: 5, min: 0, max: 12.6 }, { grade: 5, min: 22.2, max: Infinity } ],
+        male: [
+          { grade: 1, min: 14.1, max: 20.1 },
+          { grade: 2, min: 20.2, max: 22.3 },
+          { grade: 3, min: 0, max: 14.0 },
+          { grade: 4, min: 22.4, max: 32.3 },
+          { grade: 5, min: 32.4, max: Infinity },
+        ],
+        female: [
+          { grade: 1, min: 13.9, max: 20.7 },
+          { grade: 2, min: 20.8, max: 22.8 },
+          { grade: 3, min: 0, max: 13.8 },
+          { grade: 4, min: 22.9, max: 32.8 },
+          { grade: 5, min: 32.9, max: Infinity },
+        ],
         type: 'compound'
     }
   },
@@ -83,8 +232,20 @@ export const papsGradeStandards: Record<
       type: 'weight'
     },
     '체질량지수(BMI)': {
-        male: [ { grade: 1, min: 14.5, max: 18.9 }, { grade: 2, min: 19.0, max: 20.9 }, { grade: 3, min: 13.2, max: 14.4 }, { grade: 4, min: 21.0, max: 22.7 }, { grade: 5, min: 0, max: 13.1 }, { grade: 5, min: 22.8, max: Infinity } ],
-        female: [ { grade: 1, min: 14.4, max: 19.2 }, { grade: 2, min: 19.3, max: 21.4 }, { grade: 3, min: 13.1, max: 14.3 }, { grade: 4, min: 21.5, max: 23.3 }, { grade: 5, min: 0, max: 13.0 }, { grade: 5, min: 23.4, max: Infinity } ],
+        male: [
+          { grade: 1, min: 14.4, max: 20.9 },
+          { grade: 2, min: 21.0, max: 23.3 },
+          { grade: 3, min: 0, max: 14.3 },
+          { grade: 4, min: 23.4, max: 33.3 },
+          { grade: 5, min: 33.4, max: Infinity },
+        ],
+        female: [
+          { grade: 1, min: 14.3, max: 21.6 },
+          { grade: 2, min: 21.7, max: 23.9 },
+          { grade: 3, min: 0, max: 14.2 },
+          { grade: 4, min: 24.0, max: 33.9 },
+          { grade: 5, min: 34.0, max: Infinity },
+        ],
         type: 'compound'
     }
   },
@@ -119,11 +280,7 @@ export const papsGradeStandards: Record<
       female: [ { grade: 1, min: 33.0, max: Infinity }, { grade: 2, min: 22.0, max: 32.9 }, { grade: 3, min: 19.0, max: 21.9 }, { grade: 4, min: 14.0, max: 18.9 }, { grade: 5, min: 0, max: 13.9 } ],
       type: 'weight'
     },
-     '체질량지수(BMI)': {
-        male: [ { grade: 1, min: 15.0, max: 19.9 }, { grade: 2, min: 20.0, max: 21.9 }, { grade: 3, min: 13.6, max: 14.9 }, { grade: 4, min: 22.0, max: 23.8 }, { grade: 5, min: 0, max: 13.5 }, { grade: 5, min: 23.9, max: Infinity } ],
-        female: [ { grade: 1, min: 14.9, max: 20.1 }, { grade: 2, min: 20.2, max: 22.4 }, { grade: 3, min: 13.5, max: 14.8 }, { grade: 4, min: 22.5, max: 24.4 }, { grade: 5, min: 0, max: 13.4 }, { grade: 5, min: 24.5, max: Infinity } ],
-        type: 'compound'
-    }
+     '체질량지수(BMI)': defaultBmiStandardItem,
   },
   '7': {
     '왕복오래달리기': { male: [], female: [], type: 'count' },
@@ -131,7 +288,7 @@ export const papsGradeStandards: Record<
     '앉아윗몸앞으로굽히기': { male: [], female: [], type: 'distance' },
     '팔굽혀펴기': { male: [], female: [], type: 'count' },
     '악력': { male: [], female: [], type: 'weight' },
-    '체질량지수(BMI)': { male: [], female: [], type: 'compound' }
+    '체질량지수(BMI)': defaultBmiStandardItem,
   },
   '8': {
     '왕복오래달리기': { male: [], female: [], type: 'count' },
@@ -139,7 +296,7 @@ export const papsGradeStandards: Record<
     '앉아윗몸앞으로굽히기': { male: [], female: [], type: 'distance' },
     '팔굽혀펴기': { male: [], female: [], type: 'count' },
     '악력': { male: [], female: [], type: 'weight' },
-    '체질량지수(BMI)': { male: [], female: [], type: 'compound' }
+    '체질량지수(BMI)': defaultBmiStandardItem,
   },
   '9': {
     '왕복오래달리기': { male: [], female: [], type: 'count' },
@@ -147,7 +304,7 @@ export const papsGradeStandards: Record<
     '앉아윗몸앞으로굽히기': { male: [], female: [], type: 'distance' },
     '팔굽혀펴기': { male: [], female: [], type: 'count' },
     '악력': { male: [], female: [], type: 'weight' },
-    '체질량지수(BMI)': { male: [], female: [], type: 'compound' }
+    '체질량지수(BMI)': defaultBmiStandardItem,
   },
   '10': {
     '왕복오래달리기': { male: [], female: [], type: 'count' },
@@ -155,7 +312,7 @@ export const papsGradeStandards: Record<
     '앉아윗몸앞으로굽히기': { male: [], female: [], type: 'distance' },
     '팔굽혀펴기': { male: [], female: [], type: 'count' },
     '악력': { male: [], female: [], type: 'weight' },
-    '체질량지수(BMI)': { male: [], female: [], type: 'compound' }
+    '체질량지수(BMI)': defaultBmiStandardItem,
   },
   '11': {
     '왕복오래달리기': { male: [], female: [], type: 'count' },
@@ -163,7 +320,7 @@ export const papsGradeStandards: Record<
     '앉아윗몸앞으로굽히기': { male: [], female: [], type: 'distance' },
     '팔굽혀펴기': { male: [], female: [], type: 'count' },
     '악력': { male: [], female: [], type: 'weight' },
-    '체질량지수(BMI)': { male: [], female: [], type: 'compound' }
+    '체질량지수(BMI)': defaultBmiStandardItem,
   },
   '12': {
     '왕복오래달리기': { male: [], female: [], type: 'count' },
@@ -171,7 +328,7 @@ export const papsGradeStandards: Record<
     '앉아윗몸앞으로굽히기': { male: [], female: [], type: 'distance' },
     '팔굽혀펴기': { male: [], female: [], type: 'count' },
     '악력': { male: [], female: [], type: 'weight' },
-    '체질량지수(BMI)': { male: [], female: [], type: 'compound' }
+    '체질량지수(BMI)': defaultBmiStandardItem,
   },
 };
 
@@ -216,6 +373,10 @@ papsStandards['오래달리기'] = { type: 'time', unit: '초' };
 
 
 export function getPapsGrade(item: string, student: Student, value: number): number | null {
+  if (item === '체질량지수(BMI)') {
+    return getBmiGrade(student.grade, student.gender, value);
+  }
+
   const gradeKey = student.grade;
   let gradeStandard = papsGradeStandards[gradeKey];
   

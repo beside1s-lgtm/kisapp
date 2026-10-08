@@ -69,7 +69,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { papsGradeStandards } from '@/lib/pe/paps';
+import { papsGradeStandards, BMI_EVALUATION_STANDARDS, getBmiStatusText, getBmiGrade } from '@/lib/pe/paps';
 
 interface RecordInputProps {
   allStudents: Student[];
@@ -149,6 +149,8 @@ export default function RecordInput({
 
   // 우측 패널 뷰 모드 ('all' | 'standards' | 'video')
   const [rightPanelViewMode, setRightPanelViewMode] = useState<'all' | 'standards' | 'video'>('all');
+  // BMI 기준표 전용 성별 탭 ('all' | 'male' | 'female')
+  const [bmiStandardGenderTab, setBmiStandardGenderTab] = useState<'all' | 'male' | 'female'>('all');
 
   const [batchRecords, setBatchRecords] = useState<{ [studentId: string]: { value?: string; height?: string; weight?: string } }>({});
   const [isBatchSubmitting, setIsBatchSubmitting] = useState(false);
@@ -830,7 +832,27 @@ export default function RecordInput({
                               />
                             </td>
                             <td className="p-1 text-center font-black text-indigo-600 text-xs">
-                              {calculateBmi(current.height, current.weight)}
+                              {(() => {
+                                const bmiStr = calculateBmi(current.height, current.weight);
+                                if (!bmiStr) return '-';
+                                const bmiVal = parseFloat(bmiStr);
+                                const status = getBmiStatusText(s.grade, s.gender, bmiVal);
+                                const grade = getBmiGrade(s.grade, s.gender, bmiVal);
+                                return (
+                                  <div className="flex flex-col items-center justify-center">
+                                    <span className="font-black text-indigo-600 text-xs leading-tight">{bmiStr}</span>
+                                    <span className={cn(
+                                      "text-[10px] font-bold px-1 py-0.2 rounded mt-0.5 leading-tight",
+                                      status === '정상' ? "bg-emerald-50 text-emerald-700" :
+                                      status === '과체중' ? "bg-amber-50 text-amber-700" :
+                                      status === '마름' ? "bg-sky-50 text-sky-700" :
+                                      "bg-rose-50 text-rose-700"
+                                    )}>
+                                      {status} ({grade}등급)
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                             </td>
                           </>
                         ) : (
@@ -940,35 +962,182 @@ export default function RecordInput({
               {/* PAPS 등급 기준표 (글씨 대폭 확대 & 가로 스크롤 제거) */}
               {(rightPanelViewMode === 'all' || rightPanelViewMode === 'standards') && selectedItemForBatch?.isPaps && (
                 <Card className="border border-slate-200 shadow-2xs bg-white rounded-2xl overflow-hidden flex flex-col justify-between">
-                  <CardHeader className="px-3 py-2 border-b border-slate-100 bg-slate-50/60">
+                  <CardHeader className="px-3 py-2 border-b border-slate-100 bg-slate-50/60 flex flex-row items-center justify-between">
                     <CardTitle className="text-xs font-black text-slate-900 flex items-center gap-1.5">
                       <ClipboardList className="w-3.5 h-3.5 text-blue-600" />
-                      {batchRecordItem} 기준표 ({selectedGrade || studentsForBatch[0]?.grade || '5'}학년)
+                      {batchRecordItem === '체질량지수(BMI)' ? 'PAPS 체질량지수(BMI) 평가 기준표' : `${batchRecordItem} 기준표 (${selectedGrade || studentsForBatch[0]?.grade || '5'}학년)`}
                     </CardTitle>
+
+                    {batchRecordItem === '체질량지수(BMI)' && (
+                      <div className="flex items-center gap-1 bg-slate-200/70 p-0.5 rounded-lg text-[10px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setBmiStandardGenderTab('all')}
+                          className={cn(
+                            "px-1.5 py-0.5 rounded transition-colors",
+                            bmiStandardGenderTab === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                          )}
+                        >
+                          전체
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBmiStandardGenderTab('male')}
+                          className={cn(
+                            "px-1.5 py-0.5 rounded transition-colors",
+                            bmiStandardGenderTab === 'male' ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:text-blue-700"
+                          )}
+                        >
+                          남학생
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBmiStandardGenderTab('female')}
+                          className={cn(
+                            "px-1.5 py-0.5 rounded transition-colors",
+                            bmiStandardGenderTab === 'female' ? "bg-rose-600 text-white shadow-xs" : "text-slate-600 hover:text-rose-700"
+                          )}
+                        >
+                          여학생
+                        </button>
+                      </div>
+                    )}
                   </CardHeader>
-                  <CardContent className="p-2.5">
-                    <table className="w-full text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-slate-100 text-slate-700 font-black border-b border-slate-200">
-                          <th className="p-1.5 text-center w-12 text-xs font-bold">성별</th>
-                          <th className="p-1.5 text-center text-xs font-bold text-blue-700">1등급</th>
-                          <th className="p-1.5 text-center text-xs font-bold text-cyan-700">2등급</th>
-                          <th className="p-1.5 text-center text-xs font-bold text-emerald-700">3등급</th>
-                          <th className="p-1.5 text-center text-xs font-bold text-amber-700">4등급</th>
-                          <th className="p-1.5 text-center text-xs font-bold text-rose-700">5등급</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        <tr className="hover:bg-slate-50">
-                          <td className="text-center font-black text-xs text-blue-700 py-2 bg-blue-50/50">남</td>
-                          {renderGradeRanges('male')}
-                        </tr>
-                        <tr className="hover:bg-slate-50">
-                          <td className="text-center font-black text-xs text-rose-700 py-2 bg-rose-50/50">여</td>
-                          {renderGradeRanges('female')}
-                        </tr>
-                      </tbody>
-                    </table>
+                  <CardContent className="p-2.5 space-y-3">
+                    {batchRecordItem === '체질량지수(BMI)' ? (
+                      /* 체질량지수(BMI) 공식 기준표 (사진 1, 2 1:1 완벽 반영) */
+                      <div className="space-y-3">
+                        {/* 1. 남학생 BMI 평가 기준표 */}
+                        {(bmiStandardGenderTab === 'all' || bmiStandardGenderTab === 'male') && (
+                          <div className="rounded-xl border border-blue-100 bg-blue-50/20 p-2 space-y-1.5">
+                            <div className="flex items-baseline justify-between">
+                              <span className="text-xs font-black text-blue-900 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 inline-block" />
+                                1. 남학생 BMI 평가 기준표
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium">단위: kg/m²</span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 font-medium leading-tight">
+                              남학생은 학년이 올라갈수록 정상 및 비만 판정 기준 수치가 완만하게 상승합니다.
+                            </p>
+                            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                              <table className="w-full text-[11px] sm:text-xs border-collapse">
+                                <thead>
+                                  <tr className="bg-slate-100 text-slate-700 font-black border-b border-slate-200">
+                                    <th className="p-1.5 text-center font-bold text-slate-800">학년</th>
+                                    <th className="p-1.5 text-center font-bold text-sky-700 bg-sky-50/50">마름 (이하)</th>
+                                    <th className="p-1.5 text-center font-bold text-emerald-700 bg-emerald-50/50">정상</th>
+                                    <th className="p-1.5 text-center font-bold text-amber-700 bg-amber-50/50">과체중</th>
+                                    <th className="p-1.5 text-center font-bold text-orange-700 bg-orange-50/50">경도비만</th>
+                                    <th className="p-1.5 text-center font-bold text-rose-700 bg-rose-50/50">고도비만 (이상)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 text-center">
+                                  {(['4', '5', '6'] as const).map(gr => {
+                                    const isCurr = String(selectedGrade || studentsForBatch[0]?.grade) === gr;
+                                    const row = BMI_EVALUATION_STANDARDS[gr].male;
+                                    return (
+                                      <tr key={gr} className={cn("hover:bg-slate-50/80 transition-colors", isCurr && "bg-blue-50/60 font-bold")}>
+                                        <td className="p-1.5 font-black text-slate-900 bg-slate-50/40">
+                                          초{gr} {isCurr && <span className="text-[10px] text-blue-600 ml-0.5">●</span>}
+                                        </td>
+                                        <td className="p-1.5 text-slate-700">{row.underweightMax.toFixed(1)} 이하</td>
+                                        <td className="p-1.5 text-emerald-700 font-bold">{row.normalMin.toFixed(1)} ~ {row.normalMax.toFixed(1)}</td>
+                                        <td className="p-1.5 text-amber-700">{row.overweightMin.toFixed(1)} ~ {row.overweightMax.toFixed(1)}</td>
+                                        <td className="p-1.5 text-orange-700">{row.mildObeseMin.toFixed(1)} ~ {row.mildObeseMax.toFixed(1)}</td>
+                                        <td className="p-1.5 text-rose-700 font-semibold">{row.severeObeseMin.toFixed(1)} 이상</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 2. 여학생 BMI 평가 기준표 */}
+                        {(bmiStandardGenderTab === 'all' || bmiStandardGenderTab === 'female') && (
+                          <div className="rounded-xl border border-rose-100 bg-rose-50/20 p-2 space-y-1.5">
+                            <div className="flex items-baseline justify-between">
+                              <span className="text-xs font-black text-rose-900 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-600 inline-block" />
+                                2. 여학생 BMI 평가 기준표
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium">단위: kg/m²</span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 font-medium leading-tight">
+                              여학생은 남학생에 비해 성장 및 2차 성징이 상대적으로 빨라, 정상구간 및 비만 시작 기준점이 남학생보다 조금 더 높게 설정되어 있습니다.
+                            </p>
+                            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                              <table className="w-full text-[11px] sm:text-xs border-collapse">
+                                <thead>
+                                  <tr className="bg-slate-100 text-slate-700 font-black border-b border-slate-200">
+                                    <th className="p-1.5 text-center font-bold text-slate-800">학년</th>
+                                    <th className="p-1.5 text-center font-bold text-sky-700 bg-sky-50/50">마름 (이하)</th>
+                                    <th className="p-1.5 text-center font-bold text-emerald-700 bg-emerald-50/50">정상</th>
+                                    <th className="p-1.5 text-center font-bold text-amber-700 bg-amber-50/50">과체중</th>
+                                    <th className="p-1.5 text-center font-bold text-orange-700 bg-orange-50/50">경도비만</th>
+                                    <th className="p-1.5 text-center font-bold text-rose-700 bg-rose-50/50">고도비만 (이상)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 text-center">
+                                  {(['4', '5', '6'] as const).map(gr => {
+                                    const isCurr = String(selectedGrade || studentsForBatch[0]?.grade) === gr;
+                                    const row = BMI_EVALUATION_STANDARDS[gr].female;
+                                    return (
+                                      <tr key={gr} className={cn("hover:bg-slate-50/80 transition-colors", isCurr && "bg-rose-50/60 font-bold")}>
+                                        <td className="p-1.5 font-black text-slate-900 bg-slate-50/40">
+                                          초{gr} {isCurr && <span className="text-[10px] text-rose-600 ml-0.5">●</span>}
+                                        </td>
+                                        <td className="p-1.5 text-slate-700">{row.underweightMax.toFixed(1)} 이하</td>
+                                        <td className="p-1.5 text-emerald-700 font-bold">{row.normalMin.toFixed(1)} ~ {row.normalMax.toFixed(1)}</td>
+                                        <td className="p-1.5 text-amber-700">{row.overweightMin.toFixed(1)} ~ {row.overweightMax.toFixed(1)}</td>
+                                        <td className="p-1.5 text-orange-700">{row.mildObeseMin.toFixed(1)} ~ {row.mildObeseMax.toFixed(1)}</td>
+                                        <td className="p-1.5 text-rose-700 font-semibold">{row.severeObeseMin.toFixed(1)} 이상</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 등급 판정 매핑 안내 바 */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 flex flex-wrap items-center justify-between text-[10px] gap-1 text-slate-600">
+                          <span className="font-bold text-slate-800">PAPS 등급 판정:</span>
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-100/70 text-emerald-800 font-bold">정상 1등급 (20점)</span>
+                          <span className="px-1.5 py-0.5 rounded bg-amber-100/70 text-amber-800 font-bold">과체중 2등급 (15점)</span>
+                          <span className="px-1.5 py-0.5 rounded bg-sky-100/70 text-sky-800 font-bold">마름 3등급 (15점)</span>
+                          <span className="px-1.5 py-0.5 rounded bg-orange-100/70 text-orange-800 font-bold">경도비만 4등급 (10점)</span>
+                          <span className="px-1.5 py-0.5 rounded bg-rose-100/70 text-rose-800 font-bold">고도비만 5등급 (10점)</span>
+                        </div>
+                      </div>
+                    ) : (
+                      /* 일반 종목 1~5등급 기준표 */
+                      <table className="w-full text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-700 font-black border-b border-slate-200">
+                            <th className="p-1.5 text-center w-12 text-xs font-bold">성별</th>
+                            <th className="p-1.5 text-center text-xs font-bold text-blue-700">1등급</th>
+                            <th className="p-1.5 text-center text-xs font-bold text-cyan-700">2등급</th>
+                            <th className="p-1.5 text-center text-xs font-bold text-emerald-700">3등급</th>
+                            <th className="p-1.5 text-center text-xs font-bold text-amber-700">4등급</th>
+                            <th className="p-1.5 text-center text-xs font-bold text-rose-700">5등급</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          <tr className="hover:bg-slate-50">
+                            <td className="text-center font-black text-xs text-blue-700 py-2 bg-blue-50/50">남</td>
+                            {renderGradeRanges('male')}
+                          </tr>
+                          <tr className="hover:bg-slate-50">
+                            <td className="text-center font-black text-xs text-rose-700 py-2 bg-rose-50/50">여</td>
+                            {renderGradeRanges('female')}
+                          </tr>
+                        </tbody>
+                      </table>
+                    )}
                   </CardContent>
                 </Card>
               )}

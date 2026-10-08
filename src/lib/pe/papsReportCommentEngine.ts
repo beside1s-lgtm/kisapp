@@ -5,7 +5,7 @@
  */
 
 import type { Student, MeasurementItem, MeasurementRecord } from './types';
-import { getPapsGrade, calculatePapsScore } from './paps';
+import { getPapsGrade, calculatePapsScore, getBmiStatusText } from './paps';
 
 export interface PapsFactorEvaluation {
   factor: '심폐지구력' | '유연성' | '근력/근지구력' | '순발력' | '체질량지수(BMI)';
@@ -183,25 +183,26 @@ function getPlayfulImprovementGuide(factor: string, grade: number, gender: strin
 }
 
 // ==========================================
-// [영역 4] BMI 연계 생활 & 체형 가이드 세분화
+// [영역 4] BMI 연계 생활 & 체형 가이드 세분화 (사진 공식 기준표 1:1 연동)
 // ==========================================
-function getBmiHealthGuide(bmiValue: number, gender: string): string {
+function getBmiHealthGuide(bmiValue: number, gender: string, grade: string = '5'): string {
   if (!bmiValue || bmiValue === 0) {
     return "성장기 균형 잡힌 영양 섭취와 규칙적인 수면 습관을 통해 건강한 신체 발달 기반을 튼튼히 유지해 주세요.";
   }
 
   const isMale = gender === '남';
+  const status = getBmiStatusText(grade, gender, bmiValue);
 
-  if (bmiValue >= 24) {
+  if (status === '고도비만' || status === '경도비만') {
     return isMale
       ? "체중 감량을 힘든 운동으로 여기기보다 주말 자전거 라이딩, 자유 수영, 수중 달리기, 가벼운 풋살 등 관절에 무리 없이 칼로리 소모가 큰 신체 활동을 가족 루틴으로 만들어 주세요. 야식과 탄산음료를 줄이는 건강한 식습관도 함께 권장합니다."
       : "체중 관리를 위해 수영, 실내 자전거 타기, 신나는 음악 줄넘기, 주말 가족 공원 트레킹 등 관절에 부담이 적고 즐겁게 땀 흘릴 수 있는 유산소 활동을 추천합니다. 과도한 간식과 당류 섭취를 줄이는 식습관 개선도 병행해 주세요.";
   }
-  if (bmiValue >= 22) {
+  if (status === '과체중') {
     return "체격이 다부지고 건장한 편이므로, 활동량이 많은 구기 스포츠와 유산소 신체 활동을 통해 근육량을 늘리고 체지방을 건강하게 관리해 주시기 바랍니다.";
   }
-  if (bmiValue <= 14.5) {
-    return "에너지 소모 대비 섭취량이 부족할 수 있으므로, 규칙적인 세 끼 식사와 함께 양질의 단백질 간식(달걀, 우유, 견과류)을 보충하고 코어 자극 운동(브릿지, 네발기기 자세)을 통해 골격과 근육이 바르게 자리잡도록 도와주세요.";
+  if (status === '마름') {
+    return "성장기 에너지 소모 대비 영양 섭취량이 부족할 수 있으므로, 규칙적인 세 끼 식사와 함께 양질의 단백질 간식(달걀, 우유, 견과류)을 보충하고 가벼운 코어·근력 운동을 통해 골격과 근육이 바르게 자리잡도록 도와주세요.";
   }
   return "신장과 체중의 비율이 안정적인 표준 체형을 유지하고 있습니다. 규칙적인 아침 식사와 하루 8시간 이상의 충분한 숙면을 통해 성장기 건강 밸런스를 계속 유지해 주세요.";
 }
@@ -321,7 +322,7 @@ export function buildPapsStudentReport(
 
   // [영역 4] BMI 가이드
   const bmiEval = evaluations.find(e => e.factor === '체질량지수(BMI)');
-  const bmiHealthGuide = getBmiHealthGuide(bmiEval?.value || 0, student.gender || '남');
+  const bmiHealthGuide = getBmiHealthGuide(bmiEval?.value || 0, student.gender || '남', student.grade);
 
   return {
     student,
