@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { exportAttendanceToExcel } from '@/lib/afterschool/excel';
 import { getTeacherApplySettings, saveTeacherApplySettings, onTeacherApplySettingsUpdate, submitAfterschoolApprovalDoc, deleteAfterschoolApprovalDoc, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord, onDocConfigUpdate, getDocConfig } from '@/lib/services/settingsService';
+import { onAllHomeroomAttendanceByDateUpdate, type HomeroomAttendanceRecord } from '@/lib/services/homeroomAttendanceSync';
 import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
 import type { DocConfig, UserProfile } from '@/lib/types';
 import { getUsersDirectory } from '@/lib/services/userService';
@@ -599,67 +600,21 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
 
   const activeDay = scheduleDays.find((d) => d.dayIndex === activeSessionNo) || scheduleDays[0];
 
-  // 회차(activeSessionNo) 전환 시 출결 기록 없는 수강생을 자동으로 '출석(O)'으로 초기화
-  // - Firestore 초기 로드 완료를 기다리기 위해 800ms 딜레이 사용 (stale closure 방지를 위해 ref로 읽음)
-  // - 이미 기록이 존재하는 회차는 절대 덮어쓰지 않음
+  // 활성 회차(activeDay)의 담임 일일 출석 데이터 실시간 구독 (단방향 상속용)
+  const [homeroomAttendanceRecords, setHomeroomAttendanceRecords] = useState<HomeroomAttendanceRecord[]>([]);
+
   useEffect(() => {
-    if (!activeDay || !currentCourse?.id || courseStudents.length === 0) return;
+    const targetDate = activeDay?.fullDate;
+    if (!targetDate) {
+      setHomeroomAttendanceRecords([]);
+      return;
+    }
 
-    const dayKey = `${currentCourse.id}_${activeDay.dayIndex}`;
-    if (autoInitializedDaysRef.current.has(dayKey)) return;
-
-    const timer = setTimeout(() => {
-      if (autoInitializedDaysRef.current.has(dayKey)) return;
-
-      const currentRecords = attendanceRecordsRef.current;
-      const hasAnyRecord = currentRecords.some(
-        (r) => r.courseId === currentCourse.id && activeDay.sessionNos.includes(r.sessionNo || 0)
-      );
-
-      // 이미 기록이 있으면 건드리지 않음
-      if (hasAnyRecord) {
-        autoInitializedDaysRef.current.add(dayKey);
-        return;
-      }
-
-      autoInitializedDaysRef.current.add(dayKey);
-
-      const dayKor = getDayKor(activeDay);
-      const attendingStudents = courseStudents.filter((st) => {
-        if (st.selectedDays && st.selectedDays.length > 0 && dayKor) {
-          return st.selectedDays.includes(dayKor);
-        }
-        return true;
-      });
-
-      if (attendingStudents.length === 0) return;
-
-      setAttendanceRecords((prev) => {
-        // 이미 다른 경로로 레코드가 생성된 경우 중복 방지
-        const alreadyHas = prev.some(
-          (r) => r.courseId === currentCourse.id && activeDay.sessionNos.includes(r.sessionNo || 0)
-        );
-        if (alreadyHas) return prev;
-
-        const newRecords: AttendanceRecord[] = attendingStudents.flatMap((st) =>
-          activeDay.sessionNos.map((sNo) => ({
-            id: `att_${currentCourse.id}_${st.studentId}_s${sNo}`,
-            courseId: currentCourse.id,
-            studentId: st.studentId,
-            sessionNo: sNo,
-            date: activeDay.fullDate || activeDay.dateStr,
-            status: 'ATTEND' as const,
-            markSymbol: 'O' as const,
-            isIndividualDismissal: false,
-          }))
-        );
-        return [...prev, ...newRecords];
-      });
-    }, 800);
-
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSessionNo, currentCourse?.id, courseStudents]);
+    const unsub = onAllHomeroomAttendanceByDateUpdate(targetDate, (records) => {
+      setHomeroomAttendanceRecords(records || []);
+    });
+    return () => unsub();
+  }, [activeDay?.fullDate]);
 
   // 엑셀 내보내기 및 호환용 sessions 맵핑
   const sessions: SyllabusSession[] = scheduleDays.flatMap((day) =>
@@ -703,6 +658,40 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     return '';
   };
 
+  // 학생별 담임 출석 상태 조회 및 방과후 마크 기호 매핑 헬퍼 (단방향 상속)
+  const getHomeroomInheritedMark = (studentId: string): string => {
+    if (!homeroomAttendanceRecords || homeroomAttendanceRecords.length === 0) return '';
+    const cleanStr = (v: any) => String(v || '').replace(/\s+/g, '').toLowerCase();
+
+    // 1. studentId 직접 일치
+    let matched = homeroomAttendanceRecords.find(r => r.studentId === studentId);
+
+    // 2. 불일치 시 학생 프로필(마스터 학생 및 이름/학년/반) 매칭
+    if (!matched) {
+      const student = courseStudents.find(s => s.studentId === studentId);
+      if (student) {
+        const cName = cleanStr(student.name);
+        const tGrade = Number(student.grade);
+        const tClass = Number(student.classNum);
+        matched = homeroomAttendanceRecords.find(r => {
+          if (cleanStr(r.studentName) !== cName) return false;
+          if (r.gradeClass) {
+            const [g, c] = r.gradeClass.split('-');
+            if (tGrade && Number(g) !== tGrade) return false;
+            if (tClass && Number(c) !== tClass) return false;
+          }
+          return true;
+        });
+      }
+    }
+
+    if (!matched) return '';
+    if (matched.status === 'ABSENT') return 'X';
+    if (matched.status === 'EARLY_LEAVE' || matched.status === 'INDIVIDUAL_DISMISSAL') return 'V';
+    // 담임 출석부에서 정상 출석(ATTEND)인 경우 빈값('')을 반환하여 미체크로 두거나 필요 시 기본값 처리
+    return '';
+  };
+
   const getDayMark = (studentId: string, dayIndex: number): string => {
     const day = scheduleDays.find((d) => d.dayIndex === dayIndex);
     if (!day) return '';
@@ -720,11 +709,20 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     const record = attendanceRecords.find(
       (r) => r.courseId === currentCourse.id && r.studentId === studentId && r.sessionNo === firstSessionNo
     );
-    if (!record) return '';
-    if (record.markSymbol) return record.markSymbol;
-    if (record.status === 'ATTEND') return record.isIndividualDismissal ? '△' : '○';
-    if (record.status === 'LATE' || record.status === 'EARLY_LEAVE') return '△';
-    if (record.status === 'ABSENT') return '×';
+    if (record) {
+      if (record.markSymbol) return record.markSymbol;
+      if (record.status === 'ATTEND') return record.isIndividualDismissal ? '△' : '○';
+      if (record.status === 'LATE' || record.status === 'EARLY_LEAVE') return '△';
+      if (record.status === 'ABSENT') return '×';
+      return '';
+    }
+
+    // [단방향 상속]: 해당 날짜의 방과후 출결 레코드가 없는 경우 당일 담임 출석부 출결 상태를 기본값으로 상속
+    if (activeDay && day.dayIndex === activeDay.dayIndex) {
+      const inherited = getHomeroomInheritedMark(studentId);
+      if (inherited) return inherited;
+    }
+
     return '';
   };
 
@@ -768,6 +766,26 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
       const targetDayOfWeek = korDay ? koreanDayMap[korDay] : dayOfWeekMap[new Date(day.fullDate + 'T12:00:00').getDay()];
       if (!targetDayOfWeek) return;
 
+      const clean = (str: any) => String(str || '').replace(/\s+/g, '').toLowerCase();
+      const targetCleanName = clean(studentName);
+      const studentObj = courseStudents.find((s) => s.studentId === studentId);
+      const sGrade = Number(studentObj?.grade);
+      const sClass = Number(studentObj?.classNum);
+
+      // 스쿨버스 시스템 내 학생 ID 다각도 매핑 (studentId 및 kisbus student.id)
+      const matchedBusStudent = (studentsList || []).find((st: any) => {
+        if (st.id === studentId) return true;
+        const nameMatch = clean(st.name) === targetCleanName || clean(st.nameKo) === targetCleanName || clean(st.nameEn) === targetCleanName;
+        const gradeMatch = !sGrade || Number(st.grade) === sGrade;
+        const classMatch = !sClass || Number(st.class) === sClass;
+        return nameMatch && gradeMatch && classMatch;
+      });
+
+      const targetBusStudentIds = Array.from(new Set([
+        studentId,
+        matchedBusStudent ? matchedBusStudent.id : null,
+      ].filter(Boolean) as string[]));
+
       const routesSnap = await getDocs(collection(kisbusDb, 'routes'));
       let matchedCount = 0;
 
@@ -775,12 +793,12 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
         const routeData = routeDoc.data();
         if (routeData.dayOfWeek !== targetDayOfWeek) continue;
         const seating: any[] = routeData.seating || [];
-        if (!seating.some((s: any) => s.studentId === studentId)) continue;
+        if (!seating.some((s: any) => targetBusStudentIds.includes(s.studentId))) continue;
 
         const attendanceRef = doc(kisbusDb, 'routes', routeDoc.id, 'attendance', targetDateStr);
         await setDoc(attendanceRef, {
-          notBoarding: isAbsent ? arrayUnion(studentId) : arrayRemove(studentId),
-          ...(isAbsent ? { boarded: arrayRemove(studentId), disembarked: arrayRemove(studentId) } : {}),
+          notBoarding: isAbsent ? arrayUnion(...targetBusStudentIds) : arrayRemove(...targetBusStudentIds),
+          ...(isAbsent ? { boarded: arrayRemove(...targetBusStudentIds), disembarked: arrayRemove(...targetBusStudentIds) } : {}),
         }, { merge: true });
         matchedCount++;
       }
@@ -835,12 +853,13 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   };
 
   // 현재 활성 회차의 모든 확정 수강생 전원 출석 처리
+  // 단, 담임이 결석(ABSENT)/조퇴(EARLY_LEAVE/INDIVIDUAL_DISMISSAL)로 처리한 학생은 출석(O)으로 덮어쓰지 않고 기존 결석/조퇴 상태를 엄격히 보존
   const handleBulkAttendDay = (dayIndex: number) => {
     const day = scheduleDays.find((d) => d.dayIndex === dayIndex);
     if (!day) return;
     const dayKor = getDayKor(day);
 
-    // 해당 요일에 수강하는 학생만 출석 처리 (주 1회 선택 학생 중 미수강 요일 제외)
+    // 해당 요일에 수강하는 학생만 대상 (주 1회 선택 학생 중 미수강 요일 제외)
     const attendingStudents = courseStudents.filter((st) => {
       if (st.selectedDays && st.selectedDays.length > 0 && dayKor) {
         return st.selectedDays.includes(dayKor);
@@ -849,23 +868,68 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     });
 
     attendingStudents.forEach((st) => {
-      syncBusAbsenceForDay(st.studentId, dayIndex, 'O');
-      setAttendanceRecords((prev) => {
-        const filtered = prev.filter(
-          (r) => !(r.courseId === currentCourse.id && r.studentId === st.studentId && day.sessionNos.includes(r.sessionNo || 0))
-        );
-        const newRecords: AttendanceRecord[] = day.sessionNos.map((sNo) => ({
-          id: `att_${currentCourse.id}_${st.studentId}_s${sNo}`,
-          courseId: currentCourse.id,
-          studentId: st.studentId,
-          sessionNo: sNo,
-          date: day.fullDate || day.dateStr, // yyyy-MM-dd 우선 저장 (버스 selectedDate와 형식 통일)
-          status: 'ATTEND',
-          markSymbol: 'O',
-          isIndividualDismissal: false,
-        }));
-        return [...filtered, ...newRecords];
-      });
+      const inheritedMark = getHomeroomInheritedMark(st.studentId);
+      const isHomeroomAbsent = inheritedMark === 'X';
+      const isHomeroomEarlyLeave = inheritedMark === 'V';
+
+      if (isHomeroomAbsent) {
+        // 담임 결석 학생: 방과후 결석(X) 및 버스 미탑승 상태 유지
+        syncBusAbsenceForDay(st.studentId, dayIndex, 'X');
+        setAttendanceRecords((prev) => {
+          const filtered = prev.filter(
+            (r) => !(r.courseId === currentCourse.id && r.studentId === st.studentId && day.sessionNos.includes(r.sessionNo || 0))
+          );
+          const newRecords: AttendanceRecord[] = day.sessionNos.map((sNo) => ({
+            id: `att_${currentCourse.id}_${st.studentId}_s${sNo}`,
+            courseId: currentCourse.id,
+            studentId: st.studentId,
+            sessionNo: sNo,
+            date: day.fullDate || day.dateStr,
+            status: 'ABSENT',
+            markSymbol: 'X',
+            isIndividualDismissal: false,
+          }));
+          return [...filtered, ...newRecords];
+        });
+      } else if (isHomeroomEarlyLeave) {
+        // 담임 조퇴/개별하교 학생: 방과후 지각/개별(V) 및 버스 미탑승 상태 유지
+        syncBusAbsenceForDay(st.studentId, dayIndex, 'V');
+        setAttendanceRecords((prev) => {
+          const filtered = prev.filter(
+            (r) => !(r.courseId === currentCourse.id && r.studentId === st.studentId && day.sessionNos.includes(r.sessionNo || 0))
+          );
+          const newRecords: AttendanceRecord[] = day.sessionNos.map((sNo) => ({
+            id: `att_${currentCourse.id}_${st.studentId}_s${sNo}`,
+            courseId: currentCourse.id,
+            studentId: st.studentId,
+            sessionNo: sNo,
+            date: day.fullDate || day.dateStr,
+            status: 'ATTEND',
+            markSymbol: 'V',
+            isIndividualDismissal: true,
+          }));
+          return [...filtered, ...newRecords];
+        });
+      } else {
+        // 정상 출석 학생: 출석(O) 처리 및 버스 탑승 복구
+        syncBusAbsenceForDay(st.studentId, dayIndex, 'O');
+        setAttendanceRecords((prev) => {
+          const filtered = prev.filter(
+            (r) => !(r.courseId === currentCourse.id && r.studentId === st.studentId && day.sessionNos.includes(r.sessionNo || 0))
+          );
+          const newRecords: AttendanceRecord[] = day.sessionNos.map((sNo) => ({
+            id: `att_${currentCourse.id}_${st.studentId}_s${sNo}`,
+            courseId: currentCourse.id,
+            studentId: st.studentId,
+            sessionNo: sNo,
+            date: day.fullDate || day.dateStr,
+            status: 'ATTEND',
+            markSymbol: 'O',
+            isIndividualDismissal: false,
+          }));
+          return [...filtered, ...newRecords];
+        });
+      }
     });
   };
 
