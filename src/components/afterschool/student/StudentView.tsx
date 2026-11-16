@@ -5,147 +5,20 @@ import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { getRoutes } from '@/lib/kisbus/routes';
 import { getStudents } from '@/lib/kisbus/students';
-import { getDocConfig, saveAfterschoolEnrollment, deleteAfterschoolEnrollment, updateAfterschoolCourse, onTeacherApplySettingsUpdate, runAfterschoolEnrollmentTransaction } from '@/lib/services/settingsService';
+import { getDocConfig, saveAfterschoolEnrollment, updateAfterschoolCourse, onTeacherApplySettingsUpdate } from '@/lib/services/settingsService';
 import type { Route as BusRoute, Student as BusStudent } from '@/lib/kisbus/types';
 import type { DocConfig } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/use-translation';
-import { safeParseDate, buildAfterschoolEnrollmentId, getAfterschoolStudentIdentity } from '@/lib/afterschool/enrollmentRules';
+import { safeParseDate, getAfterschoolStudentIdentity, parseSchoolDateMs } from '@/lib/afterschool/enrollmentRules';
+import { useServerNow } from '@/lib/afterschool/serverClock';
+import { requestAfterschoolEnrollment, requestAfterschoolCancellation } from '@/lib/afterschool/enrollmentClient';
 
 export { safeParseDate };
 
-export type PeriodGroup = '8~9차시' | '1~2차시' | '3~4차시' | '1~4차시';
-
-export function getCoursePeriodGroup(course: Course): PeriodGroup {
-  const classTime = String(course.classTime || '').trim();
-  const title = String(course.title || '').trim();
-  const period = String(course.period || '').trim();
-  const periodSlot = String(course.periodSlot || '').trim();
-  const description = String(course.description || '').trim();
-  const classDays = Array.isArray(course.classDays) ? course.classDays : [];
-  const isSaturday = classDays.some(d => d.includes('토') || d.toLowerCase().includes('sat'));
-
-  const combined = `${classTime} ${period} ${title} ${periodSlot} ${description}`.trim();
-
-  // 1. 8~9차시 (평일 방과후 15:00~16:30 / 15:10~16:30 / 8~9차시 / 8-9차시)
-  if (
-    combined.includes('8~9') || 
-    combined.includes('8-9') || 
-    combined.includes('8,9') || 
-    combined.includes('8~9차시') || 
-    combined.includes('15:10') || 
-    combined.includes('15:00') || 
-    combined.includes('16:30') ||
-    (!isSaturday && !combined.includes('08:30') && !combined.includes('10:10') && !combined.includes('1~4') && !combined.includes('1-4'))
-  ) {
-    return '8~9차시';
-  }
-
-  // 2. 1~4차시 (토요/방학 4차시 통합 / 08:30 ~ 11:40 / 1~4차시 / 전일제)
-  if (
-    combined.includes('1~4') || 
-    combined.includes('1-4') || 
-    combined.includes('1~4차시') || 
-    combined.includes('11:40') || 
-    combined.includes('전일제') || 
-    combined.includes('통합')
-  ) {
-    return '1~4차시';
-  }
-
-  // 3. 3~4차시 (토요/방학 10:10 ~ 11:40 / 3~4차시 / 3-4차시)
-  if (
-    combined.includes('3~4') || 
-    combined.includes('3-4') || 
-    combined.includes('3~4차시') || 
-    combined.includes('10:10')
-  ) {
-    return '3~4차시';
-  }
-
-  // 4. 1~2차시 (토요/방학 08:30 ~ 10:00 / 1~2차시 / 1-2차시)
-  if (
-    combined.includes('1~2') || 
-    combined.includes('1-2') || 
-    combined.includes('1~2차시') || 
-    combined.includes('08:30') || 
-    combined.includes('8:30')
-  ) {
-    return '1~2차시';
-  }
-
-  return isSaturday ? '1~2차시' : '8~9차시';
-}
-
-export function cleanClassTime(classTimeStr?: string): string {
-  if (!classTimeStr) return '';
-  return classTimeStr
-    .replace(/\s*\(\s*[0-9]~[0-9]차시\s*\)/g, '')
-    .replace(/\s*\(\s*[0-9]-[0-9]차시\s*\)/g, '')
-    .replace(/\s*\(\s*전일제\s*\)/g, '')
-    .replace(/\s*\(\s*통합\s*\)/g, '')
-    .trim();
-}
-
-export function shouldForceWaiting(
-  targetCourse: Course,
-  studentEnrollments: Enrollment[],
-  allCourses: Course[]
-): { forceWaiting: boolean; reason?: string } {
-  const targetPeriodGroup = getCoursePeriodGroup(targetCourse);
-  const targetDays = Array.isArray(targetCourse.classDays) ? targetCourse.classDays : ['월'];
-
-  const sortedEnrollments = [...studentEnrollments].sort((a, b) => {
-    const tA = a.timestampMs || new Date(a.registrationDate || 0).getTime();
-    const tB = b.timestampMs || new Date(b.registrationDate || 0).getTime();
-    return tA - tB;
-  });
-
-  const appliedDetails = sortedEnrollments.map(e => {
-    const c = allCourses.find(course => course.id === e.courseId);
-    return {
-      enrollment: e,
-      course: c,
-      periodGroup: c ? getCoursePeriodGroup(c) : '8~9차시',
-      classDays: c && Array.isArray(c.classDays) ? c.classDays : ['월'],
-    };
-  }).filter(item => item.course !== undefined);
-
-  // 1. 토요일: 이미 1~4차시 통합 강좌를 1순위로 신청한 경우 -> 토요 후속 신청은 대기자 처리
-  const hasFirstChoice1To4 = appliedDetails.some(item => 
-    item.periodGroup === '1~4차시' && item.classDays.some(d => targetDays.includes(d))
-  );
-  if (hasFirstChoice1To4) {
-    return {
-      forceWaiting: true,
-      reason: '이미 1~4차시 통합 강좌를 신청하셨으므로, 이후 신청 강좌는 대기자 명단으로 등록됩니다.'
-    };
-  }
-
-  // 2. 토요일: 신청하려는 강좌가 1~4차시인데, 이미 토요일 다른 차시(1~2차시 또는 3~4차시) 강좌를 신청한 경우 -> 대기자 처리
-  if (targetPeriodGroup === '1~4차시') {
-    const hasSatOther = appliedDetails.some(item => item.classDays.some(d => targetDays.includes(d)));
-    if (hasSatOther) {
-      return {
-        forceWaiting: true,
-        reason: '이미 다른 차시(1~2차시/3~4차시) 강좌를 신청하셨으므로, 1~4차시 통합 강좌는 대기자 명단으로 등록됩니다.'
-      };
-    }
-  }
-
-  // 3. 동일 요일 + 동일 차시 그룹(예: 월요일 8~9차시 또는 토요일 1~2차시)에서 이미 1순위 강좌를 신청한 경우 -> 2순위 강좌는 대기자 처리
-  const existingInSameSlot = appliedDetails.filter(item => 
-    item.periodGroup === targetPeriodGroup && item.classDays.some(d => targetDays.includes(d))
-  );
-  if (existingInSameSlot.length > 0) {
-    return {
-      forceWaiting: true,
-      reason: `이미 해당 요일 ${targetPeriodGroup} 강좌(${existingInSameSlot[0].course?.title})를 1순위로 신청하셨으므로, 동시간대 2순위 신청 강좌는 대기자 명단으로 등록됩니다.`
-    };
-  }
-
-  return { forceWaiting: false };
-}
+export { getCoursePeriodGroup, cleanClassTime, shouldForceWaiting } from '@/lib/afterschool/waitingRules';
+export type { PeriodGroup } from '@/lib/afterschool/waitingRules';
+import { shouldForceWaiting, getCoursePeriodGroup, cleanClassTime, type PeriodGroup } from '@/lib/afterschool/waitingRules';
 
 interface StudentViewProps {
   courses: Course[];
@@ -306,20 +179,17 @@ export const StudentView: React.FC<StudentViewProps> = ({
   };
 
   // Timer Tick State
-  const [nowTime, setNowTime] = useState<Date>(new Date());
+  // 기기 시계가 아닌 서버(인터넷 표준) 시각 기준으로 1초마다 갱신
+  const serverNowMs = useServerNow(1000);
+  const nowTime = new Date(serverNowMs);
   const [queueTicket, setQueueTicket] = useState<QueueTicket | null>(null);
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNowTime(new Date());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Time calculations
-  const startTime = safeParseDate(timerConfig.startTime).getTime();
-  const endTime = safeParseDate(timerConfig.endTime).getTime();
-  const nowMs = nowTime.getTime();
+  // Time calculations: 개시/마감 시각은 학교 현지 시각(Asia/Ho_Chi_Minh)으로 해석
+  const nowMs = serverNowMs;
+  const parsedStart = parseSchoolDateMs(timerConfig.startTime);
+  const parsedEnd = parseSchoolDateMs(timerConfig.endTime);
+  const startTime = isNaN(parsedStart) ? nowMs : parsedStart;
+  const endTime = isNaN(parsedEnd) ? nowMs : parsedEnd;
 
   const getProgramName = () => {
     if (!teacherApplySettings) return '방과후학교';
@@ -450,50 +320,25 @@ export const StudentView: React.FC<StudentViewProps> = ({
         clearInterval(interval);
         setQueueTicket(null);
 
-        // 강좌+학생 고정 ID: 중복 신청/ID 충돌을 DB 트랜잭션에서 차단
-        const enrollmentId = buildAfterschoolEnrollmentId(course.id, currentStudentId);
+        // 신청자 정보·신청 기간·정원/대기 판정은 모두 서버가 서버 시각 기준으로 결정
         const needsBus = course.hasBusOption ? (needsBusMap[course.id] || false) : false;
-        const studentProfile = {
-          name: currentStudentName || profile?.studentName || profile?.name || '홍길동',
-          grade: Number(profile?.studentGrade) || 1,
-          classNum: Number(profile?.studentClass) || 1,
-          studentNum: Number(profile?.studentNumber) || 1,
-          studentEmail: (profile as any)?.studentEmail || (profile?.role === 'student' ? profile.email : '') || '',
-          phone: profile?.parentPhone || '',
-          parentPhone: profile?.parentPhone || '',
-          kisbusNo: needsBus ? '신청' : '-',
-          needsBus: needsBus,
-        };
 
-        const forceInfo = shouldForceWaiting(course, myEnrollments, courses);
-
-        runAfterschoolEnrollmentTransaction(
-          enrollmentId,
-          course.id,
-          currentStudentId,
-          studentProfile,
-          course.tuition,
-          course.textbookFee || 0,
-          course.materialFee || 0,
-          forceInfo.forceWaiting
-        ).then((res) => {
+        requestAfterschoolEnrollment(course.id, needsBus, profile).then((res) => {
           if (res.success) {
             if (res.status === 'ENROLLED') {
               alert(`🎉 수강 신청에 성공하였습니다! ('${course.title}') - 1순위 선착순 명단 등록`);
+            } else if (res.waitingReason) {
+              alert(`⏳ [대기자 등록 완료]
+${res.waitingReason}`);
             } else {
-              if (forceInfo.forceWaiting) {
-                alert(`⏳ [대기자 등록 완료]\n${forceInfo.reason || '동일 시간대 2순위 신청으로 대기자 명단에 등록되었습니다.'}`);
-              } else {
-                alert(`⏳ [대기자 등록 완료]\n'${course.title}' 강좌 정원이 마감되어 대기자 명단으로 등록되었습니다.`);
-              }
+              alert(`⏳ [대기자 등록 완료]
+'${course.title}' 강좌 정원이 마감되어 대기자 명단으로 등록되었습니다.`);
             }
+          } else if (res.errorCode && res.errorCode !== 'UNKNOWN') {
+            // 로그인 필요/중복 신청/신청 마감/강좌 잠금 등 업무 사유는 안내 문구를 그대로 표시
+            alert(res.error);
           } else {
-            // 중복 신청/신청 마감 등 업무 사유는 안내 문구를 그대로 표시
-            if (res.errorCode === 'DUPLICATE' || res.errorCode === 'CLOSED' || res.errorCode === 'NOT_FOUND') {
-              alert(res.error);
-            } else {
-              alert(`수강 신청 처리 중 오류가 발생했습니다: ${res.error || '알 수 없는 오류'}`);
-            }
+            alert(`수강 신청 처리 중 오류가 발생했습니다: ${res.error || '알 수 없는 오류'}`);
           }
         });
       } else {
@@ -507,12 +352,28 @@ export const StudentView: React.FC<StudentViewProps> = ({
   const handleCancelEnrollment = async (enrollment: Enrollment) => {
     if (!confirm('정말로 해당 강좌의 수강 신청(또는 대기 신청)을 취소하시겠습니까?')) return;
     try {
-      const res = await deleteAfterschoolEnrollment(enrollment.id);
-      if (res && res.message) {
-        alert(res.message);
-      } else {
-        alert('신청 취소가 성공적으로 처리되었습니다.');
+      const res = await requestAfterschoolCancellation(enrollment.id, profile);
+      if (!res.success) {
+        alert(res.error || '신청 취소 처리 중 오류가 발생했습니다.');
+        return;
       }
+      // 🌟 방과후 수강 취소 시 스쿨버스 정규 하교 버스로 즉시 복귀 연동 (기존 취소 로직과 동일)
+      const cancelled = res.cancelled || enrollment;
+      try {
+        const { revertCancelledStudentToAfternoonBus } = await import('@/lib/kisbus/assignments');
+        await revertCancelledStudentToAfternoonBus({
+          studentId: cancelled.studentId,
+          studentEmail: cancelled.studentEmail || cancelled.email,
+          name: cancelled.name || cancelled.studentName,
+          grade: cancelled.grade,
+          classNum: cancelled.classNum,
+        });
+      } catch (busErr) {
+        console.warn('스쿨버스 하교 복귀 처리 실패 (방과후 취소는 정상 완료):', busErr);
+      }
+      alert(res.promotedStudentName
+        ? `수강 신청이 취소되었습니다. 대기 1순위였던 [${res.promotedStudentName}] 학생이 [${res.promotedCourseTitle}] 수강 명단으로 자동 승격되었습니다!`
+        : '수강 신청 취소가 성공적으로 완료되었습니다.');
     } catch (err) {
       console.error(err);
       alert('신청 취소 처리 중 오류가 발생했습니다.');

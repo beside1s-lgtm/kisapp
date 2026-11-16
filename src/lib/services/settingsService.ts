@@ -750,7 +750,8 @@ export async function runAfterschoolEnrollmentTransaction(
             const { initialTimerConfig } = await import('@/lib/afterschool/mock/data');
             timerConfig = initialTimerConfig;
           }
-          if (!isAfterschoolApplyOpen(timerConfig)) {
+          // 이 클라이언트 경로는 관리자 도구(스트레스 테스트 등)용이며, 학생 신청은 서버 시각으로 판정하는 /api/afterschool/enroll을 사용한다
+          if (!isAfterschoolApplyOpen(timerConfig, Date.now())) {
             throw new AfterschoolEnrollError('CLOSED', '현재 수강 신청 가능 시간이 아니거나 관리자에 의해 신청이 잠겨있습니다.');
           }
         }

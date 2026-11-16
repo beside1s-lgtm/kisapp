@@ -32,6 +32,8 @@ import {
   Bus
 } from 'lucide-react';
 import { safeParseDate } from '../student/StudentView';
+import { formatSchoolDateTime, parseSchoolDateMs } from '@/lib/afterschool/enrollmentRules';
+import { getServerNowMs, syncServerClock } from '@/lib/afterschool/serverClock';
 import {
   updateAfterschoolCourse,
   onTeacherApplySettingsUpdate,
@@ -75,10 +77,13 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
   setEnrollments,
 }) => {
   // Real-time calculation state
-  const [nowTime, setNowTime] = useState<Date>(new Date());
+  // 관리자 화면의 남은 시간 표시도 서버(인터넷 표준) 시각 기준
+  const [nowTime, setNowTime] = useState<Date>(new Date(getServerNowMs()));
   useEffect(() => {
+    syncServerClock();
     const timer = setInterval(() => {
-      setNowTime(new Date());
+      setNowTime(new Date(getServerNowMs()));
+      syncServerClock();
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -311,8 +316,11 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
     }));
   };
 
-  const startTime = safeParseDate(timerConfig.startTime).getTime();
-  const endTime = safeParseDate(timerConfig.endTime).getTime();
+  // 개시/마감 시각은 학교 현지 시간대로 해석 (학생 화면·서버 API와 동일 기준)
+  const _parsedStart = parseSchoolDateMs(timerConfig.startTime);
+  const _parsedEnd = parseSchoolDateMs(timerConfig.endTime);
+  const startTime = isNaN(_parsedStart) ? nowTime.getTime() : _parsedStart;
+  const endTime = isNaN(_parsedEnd) ? nowTime.getTime() : _parsedEnd;
   const nowMs = nowTime.getTime();
 
   const isBeforeStart = nowMs < startTime;
@@ -470,10 +478,12 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
 
   // Quick timer preset: "10초 후 시작"
   const handleSetQuickTimer = (secondsFromNow: number) => {
-    const start = new Date(Date.now() + secondsFromNow * 1000);
-    const end = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7);
-    const startStr = start.toISOString().replace('T', ' ').slice(0, 19);
-    const endStr = end.toISOString().replace('T', ' ').slice(0, 19);
+    const serverNow = getServerNowMs(); // 관리자 PC 시계가 아닌 서버 시각 기준
+    const start = new Date(serverNow + secondsFromNow * 1000);
+    const end = new Date(serverNow + 1000 * 60 * 60 * 24 * 7);
+    // 타이머는 학교 현지 시각(벽시계) 문자열로 저장되므로 UTC(toISOString)가 아닌 학교 시간대로 변환
+    const startStr = formatSchoolDateTime(start.getTime());
+    const endStr = formatSchoolDateTime(end.getTime());
 
     setDraftStartTime(startStr);
     setDraftEndTime(endStr);

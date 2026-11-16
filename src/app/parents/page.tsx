@@ -54,6 +54,8 @@ function getGoogleCalendarUrl({
 }
 import { getSentDocuments, getStudentFieldTripDays, getStudentAbsenceDays } from '@/lib/services/documentService';
 import { getDocConfig, onAfterschoolTimerUpdate, onOrgStructureUpdate, onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsForStudentUpdate } from '@/lib/services/settingsService';
+import { isAfterschoolApplyOpen } from '@/lib/afterschool/enrollmentRules';
+import { useServerNow } from '@/lib/afterschool/serverClock';
 import { onUsersDirectoryUpdate } from '@/lib/services/userService';
 import { onBusesUpdate, onStudentsUpdate } from '@/lib/kisbus';
 import { onConsultationConfigUpdate, onConsultationSlotsUpdate } from '@/lib/services/homeroomClassService';
@@ -101,22 +103,9 @@ export default function ParentsDashboard() {
     return `${g}-${c}`;
   }, [profile]);
 
-  const isAfterschoolActive = (() => {
-    if (!timerConfig) return false;
-    if (timerConfig.masterStatus === 'FORCE_LOCK' || timerConfig.masterStatus === 'PAUSED') return false;
-    if (timerConfig.masterStatus === 'FORCE_OPEN') return true;
-
-    const now = new Date().getTime();
-    const safeParseDate = (dStr: any) => {
-      if (!dStr) return new Date(0);
-      return new Date(dStr);
-    };
-    
-    const startTime = safeParseDate(timerConfig.startTime).getTime();
-    const endTime = safeParseDate(timerConfig.endTime).getTime();
-    
-    return now >= startTime && now <= endTime;
-  })();
+  // 방과후 신청 진행 여부: 기기 시계가 아닌 서버(인터넷 표준) 시각 + 학교 현지 시간대 기준 (신청 화면·서버 API와 동일 규칙)
+  const afterschoolServerNow = useServerNow(15000);
+  const isAfterschoolActive = !!timerConfig && isAfterschoolApplyOpen(timerConfig, afterschoolServerNow);
 
   useEffect(() => {
     getDocConfig().then(cfg => setConfig(cfg));
