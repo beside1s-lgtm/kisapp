@@ -570,7 +570,8 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
               const res = await runAfterschoolEnrollmentTransaction(
                 bot.id,
                 bot.course.id,
-                `bot_s_${bot.index}`,
+                // 회차마다 고유한 가상 학생 ID (중복 신청 차단 로직에 이전 테스트 봇이 걸리지 않도록)
+                bot.id,
                 {
                   name: `가상학생_${bot.index}`,
                   phone: '010-9999-0000',
@@ -578,7 +579,10 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
                 },
                 bot.course.tuition,
                 bot.course.textbookFee || 0,
-                bot.course.materialFee || 0
+                bot.course.materialFee || 0,
+                false,
+                // 관리자 부하 테스트는 신청 잠금 상태에서도 실행 가능해야 하므로 기간 검사 생략
+                { skipOpenCheck: true }
               );
 
               if (res.success) {

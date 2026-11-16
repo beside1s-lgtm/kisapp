@@ -53,7 +53,7 @@ function getGoogleCalendarUrl({
   }
 }
 import { getSentDocuments, getStudentFieldTripDays, getStudentAbsenceDays } from '@/lib/services/documentService';
-import { getDocConfig, onAfterschoolTimerUpdate, onOrgStructureUpdate, onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsUpdate } from '@/lib/services/settingsService';
+import { getDocConfig, onAfterschoolTimerUpdate, onOrgStructureUpdate, onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsForStudentUpdate } from '@/lib/services/settingsService';
 import { onUsersDirectoryUpdate } from '@/lib/services/userService';
 import { onBusesUpdate, onStudentsUpdate } from '@/lib/kisbus';
 import { onConsultationConfigUpdate, onConsultationSlotsUpdate } from '@/lib/services/homeroomClassService';
@@ -126,7 +126,6 @@ export default function ParentsDashboard() {
     const unsubBuses = onBusesUpdate((bList) => setBuses(bList || []));
     const unsubBusStudents = onStudentsUpdate((sList) => setBusStudents(sList || []));
     const unsubCourses = onAfterschoolCoursesUpdate((cList) => setAfterschoolCourses(cList || []));
-    const unsubEnrollments = onAfterschoolEnrollmentsUpdate((eList) => setAfterschoolEnrollments(eList || []));
 
     return () => {
       unsubTimer();
@@ -135,9 +134,19 @@ export default function ParentsDashboard() {
       unsubBuses();
       unsubBusStudents();
       unsubCourses();
-      unsubEnrollments();
     };
   }, []);
+
+  // 방과후 신청 내역은 자녀(이름/이메일) 범위만 구독: 전체 컬렉션 구독 시 신청 1건마다 모든 학부모 화면에 전송되는 트래픽 폭증 방지
+  const afterschoolSubName = (profile?.studentName || '').trim();
+  const afterschoolSubEmail = (user?.email || '').trim();
+  useEffect(() => {
+    const unsubEnrollments = onAfterschoolEnrollmentsForStudentUpdate(
+      { name: afterschoolSubName, studentEmail: afterschoolSubEmail },
+      (eList) => setAfterschoolEnrollments(eList || [])
+    );
+    return () => unsubEnrollments();
+  }, [afterschoolSubName, afterschoolSubEmail]);
 
   // 학급별 상담 데이터 구독
   useEffect(() => {
@@ -255,9 +264,12 @@ export default function ParentsDashboard() {
     const sClass = String(parseInt(profile.studentClass || '', 10) || profile.studentClass || '').trim();
 
     const studentEnrollments = afterschoolEnrollments.filter(e => {
-      const eName = (e.studentName || '').trim().toLowerCase();
-      const eGrade = String(parseInt(e.studentGrade || '', 10) || e.studentGrade || '').trim();
-      const eClass = String(parseInt(e.studentClass || '', 10) || e.studentClass || '').trim();
+      // 수강신청 문서는 name/grade/classNum 필드로 저장되므로 함께 비교 (구 필드명 호환 유지)
+      const eName = (e.name || e.studentName || '').trim().toLowerCase();
+      const eGradeRaw = e.grade ?? e.studentGrade ?? '';
+      const eClassRaw = e.classNum ?? e.studentClass ?? '';
+      const eGrade = String(parseInt(String(eGradeRaw), 10) || eGradeRaw || '').trim();
+      const eClass = String(parseInt(String(eClassRaw), 10) || eClassRaw || '').trim();
 
       const isSameName = eName === sName;
       const isSameClass = (!sGrade || eGrade === sGrade) && (!sClass || eClass === sClass);

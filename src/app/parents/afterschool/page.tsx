@@ -6,7 +6,9 @@ import { Loader2, ArrowLeft, Home } from 'lucide-react';
 import { StudentView } from '@/components/afterschool/student/StudentView';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { onAfterschoolTimerUpdate, onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsUpdate } from '@/lib/services/settingsService';
+import { onAfterschoolTimerUpdate, onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsForStudentUpdate } from '@/lib/services/settingsService';
+import { useAuth } from '@/hooks/use-auth';
+import { getAfterschoolStudentIdentity } from '@/lib/afterschool/enrollmentRules';
 import type { GlobalTimerConfig } from '@/lib/afterschool/types';
 import { useTranslation } from '@/hooks/use-translation';
 
@@ -35,7 +37,6 @@ function AfterschoolEnrollment() {
   useEffect(() => {
     const unsubTimer = onAfterschoolTimerUpdate((cfg) => setTimerConfig(cfg));
     const unsubCourses = onAfterschoolCoursesUpdate((list) => setCourses(list));
-    const unsubEnrollments = onAfterschoolEnrollmentsUpdate((list) => setEnrollments(list));
 
     // Decree 13 동의 여부 확인
     try {
@@ -53,9 +54,22 @@ function AfterschoolEnrollment() {
     return () => {
       unsubTimer();
       unsubCourses();
-      unsubEnrollments();
     };
   }, []);
+
+  // 본인(자녀) 신청 내역만 구독: 전체 컬렉션 구독 시 신청 1건마다 모든 접속자에게 전송되는 트래픽 폭증 방지
+  // (StudentView의 본인 신청 판별 기준인 학생 ID/UID/이메일 + 이름과 동일한 범위)
+  const { profile } = useAuth();
+  const identity = getAfterschoolStudentIdentity(profile);
+  const identityKey = `${identity.matchIds.join('|')}::${identity.studentName}`;
+  useEffect(() => {
+    const unsubEnrollments = onAfterschoolEnrollmentsForStudentUpdate(
+      { studentIds: identity.matchIds, name: identity.studentName },
+      (list) => setEnrollments(list)
+    );
+    return () => unsubEnrollments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identityKey]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');

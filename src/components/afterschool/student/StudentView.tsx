@@ -10,41 +10,9 @@ import type { Route as BusRoute, Student as BusStudent } from '@/lib/kisbus/type
 import type { DocConfig } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/use-translation';
+import { safeParseDate, buildAfterschoolEnrollmentId, getAfterschoolStudentIdentity } from '@/lib/afterschool/enrollmentRules';
 
-export const safeParseDate = (dateStr: any): Date => {
-  if (!dateStr) return new Date();
-  if (dateStr instanceof Date) return dateStr;
-  try {
-    let s = String(dateStr).trim();
-    const isPm = s.includes('오후');
-    const isAm = s.includes('오전');
-    s = s.replace('오전', '').replace('오후', '').replace(/\s+/g, ' ');
-    
-    const parts = s.split(' ');
-    if (parts.length >= 2) {
-      const datePart = parts[0].replace(/\./g, '-');
-      const timePart = parts[1];
-      const timeSpecs = timePart.split(':');
-      let hour = parseInt(timeSpecs[0], 10) || 0;
-      const min = parseInt(timeSpecs[1], 10) || 0;
-      const sec = parseInt(timeSpecs[2], 10) || 0;
-      
-      if (isPm && hour < 12) hour += 12;
-      if (isAm && hour === 12) hour = 0;
-      
-      const d = new Date(datePart);
-      d.setHours(hour, min, sec);
-      if (!isNaN(d.getTime())) return d;
-    }
-    
-    const normalized = s.replace(/\./g, '-');
-    const parsed = new Date(normalized);
-    if (!isNaN(parsed.getTime())) return parsed;
-  } catch (err) {
-    console.error("safeParseDate error:", err);
-  }
-  return new Date();
-};
+export { safeParseDate };
 
 export type PeriodGroup = '8~9차시' | '1~2차시' | '3~4차시' | '1~4차시';
 
@@ -200,13 +168,8 @@ export const StudentView: React.FC<StudentViewProps> = ({
   const router = useRouter();
   const { t, i18n } = useTranslation();
   const currentStudentName = (profile?.studentName || profile?.name || '').trim();
-  const currentGrade = profile?.studentGrade || profile?.grade || '1';
-  const currentClass = profile?.studentClass || profile?.class || '1';
-  const currentNumber = profile?.studentNumber || profile?.number || '';
-  // 자녀 고유 식별자: 학부모 UID 단독 사용을 배제하고 학년-반-번호-이름 복합 고유 키 또는 학생 이메일 우선 사용 (다자녀 중복 신청 충돌 방지)
-  const currentStudentId = (profile?.role === 'student' && profile?.email)
-    ? profile.email.toLowerCase()
-    : `s_${currentGrade}_${currentClass}_${currentNumber || '0'}_${currentStudentName || profile?.email || 'student'}`;
+  // 자녀 고유 식별자: 학년-반-번호-이름 복합 키 또는 학생 이메일 (공통 유틸과 동일 기준)
+  const currentStudentId = getAfterschoolStudentIdentity(profile).studentId;
 
   // Bus & Settings States
   const [busStudents, setBusStudents] = useState<BusStudent[]>([]);
@@ -442,6 +405,8 @@ export const StudentView: React.FC<StudentViewProps> = ({
   }, [nowTime, timerConfig, activeStudentTab]);
 
   const handleApplyCourseWithQueue = (course: Course) => {
+    // 대기열 진행 중 연속 클릭으로 신청이 중복 발사되는 것을 방지
+    if (queueTicket) return;
     if (!isApplyEnabled()) {
       alert('현재 수강 신청 가능 시간이 아니거나 관리자에 의해 신청이 잠겨있습니다.');
       return;
@@ -485,7 +450,8 @@ export const StudentView: React.FC<StudentViewProps> = ({
         clearInterval(interval);
         setQueueTicket(null);
 
-        const enrollmentId = `e_student_${Date.now()}`;
+        // 강좌+학생 고정 ID: 중복 신청/ID 충돌을 DB 트랜잭션에서 차단
+        const enrollmentId = buildAfterschoolEnrollmentId(course.id, currentStudentId);
         const needsBus = course.hasBusOption ? (needsBusMap[course.id] || false) : false;
         const studentProfile = {
           name: currentStudentName || profile?.studentName || profile?.name || '홍길동',
@@ -522,7 +488,12 @@ export const StudentView: React.FC<StudentViewProps> = ({
               }
             }
           } else {
-            alert(`수강 신청 처리 중 오류가 발생했습니다: ${res.error || '알 수 없는 오류'}`);
+            // 중복 신청/신청 마감 등 업무 사유는 안내 문구를 그대로 표시
+            if (res.errorCode === 'DUPLICATE' || res.errorCode === 'CLOSED' || res.errorCode === 'NOT_FOUND') {
+              alert(res.error);
+            } else {
+              alert(`수강 신청 처리 중 오류가 발생했습니다: ${res.error || '알 수 없는 오류'}`);
+            }
           }
         });
       } else {

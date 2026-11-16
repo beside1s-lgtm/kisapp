@@ -330,6 +330,61 @@ export function onAfterschoolEnrollmentsUpdate(
   );
 }
 
+/**
+ * 학부모/학생 화면용: 본인(자녀) 신청 내역만 실시간 구독
+ * - 전체 컬렉션 구독 시 신청 1건마다 모든 접속자에게 전송되어 오픈 직후 트래픽/읽기 비용이 폭증하므로 범위를 좁힌다.
+ * - studentIds(in), studentEmail(in), name(==) 조건별로 구독 후 문서 ID 기준으로 병합 (호출 측에서 기존과 동일한 조건으로 최종 필터)
+ */
+export function onAfterschoolEnrollmentsForStudentUpdate(
+  filters: { studentIds?: string[]; studentEmail?: string; name?: string },
+  callback: (enrollments: import('@/lib/afterschool/types').Enrollment[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const colRef = collection(getDb(), 'afterschool_enrollments');
+  const queries: ReturnType<typeof query>[] = [];
+
+  const ids = Array.from(new Set((filters.studentIds || []).map(v => String(v || '').trim()).filter(Boolean)));
+  for (let i = 0; i < ids.length; i += 30) {
+    queries.push(query(colRef, where('studentId', 'in', ids.slice(i, i + 30))));
+  }
+  const email = String(filters.studentEmail || '').trim();
+  if (email) {
+    queries.push(query(colRef, where('studentEmail', 'in', Array.from(new Set([email, email.toLowerCase()])))));
+  }
+  const name = String(filters.name || '').trim();
+  if (name) {
+    queries.push(query(colRef, where('name', '==', name)));
+  }
+
+  if (queries.length === 0) {
+    callback([]);
+    return () => {};
+  }
+
+  const buckets: Map<string, import('@/lib/afterschool/types').Enrollment>[] = queries.map(() => new Map());
+  const emit = () => {
+    const merged = new Map<string, import('@/lib/afterschool/types').Enrollment>();
+    buckets.forEach(b => b.forEach((v, k) => merged.set(k, v)));
+    callback(Array.from(merged.values()));
+  };
+
+  const unsubs = queries.map((q, idx) => onSnapshot(
+    q,
+    (snap) => {
+      const bucket = new Map<string, import('@/lib/afterschool/types').Enrollment>();
+      snap.docs.forEach(d => bucket.set(d.id, { id: d.id, ...(d.data() as any) }));
+      buckets[idx] = bucket;
+      emit();
+    },
+    (err) => {
+      console.warn('[settingsService] onAfterschoolEnrollmentsForStudentUpdate error:', err);
+      if (onError) onError(err);
+    }
+  ));
+
+  return () => unsubs.forEach(u => u());
+}
+
 export async function saveAfterschoolEnrollment(enrollment: import('@/lib/afterschool/types').Enrollment): Promise<void> {
   const docRef = doc(getDb(), 'afterschool_enrollments', enrollment.id);
   await setDoc(docRef, cleanUndefined(enrollment));
@@ -360,6 +415,12 @@ export async function cancelAfterschoolEnrollmentTransaction(
 
   try {
     await runTransaction(db, async (transaction) => {
+      // 트랜잭션 재시도 시 이전 시도의 결과가 남지 않도록 초기화
+      promotedStudentName = undefined;
+      promotedCourseTitle = undefined;
+
+      // ⚠️ Firestore 트랜잭션은 모든 읽기를 쓰기보다 먼저 수행해야 한다.
+      // [읽기 단계] 1. 취소 대상 신청 내역
       const enrollRef = doc(db, 'afterschool_enrollments', enrollmentId);
       const enrollSnap = await transaction.get(enrollRef);
 
@@ -371,31 +432,23 @@ export async function cancelAfterschoolEnrollmentTransaction(
       cancelledEnrollmentData = cancellingEnrollment;
       const { courseId, status: cancellingStatus } = cancellingEnrollment;
 
-      // 1. 대상 신청 내역 삭제
-      transaction.delete(enrollRef);
+      // [읽기 단계] 2. 해당 강좌 정보
+      const courseRef = courseId ? doc(db, 'afterschool_courses', courseId) : null;
+      const courseSnap = courseRef ? await transaction.get(courseRef) : null;
 
-      // 2. 해당 강좌 정보 조회
-      const courseRef = doc(db, 'afterschool_courses', courseId);
-      const courseSnap = await transaction.get(courseRef);
-
-      if (!courseSnap.exists()) return;
-
-      const courseData = courseSnap.data() as Course;
-      let newCurrentStudents = courseData.currentStudents || 0;
-      let newWaitingStudents = courseData.waitingStudents || 0;
-
-      // 3. 수강 확정자(ENROLLED)가 취소한 경우: 대기 1순위 자동 승격 로직 실행
-      if (cancellingStatus === 'ENROLLED') {
-        newCurrentStudents = Math.max(0, newCurrentStudents - 1);
-
+      // [읽기 단계] 3. 확정자 취소 시 승격할 대기 1순위 확정
+      //  - 대기자 목록 조회(query)는 트랜잭션 밖 읽기이므로 후보만 뽑고,
+      //  - 각 후보를 transaction.get으로 다시 읽어 아직 WAITING인지 검증한다.
+      //    (동시 취소 2건이 같은 대기자를 중복 승격하면 충돌로 재시도되어 다음 순위가 승격됨)
+      let promoteTarget: { ref: ReturnType<typeof doc>; data: Enrollment } | null = null;
+      if (courseSnap?.exists() && cancellingStatus === 'ENROLLED') {
         const q = query(
           collection(db, 'afterschool_enrollments'),
           where('courseId', '==', courseId),
           where('status', '==', 'WAITING')
         );
         const waitingSnaps = await getDocs(q);
-
-        const waitingDocs = waitingSnaps.docs
+        const candidates = waitingSnaps.docs
           .filter(d => d.id !== enrollmentId)
           .map(d => ({ id: d.id, data: d.data() as Enrollment }))
           .sort((a, b) => {
@@ -404,26 +457,46 @@ export async function cancelAfterschoolEnrollmentTransaction(
             return tA - tB;
           });
 
-        if (waitingDocs.length > 0) {
-          const topWaiting = waitingDocs[0];
-          const topWaitingRef = doc(db, 'afterschool_enrollments', topWaiting.id);
+        for (const cand of candidates.slice(0, 10)) {
+          const candRef = doc(db, 'afterschool_enrollments', cand.id);
+          const fresh = await transaction.get(candRef);
+          const freshData = fresh.exists() ? (fresh.data() as Enrollment) : null;
+          if (freshData && freshData.status === 'WAITING' && freshData.courseId === courseId) {
+            promoteTarget = { ref: candRef, data: freshData };
+            break;
+          }
+        }
+      }
 
-          // 대기 1순위 ➔ 수강 확정(ENROLLED)으로 승격!
-          transaction.update(topWaitingRef, {
+      // [쓰기 단계] 1. 대상 신청 내역 삭제
+      transaction.delete(enrollRef);
+
+      if (!courseRef || !courseSnap?.exists()) return;
+
+      const courseData = courseSnap.data() as Course;
+      let newCurrentStudents = courseData.currentStudents || 0;
+      let newWaitingStudents = courseData.waitingStudents || 0;
+
+      // [쓰기 단계] 2. 수강 확정자(ENROLLED)가 취소한 경우: 대기 1순위 자동 승격
+      if (cancellingStatus === 'ENROLLED') {
+        newCurrentStudents = Math.max(0, newCurrentStudents - 1);
+
+        if (promoteTarget) {
+          transaction.update(promoteTarget.ref, {
             status: 'ENROLLED',
             promotedAt: new Date().toISOString(),
           });
 
           newCurrentStudents += 1;
           newWaitingStudents = Math.max(0, newWaitingStudents - 1);
-          promotedStudentName = topWaiting.data.studentName;
+          promotedStudentName = promoteTarget.data.studentName || promoteTarget.data.name;
           promotedCourseTitle = courseData.title;
         }
       } else if (cancellingStatus === 'WAITING') {
         newWaitingStudents = Math.max(0, newWaitingStudents - 1);
       }
 
-      // 4. 강좌 인원 카운터 업데이트
+      // [쓰기 단계] 3. 강좌 인원 카운터 업데이트
       transaction.update(courseRef, {
         currentStudents: newCurrentStudents,
         waitingStudents: newWaitingStudents,
@@ -592,6 +665,23 @@ export function onTeacherApplySettingsUpdate(callback: (settings: typeof default
   });
 }
 
+export type AfterschoolEnrollErrorCode = 'DUPLICATE' | 'CLOSED' | 'NOT_FOUND' | 'CONFLICT' | 'UNKNOWN';
+
+class AfterschoolEnrollError extends Error {
+  enrollCode: AfterschoolEnrollErrorCode;
+  constructor(enrollCode: AfterschoolEnrollErrorCode, message: string) {
+    super(message);
+    this.enrollCode = enrollCode;
+  }
+}
+
+/**
+ * 방과후 수강신청 선착순 트랜잭션
+ * - 정원/대기 판정과 인원 카운터 증가를 하나의 트랜잭션으로 처리
+ * - 강좌+학생 고정 ID 문서를 트랜잭션 안에서 확인하여 중복 신청 차단 (enrollmentId는 buildAfterschoolEnrollmentId 사용 권장)
+ * - 트랜잭션 안에서 신청 타이머 설정을 다시 읽어, 화면이 오래 열려 있어도 잠금/마감 이후 신청은 거절
+ * - options.skipOpenCheck: 관리자 스트레스 테스트 등 신청 기간 검사를 생략할 때만 사용
+ */
 export async function runAfterschoolEnrollmentTransaction(
   enrollmentId: string,
   courseId: string,
@@ -610,20 +700,59 @@ export async function runAfterschoolEnrollmentTransaction(
   courseTuition: number,
   courseTextbookFee: number,
   courseMaterialFee: number,
-  forceWaiting?: boolean
-): Promise<{ success: boolean; status: 'ENROLLED' | 'WAITING'; error?: string }> {
-  const maxRetries = 5;
-  let attempt = 0;
+  forceWaiting?: boolean,
+  options?: { skipOpenCheck?: boolean }
+): Promise<{ success: boolean; status: 'ENROLLED' | 'WAITING'; error?: string; errorCode?: AfterschoolEnrollErrorCode }> {
+  const { isAfterschoolApplyOpen } = await import('@/lib/afterschool/enrollmentRules');
+  const db = getDb();
+  const enrollmentDocRef = doc(db, 'afterschool_enrollments', enrollmentId);
+  const courseDocRef = doc(db, 'afterschool_courses', courseId);
+  const timerDocRef = doc(getSettingsCol(), 'afterschoolTimer');
 
-  while (attempt < maxRetries) {
-    attempt++;
+  // 사전 중복 검사: 고정 ID 도입 이전(관리자 수동 등록 등)에 만들어진 다른 ID의 신청 내역까지 확인
+  try {
+    const legacySnap = await getDocs(query(
+      collection(db, 'afterschool_enrollments'),
+      where('courseId', '==', courseId),
+      where('studentId', '==', studentId)
+    ));
+    const hasActive = legacySnap.docs.some(d => d.id !== enrollmentId && String(d.data()?.status || '').toUpperCase() !== 'CANCELLED');
+    if (hasActive) {
+      return { success: false, status: 'WAITING', errorCode: 'DUPLICATE', error: '이미 신청(또는 대기 신청)된 강좌입니다.' };
+    }
+  } catch (e) {
+    console.warn('[settingsService] 사전 중복 검사 실패 (트랜잭션 검사로 계속 진행):', e);
+  }
+
+  // Firestore SDK가 충돌 시 내부적으로 최대 5회 재시도하므로, 그 이후에도 충돌이 남은 경우에만 짧게 추가 재시도
+  const maxRetries = 3;
+  let lastError: any = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const result = await runTransaction(getDb(), async (transaction) => {
-        const courseDocRef = doc(getDb(), 'afterschool_courses', courseId);
+      const result = await runTransaction(db, async (transaction) => {
+        // [읽기 단계] 강좌, 기존 신청, 신청 타이머
         const courseSnap = await transaction.get(courseDocRef);
+        const existingSnap = await transaction.get(enrollmentDocRef);
+        const timerSnap = options?.skipOpenCheck ? null : await transaction.get(timerDocRef);
 
         if (!courseSnap.exists()) {
-          throw new Error('존재하지 않는 강좌입니다.');
+          throw new AfterschoolEnrollError('NOT_FOUND', '존재하지 않는 강좌입니다.');
+        }
+
+        if (existingSnap.exists() && String(existingSnap.data()?.status || '').toUpperCase() !== 'CANCELLED') {
+          throw new AfterschoolEnrollError('DUPLICATE', '이미 신청(또는 대기 신청)된 강좌입니다.');
+        }
+
+        if (!options?.skipOpenCheck) {
+          let timerConfig: any = timerSnap?.exists() ? timerSnap.data() : null;
+          if (!timerConfig) {
+            const { initialTimerConfig } = await import('@/lib/afterschool/mock/data');
+            timerConfig = initialTimerConfig;
+          }
+          if (!isAfterschoolApplyOpen(timerConfig)) {
+            throw new AfterschoolEnrollError('CLOSED', '현재 수강 신청 가능 시간이 아니거나 관리자에 의해 신청이 잠겨있습니다.');
+          }
         }
 
         const courseData = courseSnap.data();
@@ -632,10 +761,8 @@ export async function runAfterschoolEnrollmentTransaction(
         const waitingStudents = courseData.waitingStudents || 0;
 
         const isFull = forceWaiting || (currentStudents >= maxStudents);
-        const finalStatus = isFull ? 'WAITING' : 'ENROLLED';
+        const finalStatus: 'ENROLLED' | 'WAITING' = isFull ? 'WAITING' : 'ENROLLED';
 
-        const enrollmentDocRef = doc(getDb(), 'afterschool_enrollments', enrollmentId);
-        
         const newEnrollment = {
           id: enrollmentId,
           courseId,
@@ -658,41 +785,44 @@ export async function runAfterschoolEnrollmentTransaction(
           timestampMs: Date.now(),
         };
 
-        // 1. 수강신청 문서 등록
+        // [쓰기 단계] 1. 수강신청 문서 등록
         transaction.set(enrollmentDocRef, cleanUndefined(newEnrollment));
 
-        // 2. 카운트 안전 업데이트
+        // [쓰기 단계] 2. 카운트 안전 업데이트
         if (!isFull) {
-          transaction.update(courseDocRef, {
-            currentStudents: currentStudents + 1
-          });
+          transaction.update(courseDocRef, { currentStudents: currentStudents + 1 });
         } else {
-          transaction.update(courseDocRef, {
-            waitingStudents: waitingStudents + 1
-          });
+          transaction.update(courseDocRef, { waitingStudents: waitingStudents + 1 });
         }
 
         return { success: true, status: finalStatus };
       });
 
-      return result as any;
+      return result;
     } catch (error: any) {
-      const isVersionConflict = error?.message?.includes('stored version') || error?.code === 'failed-precondition' || error?.code === 'aborted';
-      
-      if (isVersionConflict && attempt < maxRetries) {
-        // 동시성 충돌 시 무작위 Jitter 기반 백오프 지연 후 재시도
-        const jitterDelay = Math.floor(Math.random() * 80) + 30 * attempt;
-        await new Promise((res) => setTimeout(res, jitterDelay));
-        continue;
+      if (error instanceof AfterschoolEnrollError) {
+        return { success: false, status: 'WAITING', errorCode: error.enrollCode, error: error.message };
       }
-
-      if (attempt >= maxRetries) {
-        return { success: false, status: 'WAITING', error: error.message };
+      lastError = error;
+      const isVersionConflict = error?.message?.includes('stored version') || error?.code === 'failed-precondition' || error?.code === 'aborted';
+      if (!isVersionConflict) break;
+      if (attempt < maxRetries) {
+        // 동시성 충돌 시 무작위 Jitter 기반 백오프 지연 후 재시도
+        const jitterDelay = Math.floor(Math.random() * 150) + 100 * attempt;
+        await new Promise((res) => setTimeout(res, jitterDelay));
       }
     }
   }
 
-  return { success: false, status: 'WAITING', error: '트랜잭션 재시도 횟수를 초과했습니다.' };
+  const isConflict = lastError?.code === 'failed-precondition' || lastError?.code === 'aborted';
+  return {
+    success: false,
+    status: 'WAITING',
+    errorCode: isConflict ? 'CONFLICT' : 'UNKNOWN',
+    error: isConflict
+      ? '신청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+      : (lastError?.message || '알 수 없는 오류'),
+  };
 }
 
 export async function saveAfterschoolCoursesBatch(courses: import('@/lib/afterschool/types').Course[]): Promise<{ success: boolean; error?: string }> {
