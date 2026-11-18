@@ -2,7 +2,7 @@ import { getDb, auth } from '@/lib/firebase';
 import { doc, getDoc, getDocs, setDoc, collection, onSnapshot, updateDoc, deleteDoc, writeBatch, runTransaction, query, where, orderBy, QueryDocumentSnapshot } from 'firebase/firestore';
 import type { DocConfig } from '@/lib/types';
 import type { Course, Enrollment } from '@/lib/afterschool/types';
-import { withEnrollmentMasterKey } from '@/lib/students/masterStudentResolver';
+import { overlayEnrollmentsWithMaster, withEnrollmentMasterKey } from '@/lib/students/masterStudentResolver';
 
 function cleanUndefined(obj: any): any {
   if (obj === null || obj === undefined) return null;
@@ -310,17 +310,21 @@ export function onAfterschoolEnrollmentsUpdate(
   onError?: (error: Error) => void
 ): () => void {
   const colRef = collection(getDb(), 'afterschool_enrollments');
+  let seq = 0;
   return onSnapshot(
     colRef,
     (snap) => {
       if (snap.empty) {
+        seq++;
         callback([]);
       } else {
         const list = snap.docs.map(d => ({
           id: d.id,
           ...(d.data() as any)
         } as import('@/lib/afterschool/types').Enrollment));
-        callback(list);
+        // 화면에는 통합학생계정의 최신 이름·학년·반·번호를 보여 준다 (늦게 도착한 이전 결과는 버림)
+        const mine = ++seq;
+        overlayEnrollmentsWithMaster(list).then(shown => { if (mine === seq) callback(shown); });
       }
     },
     (err) => {
@@ -363,10 +367,12 @@ export function onAfterschoolEnrollmentsForStudentUpdate(
   }
 
   const buckets: Map<string, import('@/lib/afterschool/types').Enrollment>[] = queries.map(() => new Map());
+  let seq = 0;
   const emit = () => {
     const merged = new Map<string, import('@/lib/afterschool/types').Enrollment>();
     buckets.forEach(b => b.forEach((v, k) => merged.set(k, v)));
-    callback(Array.from(merged.values()));
+    const mine = ++seq;
+    overlayEnrollmentsWithMaster(Array.from(merged.values())).then(shown => { if (mine === seq) callback(shown); });
   };
 
   const unsubs = queries.map((q, idx) => onSnapshot(

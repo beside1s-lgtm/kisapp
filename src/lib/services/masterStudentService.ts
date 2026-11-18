@@ -5,6 +5,9 @@ import {
   type DocumentData, type DocumentReference, type QueryDocumentSnapshot, type WriteBatch, type Firestore
 } from 'firebase/firestore';
 import type { MasterStudent, NewMasterStudent } from '@/lib/types/masterStudent';
+import { diffRegistryFields, type StudentChangeOptions } from '@/lib/students/studentProfileSync';
+import { propagateMasterStudentProfile, propagateToParents, recordStudentChange } from '@/lib/students/studentRegistry';
+import { invalidateMasterStudentIndex } from '@/lib/students/masterStudentResolver';
 
 const COLLECTION_NAME = 'master_students';
 const DELETED_COLLECTION_NAME = 'deleted_master_students';
@@ -767,7 +770,16 @@ async function findMastersByEmail(email: string): Promise<QueryDocumentSnapshot<
 }
 
 // 3. 마스터 학생 정보 수정 (기본 프로필 + users 컬렉션 + 스쿨버스 students 동시 양방향 업데이트)
-export const updateMasterStudent = async (studentId: string, updateData: Partial<MasterStudent>): Promise<void> => {
+/**
+ * 학생 정보 수정의 단일 창구.
+ * 어느 기능(통합학생관리·담임·스쿨버스·방과후·설정 등)에서 고치든 이 함수로 통합학생계정에 먼저 저장하고,
+ * 학생 계정(users)·학부모 자녀 정보·방과후 수강·스쿨버스·체육 기록에 같은 값을 내려보낸 뒤 변경 이력을 남긴다.
+ */
+export const updateMasterStudent = async (
+  studentId: string,
+  updateData: Partial<MasterStudent>,
+  options: StudentChangeOptions = {}
+): Promise<void> => {
   const db = getDb();
   let targetRef = doc(db, COLLECTION_NAME, studentId);
   const existingSnap = await getDoc(targetRef);
@@ -786,6 +798,7 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
   }
 
   const now = new Date().toISOString();
+  const changes = diffRegistryFields(existingData as any, updateData as any);
   
   // setDoc({ merge: true })를 사용하여 문서가 이미 삭제되었거나 없어도 'No document to update' 에러 없이 자동 생성/복구(Self-Healing)
   await setDoc(targetRef, {
@@ -794,6 +807,12 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
     updatedAt: now,
     ...(existingData ? {} : { createdAt: now })
   }, { merge: true });
+
+  // 변경 이력 + 방과후 수강·학부모 자녀 정보 반영 (실패해도 원본 저장은 유지)
+  if (changes.length) {
+    await recordStudentChange(targetRef.id, changes, options);
+    await propagateMasterStudentProfile(targetRef.id, { ...(existingData || {}), ...updateData } as any);
+  }
 
   const nameToUse = updateData.name || existingData?.name;
   const nameEnToUse = updateData.nameEn !== undefined ? updateData.nameEn : existingData?.nameEn;
@@ -859,7 +878,8 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
   }
 
   // 스쿨버스 students 컬렉션 동시 양방향 동기화 (성별, 목적지, 연락처, 영문이름, 학년, 반, 번호 등)
-  if (nameToUse) {
+  // 변경이 스쿨버스에서 시작된 경우(skipBus)는 버스에 이미 반영되어 있으므로 다시 쓰지 않는다
+  if (nameToUse && !options.skipBus) {
     await syncAddressToKisbusStudent(
       nameToUse, 
       gradeToUse, 
@@ -1581,6 +1601,9 @@ export const batchPromoteStudents = async (advancements: { studentEmail: string;
     console.warn('Failed to load kisbus students for promote:', bLoadErr);
   }
 
+  // 진급 후 학부모 자녀 정보 반영·변경 이력용
+  const promoted: { id: string; before: any; after: any }[] = [];
+
   for (const item of advancements) {
     if (!item.studentEmail) continue;
     const cleanEmail = item.studentEmail.trim().toLowerCase();
@@ -1588,6 +1611,7 @@ export const batchPromoteStudents = async (advancements: { studentEmail: string;
     const masterDocs = await findMastersByEmail(item.studentEmail);
     masterDocs.forEach(d => {
       const data = d.data();
+      promoted.push({ id: d.id, before: data, after: { ...data, grade: item.newGrade, classNum: item.newClassNum, studentNum: item.newStudentNum } });
       const existingHistory = Array.isArray(data.academicHistory) ? data.academicHistory : [];
       
       // 진급 전 기존 학학년도의 학년/반/번호 아카이브 스냅샷 보존
@@ -1628,9 +1652,10 @@ export const batchPromoteStudents = async (advancements: { studentEmail: string;
     });
 
     // 스쿨버스 students 컬렉션 진급 일괄 업데이트
-    const matchedBus = busStudents.find(bs => 
-      bs.data.studentEmail && bs.data.studentEmail.trim().toLowerCase() === cleanEmail
-    );
+    const masterIds = new Set(masterDocs.map(d => d.id));
+    const matchedBus =
+      busStudents.find(bs => bs.data.masterStudentId && masterIds.has(bs.data.masterStudentId)) ||
+      busStudents.find(bs => !bs.data.masterStudentId && bs.data.studentEmail && bs.data.studentEmail.trim().toLowerCase() === cleanEmail);
     if (matchedBus) {
       kisbusBatch.update(matchedBus.ref, {
         grade: item.newGrade,
@@ -1650,6 +1675,16 @@ export const batchPromoteStudents = async (advancements: { studentEmail: string;
   } catch (bErr) {
     console.warn('kisbus batch promote error:', bErr);
     throw new Error('통합학생계정 진급은 완료되었으나 스쿨버스 학생 정보 갱신 중 오류가 발생했습니다. 스쿨버스 학년·반을 확인해 주세요.');
+  }
+
+  invalidateMasterStudentIndex();
+  // 학부모 계정의 자녀 학년·반·번호 반영 + 변경 이력
+  // (지난 학년도 방과후 수강 기록은 당시 학년·반으로 남긴다)
+  for (const p of promoted) {
+    const changes = diffRegistryFields(p.before, { grade: p.after.grade, classNum: p.after.classNum, studentNum: p.after.studentNum });
+    if (!changes.length) continue;
+    await recordStudentChange(p.id, changes, { source: 'promotion' });
+    await propagateToParents(p.id, p.after).catch(err => console.warn('진급 학부모 자녀 정보 반영 실패:', err));
   }
   return count;
 };

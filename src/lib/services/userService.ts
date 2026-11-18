@@ -90,9 +90,13 @@ export async function saveUserProfile(userId: string, email: string, profileData
   try {
     const docSnap = await getDoc(userProfileRef);
     
+    // 자녀 정보가 있으면 통합학생계정의 공통 학생 키로 연결 (학생 정보가 바뀌면 이 키로 자녀 정보가 함께 갱신됨)
+    const { withParentMasterKeys } = await import('@/lib/students/studentRegistry');
+    const keyedProfile = await withParentMasterKeys(profileData as Record<string, any>);
+
     // undefined 필드 제거 방어 코드
     const dataToSave: any = {};
-    Object.entries(profileData).forEach(([key, val]) => {
+    Object.entries(keyedProfile).forEach(([key, val]) => {
       if (val !== undefined) {
         dataToSave[key] = val;
       }

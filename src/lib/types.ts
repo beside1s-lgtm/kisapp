@@ -35,6 +35,8 @@ export type UserProfile = {
     /** 형제·자매의 공통 학생 키 (통합학생계정 문서 ID) */
     masterStudentId?: string;
   }[];
+  /** 학부모 계정이 연결한 모든 자녀의 공통 학생 키 (학생 정보 변경 시 자녀 정보를 찾아 갱신하는 검색용) */
+  linkedMasterStudentIds?: string[];
   hasUnreadInboxNotification?: boolean;
   dept?: string; // 소속 부서 (예: 교무기획부)
   grade?: string; // 소속 학년 (예: 3학년)

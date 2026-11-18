@@ -14,7 +14,11 @@ export const getStudents = () => fetchCollection<Student>('students');
 export const onStudentsUpdate = (callback: (students: Student[]) => void) => onCollectionUpdate<Student>('students', callback);
 
 // 스쿨버스 학생 정보 변경 시 통합 마스터 학생(master_students & users)으로 양방향 실시간 동기화
+// 통합학생계정이 관리하는 항목(이름·학년·반·번호·성별·연락처·목적지)이 바뀐 경우에만 반영
+const BUS_PROFILE_KEYS = ['nameKo', 'nameEn', 'grade', 'class', 'classNum', 'number', 'studentNum', 'gender', 'contact', 'morningDestinationId', 'afternoonDestinationId', 'suggestedMorningDestination'];
+
 export const syncKisbusStudentToMaster = async (studentId: string, updatedData: Partial<Student>) => {
+    if (!updatedData || !BUS_PROFILE_KEYS.some(k => (updatedData as any)[k] !== undefined)) return;
     try {
         const busDb = db();
         const mainDb = getDb();
@@ -43,7 +47,7 @@ export const syncKisbusStudentToMaster = async (studentId: string, updatedData: 
         // 2. 대상 통합학생 1명 특정 (공통 학생 키 → 이메일 → 이름+학년+반(+번호)이 한 명일 때)
         //    이름·학년만 같은 여러 학생을 한꺼번에 덮어쓰지 않는다.
         const prev = sSnap.data() as any;
-        const index = await getMasterStudentIndex(true);
+        const index = await getMasterStudentIndex();
         const tryResolve = (hint: StudentHint) => resolveMasterStudentId(hint, index).id || '';
         const masterId =
             tryResolve({ masterStudentId: (student as any).masterStudentId, email: studentEmail, name: studentName, grade: studentGrade, classNum: studentClass, studentNum: studentNumber }) ||
@@ -58,48 +62,22 @@ export const syncKisbusStudentToMaster = async (studentId: string, updatedData: 
             await updateDoc(doc(busDb, 'students', studentId), { masterStudentId: masterId }).catch(() => {});
         }
 
-        const masterUpdates: any = { updatedAt: new Date().toISOString() };
-        if (destName) masterUpdates.address = destName;
-        if (studentNumber) masterUpdates.studentNum = String(studentNumber);
-        if (student.contact) masterUpdates.contact = student.contact;
-        if (student.gender) masterUpdates.gender = student.gender;
-        if (student.grade) masterUpdates.grade = String(student.grade);
-        if (student.class || student.classNum) masterUpdates.classNum = String(student.class || student.classNum);
-        await updateDoc(doc(mainDb, 'master_students', masterId), masterUpdates).catch(() => {});
+        // 3. 이번에 바뀐 항목만 통합학생계정에 저장 (버스 문서의 다른 오래된 값으로 덮어쓰지 않음)
+        //    통합학생계정 저장 창구(updateMasterStudent)가 학생 계정·학부모·방과후에 다시 내려보내고 이력을 남긴다.
+        const has = (k: string) => Object.prototype.hasOwnProperty.call(updatedData, k) && (updatedData as any)[k] !== undefined;
+        const patch: Record<string, any> = {};
+        if (destName && (has('morningDestinationId') || has('afternoonDestinationId') || has('suggestedMorningDestination'))) patch.address = destName;
+        if ((has('number') || has('studentNum')) && studentNumber) patch.studentNum = String(studentNumber);
+        if (has('contact')) patch.contact = (updatedData as any).contact || '';
+        if (has('gender') && (updatedData as any).gender) patch.gender = (updatedData as any).gender;
+        if (has('grade') && (updatedData as any).grade) patch.grade = String((updatedData as any).grade);
+        if ((has('class') || has('classNum')) && studentClass) patch.classNum = studentClass;
+        if (has('nameKo') && String((updatedData as any).nameKo || '').trim()) patch.name = String((updatedData as any).nameKo).trim();
+        if (has('nameEn') && String((updatedData as any).nameEn || '').trim()) patch.nameEn = String((updatedData as any).nameEn).trim();
+        if (Object.keys(patch).length === 0) return;
 
-        // 3. users 컬렉션 동기화: 해당 통합학생의 이메일 계정만
-        const masterEmail = String(index.byId.get(masterId)?.studentEmail || studentEmail || '').trim().toLowerCase();
-        if (masterEmail) {
-            const userUpdates: any = {};
-            if (destName) userUpdates.address = destName;
-            if (studentNumber) {
-                userUpdates.number = String(studentNumber);
-                userUpdates.studentNumber = String(studentNumber);
-            }
-            if (student.contact) {
-                userUpdates.phone = student.contact;
-                userUpdates.parentPhone = student.contact;
-            }
-            if (student.gender) userUpdates.gender = student.gender;
-            if (student.grade) {
-                userUpdates.grade = String(student.grade);
-                userUpdates.studentGrade = String(student.grade);
-            }
-            if (student.class || student.classNum) {
-                userUpdates.class = String(student.class || student.classNum);
-                userUpdates.studentClass = String(student.class || student.classNum);
-            }
-            if (Object.keys(userUpdates).length > 0) {
-                const uSnaps = await Promise.all(Array.from(new Set([masterEmail, studentEmail].filter(Boolean))).map(e =>
-                    getDocs(query(collection(mainDb, 'users'), where('email', '==', e)))));
-                const seen = new Set<string>();
-                for (const snap of uSnaps) for (const uDoc of snap.docs) {
-                    if (seen.has(uDoc.id)) continue;
-                    seen.add(uDoc.id);
-                    await updateDoc(doc(mainDb, 'users', uDoc.id), userUpdates).catch(() => {});
-                }
-            }
-        }
+        const { updateMasterStudent } = await import('@/lib/services/masterStudentService');
+        await updateMasterStudent(masterId, patch as any, { source: 'bus', skipBus: true });
     } catch (err) {
         console.error("Error syncing kisbus student to master:", err);
     }
@@ -158,6 +136,10 @@ export const updateStudentsInBatch = async (updates: { id: string, data: Partial
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: '/students', operation: 'update' }));
         throw serverError;
     });
+    // 일괄 수정도 통합학생계정에 반영 (순차 처리로 동시 쓰기 폭주 방지, 실패는 기록만)
+    void (async () => {
+        for (const u of updates) await syncKisbusStudentToMaster(u.id, u.data).catch(console.error);
+    })();
 };
 
 export const upsertStudent = async (student: Partial<Student> & { id?: string }) => {
@@ -175,6 +157,7 @@ export const upsertStudent = async (student: Partial<Student> & { id?: string })
         errorEmitter.emit('permission-error', permissionError);
         throw serverError;
     });
+    syncKisbusStudentToMaster(docRef.id, data).catch(console.error);
     return { id: docRef.id, ...data } as Student;
 };
 

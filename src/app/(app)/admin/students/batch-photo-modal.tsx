@@ -278,7 +278,7 @@ export function BatchPhotoModal({ isOpen, onClose, students }: BatchPhotoModalPr
         if (!item.matchedStudentId) continue;
         await updateMasterStudent(item.matchedStudentId, {
           photoUrl: item.previewUrl,
-        });
+        }, { source: 'photo' });
         successCount++;
       }
 

@@ -247,7 +247,7 @@ export default function TeacherHomeroomApplyPage() {
         contact: editStudentForm.contact,
         address: editStudentForm.address,
         photoUrl: editStudentForm.photoUrl
-      });
+      }, { source: 'homeroom' });
       setIsEditDialogOpen(false);
       toast({ title: '학생 정보 수정 완료', description: '학생 정보가 성공적으로 반영되었습니다.' });
     } catch (err) {

@@ -62,6 +62,10 @@ service cloud.firestore {
     // master_students 통합 학생 마스터 컬렉션 보안 규칙
     match /master_students/{id} {
       allow read, write: if true;
+      // 학생 정보 변경 이력: 추가만 허용 (수정·삭제 불가)
+      match /history/{historyId} {
+        allow read, create: if true;
+      }
     }
 
     // settings 컬렉션 보안 규칙

@@ -380,7 +380,7 @@ export default function AdminMasterStudentsPage() {
     };
 
     try {
-      await updateMasterStudent(editStudentForm.studentId, payloadToSave);
+      await updateMasterStudent(editStudentForm.studentId, payloadToSave, { source: 'admin-students' });
       setIsEditDialogOpen(false);
       
       // 모달이 열려있는 selectedStudent 상태 즉시 최신 반영
