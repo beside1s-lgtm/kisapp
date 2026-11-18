@@ -37,6 +37,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { getDocConfig, onOrgStructureUpdate } from '@/lib/services/settingsService';
 import { checkHomeroomAccessPermission } from '@/lib/services/permissionService';
 import { onMasterStudentsUpdate, updateMasterStudent, extractEnglishNameFromEmail } from '@/lib/services/masterStudentService';
+import { findMasterStudentId } from '@/lib/students/masterStudentResolver';
 import { getStudentFieldTripDays, getStudentAbsenceDays, createDocument, approveDocument } from '@/lib/services/documentService';
 import { getApproversByGradeClass, getUserProfileByEmail } from '@/lib/services/userService';
 import { getWorkingDaysCount, cn } from '@/lib/utils';
@@ -56,6 +57,7 @@ function generateParentStampSignature(name: string): string {
 import {
   onHomeroomAttendanceUpdate,
   getApprovedAbsenceStudentsForDate,
+  lookupApprovedAbsence,
   saveHomeroomAttendanceAndSync,
   syncParentApplicationDatesToAttendance,
   type HomeroomAttendanceRecord,
@@ -511,7 +513,7 @@ export default function TeacherHomeroomApplyPage() {
       const sId = student.studentId || student.id || '';
       if (!sId) return;
       const sName = (student.nameKo || student.name || '').trim();
-      const approved = approvedAbsenceMap.get(sName);
+      const approved = lookupApprovedAbsence(approvedAbsenceMap, sName, student.studentNum, student.studentId || student.id);
       if (approved) {
         map.set(sId, {
           status: 'ABSENT',
@@ -523,8 +525,10 @@ export default function TeacherHomeroomApplyPage() {
 
     // 2단계: 담임 교사가 수동으로 변경한 레코드가 있다면 우선 적용
     homeroomAttendanceRecords.forEach((r) => {
-      if (r.studentId) {
-        map.set(r.studentId, {
+      // 공통 학생 키가 있으면 키로 (옛 기록 중 학부모 계정 ID 등으로 저장된 것도 학생에 연결됨)
+      const recordKey = r.masterStudentId || r.studentId;
+      if (recordKey) {
+        map.set(recordKey, {
           status: r.status,
           reason: r.reason,
           source: r.source,
@@ -752,6 +756,18 @@ export default function TeacherHomeroomApplyPage() {
         proxyParentSignature: resolvedParentSignature,
       };
 
+      // 공통 학생 키(통합학생계정 문서 ID)를 신청서에 함께 저장 → 출결·방과후·버스 연동이 이름이 아닌 키로 동작
+      const proxyStudent = classStudents.find(item => (item.studentId || item.id || item.studentEmail) === selectedStudentId);
+      const proxyMasterStudentId = await findMasterStudentId({
+        masterStudentId: selectedStudentId,
+        email: proxyStudent?.studentEmail,
+        name: studentName,
+        grade: gStr,
+        classNum: cStr,
+        studentNum: proxyStudent?.studentNum,
+      });
+      if (proxyMasterStudentId) parentFormData.masterStudentId = proxyMasterStudentId;
+
       const finalAttachments: any[] = [...proxyAttachments];
       if (finalAttachments.length === 0 && medicalCertificateUrl) {
         finalAttachments.push({
@@ -809,7 +825,7 @@ export default function TeacherHomeroomApplyPage() {
         await syncParentApplicationDatesToAttendance(
           parentFormData,
           user?.email || profile.email || '담임 대리작성',
-          selectedStudentId
+          proxyMasterStudentId || selectedStudentId
         );
       } catch (syncErr) {
         console.warn('[Homeroom] 대리작성 출석부 즉시 동기화 알림:', syncErr);

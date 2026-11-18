@@ -504,7 +504,7 @@ export default function AdminMasterStudentsPage() {
       toast({ title: '진급 처리 완료', description: `총 ${count}명의 학생 학년이 성공적으로 업데이트되었습니다.` });
     } catch (err) {
       console.error(err);
-      toast({ title: '진급 오류', description: '진급 처리 중 오류가 발생했습니다.', variant: 'destructive' });
+      toast({ title: '진급 오류', description: (err as Error)?.message || '진급 처리 중 오류가 발생했습니다.', variant: 'destructive' });
     }
   };
 
@@ -745,7 +745,7 @@ export default function AdminMasterStudentsPage() {
         }
       } catch (err) {
         console.error(err);
-        toast({ title: '오류', description: '진급 엑셀 파싱 중 오류가 발생했습니다.', variant: 'destructive' });
+        toast({ title: '오류', description: (err as Error)?.message || '진급 엑셀 파싱 중 오류가 발생했습니다.', variant: 'destructive' });
       }
     };
     reader.readAsBinaryString(file);

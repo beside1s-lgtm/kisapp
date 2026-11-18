@@ -24,6 +24,8 @@ import { DesktopFieldTripReportForm } from '@/components/parents-apply/DesktopFi
 import { DesktopFieldTripForm } from '@/components/parents-apply/DesktopFieldTripForm';
 import { PinModal } from '@/components/parents-apply/PinModal';
 import { ConfirmSubmitModal } from '@/components/parents-apply/ConfirmSubmitModal';
+import { findMasterStudentId } from '@/lib/students/masterStudentResolver';
+import { normalizeStudentName, parseGradeClassText } from '@/lib/students/masterStudentKey';
 
 async function hashPIN(pin: string) {
   const encoder = new TextEncoder();
@@ -594,6 +596,25 @@ function ApplyForm() {
 
       const parentFormData: ParentFormData = data as any;
 
+      // 공통 학생 키(통합학생계정 문서 ID): 신청서의 학생(대표 자녀 또는 형제·자매)에 맞는 키를 찾아 함께 저장
+      {
+        const gcn = parseGradeClassText(data.gradeClassNumber);
+        const nameKey = normalizeStudentName(data.studentName);
+        const p: any = profile || {};
+        const sibling = (p.linkedStudents || []).find((s: any) => normalizeStudentName(s.nameKo) === nameKey);
+        const knownKey = normalizeStudentName(p.studentName) === nameKey
+          ? p.masterStudentId
+          : sibling?.masterStudentId;
+        const masterStudentId = await findMasterStudentId({
+          masterStudentId: knownKey,
+          name: data.studentName,
+          grade: gcn.grade,
+          classNum: gcn.classNum,
+          studentNum: gcn.studentNum,
+        });
+        if (masterStudentId) parentFormData.masterStudentId = masterStudentId;
+      }
+
       // 학년/반 파싱 후 결재선 자동 생성
       const gradeClassParts = data.gradeClassNumber.replace(/[^0-9-]/g, '-').split('-').filter(Boolean);
       const grade = gradeClassParts[0] || '1';
@@ -648,7 +669,8 @@ function ApplyForm() {
           await syncParentApplicationDatesToAttendance(
             parentFormData,
             user.email || '',
-            (profile as any)?.studentId
+            // 학부모 프로필의 studentId는 학부모 계정 값일 수 있어 사용하지 않고, 확인된 공통 학생 키만 넘긴다
+            parentFormData.masterStudentId
           );
         } catch (syncErr) {
           console.warn('[ParentApply] Attendance and bus/afterschool sync failed (non-blocking):', syncErr);

@@ -83,6 +83,8 @@ export interface Enrollment {
   id: string;
   courseId: string;
   studentId: string;
+  /** 공통 학생 키: 통합학생계정(master_students) 문서 ID */
+  masterStudentId?: string;
   yearNo: number;
   grade: number;
   classNum: number;

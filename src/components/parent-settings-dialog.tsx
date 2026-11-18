@@ -14,6 +14,7 @@ import { Destination } from '@/lib/kisbus/types';
 import { Combobox } from '@/components/ui/combobox';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { findMasterStudentId } from '@/lib/students/masterStudentResolver';
 import {
   Dialog,
   DialogContent,
@@ -32,6 +33,7 @@ interface LinkedStudent {
   studentClass: string;
   studentNumber?: string;
   gender?: 'Male' | 'Female';
+  masterStudentId?: string;
 }
 
 export function ParentSettingsDialog() {
@@ -161,21 +163,30 @@ export function ParentSettingsDialog() {
     
     setIsSaving(true);
     try {
+      // 공통 학생 키: 입력한 자녀 정보(이름·학년·반·번호)가 통합학생계정의 한 명과 일치할 때만 연결
+      // (자녀 정보를 고쳤을 수 있으므로 기존 키를 재사용하지 않고 매번 다시 확인)
+      const [primaryMasterId, ...siblingMasterIds] = await Promise.all([
+        findMasterStudentId({ name: studentName, grade: studentGrade, classNum: studentClass, studentNum: studentNumber }),
+        ...linkedStudents.map(s => findMasterStudentId({ name: s.nameKo, grade: s.grade, classNum: s.studentClass, studentNum: s.studentNumber })),
+      ]);
+
       const payloadData: Partial<UserProfile> = {
         studentName: studentName.trim(),
         studentNameEn: studentNameEn.trim(),
         studentGrade,
         studentClass,
         studentNumber,
+        masterStudentId: primaryMasterId || '',
         parentName: parentName.trim(),
         parentRelation: parentRelation.trim(),
         parentPhone: phone,
         residenceDestinationId: useCustomResidence ? null as any : residenceDestinationId || undefined,
         customResidenceDestination: useCustomResidence ? customResidenceDestination.trim() : undefined,
-        linkedStudents: linkedStudents.map(s => ({
+        linkedStudents: linkedStudents.map((s, i) => ({
           ...s,
           nameKo: s.nameKo.trim(),
-          nameEn: s.nameEn.trim()
+          nameEn: s.nameEn.trim(),
+          masterStudentId: siblingMasterIds[i] || ''
         }))
       };
 

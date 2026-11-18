@@ -50,6 +50,7 @@ export async function getUserProfileByEmail(email: string, throwOnError: boolean
       studentGrade: data?.studentGrade ?? null,
       studentClass: data?.studentClass ?? null,
       studentNumber: data?.studentNumber ?? null,
+      masterStudentId: data?.masterStudentId ?? null,
       linkedStudents: data?.linkedStudents || [],
       lastAckAcademicCalVersion: data?.lastAckAcademicCalVersion ?? null,
     };

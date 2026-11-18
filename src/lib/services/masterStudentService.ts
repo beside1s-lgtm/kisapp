@@ -1,7 +1,8 @@
 import { getDb } from '@/lib/firebase';
 import { getKisbusDb } from '@/lib/kisbus/firebase';
 import { 
-  collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, getDocs, getDoc, query, where 
+  collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, getDocs, getDoc, query, where,
+  type DocumentData, type DocumentReference, type QueryDocumentSnapshot, type WriteBatch, type Firestore
 } from 'firebase/firestore';
 import type { MasterStudent, NewMasterStudent } from '@/lib/types/masterStudent';
 
@@ -64,7 +65,6 @@ export const getAllMasterStudents = async (): Promise<MasterStudent[]> => {
     const busByEmail = new Map<string, any>();
     const busByGradeClassNumber = new Map<string, any>();
     const busByGradeClassName = new Map<string, any>();
-    const busByName = new Map<string, any>();
 
     busStudentList.forEach(bs => {
       if (bs.studentEmail) busByEmail.set(bs.studentEmail.toLowerCase().trim(), bs);
@@ -79,12 +79,16 @@ export const getAllMasterStudents = async (): Promise<MasterStudent[]> => {
       if (grade && cls && name) {
         busByGradeClassName.set(`${grade}_${cls}_${name}`, bs);
       }
-      if (name) {
-        busByName.set(name, bs);
-      }
     });
 
-    const findBusStudent = (s: any, email?: string) => {
+    // 공통 학생 키(masterStudentId)로 연결된 버스 학생
+    const busByMasterId = new Map<string, any>();
+    busStudentList.forEach(bs => { if (bs.masterStudentId) busByMasterId.set(String(bs.masterStudentId), bs); });
+
+    const findBusStudent = (s: any, email?: string, masterId?: string) => {
+      if (masterId && busByMasterId.has(masterId)) {
+        return busByMasterId.get(masterId);
+      }
       if (email && busByEmail.has(email.toLowerCase().trim())) {
         return busByEmail.get(email.toLowerCase().trim());
       }
@@ -97,11 +101,11 @@ export const getAllMasterStudents = async (): Promise<MasterStudent[]> => {
         return busByGradeClassName.get(`${grade}_${cls}_${name}`);
       }
       if (grade && cls && num && busByGradeClassNumber.has(`${grade}_${cls}_${num}`)) {
-        return busByGradeClassNumber.get(`${grade}_${cls}_${num}`);
+        const bs = busByGradeClassNumber.get(`${grade}_${cls}_${num}`);
+        // 학년·반·번호만 같고 이름이 다른 버스 학생은 다른 학생
+        if (!name || String(bs.nameKo || bs.name || '').replace(/\s+/g, '') === String(name).replace(/\s+/g, '')) return bs;
       }
-      if (name && busByName.has(name)) {
-        return busByName.get(name);
-      }
+      // 이름만 같은 버스 학생과는 연결하지 않음 (동명이인 오매칭 방지)
       return null;
     };
 
@@ -168,7 +172,7 @@ export const getAllMasterStudents = async (): Promise<MasterStudent[]> => {
       const existing = email ? map.get(email) : map.get(doc.id);
       const studentName = s.nameKo || s.name || s.studentName || existing?.nameKo || existing?.name || '';
       const sNum = String(s.studentNum || s.number || s.studentNumber || existing?.studentNum || '');
-      const matchedBus = findBusStudent(s, email) || (existing ? findBusStudent(existing, email) : null);
+      const matchedBus = findBusStudent(s, email, doc.id) || (existing ? findBusStudent(existing, email) : null);
       const resolvedGen = resolveGender(s.gender || existing?.gender, matchedBus, sNum);
       
       map.set(key, {
@@ -269,38 +273,61 @@ export const onMasterStudentsUpdate = (
     });
 
     // 3. 방과후 수강 신청 및 스쿨버스 학생 & 목적지 & 노선 정보와 양방향 100% 통합 매칭
+    const isValidId = (val: string) => Boolean(val && val !== 'undefined' && val !== 'null' && val !== '-');
+    const isValidEmail = (val: string) => Boolean(val && val.includes('@') && val !== 'undefined' && val !== 'null');
+
     map.forEach((master, key) => {
-      // (1) 방과후 수강 신청 실시간 연동 매칭 (동명이인 오매칭 원천 차단)
+      // (1) 방과후 수강 신청 실시간 연동 매칭 (동명이인 및 미등록 학생 오매칭 원천 차단)
+      const mStudentId = String(master.studentId || '').trim();
+      const mId = String(master.id || '').trim();
+      const mEmail = String(master.studentEmail || '').trim().toLowerCase();
+      const mGrade = String(master.grade || '').trim();
+      const mClass = String(master.classNum || '').trim();
+      const mName = String(master.name || '').trim();
+      const mNameKo = String(master.nameKo || '').trim();
+      const mNameEn = String(master.nameEn || '').trim();
+
       const matchedEnrollments = afterschoolEnrollmentList.filter(e => {
         if (e.status === 'CANCELLED') return false;
 
-        // 1단계: 고유 ID 또는 이메일 일치 (최우선)
-        const idMatches = e.studentId && (
-          e.studentId === master.studentId || 
-          e.studentId === master.id ||
-          e.studentId.toLowerCase() === master.studentEmail?.toLowerCase()
-        );
-        const emailMatches = (e as any).studentEmail && master.studentEmail && (
-          (e as any).studentEmail.toLowerCase().trim() === master.studentEmail.toLowerCase().trim()
-        );
-        if (idMatches || emailMatches) return true;
+        // 0단계: 공통 학생 키(masterStudentId)가 있는 신청은 키로만 판정
+        const eKey = String((e as any).masterStudentId || '').trim();
+        if (eKey) return eKey === mId || eKey === mStudentId;
 
-        // 이름 일치 확인
+        // 1단계: 고유 ID 또는 이메일 일치 (최우선)
+        const eStudentId = String(e.studentId || '').trim();
+        const eEmail = String((e as any).studentEmail || (e as any).email || '').trim().toLowerCase();
+
+        const idMatches = isValidId(eStudentId) && (
+          (isValidId(mStudentId) && eStudentId === mStudentId) ||
+          (isValidId(mId) && eStudentId === mId) ||
+          (isValidEmail(mEmail) && eStudentId.toLowerCase() === mEmail)
+        );
+
+        const emailMatches = isValidEmail(eEmail) && isValidEmail(mEmail) && eEmail === mEmail;
+
+        if (idMatches || emailMatches) {
+          // ID나 이메일이 일치하더라도, 학년 정보가 존재하고 master 학년과 완전히 다르면 오매칭 차단
+          const eGrade = String(e.grade || (e as any).studentGrade || '').trim();
+          if (eGrade && mGrade && eGrade !== mGrade) return false;
+          return true;
+        }
+
+        // 2단계: 이름 정규화 및 일치 확인 (undefined === undefined 오매칭 원천 차단)
+        const eName = String(e.name || e.studentName || '').trim();
+        if (!eName || (!mName && !mNameKo)) return false;
+
         const nameMatches = (
-          e.name === master.name || 
-          e.name === master.nameKo || 
-          (master.nameEn && e.name === master.nameEn) ||
-          e.studentName === master.name ||
-          e.studentName === master.nameKo
+          (mName && eName === mName) ||
+          (mNameKo && eName === mNameKo) ||
+          (mNameEn && eName.toLowerCase() === mNameEn.toLowerCase())
         );
         if (!nameMatches) return false;
 
         const eGrade = String(e.grade || (e as any).studentGrade || '').trim();
         const eClass = String(e.classNum || e.class || (e as any).studentClass || '').trim();
-        const mGrade = String(master.grade || '').trim();
-        const mClass = String(master.classNum || '').trim();
 
-        // 2단계: 이름 + 학년 + 반 3중 복합 일치 (반이 다르면 전화번호가 같아도 절대 매칭 불가)
+        // 3단계: 이름 + 학년 + 반 3중 복합 일치 (반이 다르면 절대 매칭 불가)
         if (eGrade && eClass && mGrade && mClass) {
           return eGrade === mGrade && eClass === mClass;
         }
@@ -308,7 +335,7 @@ export const onMasterStudentsUpdate = (
         // 반 정보가 없거나 비어있는 경우에 한해서만 동일 학년 내 동명이인 부재 시 허용
         if (eGrade && mGrade && eGrade === mGrade && !eClass) {
           const sameNameCountInGrade = Array.from(map.values()).filter(m => 
-            (m.name === master.name || m.nameKo === master.name) && String(m.grade).trim() === mGrade
+            (m.name === eName || m.nameKo === eName) && String(m.grade).trim() === mGrade
           ).length;
           if (sameNameCountInGrade === 1) return true;
         }
@@ -349,7 +376,10 @@ export const onMasterStudentsUpdate = (
       }
 
       // 스쿨버스 학생 매칭 (동명이인 오매칭 원천 차단: 이름 + 학년 + 반 3중 복합 일치)
-      const matchedBusStudent = busStudentList.find(bs => {
+      const masterKeys = [master.id, master.studentId].filter(Boolean).map(String);
+      const matchedBusStudent = busStudentList.find(bs => bs.masterStudentId && masterKeys.includes(String(bs.masterStudentId))) || busStudentList.find(bs => {
+        // 공통 학생 키가 붙은 버스 학생은 위에서 키로만 연결 (다른 학생 키면 제외)
+        if (bs.masterStudentId) return false;
         // 1단계: 고유 ID 또는 이메일 일치
         const idMatches = bs.id && (bs.id === master.studentId || bs.id === master.id);
         const emailMatches = (bs as any).studentEmail && master.studentEmail && (
@@ -357,11 +387,14 @@ export const onMasterStudentsUpdate = (
         );
         if (idMatches || emailMatches) return true;
 
-        // 이름 일치 확인
+        // 이름 일치 확인 (안전한 null/undefined 방어)
+        const bsName = String(bs.nameKo || bs.name || '').trim();
+        if (!bsName || (!mName && !mNameKo)) return false;
+
         const nameMatches = (
-          bs.name === master.name || 
-          bs.nameKo === master.name || 
-          (bs.name && bs.name.includes(master.name))
+          (mName && bsName === mName) || 
+          (mNameKo && bsName === mNameKo) || 
+          (mName && bs.name && String(bs.name).includes(mName))
         );
         if (!nameMatches) return false;
 
@@ -695,13 +728,43 @@ export const createMasterStudent = async (studentData: NewMasterStudent): Promis
       studentData.classNum, 
       studentData.address || '', 
       studentData.contact,
-      studentData.gender || 'Male',
-      studentData.studentEmail
+      studentData.gender || undefined, // 성별 미입력 시 버스 학생 성별을 '남'으로 덮어쓰지 않음
+      studentData.studentEmail,
+      studentData.nameEn,
+      studentData.studentNum,
+      null,
+      docRef.id
     );
   }
 
   return docRef.id;
 };
+
+/**
+ * users 컬렉션 이메일 조회 (대소문자 차이 보완).
+ * Firestore 동등 비교는 대소문자를 구분하므로 원문·소문자 두 번 조회 후 중복 제거.
+ */
+async function findUsersByEmail(email: string): Promise<{ empty: boolean; docs: QueryDocumentSnapshot<DocumentData>[] }> {
+  const raw = (email || '').trim();
+  if (!raw) return { empty: true, docs: [] };
+  const variants = Array.from(new Set([raw, raw.toLowerCase()]));
+  const snaps = await Promise.all(variants.map(v => getDocs(query(collection(getDb(), 'users'), where('email', '==', v)))));
+  const byId = new Map<string, QueryDocumentSnapshot<DocumentData>>();
+  snaps.forEach(s => s.docs.forEach(d => byId.set(d.id, d)));
+  const docs = Array.from(byId.values());
+  return { empty: docs.length === 0, docs };
+}
+
+/** master_students 이메일 조회 (대소문자 차이 보완) */
+async function findMastersByEmail(email: string): Promise<QueryDocumentSnapshot<DocumentData>[]> {
+  const raw = (email || '').trim();
+  if (!raw) return [];
+  const variants = Array.from(new Set([raw, raw.toLowerCase()]));
+  const snaps = await Promise.all(variants.map(v => getDocs(query(collection(getDb(), COLLECTION_NAME), where('studentEmail', '==', v)))));
+  const byId = new Map<string, QueryDocumentSnapshot<DocumentData>>();
+  snaps.forEach(s => s.docs.forEach(d => byId.set(d.id, d)));
+  return Array.from(byId.values());
+}
 
 // 3. 마스터 학생 정보 수정 (기본 프로필 + users 컬렉션 + 스쿨버스 students 동시 양방향 업데이트)
 export const updateMasterStudent = async (studentId: string, updateData: Partial<MasterStudent>): Promise<void> => {
@@ -745,8 +808,7 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
   // users 컬렉션 동시 업데이트
   if (emailToSearch) {
     const cleanEmail = emailToSearch.toLowerCase();
-    const q = query(collection(db, 'users'), where("email", "==", emailToSearch));
-    const snapshot = await getDocs(q);
+    const snapshot = await findUsersByEmail(emailToSearch);
     const userPayload: any = {};
     if (nameToUse) {
       userPayload.name = nameToUse;
@@ -807,7 +869,11 @@ export const updateMasterStudent = async (studentId: string, updateData: Partial
       genderToUse,
       emailToSearch,
       nameEnToUse,
-      numToUse
+      numToUse,
+      existingData
+        ? { name: existingData.name, grade: existingData.grade, classNum: existingData.classNum, studentNum: existingData.studentNum }
+        : null,
+      targetRef.id
     );
   }
 
@@ -835,34 +901,77 @@ export const syncAddressToKisbusStudent = async (
   gender?: 'Male' | 'Female',
   studentEmail?: string | null,
   nameEn?: string | null,
-  studentNum?: string | null
+  studentNum?: string | null,
+  /** 수정 전 학생 정보 (학년·반이 바뀐 경우 이메일 없는 버스 학생을 찾기 위한 보조 키) */
+  previous?: { name?: string | null; grade?: string | null; classNum?: string | null; studentNum?: string | null } | null,
+  /** 공통 학생 키 (통합학생계정 문서 ID). 버스 학생을 이 키로 먼저 찾고, 찾은 버스 학생에 저장한다 */
+  masterStudentId?: string | null
 ) => {
   try {
     if (!name) return;
     const busDb = getKisbusDb();
-    
+
     // 1. 목적지 목록에서 목적지 ID 조회 (address가 제공된 경우)
+    //    등록된 목적지와 일치할 때만 반영. 주소 원문을 목적지 ID 칸에 쓰지 않는다.
     let destIdToSet: string | null = null;
     if (address) {
       const destSnap = await getDocs(collection(busDb, 'destinations'));
       const destinations = destSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const matchedDest = destinations.find((d: any) => d.name === address || d.id === address);
-      destIdToSet = matchedDest ? matchedDest.id : address;
+      const addr = address.trim();
+      const matchedDest = destinations.find((d: any) => String(d.name || '').trim() === addr || d.id === addr);
+      if (matchedDest) {
+        destIdToSet = matchedDest.id;
+      } else {
+        console.warn(`[MasterStudentService] '${addr}' 주소와 일치하는 스쿨버스 목적지가 없어 목적지는 변경하지 않습니다.`);
+      }
     }
 
     // 2. 스쿨버스 students 컬렉션에서 학생 조회
+    //    ① 이메일 일치 ② 이름(완전 일치)+학년+반이 한 명으로 특정될 때만 연결.
+    //    이름 일부 일치·이름만 일치로는 연결하지 않는다 (다른 학생 정보 덮어쓰기 방지).
     const studSnap = await getDocs(collection(busDb, 'students'));
-    const busStudents = studSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    
-    const targetStudent = busStudents.find((s: any) => {
-      if (studentEmail && s.studentEmail && s.studentEmail.toLowerCase() === studentEmail.toLowerCase()) {
-        return true;
+    const busStudents = studSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+    const normName = (v: any) => String(v || '').replace(/\s+/g, '');
+    const normNum = (v: any) => {
+      const t = String(v ?? '').trim();
+      return t && !Number.isNaN(Number(t)) ? String(Number(t)) : t;
+    };
+    const emailKey = (studentEmail || '').trim().toLowerCase();
+
+    const masterKey = String(masterStudentId || '').trim();
+    let targetStudent: any =
+      (masterKey ? busStudents.find(s => s.masterStudentId === masterKey) : undefined) ||
+      (emailKey ? busStudents.find(s => String(s.studentEmail || '').trim().toLowerCase() === emailKey) : undefined);
+    // 다른 학생 키가 이미 붙은 버스 학생은 이메일이 같아도 건드리지 않음
+    if (targetStudent && masterKey && targetStudent.masterStudentId && targetStudent.masterStudentId !== masterKey) {
+      targetStudent = undefined;
+    }
+
+    const findByIdentity = (n?: string | null, g?: string | null, c?: string | null, num?: string | null) => {
+      const nn = normName(n);
+      if (!nn || !g || !c) return undefined;
+      let hits = busStudents.filter(s =>
+        (normName(s.nameKo) === nn || normName(s.name) === nn) &&
+        normNum(s.grade) === normNum(g) &&
+        normNum(s.class ?? s.classNum) === normNum(c) &&
+        // 이미 다른 학생 이메일·키로 연결된 버스 학생은 이름이 같아도 건드리지 않음
+        !(emailKey && s.studentEmail && String(s.studentEmail).trim().toLowerCase() !== emailKey) &&
+        !(masterKey && s.masterStudentId && s.masterStudentId !== masterKey)
+      );
+      if (hits.length > 1 && num) {
+        hits = hits.filter(s => normNum(s.number ?? s.studentNum) === normNum(num));
       }
-      const nameMatches = s.name === name || s.nameKo === name || (s.name && s.name.includes(name));
-      const gradeMatches = !grade || String(s.grade) === String(grade);
-      const classMatches = !classNum || String(s.class) === String(classNum);
-      return nameMatches && gradeMatches && classMatches;
-    }) || busStudents.find((s: any) => s.name === name || s.nameKo === name);
+      return hits.length === 1 ? hits[0] : undefined;
+    };
+
+    if (!targetStudent) {
+      targetStudent =
+        findByIdentity(name, grade, classNum, studentNum) ||
+        (previous ? findByIdentity(previous.name || name, previous.grade, previous.classNum, previous.studentNum) : undefined);
+    }
+    if (!targetStudent) {
+      console.warn(`[MasterStudentService] 스쿨버스 학생을 한 명으로 특정하지 못해 동기화를 건너뜁니다: ${name} ${grade || ''}-${classNum || ''}`);
+    }
 
     if (targetStudent) {
       const busPayload: any = {};
@@ -890,7 +999,10 @@ export const syncAddressToKisbusStudent = async (
         busPayload.gender = gender;
       }
       if (studentEmail) {
-        busPayload.studentEmail = studentEmail;
+        busPayload.studentEmail = studentEmail.trim().toLowerCase();
+      }
+      if (masterKey) {
+        busPayload.masterStudentId = masterKey;
       }
       if (nameEn !== undefined && nameEn !== null) {
         busPayload.nameEn = nameEn;
@@ -1108,10 +1220,12 @@ export const restoreMasterStudent = async (backupDocId: string): Promise<void> =
       data.classNum,
       data.address || '',
       data.contact,
-      data.gender || 'Male',
+      data.gender || undefined, // 성별 미입력 시 버스 학생 성별을 '남'으로 덮어쓰지 않음
       targetEmail,
       data.nameEn,
-      data.studentNum
+      data.studentNum,
+      null,
+      originalStudentId
     );
   }
 
@@ -1415,13 +1529,48 @@ export const batchImportMasterStudents = async (students: NewMasterStudent[]): P
 
 
 // 6. 학년/반 일괄 진급 처리 (Grade Advancement Batch Update + Automatic Academic Year Archiving)
+/** Firestore 배치 500건 제한을 넘지 않도록 나누어 커밋하는 쓰기 도우미 */
+function createChunkedWriter(firestore: Firestore, limit = 450) {
+  let batch: WriteBatch = writeBatch(firestore);
+  let ops = 0;
+  const pending: WriteBatch[] = [];
+  return {
+    update(ref: DocumentReference<DocumentData>, data: Record<string, any>) {
+      batch.update(ref, data);
+      ops++;
+      if (ops >= limit) {
+        pending.push(batch);
+        batch = writeBatch(firestore);
+        ops = 0;
+      }
+    },
+    async commit() {
+      if (ops > 0) pending.push(batch);
+      for (const b of pending) await b.commit();
+      pending.length = 0;
+      batch = writeBatch(firestore);
+      ops = 0;
+    },
+  };
+}
+
+/**
+ * 진급 전 학년도(보관 학년도) 계산. 학년도는 3월 시작.
+ * 진급 처리는 보통 학년말(12~2월)이나 새 학기 초(3~5월)에 실행하므로
+ * 1~5월 실행 → 전년도 학년도, 6~12월 실행 → 올해 학년도로 보관한다.
+ * 예) 2026-11 → 2026학년도, 2027-02 → 2026학년도, 2027-03 → 2026학년도
+ */
+function getPromotionArchiveSchoolYear(now = new Date()): number {
+  const y = now.getFullYear();
+  return now.getMonth() + 1 >= 6 ? y : y - 1;
+}
+
 export const batchPromoteStudents = async (advancements: { studentEmail: string; newGrade: string; newClassNum: string; newStudentNum: string }[]): Promise<number> => {
-  const batch = writeBatch(getDb());
+  const batch = createChunkedWriter(getDb());
   const kisbusDb = getKisbusDb();
-  const kisbusBatch = writeBatch(kisbusDb);
+  const kisbusBatch = createChunkedWriter(kisbusDb);
   let count = 0;
-  const currentYear = new Date().getFullYear();
-  const previousAcademicYear = currentYear - 1; // 진급 전 학학년도 (예: 2025학년도)
+  const previousAcademicYear = getPromotionArchiveSchoolYear(); // 진급 전 학년도 (예: 2026학년도)
 
   // 스쿨버스 전체 학생 사전 로드
   let busStudents: { id: string; ref: any; data: any }[] = [];
@@ -1436,9 +1585,8 @@ export const batchPromoteStudents = async (advancements: { studentEmail: string;
     if (!item.studentEmail) continue;
     const cleanEmail = item.studentEmail.trim().toLowerCase();
 
-    const qMaster = query(collection(getDb(), COLLECTION_NAME), where("studentEmail", "==", item.studentEmail.trim()));
-    const snapMaster = await getDocs(qMaster);
-    snapMaster.forEach(d => {
+    const masterDocs = await findMastersByEmail(item.studentEmail);
+    masterDocs.forEach(d => {
       const data = d.data();
       const existingHistory = Array.isArray(data.academicHistory) ? data.academicHistory : [];
       
@@ -1467,9 +1615,8 @@ export const batchPromoteStudents = async (advancements: { studentEmail: string;
       });
     });
 
-    const qUser = query(collection(getDb(), 'users'), where("email", "==", item.studentEmail.trim()));
-    const snapUser = await getDocs(qUser);
-    snapUser.forEach(d => {
+    const snapUser = await findUsersByEmail(item.studentEmail);
+    snapUser.docs.forEach(d => {
       batch.update(doc(getDb(), 'users', d.id), {
         grade: item.newGrade,
         studentGrade: item.newGrade,
@@ -1488,7 +1635,9 @@ export const batchPromoteStudents = async (advancements: { studentEmail: string;
       kisbusBatch.update(matchedBus.ref, {
         grade: item.newGrade,
         class: item.newClassNum,
-        number: item.newStudentNum
+        classNum: item.newClassNum,
+        number: item.newStudentNum,
+        studentNum: item.newStudentNum
       });
     }
 
@@ -1500,6 +1649,7 @@ export const batchPromoteStudents = async (advancements: { studentEmail: string;
     await kisbusBatch.commit();
   } catch (bErr) {
     console.warn('kisbus batch promote error:', bErr);
+    throw new Error('통합학생계정 진급은 완료되었으나 스쿨버스 학생 정보 갱신 중 오류가 발생했습니다. 스쿨버스 학년·반을 확인해 주세요.');
   }
   return count;
 };

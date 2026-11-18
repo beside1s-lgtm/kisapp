@@ -7,6 +7,37 @@ import {
 import { shouldForceWaiting } from '@/lib/afterschool/waitingRules';
 import { initialTimerConfig } from '@/lib/afterschool/mock/data';
 import type { Course, Enrollment } from '@/lib/afterschool/types';
+import { buildMasterStudentIndex, resolveMasterStudentId, type MasterStudentIndex } from '@/lib/students/masterStudentKey';
+
+/** 서버용 통합학생계정 색인 (짧게 캐시) */
+let masterIndexCache: { at: number; index: MasterStudentIndex } | null = null;
+async function getServerMasterIndex(): Promise<MasterStudentIndex> {
+  if (masterIndexCache && Date.now() - masterIndexCache.at < 60_000) return masterIndexCache.index;
+  const snap = await getAdminDb().collection('master_students').get();
+  const index = buildMasterStudentIndex(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+  masterIndexCache = { at: Date.now(), index };
+  return index;
+}
+
+/** 로그인 프로필(학생 본인 또는 학부모)로 공통 학생 키(masterStudentId)를 찾는다. 특정 불가 시 '' */
+async function resolveCallerMasterStudentId(caller: AfterschoolCaller): Promise<string> {
+  try {
+    const p = caller.profile || {};
+    const isStudent = p.role === 'student' || p.role === '학생';
+    const res = resolveMasterStudentId({
+      masterStudentId: p.masterStudentId,
+      email: p.studentEmail || (isStudent ? caller.email : ''),
+      name: p.studentName || (isStudent ? p.name : ''),
+      grade: p.studentGrade || (isStudent ? p.grade : ''),
+      classNum: p.studentClass || (isStudent ? p.class : ''),
+      studentNum: p.studentNumber || (isStudent ? p.number : ''),
+    }, await getServerMasterIndex());
+    return res.id || '';
+  } catch (err) {
+    console.warn('[afterschoolEnrollment] 통합학생 ID 조회 실패 (신청은 계속):', err);
+    return '';
+  }
+}
 
 /**
  * 방과후 수강신청/취소 서버 처리 (Admin SDK)
@@ -73,7 +104,9 @@ export async function resolveAfterschoolCaller(
 }
 
 /** StudentView의 '내 신청' 판별과 같은 기준으로 해당 학생의 신청인지 확인 */
-function belongsToCaller(e: any, caller: AfterschoolCaller): boolean {
+function belongsToCaller(e: any, caller: AfterschoolCaller, masterStudentId = ''): boolean {
+  // 공통 학생 키가 양쪽에 있으면 그것만으로 판정 (같은 반 동명이인 구분)
+  if (masterStudentId && e.masterStudentId) return String(e.masterStudentId) === masterStudentId;
   const { matchIds, studentName } = getAfterschoolStudentIdentity(caller.profile);
   if (e.studentId && matchIds.includes(String(e.studentId))) return true;
   if (caller.email && e.studentEmail && String(e.studentEmail).toLowerCase() === caller.email) return true;
@@ -146,17 +179,19 @@ export async function enrollAfterschoolCourse(
 
   // 같은 학생의 동시 요청(더블클릭·여러 강좌 동시 클릭)은 학생 단위로, 같은 강좌 요청은 강좌 단위로 순서대로 처리
   return runSerialized(`student:${identity.studentId}`, async () => {
+    const masterStudentId = await resolveCallerMasterStudentId(caller);
     // 동시간대 판정용 전체 강좌 목록 / 학생 본인 신청 목록 (학생 단위 대기열 안이므로 트랜잭션 밖에서 읽어도 안전)
     const [coursesSnap, ...mineSnaps] = await Promise.all([
       db.collection('afterschool_courses').get(),
       enrollCol.where('studentId', 'in', identity.matchIds.slice(0, 30)).get(),
       ...(identity.studentName ? [enrollCol.where('name', '==', identity.studentName).get()] : []),
+      ...(masterStudentId ? [enrollCol.where('masterStudentId', '==', masterStudentId).get()] : []),
     ]);
     const allCourses = coursesSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as Course));
     const myEnrollments = new Map<string, Enrollment>();
     mineSnaps.forEach(snap => snap.docs.forEach(d => {
       const data = { id: d.id, ...(d.data() as any) } as Enrollment;
-      if (belongsToCaller(data, caller) && isActiveStatus(data.status)) myEnrollments.set(d.id, data);
+      if (belongsToCaller(data, caller, masterStudentId) && isActiveStatus(data.status)) myEnrollments.set(d.id, data);
     }));
     const myList = Array.from(myEnrollments.values());
     if (myList.some(e => e.courseId === courseId)) {
@@ -195,6 +230,7 @@ export async function enrollAfterschoolCourse(
         id: enrollmentId,
         courseId,
         studentId: identity.studentId,
+        ...(masterStudentId ? { masterStudentId } : {}),
         yearNo: 99,
         grade: Number(profile.studentGrade) || 1,
         classNum: Number(profile.studentClass) || 1,

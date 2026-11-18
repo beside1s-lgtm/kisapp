@@ -16,6 +16,8 @@ export type UserProfile = {
   studentGrade?: string;
   studentClass?: string;
   studentNumber?: string;
+  /** 학부모 계정: 대표 자녀의 공통 학생 키 (통합학생계정 문서 ID) */
+  masterStudentId?: string;
   gender?: 'Male' | 'Female' | string;
   class?: string;
   number?: string;
@@ -30,6 +32,8 @@ export type UserProfile = {
     studentClass: string;
     studentNumber?: string;
     gender?: 'Male' | 'Female';
+    /** 형제·자매의 공통 학생 키 (통합학생계정 문서 ID) */
+    masterStudentId?: string;
   }[];
   hasUnreadInboxNotification?: boolean;
   dept?: string; // 소속 부서 (예: 교무기획부)
@@ -130,6 +134,8 @@ export type ParentFormData = {
   type: 'absence' | 'field-trip' | 'field-trip-report' | 'volunteer-plan' | 'volunteer-report';
   studentName: string;
   gradeClassNumber: string;
+  /** 공통 학생 키 (통합학생계정 문서 ID) — 출결·방과후·버스 연동에 사용 */
+  masterStudentId?: string;
   
   // 결석계 전용
   absencePeriod?: { startDate: string; endDate: string; totalDays: number };

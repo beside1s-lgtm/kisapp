@@ -2,6 +2,7 @@ import { getDb, auth } from '@/lib/firebase';
 import { doc, getDoc, getDocs, setDoc, collection, onSnapshot, updateDoc, deleteDoc, writeBatch, runTransaction, query, where, orderBy, QueryDocumentSnapshot } from 'firebase/firestore';
 import type { DocConfig } from '@/lib/types';
 import type { Course, Enrollment } from '@/lib/afterschool/types';
+import { withEnrollmentMasterKey } from '@/lib/students/masterStudentResolver';
 
 function cleanUndefined(obj: any): any {
   if (obj === null || obj === undefined) return null;
@@ -387,13 +388,17 @@ export function onAfterschoolEnrollmentsForStudentUpdate(
 
 export async function saveAfterschoolEnrollment(enrollment: import('@/lib/afterschool/types').Enrollment): Promise<void> {
   const docRef = doc(getDb(), 'afterschool_enrollments', enrollment.id);
-  await setDoc(docRef, cleanUndefined(enrollment));
+  // 공통 학생 키(masterStudentId)가 없으면 통합학생계정에서 찾아 함께 저장
+  const keyed = await withEnrollmentMasterKey(enrollment);
+  await setDoc(docRef, cleanUndefined(keyed));
 }
 
 export async function saveAfterschoolEnrollmentsBatch(enrollments: import('@/lib/afterschool/types').Enrollment[]): Promise<void> {
   if (!enrollments || enrollments.length === 0) return;
+  // 공통 학생 키(masterStudentId)가 없으면 통합학생계정에서 찾아 함께 저장
+  const keyedList = await Promise.all(enrollments.map(item => withEnrollmentMasterKey(item)));
   const batch = writeBatch(getDb());
-  enrollments.forEach(item => {
+  keyedList.forEach(item => {
     const docRef = doc(getDb(), 'afterschool_enrollments', item.id);
     batch.set(docRef, cleanUndefined(item), { merge: true });
   });

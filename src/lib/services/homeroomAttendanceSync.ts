@@ -13,6 +13,7 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import { getKisbusDb } from '@/lib/kisbus/firebase';
+import { findMasterStudentId } from '@/lib/students/masterStudentResolver';
 
 export type HomeroomAttendanceStatus = 'ATTEND' | 'ABSENT' | 'EARLY_LEAVE' | 'INDIVIDUAL_DISMISSAL';
 
@@ -20,6 +21,8 @@ export interface HomeroomAttendanceRecord {
   id: string; // `${date}_${studentId}`
   date: string; // YYYY-MM-DD
   studentId: string;
+  /** 공통 학생 키 (통합학생계정 문서 ID) */
+  masterStudentId?: string;
   studentName: string;
   gradeClass: string;
   status: HomeroomAttendanceStatus;
@@ -27,6 +30,48 @@ export interface HomeroomAttendanceRecord {
   reason?: string;
   updatedAt: string;
   updatedBy: string;
+}
+
+// ─── 0. 학급 키 정규화 ───────────────────────────────────────────────────────
+// 학부모 신청서는 "6-6-1", "6학년 6반 1번" 등 학년-반-번호 형식으로 들어오고,
+// 담임 출석부는 "6-6"(학년-반) 키로 조회하므로 저장·비교 시 항상 학년-반으로 맞춘다.
+
+/** "6-6-1" / "6학년 6반 1번" / "6-6" → { grade: '6', classNum: '6', studentNum: '1' | '' } */
+export function parseGradeClassNumber(raw: string | null | undefined): { grade: string; classNum: string; studentNum: string } {
+  const nums = String(raw || '').match(/\d+/g) || [];
+  const norm = (v?: string) => (v ? String(Number(v)) : '');
+  return { grade: norm(nums[0]), classNum: norm(nums[1]), studentNum: norm(nums[2]) };
+}
+
+/** 학년-반 키("6-6"). 학년·반을 알 수 없으면 원문(trim)을 그대로 반환 */
+export function normalizeGradeClassKey(raw: string | null | undefined): string {
+  const { grade, classNum } = parseGradeClassNumber(raw);
+  return grade && classNum ? `${grade}-${classNum}` : String(raw || '').trim();
+}
+
+/** 결석·체험학습 자동 결석 맵 키: 번호가 있으면 "이름#번호", 없으면 "이름" */
+export function approvedAbsenceKey(name: string, studentNum?: string | number | null): string {
+  const n = String(name || '').replace(/\s+/g, '');
+  const num = studentNum !== undefined && studentNum !== null && String(studentNum).trim() !== ''
+    ? String(Number(String(studentNum).trim()) || String(studentNum).trim())
+    : '';
+  return num ? `${n}#${num}` : n;
+}
+
+/** 공통 학생 키가 있는 신청서의 자동 결석 맵 키 */
+export const approvedAbsenceMasterKey = (masterStudentId: string) => `mid:${masterStudentId}`;
+
+/**
+ * 학생에 해당하는 자동 결석 항목 조회.
+ * - 공통 학생 키가 붙은 신청서는 키로만 찾는다 (동명이인 오표시 없음)
+ * - 키가 없는 옛 신청서는 번호가 적혀 있으면 이름+번호, 없으면 이름으로 찾는다
+ */
+export function lookupApprovedAbsence<T>(map: Map<string, T>, name: string, studentNum?: string | number | null, masterStudentId?: string | null): T | undefined {
+  if (masterStudentId) {
+    const byKey = map.get(approvedAbsenceMasterKey(masterStudentId));
+    if (byKey) return byKey;
+  }
+  return map.get(approvedAbsenceKey(name, studentNum)) ?? map.get(approvedAbsenceKey(name));
 }
 
 // ─── 1. 담임 일일 출석 실시간 구독 ──────────────────────────────────────────
@@ -46,14 +91,15 @@ export function onHomeroomAttendanceUpdate(
   const colRef = collection(db, 'homeroom_daily_attendance');
   // date 단일 필드 쿼리 → 복합 인덱스 불필요
   const q = query(colRef, where('date', '==', date));
+  const targetKey = normalizeGradeClassKey(gradeClass);
 
   return onSnapshot(
     q,
     (snap) => {
       const list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as HomeroomAttendanceRecord))
-        // 클라이언트에서 gradeClass 필터링
-        .filter((r) => r.gradeClass === gradeClass);
+        // 클라이언트에서 gradeClass 필터링 ("6-6-1" 형식으로 저장된 기존 기록도 "6-6"으로 맞춰 비교)
+        .filter((r) => normalizeGradeClassKey(r.gradeClass) === targetKey);
       callback(list);
     },
     (err) => {
@@ -102,6 +148,7 @@ export async function getApprovedAbsenceStudentsForDate(
     );
 
     const snap = await getDocs(q);
+    const targetKey = normalizeGradeClassKey(gradeClass);
     snap.docs.forEach((d) => {
       const data = d.data();
       const pData = data.parentFormData;
@@ -111,13 +158,9 @@ export async function getApprovedAbsenceStudentsForDate(
       if (data.status === 'rejected' || data.status === 'recalled' || data.status === 'cancelled') return;
 
       const pGradeClass = pData.gradeClassNumber || data.gradeClass || '';
-      // 학급 매칭 ("6-6", "6학년 6반", "6-6-1" 등 유연 매칭)
-      const cleanGClass = gradeClass.replace(/[^0-9-]/g, '');
-      const cleanPClass = pGradeClass.replace(/[^0-9-]/g, '');
-      const isClassMatch = pGradeClass.startsWith(gradeClass) ||
-                           pGradeClass.includes(gradeClass) ||
-                           (cleanGClass && cleanPClass.startsWith(cleanGClass));
-      if (!isClassMatch) return;
+      // 학급 매칭 ("6-6", "6학년 6반", "6-6-1" 모두 학년-반으로 정규화 후 정확히 비교 → "1-1"이 "1-10"에 매칭되지 않음)
+      if (normalizeGradeClassKey(pGradeClass) !== targetKey) return;
+      const pStudentNum = parseGradeClassNumber(pGradeClass).studentNum;
 
       const sName = (pData.studentName || data.studentName || '').trim();
       const docType = pData.type; // 'field-trip' | 'absence'
@@ -145,7 +188,11 @@ export async function getApprovedAbsenceStudentsForDate(
       }
 
       if (isDateInRange && sName) {
-        resultMap.set(sName, {
+        // 공통 학생 키가 있으면 키로, 없으면 번호가 적힌 신청서는 "이름#번호"로 저장 → 같은 반 동명이인에게 함께 표시되지 않음
+        const mapKey = pData.masterStudentId
+          ? approvedAbsenceMasterKey(String(pData.masterStudentId))
+          : approvedAbsenceKey(sName, pStudentNum);
+        resultMap.set(mapKey, {
           status: 'ABSENT',
           reason,
           source: docType === 'field-trip' ? 'auto_field_trip' : 'auto_absence',
@@ -169,8 +216,22 @@ export async function saveHomeroomAttendanceAndSync(
     const docId = `${record.date}_${record.studentId}`;
     const docRef = doc(db, 'homeroom_daily_attendance', docId);
 
+    // 공통 학생 키: 지정되지 않았으면 studentId가 통합학생계정 문서인지 확인해 채운다
+    let masterStudentId = record.masterStudentId || '';
+    let masterEmail = '';
+    try {
+      const masterSnap = await getDoc(doc(db, 'master_students', masterStudentId || record.studentId));
+      if (masterSnap.exists() && (masterSnap.data()?.name || masterSnap.data()?.grade)) {
+        masterStudentId = masterSnap.id;
+        masterEmail = String(masterSnap.data()?.studentEmail || '').trim().toLowerCase();
+      }
+    } catch (err) {
+      console.warn('[HomeroomAttendance] master lookup failed:', err);
+    }
+
     const fullRecord: HomeroomAttendanceRecord = {
       ...record,
+      ...(masterStudentId ? { masterStudentId } : {}),
       id: docId,
       updatedAt: new Date().toISOString(),
     };
@@ -178,7 +239,7 @@ export async function saveHomeroomAttendanceAndSync(
     await setDoc(docRef, fullRecord, { merge: true });
 
     // 스쿨버스 및 방과후 출석부 연동 비동기 실행 (결과는 기다리되 UI 차단 최소화)
-    await syncToBusAndAfterschool(fullRecord);
+    await syncToBusAndAfterschool(fullRecord, masterEmail);
 
     return { success: true };
   } catch (err: any) {
@@ -189,22 +250,13 @@ export async function saveHomeroomAttendanceAndSync(
 
 // ─── 4. 스쿨버스 및 방과후 연동 세부 로직 ──────────────────────────────────
 
-async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
+async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord, masterEmail = '') {
   const { date, studentId, studentName, gradeClass, status } = record;
+  const masterId = record.masterStudentId || '';
   const db = getDb();
 
-  const [grade, classNum] = (gradeClass || '').split('-');
-
-  // 마스터 학생 정보 조회 (이메일 및 정확한 프로필 확보)
-  let studentEmail = '';
-  try {
-    const masterDoc = await getDoc(doc(db, 'master_students', studentId));
-    if (masterDoc.exists()) {
-      studentEmail = (masterDoc.data()?.studentEmail || masterDoc.data()?.email || '').trim().toLowerCase();
-    }
-  } catch (err) {
-    console.warn('[HomeroomSync] Master student lookup failed:', err);
-  }
+  const { grade, classNum } = parseGradeClassNumber(gradeClass);
+  const studentEmail = masterEmail;
 
   const dayOfWeekMap: Record<number, string> = {
     0: 'Sunday',
@@ -225,15 +277,21 @@ async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
 
     // 스쿨버스 students 컬렉션에서 해당 학생 역추적
     const busStudentsSnap = await getDocs(collection(kisbusDb, 'students'));
-    const matchedBusStudent = busStudentsSnap.docs.find(d => {
-      const s = d.data();
-      if (d.id === studentId) return true;
-      if (studentEmail && s.studentEmail && s.studentEmail.toLowerCase() === studentEmail) return true;
-      const nameMatch = clean(s.name) === targetCleanName || clean(s.nameKo) === targetCleanName || clean(s.nameEn) === targetCleanName;
-      const gradeMatch = !grade || String(s.grade) === String(grade);
-      const classMatch = !classNum || String(s.class || s.classNum) === String(classNum);
-      return nameMatch && gradeMatch && classMatch;
-    });
+    // ① 공통 학생 키 ② 버스 학생 ID ③ 이메일 ④ (키 없는 버스 학생만) 이름+학년+반이 한 명일 때
+    const matchedBusStudent =
+      (masterId ? busStudentsSnap.docs.find(d => d.data().masterStudentId === masterId) : undefined) ||
+      busStudentsSnap.docs.find(d => d.id === studentId) ||
+      (studentEmail ? busStudentsSnap.docs.find(d => String(d.data().studentEmail || '').trim().toLowerCase() === studentEmail) : undefined) ||
+      (() => {
+        if (!grade || !classNum || !targetCleanName) return undefined;
+        const hits = busStudentsSnap.docs.filter(d => {
+          const s = d.data();
+          if (masterId && s.masterStudentId && s.masterStudentId !== masterId) return false;
+          const nameMatch = clean(s.name) === targetCleanName || clean(s.nameKo) === targetCleanName || clean(s.nameEn) === targetCleanName;
+          return nameMatch && String(s.grade) === String(grade) && String(s.class ?? s.classNum) === String(classNum);
+        });
+        return hits.length === 1 ? hits[0] : undefined;
+      })();
 
     const targetBusStudentIds = Array.from(new Set([
       studentId, 
@@ -300,13 +358,22 @@ async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
     const koreanDays = ['일', '월', '화', '수', '목', '금', '토'];
     const korDay = koreanDays[new Date(date + 'T12:00:00').getDay()];
 
-    // 1차: studentId 직접 조회
+    // 1차: 공통 학생 키(masterStudentId) + studentId 직접 조회
     const enrollmentsRef = collection(db, 'afterschool_enrollments');
-    let targetEnrollments: any[] = [];
-    const directSnap = await getDocs(query(enrollmentsRef, where('studentId', '==', studentId), where('status', '==', 'ENROLLED')));
-    targetEnrollments = directSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const found = new Map<string, any>();
+    const directSnaps = await Promise.all([
+      getDocs(query(enrollmentsRef, where('studentId', '==', studentId), where('status', '==', 'ENROLLED'))),
+      ...(masterId ? [getDocs(query(enrollmentsRef, where('masterStudentId', '==', masterId), where('status', '==', 'ENROLLED')))] : []),
+    ]);
+    directSnaps.forEach(snap => snap.docs.forEach(d => {
+      const e: any = { id: d.id, ...d.data() };
+      // 다른 학생 키가 붙은 신청은 제외
+      if (masterId && e.masterStudentId && e.masterStudentId !== masterId) return;
+      found.set(d.id, e);
+    }));
+    let targetEnrollments: any[] = Array.from(found.values());
 
-    // 2차: 직접 조회 결과가 없을 시 학생 이름/학년/반 및 이메일로 검색
+    // 2차: 직접 조회 결과가 없을 시 (키가 없는 옛 신청에 한해) 이메일 또는 이름/학년/반으로 검색
     if (targetEnrollments.length === 0 && studentName) {
       const clean = (str: any) => String(str || '').replace(/\s+/g, '').toLowerCase();
       const targetCleanName = clean(studentName);
@@ -314,6 +381,7 @@ async function syncToBusAndAfterschool(record: HomeroomAttendanceRecord) {
       targetEnrollments = allEnrolledSnap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter((e: any) => {
+          if (e.masterStudentId && e.masterStudentId !== masterId) return false;
           const nameMatch = clean(e.name || e.studentName) === targetCleanName;
           const gradeMatch = !grade || String(e.grade) === String(grade);
           const classMatch = !classNum || String(e.classNum || e.class) === String(classNum);
@@ -457,42 +525,34 @@ export async function syncParentApplicationDatesToAttendance(
     }
 
     const studentName = (pData.studentName || '').trim();
-    const gradeClass = pData.gradeClassNumber || pData.gradeClass || '';
+    const rawGradeClass = pData.gradeClassNumber || pData.gradeClass || '';
+    // 출석부는 학년-반("6-6") 키로 조회하므로 저장도 학년-반으로 맞춘다
+    const gradeClass = normalizeGradeClassKey(rawGradeClass);
     const db = getDb();
 
-    // 학생 ID 식별 (knownStudentId 우선, 없으면 master_students 조회)
-    let studentId = knownStudentId || '';
-    if (!studentId && studentName) {
-      try {
-        const clean = (str: any) => String(str || '').replace(/\s+/g, '').toLowerCase();
-        const targetClean = clean(studentName);
-        const parts = gradeClass.replace(/[^0-9-]/g, '-').split('-').filter(Boolean);
-        const targetG = parts[0];
-        const targetC = parts[1];
-
-        const mSnap = await getDocs(collection(db, 'master_students'));
-        const matched = mSnap.docs.find(d => {
-          const s = d.data();
-          if (clean(s.name) !== targetClean) return false;
-          if (targetG && String(s.grade) !== String(targetG)) return false;
-          if (targetC && String(s.classNum) !== String(targetC)) return false;
-          return true;
-        });
-        if (matched) {
-          studentId = matched.id;
-        }
-      } catch (e) {
-        console.warn('[HomeroomSync] Error finding studentId:', e);
-      }
+    // 공통 학생 키 식별: 신청서의 masterStudentId → 넘겨받은 ID(통합학생 문서일 때) → 이름+학년+반(+번호)이 한 명일 때
+    const { grade: targetG, classNum: targetC, studentNum: targetN } = parseGradeClassNumber(rawGradeClass);
+    const known = String(knownStudentId || '').trim();
+    const masterStudentId = await findMasterStudentId({
+      masterStudentId: pData.masterStudentId || known,
+      email: known.includes('@') ? known : '',
+      name: studentName,
+      grade: targetG,
+      classNum: targetC,
+      studentNum: targetN,
+    });
+    if (!masterStudentId) {
+      console.warn(`[HomeroomSync] ${studentName}(${rawGradeClass}) 학생을 통합학생계정에서 한 명으로 특정하지 못했습니다.`);
     }
 
-    const effectiveStudentId = studentId || studentName;
+    const effectiveStudentId = masterStudentId || known || studentName;
 
     // 기간 내 모든 평일 날짜에 대해 출석부 저장 및 스쿨버스/방과후 동기화
     for (const d of dates) {
       await saveHomeroomAttendanceAndSync({
         date: d,
         studentId: effectiveStudentId,
+        ...(masterStudentId ? { masterStudentId } : {}),
         studentName,
         gradeClass,
         status: 'ABSENT',
