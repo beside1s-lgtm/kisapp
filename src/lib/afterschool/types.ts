@@ -32,6 +32,8 @@ export interface Course {
   instructor5?: string;        // 강사 5
   instructor6?: string;        // 강사 6
   instructorPhone?: string;
+  /** 강사 칸별 시스템 교직원 계정 이메일 (예: { instructorName: 'a@kshcm.net', instructor2: 'b@kshcm.net' }) */
+  instructorEmails?: Record<string, string>;
   classTime: string;
   classroom?: string;       // 수업 장소 (Classroom.name)
   classroomId?: string;     // Classroom.id 참조

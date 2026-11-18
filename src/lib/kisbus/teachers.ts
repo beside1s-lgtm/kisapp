@@ -1,149 +1,79 @@
 import { getKisbusDb as db } from './firebase';
-import { doc, deleteDoc, writeBatch, collection, getDocs, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, deleteDoc, writeBatch, collection, getDocs, getDoc, updateDoc } from 'firebase/firestore';
+import { overlayTeacherNames, withBusTeacherAccount } from '@/lib/teachers/teacherRegistry';
 import type { Teacher, NewTeacher } from './types';
 import { fetchCollection, onCollectionUpdate, addDocument } from './core';
 import { sanitizeDataForSystem } from './utils';
 import { errorEmitter } from '@/lib/error-emitter';
 import { FirestorePermissionError, type SecurityRuleContext } from '@/lib/errors';
 
-const isStudentPattern = (email: string | null) => {
-    if (!email) return false;
-    return /^\d{4}[a-zA-Z0-9._-]+@kshcm.net$/.test(email);
+// ─── 교직원은 시스템 설정(사용자 관리) 계정이 원본 ───────────────────────────────
+// 스쿨버스 교사 문서(통근·방과후·토요)는 email로 시스템 계정에 연결하고, 화면 이름은 시스템 계정 이름을 따른다.
+// 배차 정보(assignedBusId 등)는 버스 교사 문서에 저장되므로, 목록에는 버스 교사로 등록된 사람만 나온다.
+// (이전 코드는 스쿨버스 DB의 users를 읽어 시스템 교직원이 실제로 합쳐진 적이 없다. 시스템에만 있는 교사를 배차에
+//  고르면 존재하지 않는 버스 교사 문서를 고치려다 저장이 실패하므로 합치지 않는다.)
+
+export const getTeachers = async (): Promise<Teacher[]> => overlayTeacherNames(await fetchCollection<Teacher>('teachers'));
+
+export const onTeachersUpdate = (callback: (teachers: Teacher[]) => void) => onLinkedTeachersUpdate('teachers', callback);
+
+/** 방과후·토요 교사 목록: 연결된 교사는 시스템 이름으로 표시 */
+const onLinkedTeachersUpdate = (col: string, callback: (teachers: Teacher[]) => void) => {
+    let seq = 0;
+    return onCollectionUpdate<Teacher>(col, (list) => {
+        const mine = ++seq;
+        overlayTeacherNames(list).then(shown => { if (mine === seq) callback(shown); });
+    });
 };
 
-export const getTeachers = async (): Promise<Teacher[]> => {
-    try {
-        const [busTeachers, usersSnap] = await Promise.all([
-            fetchCollection<Teacher>('teachers'),
-            getDocs(collection(db(), 'users')).catch(() => ({ docs: [] } as any))
-        ]);
+/** 저장 전 시스템 계정 연결 (이름 정리 → 계정 찾기 → 시스템 이름으로) */
+const linked = (t: any, prev?: any) =>
+    withBusTeacherAccount({ ...t, ...(t.name !== undefined ? { name: sanitizeDataForSystem(t.name) } : {}) }, prev);
 
-        const centralUsers: Teacher[] = (usersSnap.docs || [])
-            .map((d: any) => {
-                const data = d.data();
-                const email = (data.email || d.id || '').toLowerCase().trim();
-                const name = data.name || '';
-                if (!name || isStudentPattern(email) || data.studentName) return null;
-                return {
-                    id: email,
-                    name: name,
-                    email: email,
-                    role: data.role || '교사',
-                    dept: data.dept || '',
-                    semesterMode: 'regular',
-                } as Teacher;
-            })
-            .filter((t: any): t is Teacher => Boolean(t));
-
-        const teacherMap = new Map<string, Teacher>();
-        centralUsers.forEach(u => {
-            teacherMap.set(u.id, u);
-            if (u.name) teacherMap.set(`name_${u.name.trim()}`, u);
-        });
-        busTeachers.forEach(bt => {
-            const key = bt.email ? bt.email.toLowerCase() : bt.id;
-            teacherMap.set(key, bt);
-            if (bt.name) teacherMap.set(`name_${bt.name.trim()}`, bt);
-        });
-
-        const unique = Array.from(new Set(Array.from(teacherMap.values())));
-        unique.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
-        return unique;
-    } catch (e) {
-        return fetchCollection<Teacher>('teachers');
+const updateLinked = async (col: string, id: string, data: Partial<Teacher>) => {
+    const docRef = doc(db(), col, id);
+    let payload: any = data;
+    if (data.name !== undefined || (data as any).email !== undefined) {
+        const prev = await getDoc(docRef).then(s => s.data()).catch(() => null);
+        payload = await linked(data, prev);
     }
+    await updateDoc(docRef, payload).catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({ path: docRef.path, operation: 'update', requestResourceData: payload } satisfies SecurityRuleContext);
+        errorEmitter.emit('permission-error', permissionError);
+        throw serverError;
+    });
 };
 
-export const onTeachersUpdate = (callback: (teachers: Teacher[]) => void) => {
-    let busTeachers: Teacher[] = [];
-    let centralUsers: Teacher[] = [];
-
-    const emitMerged = () => {
-        const teacherMap = new Map<string, Teacher>();
-        centralUsers.forEach(u => {
-            teacherMap.set(u.id, u);
-            if (u.name) teacherMap.set(`name_${u.name.trim()}`, u);
-        });
-        busTeachers.forEach(bt => {
-            const key = bt.email ? bt.email.toLowerCase() : bt.id;
-            teacherMap.set(key, bt);
-            if (bt.name) teacherMap.set(`name_${bt.name.trim()}`, bt);
-        });
-
-        const unique = Array.from(new Set(Array.from(teacherMap.values())));
-        unique.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
-        callback(unique);
-    };
-
-    const unsubBusTeachers = onCollectionUpdate<Teacher>('teachers', (list) => {
-        busTeachers = list;
-        emitMerged();
+const addLinkedInBatch = async (col: string, teachers: Omit<Teacher, 'id'>[]) => {
+    const prepared = await Promise.all(teachers.map(teacher => {
+        const { afterSchoolDays, ...rest } = teacher;
+        const data: any = { ...rest };
+        if (afterSchoolDays !== undefined) data.afterSchoolDays = afterSchoolDays;
+        return linked(data);
+    }));
+    const batch = writeBatch(db());
+    prepared.forEach(data => batch.set(doc(collection(db(), col)), data));
+    await batch.commit().catch(async (serverError) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: '/' + col, operation: 'create' } satisfies SecurityRuleContext));
+        throw serverError;
     });
-
-    const unsubUsers = onSnapshot(collection(db(), 'users'), (snap) => {
-        centralUsers = snap.docs
-            .map(d => {
-                const data = d.data();
-                const email = (data.email || d.id || '').toLowerCase().trim();
-                const name = data.name || '';
-                if (!name || isStudentPattern(email) || data.studentName) return null;
-                return {
-                    id: email,
-                    name: name,
-                    email: email,
-                    role: data.role || '교사',
-                    dept: data.dept || '',
-                    semesterMode: 'regular',
-                } as Teacher;
-            })
-            .filter((t): t is Teacher => Boolean(t));
-        emitMerged();
-    }, (err) => {
-        console.warn("Silent fetch users error:", err);
-    });
-
-    return () => {
-        unsubBusTeachers();
-        unsubUsers();
-    };
 };
 
-export const addTeacher = (teacher: NewTeacher) => addDocument<Teacher>('teachers', { ...teacher, name: sanitizeDataForSystem(teacher.name) });
+export const addTeacher = async (teacher: NewTeacher) => addDocument<Teacher>('teachers', await linked(teacher));
 
 export const getAfterSchoolTeachers = () => fetchCollection<Teacher>('afterSchoolTeachers');
-export const onAfterSchoolTeachersUpdate = (callback: (teachers: Teacher[]) => void) => onCollectionUpdate<Teacher>('afterSchoolTeachers', callback);
-export const addAfterSchoolTeacher = (teacher: NewTeacher) => addDocument<Teacher>('afterSchoolTeachers', { ...teacher, name: sanitizeDataForSystem(teacher.name) });
+export const onAfterSchoolTeachersUpdate = (callback: (teachers: Teacher[]) => void) => onLinkedTeachersUpdate('afterSchoolTeachers', callback);
+export const addAfterSchoolTeacher = async (teacher: NewTeacher) => addDocument<Teacher>('afterSchoolTeachers', await linked(teacher));
 
 export const getSaturdayTeachers = () => fetchCollection<Teacher>('saturdayTeachers');
-export const onSaturdayTeachersUpdate = (callback: (teachers: Teacher[]) => void) => onCollectionUpdate<Teacher>('saturdayTeachers', callback);
-export const addSaturdayTeacher = (teacher: NewTeacher) => addDocument<Teacher>('saturdayTeachers', { ...teacher, name: sanitizeDataForSystem(teacher.name) });
+export const onSaturdayTeachersUpdate = (callback: (teachers: Teacher[]) => void) => onLinkedTeachersUpdate('saturdayTeachers', callback);
+export const addSaturdayTeacher = async (teacher: NewTeacher) => addDocument<Teacher>('saturdayTeachers', await linked(teacher));
 
-export const updateTeacher = async (id: string, data: Partial<Teacher>) => {
-    const docRef = doc(db(), 'teachers', id);
-    await updateDoc(docRef, data).catch(async (serverError) => {
-        const permissionError = new FirestorePermissionError({ path: docRef.path, operation: 'update', requestResourceData: data } satisfies SecurityRuleContext);
-        errorEmitter.emit('permission-error', permissionError);
-        throw serverError;
-    });
-};
+export const updateTeacher = (id: string, data: Partial<Teacher>) => updateLinked('teachers', id, data);
 
-export const updateAfterSchoolTeacher = async (id: string, data: Partial<Teacher>) => {
-    const docRef = doc(db(), 'afterSchoolTeachers', id);
-    await updateDoc(docRef, data).catch(async (serverError) => {
-        const permissionError = new FirestorePermissionError({ path: docRef.path, operation: 'update', requestResourceData: data } satisfies SecurityRuleContext);
-        errorEmitter.emit('permission-error', permissionError);
-        throw serverError;
-    });
-};
+export const updateAfterSchoolTeacher = (id: string, data: Partial<Teacher>) => updateLinked('afterSchoolTeachers', id, data);
 
-export const updateSaturdayTeacher = async (id: string, data: Partial<Teacher>) => {
-    const docRef = doc(db(), 'saturdayTeachers', id);
-    await updateDoc(docRef, data).catch(async (serverError) => {
-        const permissionError = new FirestorePermissionError({ path: docRef.path, operation: 'update', requestResourceData: data } satisfies SecurityRuleContext);
-        errorEmitter.emit('permission-error', permissionError);
-        throw serverError;
-    });
-};
+export const updateSaturdayTeacher = (id: string, data: Partial<Teacher>) => updateLinked('saturdayTeachers', id, data);
 
 export const deleteTeacher = (id: string) => deleteDoc(doc(db(), 'teachers', id)).catch(async (serverError) => {
     const permissionError = new FirestorePermissionError({ path: `/teachers/${id}`, operation: 'delete' } satisfies SecurityRuleContext);
@@ -163,19 +93,7 @@ export const deleteSaturdayTeacher = (id: string) => deleteDoc(doc(db(), 'saturd
     throw serverError;
 });
 
-export const addTeachersInBatch = async (teachers: Omit<Teacher, 'id'>[]) => {
-    const batch = writeBatch(db());
-    teachers.forEach(teacher => {
-        const { afterSchoolDays, ...rest } = teacher;
-        const data: any = { ...rest, name: sanitizeDataForSystem(teacher.name) };
-        if (afterSchoolDays !== undefined) data.afterSchoolDays = afterSchoolDays;
-        batch.set(doc(collection(db(), 'teachers')), data);
-    });
-    await batch.commit().catch(async (serverError) => {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: '/teachers', operation: 'create' } satisfies SecurityRuleContext));
-        throw serverError;
-    });
-};
+export const addTeachersInBatch = (teachers: Omit<Teacher, 'id'>[]) => addLinkedInBatch('teachers', teachers);
 
 export const deleteTeachersInBatch = async (ids: string[]) => {
     const batch = writeBatch(db());
@@ -200,33 +118,9 @@ export const deleteTeachersInBatch = async (ids: string[]) => {
     });
 };
 
-export const addAfterSchoolTeachersInBatch = async (teachers: Omit<Teacher, 'id'>[]) => {
-    const batch = writeBatch(db());
-    teachers.forEach(teacher => {
-        const { afterSchoolDays, ...rest } = teacher;
-        const data: any = { ...rest, name: sanitizeDataForSystem(teacher.name) };
-        if (afterSchoolDays !== undefined) data.afterSchoolDays = afterSchoolDays;
-        batch.set(doc(collection(db(), 'afterSchoolTeachers')), data);
-    });
-    await batch.commit().catch(async (serverError) => {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: '/afterSchoolTeachers', operation: 'create' } satisfies SecurityRuleContext));
-        throw serverError;
-    });
-};
+export const addAfterSchoolTeachersInBatch = (teachers: Omit<Teacher, 'id'>[]) => addLinkedInBatch('afterSchoolTeachers', teachers);
 
-export const addSaturdayTeachersInBatch = async (teachers: Omit<Teacher, 'id'>[]) => {
-    const batch = writeBatch(db());
-    teachers.forEach(teacher => {
-        const { afterSchoolDays, ...rest } = teacher;
-        const data: any = { ...rest, name: sanitizeDataForSystem(teacher.name) };
-        if (afterSchoolDays !== undefined) data.afterSchoolDays = afterSchoolDays;
-        batch.set(doc(collection(db(), 'saturdayTeachers')), data);
-    });
-    await batch.commit().catch(async (serverError) => {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: '/saturdayTeachers', operation: 'create' } satisfies SecurityRuleContext));
-        throw serverError;
-    });
-};
+export const addSaturdayTeachersInBatch = (teachers: Omit<Teacher, 'id'>[]) => addLinkedInBatch('saturdayTeachers', teachers);
 
 export const deleteAfterSchoolTeachersInBatch = async (ids: string[]) => {
     const batch = writeBatch(db());

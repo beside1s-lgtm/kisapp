@@ -3,6 +3,7 @@ import { doc, getDoc, getDocs, setDoc, collection, onSnapshot, updateDoc, delete
 import type { DocConfig } from '@/lib/types';
 import type { Course, Enrollment } from '@/lib/afterschool/types';
 import { overlayEnrollmentsWithMaster, withEnrollmentMasterKey } from '@/lib/students/masterStudentResolver';
+import { overlayCourseInstructorNames, withCourseInstructorAccounts } from '@/lib/teachers/teacherRegistry';
 
 function cleanUndefined(obj: any): any {
   if (obj === null || obj === undefined) return null;
@@ -259,17 +260,22 @@ export function onAfterschoolCoursesUpdate(
   onError?: (error: Error) => void
 ): () => void {
   const colRef = collection(getDb(), 'afterschool_courses');
+  let seq = 0;
   return onSnapshot(
     colRef,
     (snap) => {
       if (snap.empty) {
+        seq++;
         callback([]);
       } else {
         const list = snap.docs.map(d => ({
           id: d.id,
           ...(d.data() as any)
         } as import('@/lib/afterschool/types').Course));
-        callback(list.sort((a, b) => (a.id || '').localeCompare(b.id || '')));
+        // 강사 이름은 시스템 설정(사용자 관리)에 연결된 계정 이름으로 표시
+        const mine = ++seq;
+        overlayCourseInstructorNames(list.sort((a, b) => (a.id || '').localeCompare(b.id || '')))
+          .then(shown => { if (mine === seq) callback(shown); });
       }
     },
     (err) => {
@@ -285,9 +291,9 @@ export async function getAfterschoolCoursesDirectly(): Promise<import('@/lib/aft
     const colRef = collection(getDb(), 'afterschool_courses');
     const snap = await getDocs(colRef);
     if (snap.empty) return [];
-    return snap.docs
+    return overlayCourseInstructorNames(snap.docs
       .map(d => ({ id: d.id, ...(d.data() as any) } as import('@/lib/afterschool/types').Course))
-      .sort((a, b) => (a.id || '').localeCompare(b.id || ''));
+      .sort((a, b) => (a.id || '').localeCompare(b.id || '')));
   } catch (err) {
     console.warn('[settingsService] getAfterschoolCoursesDirectly error:', err);
     return [];
@@ -296,7 +302,13 @@ export async function getAfterschoolCoursesDirectly(): Promise<import('@/lib/aft
 
 export async function updateAfterschoolCourse(courseId: string, data: Partial<import('@/lib/afterschool/types').Course>): Promise<void> {
   const docRef = doc(getDb(), 'afterschool_courses', courseId);
-  await setDoc(docRef, cleanUndefined(data), { merge: true });
+  // 강사 칸을 고친 경우 시스템 교직원 계정에 연결 (기존 연결 정보와 합쳐 판정)
+  let payload: Partial<import('@/lib/afterschool/types').Course> = data;
+  if (['instructorName', 'instructor2', 'instructor3', 'instructor4', 'instructor5', 'instructor6'].some(k => (data as any)[k] !== undefined)) {
+    const prev = await getDoc(docRef).then(s => s.data()).catch(() => null);
+    payload = await withCourseInstructorAccounts({ ...data, instructorEmails: { ...(prev?.instructorEmails || {}), ...((data as any).instructorEmails || {}) } });
+  }
+  await setDoc(docRef, cleanUndefined(payload), { merge: true });
 }
 
 export async function deleteAfterschoolCourse(courseId: string): Promise<void> {
@@ -841,7 +853,9 @@ export async function saveAfterschoolCoursesBatch(courses: import('@/lib/aftersc
   try {
     const batch = writeBatch(getDb());
     const colRef = collection(getDb(), 'afterschool_courses');
-    courses.forEach((course) => {
+    // 강사 칸마다 시스템 교직원 계정 연결
+    const linkedCourses = await Promise.all(courses.map(course => withCourseInstructorAccounts(course)));
+    linkedCourses.forEach((course) => {
       const docRef = doc(colRef, course.id);
       batch.set(docRef, cleanUndefined(course));
     });

@@ -111,6 +111,15 @@ export async function saveUserProfile(userId: string, email: string, profileData
     const finalProfileSnap = await getDoc(userProfileRef);
     const finalData = finalProfileSnap.data() as UserProfile;
 
+    // 교직원 이름이 바뀌면 시스템 설정 기준으로 스쿨버스 교사·방과후 강사 이름도 함께 바꾼다
+    const prevName = String((docSnap.data() as any)?.name || '').trim();
+    const nextName = String(finalData?.name || '').trim();
+    if (nextName && prevName !== nextName && isFacultyMember({ ...finalData, email: finalProfileSnap.id })) {
+      import('@/lib/teachers/teacherRegistry')
+        .then(({ propagateTeacherProfile }) => propagateTeacherProfile(finalProfileSnap.id, nextName))
+        .catch((err) => console.warn('[UserService] 교직원 이름 반영 실패:', err));
+    }
+
     return { 
       success: true, 
       profile: { ...finalData, email: finalProfileSnap.id, uid: finalData.uid || userId }
