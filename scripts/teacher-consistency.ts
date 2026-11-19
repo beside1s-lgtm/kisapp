@@ -62,7 +62,7 @@ const INSTRUCTOR_FIELDS = ['instructorName', 'instructor2', 'instructor3', 'inst
     snap.docs.forEach((d: any) => {
       const b = d.data();
       const r = T.resolveTeacher({ email: b.email, name: b.name }, idx);
-      if (!r.email) return void unmatched.push(`버스 ${busCols[i]} ${b.name}${r.reason === 'ambiguous' ? ' (동명이인: ' + r.candidates.join(',') + ')' : ''}`);
+      if (!r.email) return void unmatched.push(`버스 ${busCols[i]} ${b.name}${'reason' in r && r.reason === 'ambiguous' ? ' (동명이인: ' + r.candidates.join(',') + ')' : ''}`);
       const sysName = idx.byEmail.get(r.email)?.name;
       const patch: any = {};
       if (b.email !== r.email) patch.email = r.email;
