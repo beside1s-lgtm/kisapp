@@ -16,7 +16,8 @@ import { Eraser, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
 import { compressImage } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { getDb } from '@/lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, query, setDoc, where } from 'firebase/firestore';
+import { findTeacherEmail, updateCachedSignature } from '@/lib/teachers/teacherRegistry';
 
 interface SignatureRegisterModalProps {
   open: boolean;
@@ -97,26 +98,20 @@ export function SignatureRegisterModal({
 
     setIsSaving(true);
     try {
-      // 1. 이메일이 있거나 users 컬렉션에서 교사 이름으로 프로필 업데이트
-      const targetEmail = teacherEmail.trim().toLowerCase();
+      // 1. 시스템 설정(사용자 관리)의 그 강사 계정에 서명 저장 (강좌에 연결된 이메일 → 없으면 이름으로 찾기)
+      const targetEmail = teacherEmail.trim().toLowerCase() || (await findTeacherEmail({ name: teacherName }));
       if (targetEmail) {
         const userRef = doc(getDb(), 'users', targetEmail);
         await setDoc(userRef, { signature: finalSignature, updatedAt: new Date().toISOString() }, { merge: true });
       }
+      updateCachedSignature(targetEmail, teacherName, finalSignature);
 
-      // 2. 강좌별 서명 저장 (결재 문서가 있는 경우를 대비)
+      // 2. 이미 상신된 이 강좌의 증빙서류에도 이 강사 칸 서명 반영
       if (courseId) {
-        const approvalDocRef = doc(getDb(), 'afterschool_approval_docs', courseId);
-        const snap = await getDoc(approvalDocRef);
-        if (snap.exists()) {
-          const currentSignatures = snap.data()?.instructorSignatures || {};
-          await setDoc(approvalDocRef, {
-            instructorSignatures: {
-              ...currentSignatures,
-              [teacherName]: finalSignature
-            }
-          }, { merge: true });
-        }
+        const snap = await getDocs(query(collection(getDb(), 'afterschool_approval_docs'), where('courseId', '==', courseId)));
+        await Promise.all(snap.docs.map((d) =>
+          setDoc(d.ref, { instructorSignatures: { [teacherName.trim()]: finalSignature } }, { merge: true })
+        ));
       }
 
       toast({

@@ -24,8 +24,35 @@ export const BUS_TEACHER_COLLECTIONS = ['teachers', 'afterSchoolTeachers', 'satu
 export const COURSE_INSTRUCTOR_FIELDS = ['instructorName', 'instructor2', 'instructor3', 'instructor4', 'instructor5', 'instructor6'] as const;
 
 const CACHE_TTL_MS = 60_000;
-let cache: { at: number; index: TeacherIndex; list: TeacherLite[] } | null = null;
+/** 서명(도장) 이미지: 계정 이메일 → 이미지, 이름(공백 무시) → 이미지 (같은 이름이 여럿이면 이름으로는 찾지 않음) */
+export interface TeacherSignatureBook {
+  index: TeacherIndex;
+  sigByEmail: Map<string, string>;
+  sigByName: Map<string, string>;
+}
+
+let cache: { at: number; index: TeacherIndex; list: TeacherLite[]; sigByEmail: Map<string, string>; sigByName: Map<string, string> } | null = null;
 let inflight: Promise<TeacherIndex> | null = null;
+
+function buildSignatureMaps(users: Array<Record<string, any>>) {
+  const sigByEmail = new Map<string, string>();
+  const nameSigs = new Map<string, Set<string>>();
+  const nameCount = new Map<string, number>();
+  users.forEach((u) => {
+    const nameKey = normalizeTeacherName(u.name);
+    if (nameKey) nameCount.set(nameKey, (nameCount.get(nameKey) || 0) + 1);
+    const sig = typeof u.signature === 'string' ? u.signature.trim() : '';
+    if (!sig) return;
+    const email = normalizeTeacherEmail(u.email || u.id);
+    if (email) sigByEmail.set(email, sig);
+    if (nameKey) nameSigs.set(nameKey, (nameSigs.get(nameKey) || new Set()).add(sig));
+  });
+  const sigByName = new Map<string, string>();
+  nameSigs.forEach((set, k) => {
+    if (set.size === 1 && nameCount.get(k) === 1) sigByName.set(k, Array.from(set)[0]);
+  });
+  return { sigByEmail, sigByName };
+}
 
 /** 시스템 사용자 중 교직원만 추려 TeacherLite로 (교직원 판정은 userService.isFacultyMember) */
 export function toFacultyList(
@@ -47,9 +74,10 @@ export async function getTeacherIndex(force = false): Promise<TeacherIndex> {
       import('@/lib/services/userService'),
       getDocs(collection(getDb(), 'users')),
     ]);
-    const list = toFacultyList(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })), isFacultyMember);
+    const users = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+    const list = toFacultyList(users, isFacultyMember);
     const index = buildTeacherIndex(list);
-    cache = { at: Date.now(), index, list };
+    cache = { at: Date.now(), index, list, ...buildSignatureMaps(users) };
     return index;
   })().finally(() => {
     inflight = null;
@@ -63,7 +91,60 @@ export function updateCachedTeacher(t: TeacherLite): void {
   const email = normalizeTeacherEmail(t.email);
   const list = cache.list.filter((x) => x.email !== email);
   list.push({ ...(cache.index.byEmail.get(email) || {}), ...t, email });
-  cache = { at: cache.at, index: buildTeacherIndex(list), list };
+  cache = { ...cache, index: buildTeacherIndex(list), list };
+}
+
+/** 시스템 계정의 서명(도장) 이미지 모음 (교직원 색인과 같은 캐시) */
+export async function getTeacherSignatureBook(force = false): Promise<TeacherSignatureBook> {
+  const index = await getTeacherIndex(force);
+  return { index, sigByEmail: cache?.sigByEmail || new Map(), sigByName: cache?.sigByName || new Map() };
+}
+
+/** 서명을 새로 등록한 직후: 캐시에 바로 반영 */
+export function updateCachedSignature(email: string, name: string, signature: string): void {
+  if (!cache) return;
+  const em = normalizeTeacherEmail(email);
+  if (em) cache.sigByEmail.set(em, signature);
+  const nk = normalizeTeacherName(name);
+  if (nk && !em) cache.sigByName.set(nk, signature);
+}
+
+/** 강좌 강사 칸에서 이 이름에 연결된 시스템 계정 이메일 (instructorEmails) */
+export function courseInstructorEmail(course: Record<string, any> | null | undefined, name: unknown): string {
+  const nk = normalizeTeacherName(name);
+  if (!course || !nk) return '';
+  const f = COURSE_INSTRUCTOR_FIELDS.find((k) => normalizeTeacherName(course[k]) === nk);
+  return (f && normalizeTeacherEmail(course.instructorEmails?.[f])) || '';
+}
+
+/** 이름(+연결 이메일)으로 시스템 계정의 서명 이미지를 찾는다. 없으면 '' */
+export function findTeacherSignature(book: TeacherSignatureBook | null | undefined, name: unknown, email?: unknown): string {
+  if (!book) return '';
+  const em = normalizeTeacherEmail(email) || resolveTeacher({ name }, book.index).email || '';
+  return (em && book.sigByEmail.get(em)) || book.sigByName.get(normalizeTeacherName(name)) || '';
+}
+
+/**
+ * 증빙서류(출석부·강사출근부) 상신 시: 강좌의 모든 강사와 보결 강사의 서명 이미지를 이름별로 모은다.
+ * (상신한 사람과 관계없이 각 강사 본인의 시스템 계정 서명이 들어간다)
+ */
+export async function collectCourseSignatures(
+  course: Record<string, any>,
+  substitutes: Array<{ courseId?: string; substituteInstructor?: string; isAbsence?: boolean }> = []
+): Promise<Record<string, string>> {
+  const book = await getTeacherSignatureBook(true);
+  const names = new Set<string>();
+  COURSE_INSTRUCTOR_FIELDS.forEach((f) => { const n = String(course[f] || '').trim(); if (n) names.add(n); });
+  (course.assistantTeachers || []).forEach((n: unknown) => { const v = String(n || '').trim(); if (v) names.add(v); });
+  substitutes
+    .filter((s) => s.courseId === course.id && !s.isAbsence)
+    .forEach((s) => { const v = String(s.substituteInstructor || '').trim(); if (v && v !== '결근') names.add(v); });
+  const out: Record<string, string> = {};
+  names.forEach((n) => {
+    const sig = findTeacherSignature(book, n, courseInstructorEmail(course, n));
+    if (sig) out[n] = sig;
+  });
+  return out;
 }
 
 /** 이름(또는 이메일)으로 시스템 교직원 이메일을 찾는다. 한 명으로 특정되지 않으면 '' */

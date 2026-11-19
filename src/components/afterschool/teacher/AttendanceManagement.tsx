@@ -12,7 +12,7 @@ import { getTeacherApplySettings, saveTeacherApplySettings, onTeacherApplySettin
 import { onAllHomeroomAttendanceByDateUpdate, type HomeroomAttendanceRecord } from '@/lib/services/homeroomAttendanceSync';
 import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
 import type { DocConfig, UserProfile } from '@/lib/types';
-import { getUsersDirectory } from '@/lib/services/userService';
+import { collectCourseSignatures, courseInstructorEmail, findTeacherSignature, getTeacherSignatureBook, type TeacherSignatureBook } from '@/lib/teachers/teacherRegistry';
 import { SignatureRegisterModal } from './SignatureRegisterModal';
 import { OfficialAttendanceSheet } from './OfficialAttendanceSheet';
 import { OfficialWorkRegister } from './OfficialWorkRegister';
@@ -297,13 +297,11 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   const [subReason, setSubReason] = useState<string>('');
   const [subRecordType, setSubRecordType] = useState<'SUBSTITUTE' | 'ABSENCE'>('SUBSTITUTE');
   const [subTargetInstructor, setSubTargetInstructor] = useState<string>('');
-  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [sigBook, setSigBook] = useState<TeacherSignatureBook | null>(null);
   const [sigModalTarget, setSigModalTarget] = useState<{ teacherName: string; teacherEmail?: string; courseId?: string } | null>(null);
 
   useEffect(() => {
-    getUsersDirectory().then(users => {
-      if (users && Array.isArray(users)) setAllUsers(users as UserProfile[]);
-    }).catch(console.error);
+    getTeacherSignatureBook().then(setSigBook).catch(console.error);
 
     getTeacherApplySettings().then(settings => {
       if (settings?.afterschoolStageStatus) {
@@ -428,17 +426,11 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
   const getInstructorSeal = (instName: string): string => {
     if (!instName) return '';
     const cleanName = instName.trim();
+    // 1) 상신 때 서류에 담긴 강사별 서명  2) 시스템 설정(사용자 관리)에 등록된 그 강사 본인의 서명
+    //    (상신한 사람·로그인한 사람의 도장을 다른 강사 칸에 넣지 않는다)
     const docSigs = (targetApprovalDoc as any)?.instructorSignatures;
     if (docSigs && docSigs[cleanName]) return docSigs[cleanName];
-    if (currentCourse?.instructorName === cleanName && (targetApprovalDoc as any)?.instructorSignature) {
-      return (targetApprovalDoc as any).instructorSignature;
-    }
-    if (profile?.name === cleanName && profile?.signature) {
-      return profile.signature;
-    }
-    const u = allUsers.find(user => user.name === cleanName);
-    if (u?.signature) return u.signature;
-    return '';
+    return findTeacherSignature(sigBook, cleanName, courseInstructorEmail(currentCourse, cleanName));
   };
 
   const instructorSignature = getInstructorSeal(currentCourse?.instructorName || '');
@@ -940,12 +932,18 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
       alert('이미 해당 강좌의 서류가 전송 대기 중입니다.');
       return;
     }
+    // 강좌의 모든 강사·보결 강사 서명을 각자 시스템 계정에서 가져와 서류에 담는다
+    const instructorSignatures = await collectCourseSignatures(currentCourse, substituteRecords).catch((err) => {
+      console.warn('[ApprovalDoc] 강사 서명 조회 실패:', err);
+      return {} as Record<string, string>;
+    });
     const newDoc: SubmittedApprovalDoc = {
       id: `doc_${Date.now()}`,
       courseId: currentCourse.id,
       courseTitle: currentCourse.title,
       instructorName: currentCourse.instructorName || '김강사',
-      instructorSignature: profile?.signature || '',
+      instructorSignature: instructorSignatures[(currentCourse.instructorName || '').trim()] || '',
+      instructorSignatures,
       submittedAt: new Date().toLocaleString('ko-KR'),
       selected: true,
       status: 'PENDING',
@@ -1660,7 +1658,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
               isManagerApproved={isManagerApproved}
               isVicePrincipalApproved={isVicePrincipalApproved}
               onRequestSignature={(teacherName, courseId) => {
-                setSigModalTarget({ teacherName, courseId });
+                setSigModalTarget({ teacherName, courseId, teacherEmail: courseInstructorEmail(currentCourse, teacherName) });
               }}
               onManageSubstitute={(day, targetInst) => {
                 handleOpenSubstituteModal(day as ScheduleDay, targetInst);
@@ -1896,7 +1894,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
           }}
           getInstructorSeal={getInstructorSeal}
           onRequestSignature={(teacherName, courseId) => {
-            setSigModalTarget({ teacherName, courseId });
+            setSigModalTarget({ teacherName, courseId, teacherEmail: courseInstructorEmail(currentCourse, teacherName) });
           }}
           onClose={() => setIsPrintModalOpen(false)}
         />
@@ -1915,7 +1913,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
           isManagerApproved={isManagerApproved}
           isVicePrincipalApproved={isVicePrincipalApproved}
           onRequestSignature={(teacherName, courseId) => {
-            setSigModalTarget({ teacherName, courseId });
+            setSigModalTarget({ teacherName, courseId, teacherEmail: courseInstructorEmail(currentCourse, teacherName) });
           }}
           onManageSubstitute={(day, targetInst) => {
             handleOpenSubstituteModal(day as ScheduleDay, targetInst);
@@ -1933,12 +1931,8 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
           teacherName={sigModalTarget.teacherName}
           teacherEmail={sigModalTarget.teacherEmail}
           courseId={sigModalTarget.courseId}
-          onSuccess={(savedSig) => {
-            setAllUsers((prev) =>
-              prev.map((u) =>
-                u.name === sigModalTarget.teacherName ? { ...u, signature: savedSig } : u
-              )
-            );
+          onSuccess={() => {
+            getTeacherSignatureBook().then(setSigBook).catch(console.error);
           }}
         />
       )}
