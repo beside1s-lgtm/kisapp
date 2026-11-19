@@ -1,25 +1,48 @@
 'use client';
 
 import type { Dispatch, SetStateAction } from 'react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useAuth } from '@/hooks/use-auth';
+import { HandoverAdminModal } from '@/components/handover/HandoverAdminModal';
+import { CustomFeatureRequestManagerModal } from '@/components/custom-duty/CustomFeatureRequestManagerModal';
+import { onCustomFeatureRequestsUpdate, getCustomDutyHref, isBuiltInOrExcludedDutyName } from '@/lib/services/customDutyService';
+import type { CustomFeatureUpgradeRequest } from '@/lib/types/customDuty';
+import { FileSpreadsheet, Layers } from 'lucide-react';
 import {
   Briefcase,
   Building2,
   Download,
+  ExternalLink,
   FileUp,
+  Folder,
   FolderKanban,
   GraduationCap,
+  HardDrive,
   Info,
   Loader2,
   PlusCircle,
+  RefreshCw,
   RotateCcw,
   Save,
+  ShieldAlert,
   ShieldCheck,
+  Sparkles,
   Tag,
   Trash2,
   UserCheck,
   X,
+  AlertTriangle,
+  GitPullRequest,
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -39,10 +62,13 @@ import {
 import { TabsContent } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { syncAllUsersToOrgStructure } from '@/lib/services/userService';
+import { buildDepartmentSyncPlans } from '@/lib/drive/deptFolderMapping';
 import { SearchableUserSelect, DEFAULT_ROLE_PERMISSIONS } from '../settings-modal';
-import type { OrgStructure, UserProfile, CustomDutyRole, DutyRolePermission } from '@/lib/types';
+import type { OrgStructure, UserProfile, CustomDutyRole, DutyRolePermission, GoogleDriveConfig } from '@/lib/types';
+import { FacilitiesOrgTab } from './FacilitiesOrgTab';
+import { School } from 'lucide-react';
 
-export type OrgSubTab = 'leadership' | 'duties' | 'grades' | 'departments';
+export type OrgSubTab = 'leadership' | 'duties' | 'grades' | 'departments' | 'facilities';
 
 interface DuplicatePendingRow {
   grade: string;
@@ -116,13 +142,23 @@ export interface OrgSettingsTabProps {
   updateDeptHead: (deptId: string, email: string) => void;
   addDeptMember: (deptId: string, email: string) => void;
   removeDeptMember: (deptId: string, email: string) => void;
-  assignDutyToMember: (dutyKeyOrId: string, email: string, deptName?: string) => void;
+  assignDutyToMember: (dutyKeyOrId: string, email: string) => void;
   createAndAssignCustomDuty: (roleName: string, deptName: string, email?: string) => void;
   removeDutyFromMember: (dutyKeyOrId: string, email: string) => void;
   handleDeptFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleDeptUpload: () => void;
   handleDownloadDeptTemplate: () => void;
   selectedDeptFile: File | null;
+
+  // Google Drive 부서 폴더 동기화
+  googleDriveConfig?: GoogleDriveConfig;
+  selectedAcademicYear?: string;
+  setSelectedAcademicYear?: (value: string) => void;
+  academicYearOptions?: string[];
+  isSyncingFolders?: boolean;
+  onSyncDepartmentFolders?: (targetDeptNames?: string[], academicYear?: string) => Promise<void>;
+  autoOpenFeatureRequests?: boolean;
+  onConsumedAutoOpenFeatureRequests?: () => void;
 }
 
 export function OrgSettingsTab({
@@ -173,11 +209,172 @@ export function OrgSettingsTab({
   handleDeptUpload,
   handleDownloadDeptTemplate,
   selectedDeptFile,
+  googleDriveConfig,
+  selectedAcademicYear,
+  setSelectedAcademicYear,
+  academicYearOptions,
+  isSyncingFolders = false,
+  onSyncDepartmentFolders,
+  autoOpenFeatureRequests = false,
+  onConsumedAutoOpenFeatureRequests,
 }: OrgSettingsTabProps) {
+  const { profile: currentProfile } = useAuth();
+  const [isHandoverAdminModalOpen, setIsHandoverAdminModalOpen] = useState(false);
+  const [isFeatureRequestsModalOpen, setIsFeatureRequestsModalOpen] = useState(false);
+  const [customFeatureRequests, setCustomFeatureRequests] = useState<CustomFeatureUpgradeRequest[]>([]);
+
+  useEffect(() => {
+    const unsub = onCustomFeatureRequestsUpdate((list) => setCustomFeatureRequests(list));
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (autoOpenFeatureRequests) {
+      setIsFeatureRequestsModalOpen(true);
+      onConsumedAutoOpenFeatureRequests?.();
+    }
+  }, [autoOpenFeatureRequests, onConsumedAutoOpenFeatureRequests]);
+
+  const pendingFeatureRequestCount = useMemo(
+    () => customFeatureRequests.filter((r) => r.status === 'pending').length,
+    [customFeatureRequests]
+  );
+
+  // ─── 부서 관리: 후임 설정 모드 및 일괄 교체 상태 ───
+  const [successorMode, setSuccessorMode] = useState(false);
+  const [successorConfirmModalOpen, setSuccessorConfirmModalOpen] = useState(false);
+
+  // ─── 부서 관리: Google Drive 동기화 범위 선택 상태 ('__ALL__' = 전체 부서, 그 외 = 특정 부서명) ───
+  const [driveSyncScope, setDriveSyncScope] = useState<string>('__ALL__');
+
+  const plannedDeptFolders = useMemo(() => buildDepartmentSyncPlans(org), [org]);
+  const fallbackAcademicYear = useMemo(() => {
+    const now = new Date();
+    return String(now.getMonth() + 1 >= 3 ? now.getFullYear() : now.getFullYear() - 1);
+  }, []);
+  const activeSyncYear = selectedAcademicYear || fallbackAcademicYear;
+  const currentYearDriveFolders = googleDriveConfig?.yearlyFolders?.[activeSyncYear];
+
   const activeDept = useMemo(() => {
     if (!org.departments || org.departments.length === 0) return null;
     return org.departments.find(d => d.id === selectedDeptId) || org.departments[0];
   }, [org.departments, selectedDeptId]);
+
+  // 후임 설정 모드 토글 핸들러
+  const handleToggleSuccessorMode = (nextChecked: boolean) => {
+    if (nextChecked) {
+      setSuccessorMode(true);
+    } else {
+      // 해제 시, 현재 부서에 후임자가 지정되어 있으면 확인 팝업 오픈
+      const hasSuccessor = Boolean(
+        activeDept?.successorHeadEmail ||
+        (activeDept?.memberSuccessors && Object.keys(activeDept.memberSuccessors).length > 0)
+      );
+      if (hasSuccessor) {
+        setSuccessorConfirmModalOpen(true);
+      } else {
+        setSuccessorMode(false);
+      }
+    }
+  };
+
+  // 귀임 교원(올해 학교를 떠나는 교원) 지정/해제 — 인계서 작성 시 한국 주소·원소속·재직기간 기재 항목이 추가됨
+  const isReturningEmail = (email?: string | null) => {
+    const key = (email || '').trim().toLowerCase();
+    return Boolean(key) && (org.returningTeacherEmails || []).some(e => (e || '').trim().toLowerCase() === key);
+  };
+  const toggleReturningTeacher = (email: string, checked: boolean) => {
+    const key = (email || '').trim().toLowerCase();
+    if (!key) return;
+    setOrg(prev => {
+      const rest = (prev.returningTeacherEmails || []).filter(e => (e || '').trim().toLowerCase() !== key);
+      return { ...prev, returningTeacherEmails: checked ? [...rest, key] : rest };
+    });
+  };
+  const renderReturningCheckbox = (email?: string | null, idSuffix?: string) => {
+    if (!successorMode || !email) return null;
+    const checked = isReturningEmail(email);
+    const id = `returning-${idSuffix || email}`;
+    return (
+      <label
+        htmlFor={id}
+        className={`inline-flex items-center gap-1 shrink-0 cursor-pointer select-none rounded border px-1 py-0 text-[10px] font-bold ${
+          checked ? 'bg-sky-100 border-sky-400 text-sky-800' : 'bg-white border-slate-300 text-slate-500'
+        }`}
+        title="올해 학교를 떠나는 귀임 교원이면 체크하세요. 인계서 작성 시 한국 주소·원소속·재직기간 입력 칸이 추가됩니다."
+      >
+        <input
+          type="checkbox"
+          id={id}
+          checked={checked}
+          onChange={(e) => toggleReturningTeacher(email, e.target.checked)}
+          className="w-3 h-3 rounded border-sky-400 text-sky-600 cursor-pointer"
+        />
+        귀임
+      </label>
+    );
+  };
+
+  // 부장 후임자 지정
+  const updateDeptSuccessorHead = (deptId: string, successorEmail: string) => {
+    setOrg(prev => ({
+      ...prev,
+      departments: (prev.departments || []).map(d =>
+        d.id === deptId ? { ...d, successorHeadEmail: successorEmail || null } : d
+      ),
+    }));
+  };
+
+  // 소속 부원 후임자 지정
+  const updateDeptMemberSuccessor = (deptId: string, currentEmail: string, successorEmail: string) => {
+    setOrg(prev => ({
+      ...prev,
+      departments: (prev.departments || []).map(d => {
+        if (d.id !== deptId) return d;
+        const currentMap = { ...(d.memberSuccessors || {}) };
+        if (!successorEmail) {
+          delete currentMap[currentEmail];
+        } else {
+          currentMap[currentEmail] = successorEmail;
+        }
+        return { ...d, memberSuccessors: currentMap };
+      }),
+    }));
+  };
+
+  // 후임자로 일괄 교체 실행
+  const handleConfirmApplySuccessors = () => {
+    if (!activeDept) return;
+    setOrg(prev => ({
+      ...prev,
+      departments: (prev.departments || []).map(d => {
+        if (d.id !== activeDept.id) return d;
+        const newHead = d.successorHeadEmail ? d.successorHeadEmail : d.headEmail;
+        const newMembers = d.memberEmails.map(m => {
+          return d.memberSuccessors?.[m] || m;
+        });
+        return {
+          ...d,
+          headEmail: newHead,
+          memberEmails: Array.from(new Set(newMembers)),
+          successorHeadEmail: null,
+          memberSuccessors: {},
+        };
+      }),
+    }));
+    setSuccessorMode(false);
+    setSuccessorConfirmModalOpen(false);
+    toast({
+      title: '후임자로 교체 완료',
+      description: `${activeDept.name}의 부장 교사 및 부원이 지정된 후임자로 교체되었습니다. 하단 조직도 저장을 눌러 최종 반영하세요.`,
+    });
+  };
+
+  // 교체하지 않고 그냥 해제
+  const handleCancelApplySuccessors = () => {
+    setSuccessorMode(false);
+    setSuccessorConfirmModalOpen(false);
+  };
 
   return (
     <TabsContent value="org" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
@@ -232,6 +429,18 @@ export function OrgSettingsTab({
             >
               <FolderKanban className="w-3.5 h-3.5" />
               부서 관리
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrgSubTab('facilities')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                orgSubTab === 'facilities'
+                  ? 'bg-white text-[#2471B2] shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <School className="w-3.5 h-3.5" />
+              시설 및 학급
             </button>
           </div>
 
@@ -469,78 +678,176 @@ export function OrgSettingsTab({
         {orgSubTab === 'duties' && (
           <div className="space-y-4">
             {/* 새 업무 담당 직책 추가 바 (소속 부서 선택 연동) */}
-            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-2 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-indigo-950 flex items-center gap-1">
-                        <PlusCircle className="w-3.5 h-3.5 text-indigo-600" />
-                        새 업무 담당 직책 추가
-                      </span>
-                      <p className="text-[11px] text-indigo-700">학교 내 업무/직책을 직접 생성하고, 어느 부서의 소관 업무인지 연결합니다.</p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1.5 w-full lg:w-auto">
-                      <Input
-                        placeholder="직책명 (예: 영재교육, 정보보안)"
-                        value={newCustomDutyRoleName}
-                        onChange={e => setNewCustomDutyRoleName(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            if (!newCustomDutyRoleName.trim()) return;
-                            const newRole: CustomDutyRole = {
-                              id: Date.now().toString(),
-                              roleName: newCustomDutyRoleName.trim(),
-                              deptName: newCustomDutyDept !== 'unassigned' ? newCustomDutyDept : undefined,
-                              teacherEmails: []
-                            };
-                            updateAndSaveOrg(p => ({ ...p, customDutyRoles: [...(p.customDutyRoles || []), newRole] }), `"${newRole.roleName}" 직책이 추가되었습니다.`);
-                            setNewCustomDutyRoleName('');
-                          }
-                        }}
-                        className="h-8 text-xs bg-white border-indigo-200 w-40 sm:w-48"
-                      />
+            <div className="flex flex-col gap-2.5 p-3.5 bg-indigo-50/50 rounded-xl border border-indigo-100 shadow-2xs">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-bold text-indigo-950 flex items-center gap-1">
+                    <PlusCircle className="w-3.5 h-3.5 text-indigo-600" />
+                    새 업무 담당 직책 추가
+                  </span>
+                  <p className="text-[11px] text-indigo-700">학교 내 업무/직책을 직접 생성하고, 어느 부서의 소관 업무인지 연결합니다.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 w-full lg:w-auto">
+                  <Input
+                    placeholder="직책명 (예: 안전지도 담당자, 영재교육)"
+                    value={newCustomDutyRoleName}
+                    onChange={e => setNewCustomDutyRoleName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (!newCustomDutyRoleName.trim()) return;
+                        const newRole: CustomDutyRole = {
+                          id: Date.now().toString(),
+                          roleName: newCustomDutyRoleName.trim(),
+                          deptName: newCustomDutyDept !== 'unassigned' ? newCustomDutyDept : undefined,
+                          teacherEmails: []
+                        };
+                        updateAndSaveOrg(p => ({ ...p, customDutyRoles: [...(p.customDutyRoles || []), newRole] }), `"${newRole.roleName}" 직책이 추가되었습니다.`);
+                        setNewCustomDutyRoleName('');
+                      }
+                    }}
+                    className="h-8 text-xs bg-white border-indigo-200 w-44 sm:w-52"
+                  />
 
-                      {/* 소속 부서 선택 드롭다운 */}
-                      <Select value={newCustomDutyDept} onValueChange={setNewCustomDutyDept}>
-                        <SelectTrigger className="h-8 text-xs bg-white border-indigo-200 w-36">
-                          <SelectValue placeholder="소속 부서 선택" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="unassigned" className="text-xs font-semibold text-slate-500">소속 부서 없음 (직속)</SelectItem>
-                          {(org.departments || []).map(d => (
-                            <SelectItem key={d.id} value={d.name} className="text-xs font-medium">
-                              {d.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  {/* 소속 부서 선택 드롭다운 */}
+                  <Select value={newCustomDutyDept} onValueChange={setNewCustomDutyDept}>
+                    <SelectTrigger className="h-8 text-xs bg-white border-indigo-200 w-36">
+                      <SelectValue placeholder="소속 부서 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned" className="text-xs font-semibold text-slate-500">소속 부서 없음 (직속)</SelectItem>
+                      {(org.departments || []).map(d => (
+                        <SelectItem key={d.id} value={d.name} className="text-xs font-medium">
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => {
-                          if (!newCustomDutyRoleName.trim()) {
-                            toast({ variant: 'destructive', title: '직책명 입력', description: '추가할 직책명을 입력하세요.' });
-                            return;
-                          }
-                          const newRole: CustomDutyRole = {
-                            id: Date.now().toString(),
-                            roleName: newCustomDutyRoleName.trim(),
-                            deptName: newCustomDutyDept !== 'unassigned' ? newCustomDutyDept : undefined,
-                            teacherEmails: []
-                          };
-                          updateAndSaveOrg(p => ({ ...p, customDutyRoles: [...(p.customDutyRoles || []), newRole] }), `"${newRole.roleName}" 직책이 추가되었습니다.`);
-                          setNewCustomDutyRoleName('');
-                        }}
-                        className="h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
-                      >
-                        <PlusCircle className="w-3.5 h-3.5 mr-1" />
-                        직책 추가
-                      </Button>
-                    </div>
-                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      if (!newCustomDutyRoleName.trim()) {
+                        toast({ variant: 'destructive', title: '직책명 입력', description: '추가할 직책명을 입력하세요.' });
+                        return;
+                      }
+                      const newRole: CustomDutyRole = {
+                        id: Date.now().toString(),
+                        roleName: newCustomDutyRoleName.trim(),
+                        deptName: newCustomDutyDept !== 'unassigned' ? newCustomDutyDept : undefined,
+                        teacherEmails: []
+                      };
+                      updateAndSaveOrg(p => ({ ...p, customDutyRoles: [...(p.customDutyRoles || []), newRole] }), `"${newRole.roleName}" 직책이 추가되었습니다.`);
+                      setNewCustomDutyRoleName('');
+                    }}
+                    className="h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5 mr-1" />
+                    직책 추가
+                  </Button>
+                </div>
+              </div>
 
-                  {/* 기본 7종 업무 직책 카드 그리드 (소속 부서 지정 + 권한 설정) */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* 추천 업무 직책 빠른 추가 칩 */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-indigo-100/70">
+                <span className="text-[11px] text-indigo-900 font-bold flex items-center gap-1 shrink-0">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  추천 직책 바로 등록:
+                </span>
+                {[
+                  { name: '학년 말 인수인계', highlight: true, desc: '학년 말 교원 업무 인수인계 및 아카이빙 총괄' },
+                  { name: '안전지도 담당자', highlight: true, desc: '교내외 순찰 및 안전사고 대장 관리' },
+                  { name: '영재교육 담당자', highlight: false, desc: '영재학급 및 특별수업 운영' },
+                  { name: '정보보안 담당자', highlight: false, desc: '개인정보 및 전산망 보안' },
+                  { name: '학적/출결 담당자', highlight: false, desc: '전교생 학적 및 출결 총괄' },
+                ].map((preset) => {
+                  const isAlreadyAdded = (org.customDutyRoles || []).some(r => r.roleName === preset.name);
+                  return (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      disabled={isAlreadyAdded}
+                      onClick={() => {
+                        if (isAlreadyAdded) return;
+                        const newRole: CustomDutyRole = {
+                          id: Date.now().toString(),
+                          roleName: preset.name,
+                          deptName: newCustomDutyDept !== 'unassigned' ? newCustomDutyDept : undefined,
+                          teacherEmails: [],
+                          permissions: preset.name === '안전지도 담당자' 
+                            ? { features: ['safety_admin'], documents: ['doc_absence', 'doc_fieldtrip'] } 
+                            : { features: [], documents: [] }
+                        };
+                        updateAndSaveOrg(
+                          p => ({ ...p, customDutyRoles: [...(p.customDutyRoles || []), newRole] }),
+                          `"${newRole.roleName}" 직책이 추가되었습니다.`
+                        );
+                        toast({
+                          title: '직책 추가 완료',
+                          description: `"${preset.name}" 직책이 추가되었습니다. 교원을 배정해주세요.`,
+                        });
+                      }}
+                      className={cn(
+                        "text-[10px] sm:text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all border flex items-center gap-1 cursor-pointer",
+                        isAlreadyAdded
+                          ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60"
+                          : preset.highlight
+                            ? "bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-300 shadow-2xs font-black animate-pulse"
+                            : "bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-200 hover:border-indigo-300"
+                      )}
+                      title={isAlreadyAdded ? '이미 등록된 직책입니다' : preset.desc}
+                    >
+                      <PlusCircle className="w-3 h-3" />
+                      <span>{preset.name}</span>
+                      {isAlreadyAdded && <span className="text-[9px] text-slate-400 font-normal">(등록됨)</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 학년 말 인수인계 및 교원 업무 분장 대시보드 바로가기 바 */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 bg-gradient-to-r from-indigo-50/90 via-sky-50/50 to-indigo-50/90 rounded-xl border border-indigo-200 shadow-2xs">
+              <div className="space-y-0.5">
+                <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                  <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
+                  학년 말 인수인계 & 전체 교원 업무 배정 총괄 관리
+                </span>
+                <p className="text-[11px] text-indigo-800">
+                  전 교원 대상 인수인계 요청 팝업 일괄 발송, 교원별 주/부 업무 매핑 및 새 학년도 인수자 자동 배정을 총괄합니다.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsFeatureRequestsModalOpen(true)}
+                  className="h-8 text-xs font-bold bg-white hover:bg-indigo-50 border-indigo-300 text-indigo-800 shadow-2xs gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>업무기능 추가 요청 관리</span>
+                  {pendingFeatureRequestCount > 0 && (
+                    <Badge className="bg-rose-600 text-white text-[9px] px-1.5 py-0 font-extrabold">
+                      {pendingFeatureRequestCount}
+                    </Badge>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setIsHandoverAdminModalOpen(true)}
+                  className="h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs gap-1"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>인수인계 대시보드 열기</span>
+                </Button>
+              </div>
+            </div>
+
+                  {/* 기본 업무 직책 카드 그리드 (소속 부서 지정 + 권한 설정) */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     {[
                       {
                         key: 'pe',
@@ -549,6 +856,7 @@ export function OrgSettingsTab({
                         borderClass: 'border-indigo-200',
                         bgClass: 'bg-indigo-50/40',
                         badgeClass: 'bg-indigo-100 text-indigo-800',
+                        href: '/teacher/pe',
                       },
                       {
                         key: 'health',
@@ -557,6 +865,16 @@ export function OrgSettingsTab({
                         borderClass: 'border-emerald-200',
                         bgClass: 'bg-emerald-50/40',
                         badgeClass: 'bg-emerald-100 text-emerald-800',
+                        href: '/teacher/health',
+                      },
+                      {
+                        key: 'safety',
+                        title: '안전지도 담당자 / 학생 안전',
+                        colorClass: 'text-rose-800',
+                        borderClass: 'border-rose-200',
+                        bgClass: 'bg-rose-50/40',
+                        badgeClass: 'bg-rose-100 text-rose-800',
+                        href: '/teacher/safety',
                       },
                       {
                         key: 'afterschool',
@@ -565,6 +883,7 @@ export function OrgSettingsTab({
                         borderClass: 'border-violet-200',
                         bgClass: 'bg-violet-50/40',
                         badgeClass: 'bg-violet-100 text-violet-800',
+                        href: '/teacher/afterschool',
                       },
                       {
                         key: 'bus',
@@ -573,6 +892,7 @@ export function OrgSettingsTab({
                         borderClass: 'border-amber-200',
                         bgClass: 'bg-amber-50/40',
                         badgeClass: 'bg-amber-100 text-amber-800',
+                        href: '/teacher/bus',
                       },
                       {
                         key: 'system',
@@ -589,6 +909,7 @@ export function OrgSettingsTab({
                         borderClass: 'border-teal-200',
                         bgClass: 'bg-teal-50/40',
                         badgeClass: 'bg-teal-100 text-teal-800',
+                        href: getCustomDutyHref('특수교육 / 도움반'),
                       },
                       {
                         key: 'librarian',
@@ -597,6 +918,16 @@ export function OrgSettingsTab({
                         borderClass: 'border-slate-200',
                         bgClass: 'bg-slate-50/40',
                         badgeClass: 'bg-slate-100 text-slate-800',
+                        href: getCustomDutyHref('도서관 / 사서교사'),
+                      },
+                      {
+                        key: 'handover',
+                        title: '학년 말 인수인계 담당',
+                        colorClass: 'text-indigo-800',
+                        borderClass: 'border-indigo-300',
+                        bgClass: 'bg-indigo-50/60',
+                        badgeClass: 'bg-indigo-100 text-indigo-800',
+                        href: '/teacher/handover',
                       },
                     ].map(item => {
                       const assignedDept = org.dutyRoleDepts?.[item.key];
@@ -655,17 +986,29 @@ export function OrgSettingsTab({
                             </div>
                           </div>
 
-                          {/* 권한 설정 버튼 */}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openPermissionModal(item.key, item.title, rolePerms)}
-                            className="h-7 text-xs font-bold w-full bg-white hover:bg-slate-50 border-slate-200 text-slate-700"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5 mr-1 text-indigo-600" />
-                            권한 설정
-                          </Button>
+                          {/* 하단 액션: 권한 설정 + 업무 관리 페이지 바로가기 */}
+                          <div className="flex items-center gap-1.5 pt-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openPermissionModal(item.key, item.title, rolePerms)}
+                              className="h-7 text-xs font-bold flex-1 bg-white hover:bg-slate-50 border-slate-200 text-slate-700"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+                              권한 설정
+                            </Button>
+                            {item.href && (
+                              <Link
+                                href={item.href}
+                                className="h-7 px-2 text-[10px] sm:text-[11px] font-bold inline-flex items-center justify-center rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shrink-0 transition-colors"
+                                title="해당 업무 관리 페이지로 바로 이동"
+                              >
+                                <ExternalLink className="w-3 h-3 mr-0.5 sm:mr-1 text-indigo-600" />
+                                업무 이동
+                              </Link>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -745,16 +1088,46 @@ export function OrgSettingsTab({
                                 </div>
                               </div>
 
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => openPermissionModal(role.id, role.roleName, rolePerms)}
-                                className="h-7 text-xs font-bold w-full bg-white hover:bg-slate-50 border-slate-200 text-slate-700"
-                              >
-                                <ShieldCheck className="w-3.5 h-3.5 mr-1 text-indigo-600" />
-                                권한 설정
-                              </Button>
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openPermissionModal(role.id, role.roleName, rolePerms)}
+                                  className="h-7 text-xs font-bold flex-1 bg-white hover:bg-slate-50 border-slate-200 text-slate-700"
+                                >
+                                  <ShieldCheck className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+                                  권한 설정
+                                </Button>
+                                {(() => {
+                                  const customHref = role.roleName.includes('안전')
+                                    ? '/teacher/safety'
+                                    : role.roleName.includes('체육')
+                                      ? '/teacher/pe'
+                                      : role.roleName.includes('보건')
+                                        ? '/teacher/health'
+                                        : role.roleName.includes('방과후')
+                                          ? '/teacher/afterschool'
+                                          : role.roleName.includes('버스')
+                                            ? '/teacher/bus'
+                                            : role.roleName.includes('인수인계')
+                                              ? '/teacher/handover'
+                                              : !isBuiltInOrExcludedDutyName(role.roleName)
+                                                ? getCustomDutyHref(role.roleName)
+                                                : null;
+                                  if (!customHref) return null;
+                                  return (
+                                    <Link
+                                      href={customHref}
+                                      className="h-7 px-2 text-[10px] sm:text-[11px] font-bold inline-flex items-center justify-center rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shrink-0 transition-colors"
+                                      title="해당 업무 관리 페이지로 바로 이동"
+                                    >
+                                      <ExternalLink className="w-3 h-3 mr-0.5 sm:mr-1 text-indigo-600" />
+                                      업무 이동
+                                    </Link>
+                                  );
+                                })()}
+                              </div>
                             </div>
                           );
                         })}
@@ -1297,6 +1670,27 @@ export function OrgSettingsTab({
                     전체 {(org.departments || []).length}개 부서 중 선택됨
                   </Badge>
                 )}
+
+                {/* 후임 설정 체크박스 */}
+                {activeDept && (
+                  <div className="flex items-center gap-1.5 ml-1.5 sm:ml-2 border-l border-indigo-200/80 pl-2 shrink-0">
+                    <input
+                      type="checkbox"
+                      id="successor-mode-check"
+                      checked={successorMode}
+                      onChange={(e) => handleToggleSuccessorMode(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <label htmlFor="successor-mode-check" className="text-xs font-bold text-indigo-950 cursor-pointer flex items-center gap-1 select-none">
+                      <span>후임 설정</span>
+                      {successorMode && (
+                        <span className="text-[9px] text-amber-800 bg-amber-100 font-black px-1 py-0.2 rounded border border-amber-300 animate-pulse">
+                          ON
+                        </span>
+                      )}
+                    </label>
+                  </div>
+                )}
               </div>
 
               {/* 우측: 새 부서 추가 인라인 폼 */}
@@ -1311,6 +1705,100 @@ export function OrgSettingsTab({
                 <Button onClick={addDepartment} size="sm" className="h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 px-2.5 shadow-2xs">
                   <PlusCircle className="w-3.5 h-3.5 mr-1" />
                   부서 추가
+                </Button>
+              </div>
+            </div>
+
+            {/* 상단 제어 바 2: Google Drive 부서별 / 전체 부서 동기화 바 */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 bg-slate-50/90 p-2 px-3 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <HardDrive className="w-3.5 h-3.5 text-indigo-600" />
+                  <span className="text-xs font-bold text-slate-800">Google Drive 부서 폴더 동기화</span>
+                </div>
+
+                {academicYearOptions && academicYearOptions.length > 0 && setSelectedAcademicYear && (
+                  <select
+                    value={activeSyncYear}
+                    onChange={(e) => setSelectedAcademicYear(e.target.value)}
+                    className="h-7 text-[11px] font-bold border border-indigo-200 rounded-lg px-2 bg-white text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-400 cursor-pointer"
+                    aria-label="동기화 대상 학년도"
+                  >
+                    {academicYearOptions.map(yr => (
+                      <option key={yr} value={yr}>{yr}학년도</option>
+                    ))}
+                  </select>
+                )}
+
+                {!googleDriveConfig?.rootFolderId ? (
+                  <Badge variant="outline" className="text-[10px] font-bold bg-amber-50 text-amber-800 border-amber-300 px-2 py-0.5">
+                    일반 탭에서 Drive 루트 폴더를 먼저 설정하세요
+                  </Badge>
+                ) : (
+                  <>
+                    <Badge variant="outline" className="text-[10px] font-bold bg-white text-indigo-700 border-indigo-200 px-2 py-0.5">
+                      연동된 부서 {Object.keys(currentYearDriveFolders?.departmentFolders || {}).length} / {plannedDeptFolders.length}개
+                    </Badge>
+                    {currentYearDriveFolders?.yearFolderUrl && (
+                      <a
+                        href={currentYearDriveFolders.yearFolderUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[10.5px] font-bold text-indigo-600 hover:text-indigo-800 bg-white border border-indigo-200 rounded-md px-2 py-0.5"
+                      >
+                        <Folder className="w-3 h-3" />
+                        <span>{activeSyncYear}학년도 Drive 열기</span>
+                        <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                <Select
+                  value={
+                    driveSyncScope === '__ALL__' || plannedDeptFolders.some(p => p.deptName === driveSyncScope)
+                      ? driveSyncScope
+                      : '__ALL__'
+                  }
+                  onValueChange={setDriveSyncScope}
+                >
+                  <SelectTrigger className="h-8 w-48 sm:w-56 text-xs font-semibold bg-white border-slate-200 text-slate-800 shadow-2xs">
+                    <SelectValue placeholder="동기화 대상 선택" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    <SelectItem value="__ALL__" className="text-xs font-bold text-indigo-700">
+                      전체 부서 동기화 ({plannedDeptFolders.length}개)
+                    </SelectItem>
+                    {plannedDeptFolders.length > 0 && <SelectSeparator />}
+                    {plannedDeptFolders.map((plan) => (
+                      <SelectItem key={plan.deptName} value={plan.deptName} className="text-xs font-medium">
+                        {plan.deptName}만 동기화 ({plan.tasks.length}개 업무){activeDept?.name === plan.deptName ? ' · 현재' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isSyncingFolders || !onSyncDepartmentFolders}
+                  onClick={() => {
+                    const validScope =
+                      driveSyncScope === '__ALL__' || !plannedDeptFolders.some(p => p.deptName === driveSyncScope)
+                        ? undefined
+                        : [driveSyncScope];
+                    onSyncDepartmentFolders?.(validScope, activeSyncYear);
+                  }}
+                  className="h-8 px-3 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs shrink-0 gap-1.5"
+                >
+                  {isSyncingFolders ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  )}
+                  <span>드라이브 동기화</span>
                 </Button>
               </div>
             </div>
@@ -1340,8 +1828,10 @@ export function OrgSettingsTab({
                 if (org.busManagers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('스쿨버스');
                 if (org.systemManagers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('시스템설정');
                 if (org.healthTeachers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('보건교사');
+                if (org.safetyManagers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('안전지도');
                 if (org.specialTeachers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('특수교사');
                 if (org.librarianTeachers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('사서교사');
+                if (org.handoverManagers?.some(m => m.toLowerCase() === emailLower)) matchedDuties.push('인수인계');
                 if (org.volunteerManager && org.volunteerManager.toLowerCase() === emailLower) matchedDuties.push('봉사활동');
 
                 (org.customDutyRoles || []).forEach(duty => {
@@ -1357,11 +1847,13 @@ export function OrgSettingsTab({
               const allSystemDuties: { id: string; name: string; deptName?: string }[] = [
                 { id: 'pe', name: '학교체육', deptName: org.dutyRoleDepts?.['pe'] },
                 { id: 'health', name: '보건교사', deptName: org.dutyRoleDepts?.['health'] },
+                { id: 'safety', name: '안전지도', deptName: org.dutyRoleDepts?.['safety'] },
                 { id: 'afterschool', name: '방과후학교', deptName: org.dutyRoleDepts?.['afterschool'] },
                 { id: 'bus', name: '스쿨버스', deptName: org.dutyRoleDepts?.['bus'] },
                 { id: 'system', name: '시스템설정', deptName: org.dutyRoleDepts?.['system'] },
                 { id: 'special', name: '특수교사', deptName: org.dutyRoleDepts?.['special'] },
                 { id: 'librarian', name: '사서교사', deptName: org.dutyRoleDepts?.['librarian'] },
+                { id: 'handover', name: '인수인계', deptName: org.dutyRoleDepts?.['handover'] },
                 { id: 'volunteer', name: '봉사활동', deptName: org.dutyRoleDepts?.['volunteer'] },
                 ...(org.customDutyRoles || []).map(duty => ({
                   id: duty.id,
@@ -1377,9 +1869,9 @@ export function OrgSettingsTab({
               const headDutyList = dept.headEmail ? getStaffDutyRoles(dept.headEmail) : [];
 
               return (
-                <Card className="border border-slate-200 shadow-2xs rounded-xl overflow-hidden bg-white">
+                <Card className="border border-slate-200 shadow-2xs rounded-xl bg-white">
                   {/* 컴팩트 단일 헤더 바: 부서명 + 소관업무 요약 + 소관업무 배속 드롭다운 + 삭제 버튼 */}
-                  <div className="px-3 py-1.5 bg-slate-50 border-b flex items-center justify-between gap-2">
+                  <div className="px-3 py-1.5 bg-slate-50 border-b rounded-t-xl flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap min-w-0">
                       <FolderKanban className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                       <span className="text-xs font-bold text-slate-900">{dept.name}</span>
@@ -1411,7 +1903,7 @@ export function OrgSettingsTab({
                             createAndAssignCustomDuty(customName.trim(), dept.name);
                           }
                         } else {
-                          if (['afterschool', 'bus', 'system', 'health', 'special', 'librarian'].includes(val)) {
+                          if (['afterschool', 'bus', 'system', 'pe', 'health', 'safety', 'special', 'librarian', 'handover', 'volunteer'].includes(val)) {
                             setOrg(prev => ({
                               ...prev,
                               dutyRoleDepts: { ...(prev.dutyRoleDepts || {}), [val]: dept.name }
@@ -1458,6 +1950,77 @@ export function OrgSettingsTab({
                     </div>
                   </div>
 
+                  {/* 부서별 Google Drive 폴더 및 하위 귀속 업무 폴더 현황 스트립 */}
+                  {(() => {
+                    const deptPlan = plannedDeptFolders.find(p => p.deptName === dept.name);
+                    const syncedDept = currentYearDriveFolders?.departmentFolders?.[dept.name];
+                    const syncedTaskMap = new Map((syncedDept?.taskFolders || []).map(tf => [tf.name, tf]));
+                    const planTasks = deptPlan?.tasks || [];
+
+                    return (
+                      <div className="px-3 py-1.5 bg-indigo-50/30 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                          <span className="text-[10.5px] font-bold text-indigo-900 flex items-center gap-1 shrink-0">
+                            <Folder className="w-3 h-3 text-indigo-600" />
+                            {activeSyncYear}학년도 Drive 하위 폴더:
+                          </span>
+                          {syncedDept?.folderUrl && (
+                            <a
+                              href={syncedDept.folderUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-600 text-white hover:bg-indigo-700 shrink-0"
+                            >
+                              <span>{dept.name} 폴더 열기</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+                          )}
+                          {planTasks.length === 0 ? (
+                            <span className="text-[10px] text-slate-400">생성 예정 하위 업무 폴더 없음 (부서 폴더만 생성됨)</span>
+                          ) : (
+                            planTasks.map((pt) => {
+                              const syncedTask = syncedTaskMap.get(pt.folderName);
+                              return syncedTask?.url ? (
+                                <a
+                                  key={pt.folderName}
+                                  href={syncedTask.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.2 rounded bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 shrink-0"
+                                  title="Google Drive 폴더 열기"
+                                >
+                                  <span>{pt.folderName}</span>
+                                  <ExternalLink className="w-2.5 h-2.5 text-emerald-600" />
+                                </a>
+                              ) : (
+                                <span
+                                  key={pt.folderName}
+                                  className="inline-flex items-center text-[10px] font-medium px-1.5 py-0.2 rounded bg-white text-slate-500 border border-dashed border-slate-300 shrink-0"
+                                  title="드라이브 동기화 실행 시 자동 생성됩니다"
+                                >
+                                  {pt.folderName}
+                                </span>
+                              );
+                            })
+                          )}
+                        </div>
+                        {onSyncDepartmentFolders && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isSyncingFolders}
+                            onClick={() => onSyncDepartmentFolders([dept.name], activeSyncYear)}
+                            className="h-6 px-2 text-[10px] font-bold text-indigo-700 bg-white border-indigo-200 hover:bg-indigo-50 shrink-0 gap-1"
+                          >
+                            {isSyncingFolders ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <RefreshCw className="w-2.5 h-2.5" />}
+                            <span>{dept.name}만 동기화</span>
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   <CardContent className="p-2.5 space-y-2">
                     {/* 2단 그리드: 좌측 부장 교사 관리 / 우측 소속 부원 관리 (가로 병렬 배치) */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
@@ -1465,9 +2028,12 @@ export function OrgSettingsTab({
                       <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 space-y-2 flex flex-col justify-between">
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between gap-1.5">
-                            <Label className="text-xs font-bold text-slate-800 shrink-0 whitespace-nowrap">
-                              부장 교사
-                            </Label>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <Label className="text-xs font-bold text-slate-800 shrink-0 whitespace-nowrap">
+                                부장 교사
+                              </Label>
+                              {renderReturningCheckbox(dept.headEmail, `head-${dept.id}`)}
+                            </div>
 
                             {/* 부장 교사 업무 배정 드롭다운 (항상 표시) */}
                             {dept.headEmail && (
@@ -1478,7 +2044,7 @@ export function OrgSettingsTab({
                                     createAndAssignCustomDuty(customName.trim(), dept.name, dept.headEmail!);
                                   }
                                 } else {
-                                  assignDutyToMember(val, dept.headEmail!, dept.name);
+                                  assignDutyToMember(val, dept.headEmail!);
                                 }
                               }}>
                                 <SelectTrigger className="h-5 w-28 px-1.5 text-[10px] bg-indigo-50 hover:bg-indigo-100 border-indigo-200 rounded-md text-indigo-700 font-bold shrink-0">
@@ -1543,6 +2109,30 @@ export function OrgSettingsTab({
                               ))}
                             </div>
                           )}
+
+                          {/* 후임 설정 모드 활성화 시 부장 후임자 지정 슬롯 */}
+                          {successorMode && (
+                            <div className="mt-2 p-2 bg-amber-50/80 border border-amber-200 rounded-lg space-y-1">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-[11px] font-extrabold text-amber-950 flex items-center gap-1">
+                                  <span>부장 후임자 지정</span>
+                                </Label>
+                                {dept.successorHeadEmail && (
+                                  <Badge className="bg-amber-600 text-white text-[9px] font-bold px-1.5 py-0">후임 지정됨</Badge>
+                                )}
+                              </div>
+                              <SearchableUserSelect
+                                users={facultyUsers}
+                                value={dept.successorHeadEmail || ''}
+                                onSelect={(val) => updateDeptSuccessorHead(dept.id, val)}
+                                placeholder="부장 후임자 선택..."
+                                allowUnassign={true}
+                                unassignLabel="후임자 지정 해제"
+                                triggerClassName="h-7 text-xs bg-white font-medium border-amber-300 w-full"
+                                panelWidthClass="w-64"
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1578,86 +2168,117 @@ export function OrgSettingsTab({
                                 const staffDuties = getStaffDutyRoles(cleanEmail);
 
                                 return (
-                                  <div key={email} className="flex items-center justify-between gap-1.5 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 p-1.5 px-2 rounded-md transition-colors">
-                                    <div className="space-y-0.5 min-w-0 flex-1">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="font-bold text-xs text-slate-900 truncate">{u ? u.name : email}</span>
-                                        <span className="text-[10px] text-slate-400 truncate">{u ? u.role : ''}</span>
+                                  <div key={email} className="flex flex-col gap-1 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 p-1.5 px-2 rounded-md transition-colors">
+                                    <div className="flex items-center justify-between gap-1.5">
+                                      <div className="space-y-0.5 min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="font-bold text-xs text-slate-900 truncate">{u ? u.name : email}</span>
+                                          <span className="text-[10px] text-slate-400 truncate">{u ? u.role : ''}</span>
+                                          {renderReturningCheckbox(cleanEmail, `${dept.id}-${cleanEmail}`)}
+                                        </div>
+
+                                        {/* 담당 업무 배지 */}
+                                        <div className="flex items-center gap-1 flex-wrap">
+                                          {staffDuties.length > 0 ? (
+                                            staffDuties.map(duty => (
+                                              <span key={duty} className="inline-flex items-center gap-1 bg-white text-indigo-700 border border-indigo-200 text-[9px] font-bold px-1.5 py-0 rounded shadow-2xs">
+                                                {duty}
+                                                <button
+                                                  type="button"
+                                                  onClick={() => removeDutyFromMember(duty, email)}
+                                                  className="text-indigo-500 hover:text-indigo-800 font-bold ml-0.5"
+                                                  title="업무 해제"
+                                                >
+                                                  ×
+                                                </button>
+                                              </span>
+                                            ))
+                                          ) : (
+                                            <span className="text-[10px] text-slate-400 font-normal">업무 미지정</span>
+                                          )}
+                                        </div>
                                       </div>
 
-                                      {/* 담당 업무 배지 */}
-                                      <div className="flex items-center gap-1 flex-wrap">
-                                        {staffDuties.length > 0 ? (
-                                          staffDuties.map(duty => (
-                                            <span key={duty} className="inline-flex items-center gap-1 bg-white text-indigo-700 border border-indigo-200 text-[9px] font-bold px-1.5 py-0 rounded shadow-2xs">
-                                              {duty}
-                                              <button
-                                                type="button"
-                                                onClick={() => removeDutyFromMember(duty, email)}
-                                                className="text-indigo-500 hover:text-indigo-800 font-bold ml-0.5"
-                                                title="업무 해제"
-                                              >
-                                                ×
-                                              </button>
-                                            </span>
-                                          ))
-                                        ) : (
-                                          <span className="text-[10px] text-slate-400 font-normal">업무 미지정</span>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      {/* 소관 업무 배정 드롭다운 (항상 선명하게 노출) */}
-                                      <Select onValueChange={(val) => {
-                                        if (val === '__CREATE_MEMBER_DUTY__') {
-                                          const customName = window.prompt(`${u ? u.name : email} 교사에게 새로 부여할 담당 업무명을 입력해 주세요 (예: 방과후 강사 관리, 출결 관리):`);
-                                          if (customName?.trim()) {
-                                            createAndAssignCustomDuty(customName.trim(), dept.name, email);
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        {/* 소관 업무 배정 드롭다운 (항상 선명하게 노출) */}
+                                        <Select onValueChange={(val) => {
+                                          if (val === '__CREATE_MEMBER_DUTY__') {
+                                            const customName = window.prompt(`${u ? u.name : email} 교사에게 새로 부여할 담당 업무명을 입력해 주세요 (예: 방과후 강사 관리, 출결 관리):`);
+                                            if (customName?.trim()) {
+                                              createAndAssignCustomDuty(customName.trim(), dept.name, email);
+                                            }
+                                          } else {
+                                            assignDutyToMember(val, email);
                                           }
-                                        } else {
-                                          assignDutyToMember(val, email, dept.name);
-                                        }
-                                      }}>
-                                        <SelectTrigger className="h-5.5 w-22 px-1 text-[9px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 rounded font-bold">
-                                          <SelectValue placeholder="+ 업무 배정" />
-                                        </SelectTrigger>
-                                        <SelectContent className="max-h-60">
-                                          {deptDuties.length > 0 && (
-                                            <SelectGroup>
-                                              <SelectLabel className="text-[10px] text-indigo-900 font-bold">부서 소관 업무</SelectLabel>
-                                              {deptDuties.filter(d => !staffDuties.includes(d.name)).map(d => (
-                                                <SelectItem key={d.id} value={d.id} className="text-xs font-semibold">
-                                                  {d.name}
-                                                </SelectItem>
-                                              ))}
-                                            </SelectGroup>
-                                          )}
-                                          {otherDuties.filter(d => !staffDuties.includes(d.name)).length > 0 && (
-                                            <SelectGroup>
-                                              <SelectLabel className="text-[10px] text-slate-500 font-bold">학교 전체 업무 직책</SelectLabel>
-                                              {otherDuties.filter(d => !staffDuties.includes(d.name)).map(d => (
-                                                <SelectItem key={d.id} value={d.id} className="text-xs">
-                                                  {d.name} {d.deptName ? `(${d.deptName})` : ''}
-                                                </SelectItem>
-                                              ))}
-                                            </SelectGroup>
-                                          )}
-                                          <SelectSeparator />
-                                          <SelectItem value="__CREATE_MEMBER_DUTY__" className="text-xs font-bold text-indigo-600">
-                                            + 새 업무 직접 입력...
-                                          </SelectItem>
-                                        </SelectContent>
-                                      </Select>
+                                        }}>
+                                          <SelectTrigger className="h-5.5 w-22 px-1 text-[9px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 rounded font-bold">
+                                            <SelectValue placeholder="+ 업무 배정" />
+                                          </SelectTrigger>
+                                          <SelectContent className="max-h-60">
+                                            {deptDuties.length > 0 && (
+                                              <SelectGroup>
+                                                <SelectLabel className="text-[10px] text-indigo-900 font-bold">부서 소관 업무</SelectLabel>
+                                                {deptDuties.filter(d => !staffDuties.includes(d.name)).map(d => (
+                                                  <SelectItem key={d.id} value={d.id} className="text-xs font-semibold">
+                                                    {d.name}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectGroup>
+                                            )}
+                                            {otherDuties.filter(d => !staffDuties.includes(d.name)).length > 0 && (
+                                              <SelectGroup>
+                                                <SelectLabel className="text-[10px] text-slate-500 font-bold">학교 전체 업무 직책</SelectLabel>
+                                                {otherDuties.filter(d => !staffDuties.includes(d.name)).map(d => (
+                                                  <SelectItem key={d.id} value={d.id} className="text-xs">
+                                                    {d.name} {d.deptName ? `(${d.deptName})` : ''}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectGroup>
+                                            )}
+                                            <SelectSeparator />
+                                            <SelectItem value="__CREATE_MEMBER_DUTY__" className="text-xs font-bold text-indigo-600">
+                                              + 새 업무 직접 입력...
+                                            </SelectItem>
+                                          </SelectContent>
+                                        </Select>
 
-                                      <button
-                                        onClick={() => removeDeptMember(dept.id, email)}
-                                        className="text-slate-400 hover:text-rose-600 font-bold p-0.5 rounded hover:bg-white"
-                                        title="부원 제외"
-                                      >
-                                        <X className="w-3.5 h-3.5" />
-                                      </button>
+                                        <button
+                                          onClick={() => removeDeptMember(dept.id, email)}
+                                          className="text-slate-400 hover:text-rose-600 font-bold p-0.5 rounded hover:bg-white"
+                                          title="부원 제외"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
                                     </div>
+
+                                    {/* 후임 설정 모드 활성화 시 각 부원 후임자 지정 슬롯 */}
+                                    {successorMode && (
+                                      <div className="pt-1 mt-0.5 border-t border-amber-200/80 flex items-center justify-between gap-1 bg-amber-50/60 p-1 rounded">
+                                        <div className="flex items-center gap-1 min-w-0">
+                                          <span className="text-[10px] font-bold text-amber-900 shrink-0">후임자:</span>
+                                          {dept.memberSuccessors?.[cleanEmail] ? (
+                                            <span className="text-[10px] font-extrabold text-indigo-700 truncate">
+                                              {users.find(usr => usr.email?.toLowerCase().trim() === dept.memberSuccessors?.[cleanEmail]?.toLowerCase().trim())?.name || dept.memberSuccessors[cleanEmail]}
+                                            </span>
+                                          ) : (
+                                            <span className="text-[10px] text-slate-400 font-medium">미지정</span>
+                                          )}
+                                        </div>
+                                        <div className="w-28 shrink-0">
+                                          <SearchableUserSelect
+                                            users={facultyUsers}
+                                            value={dept.memberSuccessors?.[cleanEmail] || ''}
+                                            placeholder="+ 후임자..."
+                                            allowUnassign={true}
+                                            unassignLabel="지정 해제"
+                                            triggerClassName="h-5.5 text-[10px] bg-white border-amber-300 px-1"
+                                            panelWidthClass="w-52"
+                                            onSelect={(val) => updateDeptMemberSuccessor(dept.id, cleanEmail, val)}
+                                          />
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -1698,6 +2319,13 @@ export function OrgSettingsTab({
             </Card>
           </div>
         )}
+
+        {/* 5. 하위 탭: 시설 및 학급 */}
+        {orgSubTab === 'facilities' && (
+          <div className="p-6">
+            <FacilitiesOrgTab />
+          </div>
+        )}
       </div>
 
       <div className="shrink-0 px-6 py-3.5 border-t flex justify-end bg-slate-50/70">
@@ -1706,6 +2334,86 @@ export function OrgSettingsTab({
           조직도 저장
         </Button>
       </div>
+
+      <HandoverAdminModal
+        open={isHandoverAdminModalOpen}
+        onOpenChange={setIsHandoverAdminModalOpen}
+        currentUserProfile={currentProfile || ({} as any)}
+      />
+
+      <CustomFeatureRequestManagerModal
+        open={isFeatureRequestsModalOpen}
+        onOpenChange={setIsFeatureRequestsModalOpen}
+        requests={customFeatureRequests}
+        adminEmail={currentProfile?.email || ''}
+        adminName={currentProfile?.name || currentProfile?.email || '시스템 담당자'}
+      />
+
+      {/* 후임자 일괄 교체 확인 다이얼로그 */}
+      <Dialog open={successorConfirmModalOpen} onOpenChange={setSuccessorConfirmModalOpen}>
+        <DialogContent className="max-w-md p-5 bg-white border border-amber-200 rounded-2xl shadow-xl">
+          <DialogHeader className="space-y-1.5 pb-2 border-b">
+            <div className="flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+              <Badge className="bg-amber-600 text-white font-bold text-xs">후임 교체 확인</Badge>
+            </div>
+            <DialogTitle className="text-base font-bold text-slate-900">
+              후임자로 교체하시겠습니까?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              {activeDept?.name}에 지정된 후임자로 현재 등록된 부장 교사 및 소속 부원을 일괄 교체합니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2 space-y-2 text-xs">
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 max-h-48 overflow-y-auto">
+              {activeDept?.successorHeadEmail && (
+                <div className="flex items-center justify-between text-indigo-950 font-bold border-b border-slate-200 pb-1">
+                  <span>부장 교체:</span>
+                  <span className="truncate max-w-[220px]">
+                    {facultyUsers.find(u => u.email.toLowerCase() === activeDept.headEmail?.toLowerCase())?.name || activeDept.headEmail}
+                    {' → '}
+                    <span className="text-indigo-600 font-extrabold">{facultyUsers.find(u => u.email.toLowerCase() === activeDept.successorHeadEmail?.toLowerCase())?.name || activeDept.successorHeadEmail}</span>
+                  </span>
+                </div>
+              )}
+              {Object.entries(activeDept?.memberSuccessors || {}).map(([cur, succ]) => (
+                <div key={cur} className="flex items-center justify-between text-slate-700">
+                  <span>부원 교체:</span>
+                  <span className="truncate max-w-[220px]">
+                    {facultyUsers.find(u => u.email.toLowerCase() === cur.toLowerCase())?.name || cur}
+                    {' → '}
+                    <span className="font-bold text-emerald-700">{facultyUsers.find(u => u.email.toLowerCase() === succ.toLowerCase())?.name || succ}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-amber-700 font-medium">
+              ※ &apos;예&apos;를 누르면 지정된 후임자로 교체가 완료되고 후임 설정이 해제됩니다. 조직도 저장을 눌러 최종 반영하세요.
+            </p>
+          </div>
+
+          <DialogFooter className="pt-2 border-t flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCancelApplySuccessors}
+              className="h-8 text-xs"
+            >
+              그냥 해제 (교체 안 함)
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleConfirmApplySuccessors}
+              className="h-8 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              예 (후임자로 교체)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </TabsContent>
   );
 }

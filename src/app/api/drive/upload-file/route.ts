@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGoogleDriveClient } from '@/lib/server/googleAuth';
 import { Readable } from 'stream';
+import { denyIfNotStaff } from '@/lib/server/staffRequestAuth';
 
 export async function POST(req: NextRequest) {
+  // 로그인한 교직원만 호출 가능
+  const denied = await denyIfNotStaff(req, '[upload-file]');
+  if (denied) return denied;
+
   try {
     const formData = await req.formData();
     const folderId = formData.get('folderId') as string;

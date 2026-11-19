@@ -130,7 +130,7 @@ export function SidebarShortcutsModal({ open, onOpenChange }: SidebarShortcutsMo
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
+      <DialogContent hideCloseButton className="max-w-xl max-h-[85vh] flex flex-col p-0 overflow-hidden [&>button.absolute]:hidden">
         <DialogHeader className="p-4 sm:p-5 border-b shrink-0 bg-muted/20">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-base sm:text-lg font-bold flex items-center gap-2">

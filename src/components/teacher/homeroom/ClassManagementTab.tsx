@@ -10,6 +10,8 @@ import {
   BarChart3,
   Edit2,
   FolderOpen,
+  LayoutGrid,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -43,6 +45,7 @@ import type { MasterStudent } from '@/lib/types/masterStudent';
 import { HomeworkPresentationModal } from './HomeworkPresentationModal';
 import { DailyMemoFullscreenModal } from './DailyMemoFullscreenModal';
 import { GradeMaterialsTab } from './GradeMaterialsTab';
+import { ClassToolsMainTab } from './tools/ClassToolsMainTab';
 import { MemoTabContent } from './class-management/MemoTabContent';
 import { HomeworkTabContent } from './class-management/HomeworkTabContent';
 import { BehaviorTabContent } from './class-management/BehaviorTabContent';
@@ -67,8 +70,9 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
 }) => {
   const { toast } = useToast();
 
-  // 내부 탭 상태: 'memo' (일일 알림) | 'homework' (과제 확인) | 'behavior' (행동 기록) | 'review' (기록 조회/상담) | 'matrix' (월별 현황) | 'materials' (학년 자료 공유)
-  const [subTab, setSubTab] = useState<'memo' | 'homework' | 'behavior' | 'review' | 'matrix' | 'materials'>('memo');
+  // 내부 탭 상태: 'seating' (수업 도구: 자리배치/칭찬, 뽑기, 모둠, 칠판알림, 숙제확인) | 'behavior' (행동 기록) | 'review' (기록 조회/상담) | 'matrix' (월별 현황) | 'materials' (학년 자료 공유) | 'memo' | 'homework'
+  const [subTab, setSubTab] = useState<'memo' | 'homework' | 'behavior' | 'review' | 'matrix' | 'materials' | 'seating'>('seating');
+  const [toolsSubTool, setToolsSubTool] = useState<'seating' | 'praise' | 'picker' | 'teams' | 'memo' | 'homework'>('seating');
 
   // 1. 일일 메모 상태
   const todayStr = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
@@ -646,38 +650,30 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
           </p>
         </div>
 
-        {/* 세부 5대 탭 전환 버튼 */}
+        {/* 학급 교실 5대 메인 탭 전환 버튼 (수업 도구 허브, 행동 관찰, 기록·상담, 월별 현황, 자료 공유) */}
         <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 overflow-x-auto whitespace-nowrap">
           <Button
-            variant={subTab === 'memo' ? 'default' : 'ghost'}
+            variant={subTab === 'seating' || subTab === 'memo' || subTab === 'homework' ? 'default' : 'ghost'}
             size="sm"
-            onClick={() => setSubTab('memo')}
-            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 whitespace-nowrap ${subTab === 'memo' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
+            onClick={() => {
+              setSubTab('seating');
+              setToolsSubTool('seating');
+            }}
+            className={`h-7 sm:h-8 text-xs font-black gap-1.5 rounded-xl px-2.5 sm:px-3.5 whitespace-nowrap transition-all cursor-pointer ${
+              subTab === 'seating' || subTab === 'memo' || subTab === 'homework'
+                ? 'bg-[#2471B2] text-white shadow-xs hover:bg-[#1E629D]'
+                : 'text-slate-700 hover:bg-slate-200/70'
+            }`}
           >
-            <BookOpen className="w-3.5 h-3.5 shrink-0" />
-            <span>칠판 알림</span>
-          </Button>
-
-          <Button
-            variant={subTab === 'homework' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setSubTab('homework')}
-            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 whitespace-nowrap ${subTab === 'homework' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-            <span>숙제 확인</span>
-            {homeworks.length > 0 && (
-              <span className="ml-0.5 px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] rounded-full">
-                {activeHwCount}
-              </span>
-            )}
+            <Sparkles className={`w-3.5 h-3.5 shrink-0 ${subTab === 'seating' || subTab === 'memo' || subTab === 'homework' ? 'text-amber-300' : 'text-[#C49832]'}`} />
+            <span>수업 도구</span>
           </Button>
 
           <Button
             variant={subTab === 'behavior' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setSubTab('behavior')}
-            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 whitespace-nowrap ${subTab === 'behavior' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
+            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 whitespace-nowrap cursor-pointer ${subTab === 'behavior' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
           >
             <Edit2 className="w-3.5 h-3.5 shrink-0" />
             <span>행동 관찰</span>
@@ -692,7 +688,7 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
             variant={subTab === 'review' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setSubTab('review')}
-            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 whitespace-nowrap ${subTab === 'review' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
+            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 whitespace-nowrap cursor-pointer ${subTab === 'review' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
           >
             <MessageSquare className="w-3.5 h-3.5 shrink-0" />
             <span>기록·상담</span>
@@ -702,7 +698,7 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
             variant={subTab === 'matrix' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setSubTab('matrix')}
-            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 whitespace-nowrap ${subTab === 'matrix' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
+            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 whitespace-nowrap cursor-pointer ${subTab === 'matrix' ? 'bg-white text-emerald-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
           >
             <BarChart3 className="w-3.5 h-3.5 shrink-0" />
             <span>월별 현황</span>
@@ -712,7 +708,7 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
             variant={subTab === 'materials' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setSubTab('materials')}
-            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 whitespace-nowrap ${subTab === 'materials' ? 'bg-white text-indigo-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
+            className={`h-7 sm:h-8 text-xs font-bold gap-1 rounded-lg px-2 sm:px-3 whitespace-nowrap cursor-pointer ${subTab === 'materials' ? 'bg-white text-indigo-700 shadow-xs hover:bg-white' : 'text-slate-600'}`}
           >
             <FolderOpen className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
             <span>자료 공유</span>
@@ -720,51 +716,53 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
         </div>
       </div>
 
-      {/* ────────────────── 1. 칠판 알림 메모 탭 ────────────────── */}
-      {subTab === 'memo' && (
-        <MemoTabContent
-          todayDisplay={todayDisplay}
-          memoContent={memoContent}
-          setMemoContent={setMemoContent}
-          handleSaveMemo={handleSaveMemo}
-          handleOpenMemoHistory={handleOpenMemoHistory}
-          setIsMemoFullscreenOpen={setIsMemoFullscreenOpen}
-        />
-      )}
-
-      {/* ────────────────── 2. 숙제 확인 탭 (일자별 달력/드롭다운 듀얼 탐색 & 2단계 계층 구조) ────────────────── */}
-      {subTab === 'homework' && (
-        <HomeworkTabContent
-          dateNavMode={dateNavMode}
-          setDateNavMode={setDateNavMode}
-          selectedHwDate={selectedHwDate}
-          setSelectedHwDate={setSelectedHwDate}
-          calCurrentDate={calCurrentDate}
-          setCalCurrentDate={setCalCurrentDate}
-          todayStr={todayStr}
-          registeredDates={registeredDates}
-          dateStatsMap={dateStatsMap}
-          newHwTitle={newHwTitle}
-          setNewHwTitle={setNewHwTitle}
-          handleAddHomework={handleAddHomework}
-          homeworks={homeworks}
-          setPresMode={setPresMode}
-          setIsPresModalOpen={setIsPresModalOpen}
-          currentDayHomeworks={currentDayHomeworks}
-          getHwStats={getHwStats}
-          selectedHw={selectedHw}
-          setSelectedHwId={setSelectedHwId}
-          setPresTargetHw={setPresTargetHw}
-          setEditingHw={setEditingHw}
-          setEditHwTitle={setEditHwTitle}
-          handleDeleteHomework={handleDeleteHomework}
-          homeworkChecks={homeworkChecks}
-          students={students}
-          handleToggleHwCheck={handleToggleHwCheck}
-          handleBatchToggleHw={handleBatchToggleHw}
-          calendarDays={calendarDays}
+      {/* ────────────────── 1. 수업 도구 탭 (자리 배치, 발표자 뽑기, 모둠 나누기, 칠판 알림, 숙제 확인) ────────────────── */}
+      {(subTab === 'seating' || subTab === 'memo' || subTab === 'homework') && (
+        <ClassToolsMainTab
+          classKey={classKey}
           classLabel={classLabel}
-          onToggleConfirm={handleToggleHwConfirmation}
+          students={students}
+          userEmail={userEmail}
+          initialTool={subTab === 'memo' ? 'memo' : subTab === 'homework' ? 'homework' : toolsSubTool}
+          memoProps={{
+            todayDisplay,
+            memoContent,
+            setMemoContent,
+            handleSaveMemo,
+            handleOpenMemoHistory,
+            setIsMemoFullscreenOpen,
+          }}
+          homeworkProps={{
+            dateNavMode,
+            setDateNavMode,
+            selectedHwDate,
+            setSelectedHwDate,
+            calCurrentDate,
+            setCalCurrentDate,
+            todayStr,
+            registeredDates,
+            dateStatsMap,
+            newHwTitle,
+            setNewHwTitle,
+            handleAddHomework,
+            homeworks,
+            setPresMode,
+            setIsPresModalOpen,
+            currentDayHomeworks,
+            getHwStats,
+            selectedHw,
+            setSelectedHwId,
+            setPresTargetHw,
+            setEditingHw,
+            setEditHwTitle,
+            handleDeleteHomework,
+            homeworkChecks,
+            handleToggleHwCheck,
+            handleBatchToggleHw,
+            calendarDays,
+            onToggleConfirm: handleToggleHwConfirmation,
+            activeHwCount,
+          }}
         />
       )}
 
@@ -812,7 +810,7 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
           homeworkChecks={homeworkChecks}
         />
       )}
-      {/* ────────────────── 6. 학년 자료 공유 탭 ────────────────── */}
+      {/* ────────────────── 5. 학년 자료 공유 탭 ────────────────── */}
       {subTab === 'materials' && (
         <GradeMaterialsTab
           classKey={classKey}

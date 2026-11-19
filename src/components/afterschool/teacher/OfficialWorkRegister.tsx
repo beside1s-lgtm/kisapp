@@ -56,6 +56,8 @@ export interface OfficialWorkRegisterProps {
   deleteDocLabel?: string;
   isModal?: boolean;
   yearSemesterText?: string;
+  /** 'page': 팝업 없이 본문만 (증빙서류 일괄 출력용, evidence-print-page 클래스) */
+  variant?: 'modal' | 'page';
 }
 
 // 출근부 전용 컴팩트 서명/도장 렌더러 (이름 텍스트 없이 도장/서명 이미지만 단독 렌더링, 150% 가독성 최적화)
@@ -124,6 +126,7 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
   deleteDocLabel = '제출 서류 반려 및 삭제',
   isModal = true,
   yearSemesterText = '2026학년도 2학기 방과후학교',
+  variant = 'modal',
 }) => {
   const mainInstructor = course.instructorName || '강사';
   const assistantInstructors = [
@@ -268,7 +271,7 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
           {hasChecked ? (
             <div className="flex items-center justify-center gap-1.5 flex-wrap">
               {allCourseInstructors.map((inst) => {
-                const sub = daySubs.find((s) => !s.targetInstructor || s.targetInstructor === inst);
+                const sub = daySubs.find((s) => String(s.targetInstructor || (s as any).originalInstructor || mainInstructor).trim() === inst);
                 if (sub?.isAbsence) {
                   return (
                     <span
@@ -314,7 +317,7 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
   const content = (
     <div
       className={`${
-        isModal ? 'official-work-register-modal-print' : 'no-print print:hidden'
+        variant === 'page' ? 'evidence-print-page evidence-page-work' : isModal ? 'official-work-register-modal-print' : 'no-print print:hidden'
       } bg-white p-4 md:p-6 print:p-0 print:pt-[10mm] border border-slate-300 print:border-none rounded-lg text-slate-950 font-sans`}
       style={{
         paddingTop: isModal ? '10mm' : undefined,
@@ -532,7 +535,7 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
     </div>
   );
 
-  if (!isModal) {
+  if (variant === 'page' || !isModal) {
     return content;
   }
 

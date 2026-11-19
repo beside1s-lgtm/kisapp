@@ -2,14 +2,14 @@
 
 import { generateContentAction } from '@/app/ai-actions';
 import { useAuth } from '@/hooks/use-auth';
-import { ApprovalDoc, ApprovalDocPayload, Approver, DocConfig, UserProfile, DelegationRule, OrgStructure } from '@/lib/types';
+import { ApprovalDoc, ApprovalDocPayload, Approver, DocConfig, UserProfile, DelegationRule, OrgStructure, GoogleDriveConfig } from '@/lib/types';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { File as FileIcon, Loader2, Plus, Sparkles, User as UserIcon, X, Paperclip, Trash2, Settings2, FolderOpen, Lock, FileText, CheckCircle2 } from 'lucide-react';
-import { getTeacherApplySettings, defaultTeacherApplySettings, getOrgStructure, getDelegationRules } from '@/lib/services/settingsService';
+import { getTeacherApplySettings, defaultTeacherApplySettings, getOrgStructure, getDelegationRules, getGoogleDriveConfig } from '@/lib/services/settingsService';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -18,6 +18,19 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
+import {
+  resolveTeacherFilingDutiesList,
+  syncCompletedApprovalToHandoverTimeline,
+  CURRENT_SCHOOL_YEAR,
+} from '@/lib/services/handoverService';
+import {
+  resolveDriveFoldersForDuties,
+  listDriveFilingFolderOptions,
+  resolveDefaultFilingFolderOption,
+  inferHandoverCategoryFromTarget,
+  type DriveFilingFolderOption,
+} from '@/lib/drive/deptFolderMapping';
+import { format } from 'date-fns';
 import UserSearch from './user-search';
 import { cn } from '@/lib/utils';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
@@ -25,6 +38,8 @@ import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import RichEditor from "./rich-editor";
 import { getDb } from '@/lib/firebase';
 import { doc, getDoc, getDocs, collection, runTransaction, serverTimestamp, setDoc, updateDoc, addDoc, query, where, deleteDoc, limit } from 'firebase/firestore';
+import { computeSettlement, termFromSettingsAndDocConfig, termPeriodLabel } from '@/lib/afterschool/settlement';
+import { DEFAULT_ACADEMIC_CALENDAR_CONFIG as AS_DEFAULT_CALENDAR } from '@/lib/services/academicCalendarService';
 import {
   Dialog,
   DialogContent,
@@ -34,12 +49,23 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { sendMailNotification } from '@/lib/services/documentService';
-import { getDocumentById } from '@/lib/services/documentService';
+import { sendMailNotification, getDocumentById, archiveAndSyncCompletedApprovalDoc } from '@/lib/services/documentService';
 import { generateAfterschoolSettlementWorkbook } from '@/lib/afterschool/excel';
 import { getRealtimeSemesterInfo } from '@/lib/services/academicCalendarService';
 import { PresetManagementDialog } from './document-form/PresetManagementDialog';
 import { MobileCirculationDialog } from './document-form/MobileCirculationDialog';
+import { DriveFilingHandoverCard } from './document-form/DriveFilingHandoverCard';
+import { StandardTemplateBanner } from './document-form/StandardTemplateBanner';
+import {
+  loadStandardDocTemplateOverride,
+  saveStandardDocTemplateOverride,
+  resetStandardDocTemplateOverride,
+} from '@/lib/services/standardDocTemplateService';
+import {
+  resolveAssignedCustomDuties,
+  getCustomDutyWorkspaceId,
+  upsertCustomDutyStandardDoc,
+} from '@/lib/services/customDutyService';
 
 const approverSchema = z.object({
   name: z.string().optional().default(''),
@@ -63,6 +89,13 @@ const formSchema = z.object({
   docType: z.enum(['internal', 'external', 'parent', 'teacher-duty', 'teacher-overtime', 'teacher-afterschool', 'volunteer']).optional().default('internal'),
   receiverName: z.string().optional().default(''),
   receiverEmail: z.string().optional().default(''),
+  addToHandover: z.boolean().optional().default(true),
+  handoverCategory: z.string().optional().default('일반업무'),
+  driveTargetFolderId: z.string().optional().default(''),
+  driveTargetFolderUrl: z.string().optional().default(''),
+  driveTargetFolderLabel: z.string().optional().default(''),
+  driveTargetDeptName: z.string().optional().default(''),
+  driveTargetTaskName: z.string().optional().default(''),
 });
 type FormData = z.infer<typeof formSchema>;
 
@@ -92,6 +125,14 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [orgStructure, setOrgStructure] = useState<Partial<OrgStructure> | null>(null);
   const [docConfig, setDocConfig] = useState<DocConfig>({});
+  const [driveConfig, setDriveConfig] = useState<GoogleDriveConfig | null>(null);
+  const [selectedFilingValue, setSelectedFilingValue] = useState<string>('');
+  const [loadedSavedFiling, setLoadedSavedFiling] = useState<{
+    folderId?: string;
+    deptName?: string;
+    taskName?: string;
+  } | null>(null);
+  const userEditedFilingRef = useRef<boolean>(false);
   
   const [circularQuery, setCircularQuery] = useState('');
   const attachmentInputRef = useRef<HTMLInputElement>(null);
@@ -300,12 +341,24 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
   const [delegationRules, setDelegationRules] = useState<DelegationRule[]>([]);
   const [selectedDelegationId, setSelectedDelegationId] = useState<string>('');
 
+  // 표준 기안문서 기본값 설정/저장 상태
+  const [activeTemplateKey, setActiveTemplateKey] = useState<string | null>(() => searchParams.get('templateKey'));
+  const [activeTemplateName, setActiveTemplateName] = useState<string>('');
+  const [hasCustomOverride, setHasCustomOverride] = useState<boolean>(false);
+  const [isSavingTemplateDefault, setIsSavingTemplateDefault] = useState<boolean>(false);
+  const [isResettingTemplateDefault, setIsResettingTemplateDefault] = useState<boolean>(false);
+  const [afterschoolRebuildTick, setAfterschoolRebuildTick] = useState<number>(0);
+  const afterschoolOverrideLockedRef = useRef<boolean>(false);
+
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       title: '', content: '',
       approvers: defaultApproversTemplate.map(ap => ({...ap, active: ap.role !== '협조'})),
       circulars: [], attachments: [], publishStatus: '공개', docType: 'internal',
+      addToHandover: true, handoverCategory: '일반업무',
+      driveTargetFolderId: '', driveTargetFolderUrl: '', driveTargetFolderLabel: '',
+      driveTargetDeptName: '', driveTargetTaskName: '',
     },
   });
 
@@ -336,7 +389,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
     });
   };
 
-  const handleQuickTemplate = (type: 'annual' | 'detail' | 'dept' | 'general') => {
+  const handleQuickTemplate = async (type: 'annual' | 'detail' | 'dept' | 'general') => {
     let targetRuleName = '연간계획공문';
     let defaultTitlePrefix = '[연간계획] ';
     if (type === 'detail') {
@@ -349,6 +402,10 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
       targetRuleName = '기본 기안문';
       defaultTitlePrefix = '';
     }
+
+    const quickKey = `quick_${type}`;
+    setActiveTemplateKey(quickKey);
+    setActiveTemplateName(targetRuleName);
 
     const curTitle = form.getValues('title') || '';
     const cleanTitle = curTitle.replace(/^\[(연간계획|세부계획|부서업무|기안)\]\s*/, '');
@@ -375,6 +432,28 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
         title: "템플릿 결재선 적용",
         description: isDept ? '부서업무공문 (부장 전결) 결재선이 설정되었습니다.' : isVp ? '세부계획공문 (교감 전결) 결재선이 설정되었습니다.' : '연간계획공문 (교장 결재) 결재선이 설정되었습니다.'
       });
+    }
+
+    try {
+      const override = await loadStandardDocTemplateOverride(quickKey);
+      if (override) {
+        setHasCustomOverride(true);
+        if (override.title) form.setValue('title', override.title, { shouldDirty: true });
+        if (override.content) form.setValue('content', override.content, { shouldDirty: true });
+        if (override.includeAttachments && Array.isArray(override.attachments)) {
+          const normalizedAtts = override.attachments.map(a => ({ name: a.name, data: a.data, size: a.size ?? 0 }));
+          form.setValue('attachments', normalizedAtts);
+          replaceAttachments(normalizedAtts);
+        }
+        toast({
+          title: '저장된 표준 기본값 불러오기 완료',
+          description: `[${targetRuleName}] 수정 기본값이 본문에 적용되었습니다.`,
+        });
+      } else {
+        setHasCustomOverride(false);
+      }
+    } catch {
+      setHasCustomOverride(false);
     }
   };
 
@@ -425,6 +504,11 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
             if (configSnap.exists()) {
                 setDocConfig(configSnap.data() as DocConfig);
             }
+
+            // Google Drive 문서함 설정 불러오기
+            getGoogleDriveConfig().then(cfg => {
+              if (cfg) setDriveConfig(cfg);
+            }).catch(() => {});
 
             // 위임전결규정 불러오기
             getDelegationRules().then(rules => setDelegationRules(rules || []));
@@ -561,16 +645,54 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
 
         const busTemplate = searchParams.get('busTemplate');
         const peTemplate = searchParams.get('peTemplate');
-        if (busTemplate === 'true' || peTemplate === 'true') {
+        const safetyTemplate = searchParams.get('safetyTemplate');
+        const customTemplate = searchParams.get('customTemplate');
+        const templateKeyParam = searchParams.get('templateKey');
+        if (
+            busTemplate === 'true' ||
+            peTemplate === 'true' ||
+            safetyTemplate === 'true' ||
+            customTemplate === 'true' ||
+            Boolean(templateKeyParam)
+        ) {
             const draftJson = sessionStorage.getItem('pending_doc_draft');
             if (draftJson) {
                 try {
                     const draft = JSON.parse(draftJson);
                     sessionStorage.removeItem('pending_doc_draft');
-                    const initialAttachments = draft.attachments || [];
+                    const resolvedKey: string | null = draft.templateKey || templateKeyParam || null;
+                    let finalTitle = draft.title || '';
+                    let finalContent = draft.content || '';
+                    let initialAttachments = draft.attachments || [];
+                    let loadedOverride = false;
+
+                    if (resolvedKey) {
+                        setActiveTemplateKey(resolvedKey);
+                        const override = await loadStandardDocTemplateOverride(resolvedKey);
+                        if (override) {
+                            loadedOverride = true;
+                            finalTitle = override.title || finalTitle;
+                            finalContent = override.content || finalContent;
+                            if (override.includeAttachments) {
+                                initialAttachments = (override.attachments || []).map(a => ({ name: a.name, data: a.data, size: a.size ?? 0 }));
+                            }
+                            setActiveTemplateName(override.templateName || draft.templateName || '');
+                        } else if (draft.templateName) {
+                            setActiveTemplateName(draft.templateName);
+                        }
+                        setHasCustomOverride(loadedOverride);
+                    }
+
+                    if (draft.driveTargetFolderId || (draft.driveTargetDeptName && draft.driveTargetTaskName)) {
+                        setLoadedSavedFiling({
+                            folderId: draft.driveTargetFolderId || '',
+                            deptName: draft.driveTargetDeptName || '',
+                            taskName: draft.driveTargetTaskName || '',
+                        });
+                    }
                     form.reset({
-                        title: draft.title || '',
-                        content: draft.content || '',
+                        title: finalTitle,
+                        content: finalContent,
                         publishStatus: '공개',
                         docType: 'internal',
                         receiverName: '',
@@ -578,11 +700,30 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                         circulars: [],
                         attachments: initialAttachments,
                         approvers: dynamicDefaultApprovers,
+                        addToHandover: draft.addToHandover ?? true,
+                        handoverCategory: draft.handoverCategory || draft.dutyName || form.getValues('handoverCategory') || '일반업무',
+                        driveTargetFolderId: draft.driveTargetFolderId || form.getValues('driveTargetFolderId') || '',
+                        driveTargetFolderUrl: draft.driveTargetFolderUrl || form.getValues('driveTargetFolderUrl') || '',
+                        driveTargetFolderLabel: draft.driveTargetFolderLabel || form.getValues('driveTargetFolderLabel') || '',
+                        driveTargetDeptName: draft.driveTargetDeptName || form.getValues('driveTargetDeptName') || '',
+                        driveTargetTaskName: draft.driveTargetTaskName || form.getValues('driveTargetTaskName') || '',
                     });
                     replaceApprovers(dynamicDefaultApprovers);
                     replaceAttachments(initialAttachments);
-                    const templateName = peTemplate === 'true' ? '체육 행사' : '스쿨버스';
-                    toast({ title: `${templateName} 기안 불러오기 완료`, description: `[${draft.title}] 양식 및 첨부파일(${initialAttachments.length}건)이 탑재되었습니다.` });
+                    const templateName =
+                        peTemplate === 'true'
+                            ? '체육 행사'
+                            : safetyTemplate === 'true'
+                              ? '학생 안전교육'
+                              : customTemplate === 'true'
+                                ? (draft.dutyName || '커스텀 업무')
+                                : '스쿨버스';
+                    toast({
+                        title: `${templateName} 기안 불러오기 완료`,
+                        description: loadedOverride
+                            ? `[${finalTitle}] 저장된 사용자 기본 서식이 적용되었습니다.`
+                            : `[${finalTitle}] 양식 및 첨부파일(${initialAttachments.length}건)이 탑재되었습니다.`,
+                    });
                     return;
                 } catch (err) {
                     console.error("Draft Parse Error:", err);
@@ -592,18 +733,44 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
 
         const afterschoolMode = searchParams.get('afterschoolMode');
         if (afterschoolMode === 'plan' || afterschoolMode === 'result') {
+            const asKey = afterschoolMode === 'plan' ? 'afterschool_plan' : 'afterschool_result';
+            setActiveTemplateKey(asKey);
+            const override = await loadStandardDocTemplateOverride(asKey);
+            const hasOverride = Boolean(override);
+            if (hasOverride) {
+                afterschoolOverrideLockedRef.current = true;
+            }
+            setHasCustomOverride(hasOverride);
+            const asAttachments = hasOverride && override?.includeAttachments
+                ? (override.attachments || []).map(a => ({ name: a.name, data: a.data, size: a.size ?? 0 }))
+                : [];
+
             form.reset({
-                title: afterschoolMode === 'plan' ? '[계획] 방과후학교 운영 계획 승인의 건' : '[결과] 방과후학교 운영 결과 보고 및 수당 지급 청구의 건',
-                content: '<p>데이터 로딩 중...</p>',
+                title:
+                    override?.title ||
+                    (afterschoolMode === 'plan'
+                        ? '[계획] 방과후학교 운영 계획 승인의 건'
+                        : '[결과] 방과후학교 운영 결과 보고 및 수당 지급 청구의 건'),
+                content: override?.content || '<p>데이터 로딩 중...</p>',
                 publishStatus: '공개',
                 docType: 'teacher-afterschool',
                 receiverName: '',
                 receiverEmail: '',
                 circulars: [],
-                attachments: [],
+                attachments: asAttachments,
                 approvers: dynamicDefaultApprovers,
+                addToHandover: true,
+                handoverCategory: form.getValues('handoverCategory') || '방과후학교',
+                driveTargetFolderId: form.getValues('driveTargetFolderId') || '',
+                driveTargetFolderUrl: form.getValues('driveTargetFolderUrl') || '',
+                driveTargetFolderLabel: form.getValues('driveTargetFolderLabel') || '',
+                driveTargetDeptName: form.getValues('driveTargetDeptName') || '',
+                driveTargetTaskName: form.getValues('driveTargetTaskName') || '',
             });
             replaceApprovers(dynamicDefaultApprovers);
+            if (asAttachments.length > 0) {
+                replaceAttachments(asAttachments);
+            }
             return;
         }
 
@@ -642,6 +809,13 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
             }
 
             const formattedAttachments = targetData.attachments?.map(a => ({...a, size: a.size || 0})) || [];
+            if (targetData.driveTargetFolderId || (targetData.driveTargetDeptName && targetData.driveTargetTaskName)) {
+                setLoadedSavedFiling({
+                    folderId: targetData.driveTargetFolderId || '',
+                    deptName: targetData.driveTargetDeptName || '',
+                    taskName: targetData.driveTargetTaskName || '',
+                });
+            }
             form.reset({
                 title: targetData.title || '',
                 content: targetData.content || '',
@@ -652,6 +826,13 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                 circulars: targetData.circulars || [],
                 attachments: formattedAttachments,
                 approvers: mappedApprovers,
+                addToHandover: targetData.addToHandover ?? true,
+                handoverCategory: targetData.handoverCategory || form.getValues('handoverCategory') || '일반업무',
+                driveTargetFolderId: targetData.driveTargetFolderId || form.getValues('driveTargetFolderId') || '',
+                driveTargetFolderUrl: targetData.driveTargetFolderUrl || form.getValues('driveTargetFolderUrl') || '',
+                driveTargetFolderLabel: targetData.driveTargetFolderLabel || form.getValues('driveTargetFolderLabel') || '',
+                driveTargetDeptName: targetData.driveTargetDeptName || form.getValues('driveTargetDeptName') || '',
+                driveTargetTaskName: targetData.driveTargetTaskName || form.getValues('driveTargetTaskName') || '',
             });
             replaceAttachments(formattedAttachments);
         } else {
@@ -664,10 +845,88 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
     initializeForm();
   }, [docToEdit, cloneId, form]);
 
+  // 로그인한 사용자의 담당 업무 기준 Google Drive 저장 문서함(편철) 목록 및 기본 선택 계산
+  const teacherDeptName = useMemo(() => {
+    if (myDepartments.length > 0 && myDepartments[0]?.name) {
+      return myDepartments[0].name;
+    }
+    return profile?.dept || '';
+  }, [myDepartments, profile?.dept]);
+
+  const myAssignedFilingDuties = useMemo(() => {
+    if (!profile?.email || !orgStructure) return [];
+    return resolveTeacherFilingDutiesList(profile.email, orgStructure, teacherDeptName);
+  }, [profile?.email, orgStructure, teacherDeptName]);
+
+  const myMatchedDriveFolders = useMemo(() => {
+    if (!driveConfig || myAssignedFilingDuties.length === 0) return [];
+    return resolveDriveFoldersForDuties(
+      myAssignedFilingDuties,
+      driveConfig,
+      CURRENT_SCHOOL_YEAR,
+      teacherDeptName,
+      orgStructure
+    );
+  }, [myAssignedFilingDuties, driveConfig, teacherDeptName, orgStructure]);
+
+  const filingOptions = useMemo(
+    () => listDriveFilingFolderOptions(driveConfig, orgStructure, CURRENT_SCHOOL_YEAR, myMatchedDriveFolders),
+    [driveConfig, orgStructure, myMatchedDriveFolders]
+  );
+
+  const selectedFilingOption = useMemo(
+    () => filingOptions.find(o => o.value === selectedFilingValue) || null,
+    [filingOptions, selectedFilingValue]
+  );
+
+  const applySelectedFilingOption = (opt: DriveFilingFolderOption | null) => {
+    if (!opt) return;
+    setSelectedFilingValue(opt.value);
+    form.setValue('driveTargetFolderId', opt.folderId || '');
+    form.setValue('driveTargetFolderUrl', opt.folderUrl || '');
+    form.setValue('driveTargetFolderLabel', opt.label || '');
+    form.setValue('driveTargetDeptName', opt.deptName || '');
+    form.setValue('driveTargetTaskName', opt.folderName || '');
+    form.setValue(
+      'handoverCategory',
+      inferHandoverCategoryFromTarget(opt.deptName, opt.folderName, myAssignedFilingDuties)
+    );
+  };
+
+  useEffect(() => {
+    if (userEditedFilingRef.current) return;
+    if (filingOptions.length === 0) return;
+
+    const defaultOpt = resolveDefaultFilingFolderOption(filingOptions, {
+      myMatchedFolders: myMatchedDriveFolders,
+      teacherDeptName,
+      busTemplate: searchParams.get('busTemplate') === 'true',
+      peTemplate: searchParams.get('peTemplate') === 'true',
+      afterschoolMode: searchParams.get('afterschoolMode'),
+      savedFolderId: loadedSavedFiling?.folderId || docToEdit?.driveTargetFolderId || '',
+      savedDeptName: loadedSavedFiling?.deptName || docToEdit?.driveTargetDeptName || '',
+      savedTaskName: loadedSavedFiling?.taskName || docToEdit?.driveTargetTaskName || '',
+    });
+
+    if (defaultOpt) {
+      applySelectedFilingOption(defaultOpt);
+    }
+  }, [
+    filingOptions,
+    myMatchedDriveFolders,
+    teacherDeptName,
+    searchParams,
+    loadedSavedFiling,
+    docToEdit?.driveTargetFolderId,
+    docToEdit?.driveTargetDeptName,
+    docToEdit?.driveTargetTaskName,
+  ]);
+
   // 방과후 기안 본문 및 제목 실시간 동적 생성
   useEffect(() => {
         const afterschoolMode = searchParams.get('afterschoolMode');
         if (!afterschoolMode) return;
+        if (afterschoolOverrideLockedRef.current) return;
 
         const targetSettings = teacherApplySettings || defaultTeacherApplySettings;
         const openCourses = afterschoolCourses.filter(c => c.status === 'OPEN');
@@ -735,40 +994,43 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
             ]);
         } else if (afterschoolMode === 'result') {
             const formattedTitle = `[결과] ${selectedYear}학년도 제${selectedSemester} 방과후학교 운영 결과 보고 및 수당 지급 청구의 건`;
-            const totalStudents = openCourses.reduce((sum, c) => sum + (c.currentStudents || 0), 0);
-            const rate = targetSettings.teacherFee || 800000;
-            const submittedCourses = openCourses.filter(c => (afterschoolApprovalDocs || []).some((d: any) => d.courseId === c.id));
-            const unsubmittedCount = openCourses.length - submittedCourses.length;
-            
-            // ★ 올바른 계산: 학생 수와 무관하게 [강좌별 총 수업 차시 × 차시당 강사료 단가]
-            const totalSessionsSum = openCourses.reduce((sum, c) => {
-              const sessionsPerClass = c.sessionsPerClass || 2;
-              return sum + (c.totalSessions || (c.operatingWeeks ? c.operatingWeeks * sessionsPerClass : 20));
-            }, 0);
-            const totalRate = totalSessionsSum * rate;
+            // 정산 기준: [실시간 제어실 › 강사 신청 제어]의 운영 기간 + 학사일정 휴업일, 실제 수업한 차시, 강사별 출근 차시
+            const term = termFromSettingsAndDocConfig(targetSettings, docConfig, AS_DEFAULT_CALENDAR.events || []);
+            const activeCourses = afterschoolCourses.filter(c => c.status === 'OPEN' || c.status === 'CLOSED');
+            const settle = computeSettlement(activeCourses, afterschoolAttendance as any, afterschoolSubstitutes as any, afterschoolApprovalDocs as any, term);
+            const cur = term.currency || 'VND';
+            const approvedCount = settle.courses.filter(r => r.evidence === '교감 결재 완료').length;
+            const inProgressCount = settle.courses.filter(r => r.evidence === '결재 진행 중').length;
+            const unsubmittedCount = settle.courses.filter(r => r.evidence === '미제출').length;
+            const absentEvents = settle.substituteEvents.filter(e => e.conducted);
+            const xlsxName = `${selectedYear}-${selectedSemester}_방과후학교_출석부_및_강사출근부_취합본.xlsx`;
 
             const resultContent = `
 <p><strong>1. 관련</strong>: ${relatedDocText}</p>
-<p><strong>2. 보고</strong>: ${semesterFull} 방과후학교 프로그램이 성공적으로 종료됨에 따라, 다음과 같이 강좌별 운영 결과 및 출석부·강사출근부 내역을 종합 보고하고 강사료 수당 지급을 청구합니다.</p>
+<p><strong>2. 보고</strong>: ${semesterFull} 방과후학교 운영(운영 기간 ${termPeriodLabel(term)})이 종료됨에 따라, 다음과 같이 강좌별 운영 결과와 출석부·강사출근부 내역을 보고하고 강사료 지급을 청구합니다.</p>
 <br/>
-<p><strong>가. 운영 결과 및 서류 제출 현황</strong></p>
-<p>① 총 개설 강좌 수: ${openCourses.length}개 강좌</p>
-<p>② 출석부·출근부 제출 완료: <strong>${submittedCourses.length}개 강좌 (정산 대상)</strong> ${unsubmittedCount > 0 ? ` / 서류 미제출: ${unsubmittedCount}개 강좌 (정산 보류)` : ''}</p>
-<p>③ 총 수강 학생 수: ${totalStudents}명</p>
-<p>④ 총 수업 이수 차시: 누적 ${totalSessionsSum}차시</p>
+<p><strong>가. 운영 결과 및 증빙서류 현황</strong></p>
+<p>① 운영 기간: ${termPeriodLabel(term)} (강좌별 요일·휴업일 반영)</p>
+<p>② 운영 강좌 수: ${settle.totals.courses}개 강좌 / 총 수강 학생 수: ${settle.totals.students}명</p>
+<p>③ 실제 수업 차시: 누적 ${settle.totals.conductedSessions}차시</p>
+<p>④ 증빙서류(출석부·강사출근부) 교감 결재 완료: <strong>${approvedCount}개 강좌</strong>${inProgressCount ? ` / 결재 진행 중: ${inProgressCount}개 강좌` : ''}${unsubmittedCount ? ` / 미제출: ${unsubmittedCount}개 강좌` : ''}</p>
 <br/>
-<p><strong>나. 강사 수당 정산 및 청구 내역</strong></p>
-<p>① 총 강사 수당 청구액: <strong>${totalRate.toLocaleString()} VND</strong> (산정 기준: 총 ${totalSessionsSum}차시 × 차시당 ${rate.toLocaleString()} VND)</p>
-<p>② 지급 예정일: ${new Date().toLocaleDateString('ko-KR')} (학교 운영위원회 심의 및 서류 검토 후 지급)</p>
+<p><strong>나. 강사료 정산 및 청구 내역</strong></p>
+<p>① 지급 대상 강사: ${settle.totals.instructors}명 (공동 강사는 각자 출근한 차시 기준)</p>
+<p>② 총 지급 차시: ${settle.totals.paidSessions}차시 (결근 차시 제외, 대강 차시는 대강 강사에게 지급)${absentEvents.length ? ` — 결근·대강 ${absentEvents.length}건` : ''}</p>
+<p>③ 총 강사료 청구액: <strong>${settle.totals.amount.toLocaleString()} ${cur}</strong> (산정 기준: 강사별 지급 차시 × ${term.feeType} ${term.fee.toLocaleString()} ${cur})</p>
+<p>④ 강사별 지급액: 붙임 1의 [강사별_강사료정산표] 참조</p>
 <br/>
-<p><strong>다. 붙임파일</strong>: ${selectedYear}-${selectedSemester}_방과후학교_출석부_및_강사출근부_취합본.xlsx 1부 (강사료정산 총괄표, 수강생 출석부 취합본, 강사출근부 취합본 포함). 끝.</p>
+<p><strong>다. 붙임</strong></p>
+<p>1. ${xlsxName} 1부 (강사별 강사료 정산표, 강좌별 운영 현황, 결근·대강 내역, 출석부·강사출근부 취합본)</p>
+<p>2. 별첨: 방과후 강사료 증빙서류(출석부·강사출근부, 교감 결재 완료) ${approvedCount}개 강좌 1부. 끝.</p>
             `.trim();
 
             form.setValue('title', formattedTitle);
             form.setValue('content', resultContent);
             form.setValue('attachments', [
                 {
-                    name: `${selectedYear}-${selectedSemester}_방과후학교_출석부_및_강사출근부_취합본.xlsx`,
+                    name: xlsxName,
                     size: 28500,
                     data: 'data:text/plain;base64,QXNzaWdubmVudCBkYXRhCg=='
                 }
@@ -784,8 +1046,141 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
         afterschoolEnrollments,
         afterschoolAttendance,
         afterschoolApprovalDocs,
-        teacherApplySettings
+        teacherApplySettings,
+        afterschoolRebuildTick,
+        docConfig,
+        afterschoolSubstitutes
     ]);
+
+  const myAssignedCustomDuties = useMemo(
+    () => resolveAssignedCustomDuties(profile?.email, orgStructure, profile),
+    [profile, orgStructure]
+  );
+
+  const handleSaveTemplateAsDefault = async (
+    includeAttachments: boolean,
+    targetOverride?: { templateKey?: string; customDutyName?: string }
+  ) => {
+    const titleVal = form.getValues('title')?.trim();
+    const contentVal = form.getValues('content')?.trim();
+    const attsVal = form.getValues('attachments') || [];
+    const docTypeVal = form.getValues('docType');
+
+    if (!titleVal || !contentVal) {
+      toast({
+        variant: 'destructive',
+        title: '입력 필요',
+        description: '기본값으로 저장할 제목과 본문 내용을 먼저 입력하세요.',
+      });
+      return;
+    }
+
+    setIsSavingTemplateDefault(true);
+    try {
+      const actorEmail = profile?.email || 'unknown';
+      const actorName = profile?.name || actorEmail;
+      let targetKey = targetOverride?.templateKey || activeTemplateKey;
+      let templateName = activeTemplateName;
+      let dutyName: string | undefined;
+
+      if (targetOverride?.customDutyName) {
+        dutyName = targetOverride.customDutyName;
+        const wsId = getCustomDutyWorkspaceId(dutyName);
+        const docId = `std_${Date.now()}`;
+        targetKey = `custom_duty__${wsId}__${docId}`;
+        templateName = `${dutyName} - ${titleVal}`;
+        await upsertCustomDutyStandardDoc(
+          dutyName,
+          {
+            id: docId,
+            templateKey: targetKey,
+            title: titleVal,
+            description: '기안 작성기에서 기본값으로 저장된 표준 문서',
+            content: contentVal,
+            docType: docTypeVal === 'external' ? 'external' : 'internal',
+            attachments: includeAttachments ? attsVal : [],
+            isDefault: true,
+            updatedAt: new Date().toISOString(),
+            updatedBy: actorEmail,
+            updatedByName: actorName,
+          },
+          orgStructure
+        );
+      }
+
+      if (!targetKey) {
+        toast({
+          variant: 'destructive',
+          title: '저장 대상 필요',
+          description: '저장할 업무 또는 표준 서식 대상을 선택하세요.',
+        });
+        return;
+      }
+
+      const saved = await saveStandardDocTemplateOverride({
+        templateKey: targetKey,
+        templateName,
+        dutyName,
+        title: titleVal,
+        content: contentVal,
+        docType: docTypeVal as any,
+        includeAttachments,
+        attachments: attsVal,
+        updatedBy: actorEmail,
+        updatedByName: actorName,
+      });
+
+      setActiveTemplateKey(targetKey);
+      setActiveTemplateName(saved.templateName);
+      setHasCustomOverride(true);
+      if (targetKey === 'afterschool_plan' || targetKey === 'afterschool_result') {
+        afterschoolOverrideLockedRef.current = true;
+      }
+
+      toast({
+        title: '표준 기안문서 기본값 저장 완료',
+        description: `[${saved.templateName}] 서식이 수정된 상태로 저장되어 다음 업무 실행 시 기본으로 적용됩니다.`,
+      });
+    } catch (err: any) {
+      console.error('Save template default error:', err);
+      toast({
+        variant: 'destructive',
+        title: '기본값 저장 실패',
+        description: err?.message || '표준 서식 저장 중 오류가 발생했습니다.',
+      });
+    } finally {
+      setIsSavingTemplateDefault(false);
+    }
+  };
+
+  const handleResetTemplateDefault = async () => {
+    if (!activeTemplateKey) return;
+    if (!window.confirm('수정된 기본 서식을 삭제하고 시스템 초기 양식으로 되돌리시겠습니까?')) {
+      return;
+    }
+
+    setIsResettingTemplateDefault(true);
+    try {
+      await resetStandardDocTemplateOverride(activeTemplateKey);
+      setHasCustomOverride(false);
+      if (activeTemplateKey === 'afterschool_plan' || activeTemplateKey === 'afterschool_result') {
+        afterschoolOverrideLockedRef.current = false;
+        setAfterschoolRebuildTick((c) => c + 1);
+      }
+      toast({
+        title: '초기 서식 복원 완료',
+        description: '사용자 수정 기본값이 초기화되었습니다. 다음 열기부터 시스템 초기 양식이 적용됩니다.',
+      });
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: '초기화 실패',
+        description: err?.message || '초기화 중 오류가 발생했습니다.',
+      });
+    } finally {
+      setIsResettingTemplateDefault(false);
+    }
+  };
 
   const handleDownloadAttachment = async (field: any) => {
     if (field.name.includes('_방과후학교_운영계획_강좌목록.xlsx')) {
@@ -833,7 +1228,8 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
           afterschoolApprovalDocs,
           rate,
           `${selectedYear}-${selectedSemester}`,
-          afterschoolSubstitutes
+          afterschoolSubstitutes,
+          termFromSettingsAndDocConfig(teacherApplySettings, docConfig, AS_DEFAULT_CALENDAR.events || [])
         );
 
         const XLSX = await import('xlsx');
@@ -1047,7 +1443,20 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                 fax: docConfig.fax || '',
                 email: docConfig.email || '',
                 homepage: docConfig.homepage || '',
-             }
+             },
+             addToHandover: !!data.addToHandover,
+             handoverCategory:
+               data.handoverCategory ||
+               inferHandoverCategoryFromTarget(
+                 data.driveTargetDeptName || selectedFilingOption?.deptName,
+                 data.driveTargetTaskName || selectedFilingOption?.folderName,
+                 myAssignedFilingDuties
+               ),
+             driveTargetFolderId: data.driveTargetFolderId || selectedFilingOption?.folderId || '',
+             driveTargetFolderUrl: data.driveTargetFolderUrl || selectedFilingOption?.folderUrl || '',
+             driveTargetFolderLabel: data.driveTargetFolderLabel || selectedFilingOption?.label || '',
+             driveTargetDeptName: data.driveTargetDeptName || selectedFilingOption?.deptName || '',
+             driveTargetTaskName: data.driveTargetTaskName || selectedFilingOption?.folderName || '',
          };
 
          const approverEmails = (payload.approvers || [])
@@ -1101,6 +1510,7 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                  updatedAt: serverTimestamp(),
                  comment: '',
              });
+
              return { success: true };
          } 
          // 2. 신규 생성
@@ -1189,7 +1599,12 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
 
              const activeApprovers = data.approvers.filter(a => a.active && a.name && a.name.trim() !== '');
 
-             const payload: any = {
+             const activeFilingOpt =
+               filingOptions.find(o => o.value === selectedFilingValue) || selectedFilingOption;
+             const newDocRef = doc(collection(getDb(), 'approvals'));
+             const nowIso = new Date().toISOString();
+
+             const baseFaceToFacePayload: any = {
                  title: data.title,
                  content: data.content,
                  docType: data.docType,
@@ -1228,6 +1643,19 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                      email: docConfig.email || '',
                      homepage: docConfig.homepage || '',
                  },
+                 addToHandover: !!data.addToHandover,
+                 handoverCategory:
+                   data.handoverCategory ||
+                   inferHandoverCategoryFromTarget(
+                     data.driveTargetDeptName || activeFilingOpt?.deptName,
+                     data.driveTargetTaskName || activeFilingOpt?.folderName,
+                     myAssignedFilingDuties
+                   ),
+                 driveTargetFolderId: data.driveTargetFolderId || activeFilingOpt?.folderId || '',
+                 driveTargetFolderUrl: data.driveTargetFolderUrl || activeFilingOpt?.folderUrl || '',
+                 driveTargetFolderLabel: data.driveTargetFolderLabel || activeFilingOpt?.label || '',
+                 driveTargetDeptName: data.driveTargetDeptName || activeFilingOpt?.deptName || '',
+                 driveTargetTaskName: data.driveTargetTaskName || activeFilingOpt?.folderName || '',
                  approverEmails: activeApprovers.map(a => a.email?.trim().toLowerCase()).filter(Boolean),
                  circularEmails: data.circulars.map(c => c.email?.trim().toLowerCase()).filter(Boolean),
                  // 대면 결재 전용 필드
@@ -1241,12 +1669,44 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                  requesterSignature: profile.signature || '',
                  currentStep: activeApprovers.length > 0 ? activeApprovers.length - 1 : 0,
                  status: 'approved',
+             };
+
+             // 대면 결재는 즉시 승인 완료 상태이므로 선택한 편철 문서함(Google Drive) 아카이빙 실행
+             const archiveRes = await archiveAndSyncCompletedApprovalDoc(
+               newDocRef.id,
+               { ...baseFaceToFacePayload, id: newDocRef.id, createdAt: nowIso, completedAt: nowIso },
+               { skipApprovalsDocUpdate: true, skipHandoverSync: true, docConfigOverride: docConfig }
+             );
+
+             const finalFaceToFaceDoc: any = {
+                 ...baseFaceToFacePayload,
+                 ...(archiveRes.archivedFileId
+                   ? {
+                       driveArchived: true,
+                       driveFileId: archiveRes.archivedFileId,
+                       driveFileUrl: archiveRes.archivedFileUrl || '',
+                       archivedAt: serverTimestamp(),
+                     }
+                   : {}),
+                 ...(archiveRes.archivedFolderUrl && !baseFaceToFacePayload.driveTargetFolderUrl
+                   ? { driveTargetFolderUrl: archiveRes.archivedFolderUrl }
+                   : {}),
                  createdAt: serverTimestamp(),
                  completedAt: serverTimestamp(),
              };
 
-             const newDocRef = doc(collection(getDb(), 'approvals'));
-             await setDoc(newDocRef, payload);
+             await setDoc(newDocRef, finalFaceToFaceDoc);
+
+             if (baseFaceToFacePayload.addToHandover && profile.email) {
+                 await syncCompletedApprovalToHandoverTimeline(newDocRef.id, {
+                   ...baseFaceToFacePayload,
+                   id: newDocRef.id,
+                   driveFileUrl: archiveRes.archivedFileUrl || '',
+                   driveTargetFolderUrl: archiveRes.archivedFolderUrl || baseFaceToFacePayload.driveTargetFolderUrl || '',
+                   createdAt: nowIso,
+                   completedAt: nowIso,
+                 }).catch(e => console.warn('[HandoverTimeline] 대면 결재 타임라인 동기화 오류:', e));
+             }
 
              toast({ title: "대면 결재 완료", description: `문서 번호 [${faceToFaceDocNo.trim()}]로 대면결재문서대장에 등록되었습니다.` });
              router.push('/registry');
@@ -1426,6 +1886,27 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
             </Button>
           </div>
         </div>
+
+        {/* 표준 기안문서 기본값 설정/저장 바 */}
+        <StandardTemplateBanner
+          activeTemplateKey={activeTemplateKey}
+          activeTemplateName={activeTemplateName}
+          hasCustomOverride={hasCustomOverride}
+          isSaving={isSavingTemplateDefault}
+          isResetting={isResettingTemplateDefault}
+          afterschoolMode={searchParams.get('afterschoolMode')}
+          customDuties={myAssignedCustomDuties}
+          onSaveAsDefault={handleSaveTemplateAsDefault}
+          onResetDefault={handleResetTemplateDefault}
+          onRebuildAfterschoolLive={() => {
+            afterschoolOverrideLockedRef.current = false;
+            setAfterschoolRebuildTick((c) => c + 1);
+            toast({
+              title: '최신 강좌 데이터 반영',
+              description: '현재 개설 강좌 및 정산 데이터 기준으로 본문이 다시 생성되었습니다.',
+            });
+          }}
+        />
 
         <FormField
           control={form.control}
@@ -1789,10 +2270,10 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
           onRemoveCircular={removeCircular}
         />
 
-        {/* 데스크톱 전용 공람 카드 */}
+        {/* 데스크톱 전용 공람 / 문서 번호 / 게시 상태 / 저장 문서함 그리드 */}
         {!isFamily && (
-        <div className="hidden sm:grid md:grid-cols-2 gap-8">
-            <Card>
+        <div className="hidden sm:grid md:grid-cols-2 gap-8 items-start">
+            <Card className={!docConfig.enableFaceToFaceApproval ? 'md:col-span-2' : ''}>
             <CardHeader><CardTitle>공람</CardTitle></CardHeader>
             <CardContent>
                 <div className="mb-4">
@@ -1898,6 +2379,24 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
                     </div>
                 )}
             </div>
+
+            {/* 우측 하단 박스: 저장 문서함(편철) 선택 & 인수인계 타임라인 자동 추가 */}
+            <DriveFilingHandoverCard
+              options={filingOptions}
+              selectedValue={selectedFilingValue}
+              selectedOption={selectedFilingOption}
+              onSelectFolder={(val) => {
+                if (!val) return;
+                const matched = filingOptions.find(o => o.value === val) || null;
+                if (!matched) return;
+                userEditedFilingRef.current = true;
+                applySelectedFilingOption(matched);
+              }}
+              addToHandover={!!form.watch('addToHandover')}
+              onToggleAddToHandover={(checked) => form.setValue('addToHandover', !!checked)}
+              driveEnabled={driveConfig?.enabled !== false}
+              idSuffix="desktop"
+            />
         </div>
         )}
 
@@ -1967,6 +2466,29 @@ export default function DocumentForm({ docToEdit, category = 'draft' }: Document
             )}
           />
         </div>
+
+        {/* 모바일 전용: 저장 문서함(편철) & 인수인계 타임라인에 추가 */}
+        {!isFamily && (
+          <div className="sm:hidden">
+            <DriveFilingHandoverCard
+              compact
+              options={filingOptions}
+              selectedValue={selectedFilingValue}
+              selectedOption={selectedFilingOption}
+              onSelectFolder={(val) => {
+                if (!val) return;
+                const matched = filingOptions.find(o => o.value === val) || null;
+                if (!matched) return;
+                userEditedFilingRef.current = true;
+                applySelectedFilingOption(matched);
+              }}
+              addToHandover={!!form.watch('addToHandover')}
+              onToggleAddToHandover={(checked) => form.setValue('addToHandover', !!checked)}
+              driveEnabled={driveConfig?.enabled !== false}
+              idSuffix="mobile"
+            />
+          </div>
+        )}
 
         <FormField
           control={form.control}

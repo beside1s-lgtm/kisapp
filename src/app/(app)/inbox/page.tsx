@@ -68,7 +68,7 @@ import {
   MajorTaskDefinition,
   TaskAssignmentContext
 } from "@/components/dashboard/major-tasks-modal";
-import { checkPeAccessPermission, checkHealthAccessPermission, checkHomeroomAccessPermission } from "@/lib/services/permissionService";
+import { checkPeAccessPermission, checkHealthAccessPermission, checkHomeroomAccessPermission, checkSafetyAccessPermission } from "@/lib/services/permissionService";
 import { MainLayout } from "@/components/layout/main-layout";
 import { WeeklyEducationPlanModal } from "@/components/tasks/weekly-education-plan-modal";
 import { MonthlyEducationPlanModal } from "@/components/tasks/monthly-education-plan-modal";
@@ -80,6 +80,12 @@ import {
   buildGoogleCalendarUrl 
 } from "@/lib/services/calendarExportService";
 import { OvertimeBarChart } from "@/components/inbox/OvertimeBarChart";
+import {
+  resolveAssignedCustomDuties,
+  onAllCustomDutyWorkspacesUpdate,
+  getCustomDutyHref,
+} from "@/lib/services/customDutyService";
+import type { CustomDutyWorkspace } from "@/lib/types/customDuty";
 
 export default function InboxPage() {
     const { user, profile, isParent, updateProfile } = useAuth();
@@ -142,6 +148,13 @@ export default function InboxPage() {
     // 대시보드 주요 업무 바로가기 개인화 설정 상태 (로그인한 사용자의 실제 담당 업무 기반으로 동적 설정)
     const [isMajorTasksModalOpen, setIsMajorTasksModalOpen] = useState(false);
     const [selectedMajorTaskIds, setSelectedMajorTaskIds] = useState<string[]>([]);
+    const [customWorkspacesMap, setCustomWorkspacesMap] = useState<Record<string, CustomDutyWorkspace>>({});
+
+    // 0. 커스텀 업무 워크스페이스 상태 실시간 구독
+    useEffect(() => {
+        const unsub = onAllCustomDutyWorkspacesUpdate((map) => setCustomWorkspacesMap(map));
+        return () => unsub();
+    }, []);
 
     // 1. 실시간 부서 업무 구독
     useEffect(() => {
@@ -381,6 +394,10 @@ export default function InboxPage() {
         return checkHealthAccessPermission(profile?.email, profile, orgData);
     }, [profile, orgData]);
 
+    const canAccessSafety = useMemo(() => {
+        return checkSafetyAccessPermission(profile?.email, profile, orgData);
+    }, [profile, orgData]);
+
     const isHomeroomTeacher = useMemo(() => {
         if (!profile?.email) return false;
         const { canAccess } = checkHomeroomAccessPermission(profile.email, profile, orgData);
@@ -407,14 +424,36 @@ export default function InboxPage() {
         hasAssignedBus,
         canAccessPe,
         canAccessHealth,
+        canAccessSafety,
         isHomeroomTeacher,
-    }), [profile, orgData, myBelongingInfo, isAfterschoolManager, isBusManager, myAfterschoolCourses, hasAssignedBus, canAccessPe, canAccessHealth, isHomeroomTeacher]);
+    }), [profile, orgData, myBelongingInfo, isAfterschoolManager, isBusManager, myAfterschoolCourses, hasAssignedBus, canAccessPe, canAccessHealth, canAccessSafety, isHomeroomTeacher]);
 
-    // 사용자의 실제 담당 업무 목록 (자신의 담당 업무 중에서만 노출)
+    const myCustomDuties = useMemo(() => {
+        return resolveAssignedCustomDuties(profile?.email, orgData, profile);
+    }, [profile, orgData]);
+
+    // 사용자의 실제 담당 업무 목록 (기본 구현 업무 + 배정된 커스텀 업무)
     const myAvailableTasks = useMemo(() => {
         if (!profile?.email) return [];
-        return ALL_MAJOR_TASKS.filter((task) => task.checkAssigned(taskContext));
-    }, [profile?.email, taskContext]);
+        const baseTasks = ALL_MAJOR_TASKS.filter((task) => task.checkAssigned(taskContext));
+        const customTasks: MajorTaskDefinition[] = myCustomDuties.map((cd) => {
+            const ws = customWorkspacesMap[cd.workspaceId];
+            const isUpgraded = ws?.status === 'upgraded';
+            const isRequested = ws?.status === 'requested' || ws?.status === 'in_progress';
+            return {
+                id: `custom__${cd.workspaceId}`,
+                name: cd.dutyName,
+                badge: isUpgraded ? '맞춤업무' : isRequested ? '요청접수' : '신규/빈페이지',
+                description: isUpgraded
+                    ? ws?.upgradedSummary || `${cd.dutyName} 맞춤형 관리 기능`
+                    : `${cd.dutyName} 표준 기안서 등록 및 업무기능 추가 요청`,
+                getHref: () => getCustomDutyHref(cd.dutyName, ws?.upgradedRoute),
+                themeColor: isUpgraded ? 'emerald' : 'indigo',
+                checkAssigned: () => true,
+            };
+        });
+        return [...baseTasks, ...customTasks];
+    }, [profile?.email, taskContext, myCustomDuties, customWorkspacesMap]);
 
     // 사용자별 주요 업무 선택 상태 동기화 (계정 프로필 DB 우선, localStorage 캐시 및 담당 업무 필터링)
     useEffect(() => {
@@ -682,8 +721,8 @@ export default function InboxPage() {
                 <div className="flex flex-col gap-2.5 lg:gap-3 lg:flex-1 lg:min-h-0 lg:h-full">
                     {/* 1-1. 상단: 결재 대기 문서 목록 카드 (높이를 절반으로 줄여 콤팩트화) */}
                     <Card className="rounded-2xl border bg-card shadow-xs flex flex-col shrink-0 overflow-hidden">
-                        <div className="p-2.5 sm:p-3 border-b flex items-center justify-between gap-2 shrink-0 bg-slate-50/70 rounded-t-2xl min-h-[46px]">
-                            <div className="flex items-center gap-2 min-w-0">
+                        <div className="p-2.5 sm:p-3 border-b flex flex-wrap items-center justify-between gap-2 shrink-0 bg-slate-50/70 rounded-t-2xl min-h-[46px]">
+                            <div className="flex items-center gap-2 min-w-[130px] sm:min-w-[185px] flex-1">
                                 <div className="p-1.5 bg-blue-500/10 rounded-xl text-blue-600 shrink-0">
                                     <Inbox className="h-4 w-4" />
                                 </div>
@@ -699,7 +738,7 @@ export default function InboxPage() {
                                     </div>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                            <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 shrink-0">
                                 <Button asChild variant="outline" size="sm" className="h-7 text-xs font-semibold gap-1 px-2 sm:px-2.5">
                                     <Link href="/sent">
                                         <Send className="w-3 h-3" /> <span className="hidden sm:inline">상신함</span><span className="sm:hidden">상신</span>
@@ -727,8 +766,8 @@ export default function InboxPage() {
 
                     {/* 1-2. 하단: 주요 학교 일정 (위로 끌어올려 충분한 세로 공간 확보) */}
                     <Card className="rounded-2xl border bg-card shadow-xs flex flex-col lg:flex-1 lg:min-h-0 overflow-hidden">
-                        <div className="p-2.5 sm:p-3 border-b flex items-center justify-between gap-1.5 sm:gap-2 shrink-0 bg-blue-50/50 rounded-t-2xl min-w-0 min-h-[46px]">
-                            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
+                        <div className="p-2.5 sm:p-3 border-b flex flex-wrap items-center justify-between gap-2 shrink-0 bg-blue-50/50 rounded-t-2xl min-w-0 min-h-[46px]">
+                            <div className="flex items-center gap-1.5 sm:gap-2 min-w-[120px] sm:min-w-[165px] flex-1">
                                 <div className="p-1.5 bg-blue-600/10 rounded-xl text-blue-600 shrink-0">
                                     <CalendarDays className="h-4 w-4" />
                                 </div>
@@ -743,7 +782,7 @@ export default function InboxPage() {
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 flex-nowrap">
+                            <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 shrink-0">
                                 <Button 
                                     size="sm" 
                                     variant="outline"
@@ -896,8 +935,8 @@ export default function InboxPage() {
 
                 {/* 2. 우측 (50%): 나의 업무 (부서/학급 현행 업무 + 워크플로우 + Todo) 카드 */}
                 <Card className="rounded-2xl border bg-card shadow-xs flex flex-col lg:flex-1 lg:min-h-0 lg:h-full overflow-hidden">
-                    <div className="p-2.5 sm:p-3 border-b flex items-center justify-between gap-1.5 sm:gap-2 shrink-0 bg-indigo-50/50 rounded-t-2xl min-w-0 min-h-[46px]">
-                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
+                    <div className="p-2.5 sm:p-3 border-b flex flex-wrap items-center justify-between gap-2 shrink-0 bg-indigo-50/50 rounded-t-2xl min-w-0 min-h-[46px]">
+                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-[100px] sm:min-w-[125px] flex-1">
                             <div className="p-1.5 bg-indigo-500/10 rounded-xl text-indigo-600 shrink-0">
                                 <ClipboardList className="h-4 w-4" />
                             </div>
@@ -908,7 +947,7 @@ export default function InboxPage() {
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 flex-nowrap">
+                        <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 shrink-0 max-w-full">
                             {/* 주요 업무 바로가기 설정 버튼 (일정 건의 왼쪽) */}
                             <Button 
                                 size="sm" 
@@ -1193,7 +1232,7 @@ export default function InboxPage() {
                                         );
                                     }
 
-                                    const def = ALL_MAJOR_TASKS.find(t => t.id === taskId);
+                                    const def = myAvailableTasks.find(t => t.id === taskId) || ALL_MAJOR_TASKS.find(t => t.id === taskId);
                                     if (!def) return null;
 
                                     let title = def.name;
@@ -1246,12 +1285,12 @@ export default function InboxPage() {
                                 })}
                             </div>
                         ) : myAvailableTasks.length > 0 ? (
-                            <div className="p-2.5 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/30 flex items-center justify-between text-xs text-slate-600">
+                            <div className="p-2.5 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/30 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
                                 <span className="font-medium text-[11px] text-slate-600">선생님의 담당 업무 중 대시보드 상단에 표시할 바로가기를 설정해 보세요.</span>
                                 <Button 
                                     size="sm" 
                                     variant="outline" 
-                                    className="h-6.5 px-2 text-[11px] font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-100" 
+                                    className="h-6.5 px-2 text-[11px] font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-100 shrink-0" 
                                     onClick={() => setIsMajorTasksModalOpen(true)}
                                 >
                                     업무 선택
@@ -1259,9 +1298,50 @@ export default function InboxPage() {
                             </div>
                         ) : null}
 
+                        {/* 2-1-b. 배정된 커스텀(업무기능 구축/요청 가능) 업무 바로가기 스트립 */}
+                        {(() => {
+                            const unpinnedCustomDuties = myCustomDuties.filter(
+                                (cd) => !effectiveMajorTaskIds.includes(`custom__${cd.workspaceId}`)
+                            );
+                            if (unpinnedCustomDuties.length === 0) return null;
+                            return (
+                                <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-xl bg-indigo-50/50 border border-indigo-100">
+                                    <span className="text-[10.5px] font-extrabold text-indigo-900 shrink-0 mr-1">
+                                        맞춤 업무 페이지:
+                                    </span>
+                                    {unpinnedCustomDuties.map((cd) => {
+                                        const ws = customWorkspacesMap[cd.workspaceId];
+                                        const isUpgraded = ws?.status === 'upgraded';
+                                        const isRequested = ws?.status === 'requested' || ws?.status === 'in_progress';
+                                        return (
+                                            <Link
+                                                key={cd.workspaceId}
+                                                href={getCustomDutyHref(cd.dutyName, ws?.upgradedRoute)}
+                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white hover:bg-indigo-100/60 border border-indigo-200 text-[11px] font-bold text-indigo-900 transition-colors shadow-2xs"
+                                            >
+                                                <span>{cd.dutyName}</span>
+                                                <span
+                                                    className={cn(
+                                                        "text-[9px] px-1 py-0 rounded font-extrabold",
+                                                        isUpgraded
+                                                            ? "bg-emerald-100 text-emerald-800"
+                                                            : isRequested
+                                                              ? "bg-amber-100 text-amber-800"
+                                                              : "bg-slate-100 text-slate-600"
+                                                    )}
+                                                >
+                                                    {isUpgraded ? '기능활성' : isRequested ? '요청됨' : '서식/요청'}
+                                                </span>
+                                            </Link>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })()}
+
                         {/* 2-2. 부서·학년 업무 할당/제출 워크플로우 탭 */}
                         <div className="space-y-1.5 pt-1 border-t border-slate-100 lg:flex-1 flex flex-col lg:min-h-0">
-                            <div className="flex items-center justify-between gap-1.5 shrink-0">
+                            <div className="flex flex-wrap items-center justify-between gap-1.5 shrink-0">
                                 {(() => {
                                     const myEmail = profile?.email?.toLowerCase() || '';
                                     // 내가 대상자(targetEmails)에 포함되어 있는 모든 업무를 '나에게 할당된 업무'로 표시 (본인이 직접 할당한 경우도 포함)
@@ -1269,7 +1349,7 @@ export default function InboxPage() {
                                     const createdCount = deptTasks.filter(t => t.creatorEmail?.toLowerCase() === myEmail || myBelongingInfo.isHead || profile?.isAdmin).length;
 
                                     return (
-                                        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                                        <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 shrink-0">
                                             <button
                                                 type="button"
                                                 onClick={() => setActiveTaskSubTab('assigned')}
@@ -1481,6 +1561,16 @@ export default function InboxPage() {
                                                             <span className="text-[10px] text-slate-500 font-semibold">
                                                                 제출: {submittedCount}/{total}명 ({pct}%)
                                                             </span>
+                                                            {task.status === 'completed' && (
+                                                                <Badge className="bg-emerald-600 text-white text-[9px] px-1.5 py-0 font-bold">
+                                                                    업무 완료
+                                                                </Badge>
+                                                            )}
+                                                            {task.status === 'closed' && (
+                                                                <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-300 text-[9px] px-1.5 py-0 font-semibold">
+                                                                    마감됨
+                                                                </Badge>
+                                                            )}
                                                             <span className="text-[10px] text-rose-600">
                                                                 마감: {task.deadline}
                                                             </span>
@@ -1550,7 +1640,7 @@ export default function InboxPage() {
             />
 
             <TaskSubmissionsDialog 
-                task={viewingSubmissionsTask}
+                task={viewingSubmissionsTask ? (deptTasks.find(t => t.id === viewingSubmissionsTask.id) || viewingSubmissionsTask) : null}
                 open={!!viewingSubmissionsTask}
                 onOpenChange={(open) => !open && setViewingSubmissionsTask(null)}
             />

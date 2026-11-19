@@ -285,3 +285,346 @@ export function checkHomeroomAccessPermission(
   };
 }
 
+/**
+ * 학생 안전지도 관리 시스템 접근 권한 확인
+ * - 최고 관리자, 학교 리더십, 안전지도 담당자(safetyManagers),
+ *   또는 '안전'/'안전지도' 관련 업무 담당자에게 접근 허용
+ */
+export function checkSafetyAccessPermission(
+  email?: string | null,
+  profile?: UserProfile | null,
+  org?: Partial<OrgStructure> | null
+): boolean {
+  return getSafetyPermissionDetails(email, profile, org).canAccess;
+}
+
+/**
+ * 안전지도 담당자 세부 권한 정보 조회
+ */
+export function getSafetyPermissionDetails(
+  email?: string | null,
+  profile?: UserProfile | null,
+  org?: Partial<OrgStructure> | null
+): {
+  canAccess: boolean;
+  isAdmin: boolean;
+  isSafetyManager: boolean;
+  roleTitle: string;
+} {
+  if (!email) {
+    return { canAccess: false, isAdmin: false, isSafetyManager: false, roleTitle: '' };
+  }
+
+  const emailLower = email.trim().toLowerCase();
+  const isAdmin = !!profile?.isAdmin;
+
+  // 1. 최고 관리자
+  if (isAdmin) {
+    return { canAccess: true, isAdmin: true, isSafetyManager: true, roleTitle: '시스템 관리자' };
+  }
+
+  if (!org) {
+    return { canAccess: false, isAdmin: false, isSafetyManager: false, roleTitle: '' };
+  }
+
+  // 2. 학교 리더십 (교장, 교감, 교무부장, 행정실장)
+  if (org.principal?.toLowerCase() === emailLower) {
+    return { canAccess: true, isAdmin: false, isSafetyManager: true, roleTitle: '학교장' };
+  }
+  if (org.vicePrincipal?.toLowerCase() === emailLower) {
+    return { canAccess: true, isAdmin: false, isSafetyManager: true, roleTitle: '교감' };
+  }
+  if (org.academicHead?.toLowerCase() === emailLower) {
+    return { canAccess: true, isAdmin: false, isSafetyManager: true, roleTitle: '교무부장' };
+  }
+  if (org.administrativeHead?.toLowerCase() === emailLower) {
+    return { canAccess: true, isAdmin: false, isSafetyManager: true, roleTitle: '행정실장' };
+  }
+
+  // 3. 전용 안전지도 담당자 목록 (safetyManagers)
+  if (org.safetyManagers?.some(e => e.toLowerCase() === emailLower)) {
+    return { canAccess: true, isAdmin: false, isSafetyManager: true, roleTitle: '안전지도 담당자' };
+  }
+
+  // 4. 기본 직책 'safety'에 부여된 권한 확인
+  const safetyRolePerms = org.dutyRolePermissions?.['safety'];
+  if (safetyRolePerms?.features?.includes('safety_admin') && org.safetyManagers?.some(e => e.toLowerCase() === emailLower)) {
+    return { canAccess: true, isAdmin: false, isSafetyManager: true, roleTitle: '안전지도 담당자' };
+  }
+
+  // 5. 커스텀 직책(customDutyRoles) 중 '안전'/'안전지도' 명칭 포함 또는 safety_admin 권한
+  if (org.customDutyRoles) {
+    for (const role of org.customDutyRoles) {
+      const hasEmail = role.teacherEmails?.some(e => e.toLowerCase() === emailLower);
+      if (hasEmail) {
+        const rName = role.roleName || '';
+        const hasSafetyFeature = role.permissions?.features?.includes('safety_admin');
+        if (hasSafetyFeature || rName.includes('안전') || rName.includes('지도') || rName.includes('생활지도')) {
+          return { canAccess: true, isAdmin: false, isSafetyManager: true, roleTitle: role.roleName || '안전지도 담당자' };
+        }
+      }
+    }
+  }
+
+  // 6. 소속 부서 업무(tasks) 중 '안전' 관련 업무 배정자
+  if (org.departments) {
+    for (const dept of org.departments) {
+      if (dept.tasks) {
+        for (const task of dept.tasks) {
+          const tName = task.taskName || '';
+          if (tName.includes('안전') || tName.includes('지도')) {
+            if (task.assignedEmails?.some(e => e.toLowerCase() === emailLower)) {
+              return { canAccess: true, isAdmin: false, isSafetyManager: true, roleTitle: `${dept.name} ${tName} 담당` };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 7. 부서별 부원 업무 할당 매핑 (deptMemberDuties)
+  if (org.deptMemberDuties) {
+    for (const deptId in org.deptMemberDuties) {
+      const memberDuties = org.deptMemberDuties[deptId]?.[emailLower] || [];
+      if (memberDuties.some(d => d.includes('안전') || d === 'safety')) {
+        return { canAccess: true, isAdmin: false, isSafetyManager: true, roleTitle: '안전지도 담당' };
+      }
+    }
+  }
+
+  return { canAccess: false, isAdmin: false, isSafetyManager: false, roleTitle: '' };
+}
+
+/**
+ * 학년 말 인수인계 총괄 관리자(교무부장 / 인수인계 담당자 / 관리자) 권한 판별
+ */
+export function checkHandoverAdminPermission(
+  user: UserProfile | null | undefined,
+  org: Partial<OrgStructure> | null | undefined
+): { canAccess: boolean; isAdmin: boolean; isHandoverManager: boolean; roleTitle: string } {
+  if (!user || !user.email) {
+    return { canAccess: false, isAdmin: false, isHandoverManager: false, roleTitle: '' };
+  }
+  const emailLower = user.email.trim().toLowerCase();
+
+  // 1. 최고 관리자
+  if (user.isAdmin) {
+    return { canAccess: true, isAdmin: true, isHandoverManager: true, roleTitle: '시스템 관리자' };
+  }
+
+  if (!org) {
+    return { canAccess: false, isAdmin: false, isHandoverManager: false, roleTitle: '' };
+  }
+
+  // 2. 학교 리더십 (교장, 교감, 교무부장, 행정실장)
+  if (org.principal?.toLowerCase() === emailLower) {
+    return { canAccess: true, isAdmin: false, isHandoverManager: true, roleTitle: '학교장' };
+  }
+  if (org.vicePrincipal?.toLowerCase() === emailLower) {
+    return { canAccess: true, isAdmin: false, isHandoverManager: true, roleTitle: '교감' };
+  }
+  if (org.academicHead?.toLowerCase() === emailLower) {
+    return { canAccess: true, isAdmin: false, isHandoverManager: true, roleTitle: '교무부장' };
+  }
+  if (org.administrativeHead?.toLowerCase() === emailLower) {
+    return { canAccess: true, isAdmin: false, isHandoverManager: true, roleTitle: '행정실장' };
+  }
+
+  // 3. 전용 인수인계 담당자 목록 (handoverManagers)
+  if (org.handoverManagers?.some(e => e.toLowerCase() === emailLower)) {
+    return { canAccess: true, isAdmin: false, isHandoverManager: true, roleTitle: '인수인계 담당자' };
+  }
+
+  // 4. 기본 직책 'handover'에 부여된 권한 확인
+  const handoverRolePerms = org.dutyRolePermissions?.['handover'];
+  if (handoverRolePerms?.features?.includes('handover_admin') && org.handoverManagers?.some(e => e.toLowerCase() === emailLower)) {
+    return { canAccess: true, isAdmin: false, isHandoverManager: true, roleTitle: '인수인계 담당자' };
+  }
+
+  // 5. 커스텀 직책(customDutyRoles) 중 '인수인계' 명칭 포함 또는 handover_admin 권한
+  if (org.customDutyRoles) {
+    for (const role of org.customDutyRoles) {
+      const hasEmail = role.teacherEmails?.some(e => e.toLowerCase() === emailLower);
+      if (hasEmail) {
+        const rName = role.roleName || '';
+        const hasHandoverFeature = role.permissions?.features?.includes('handover_admin');
+        if (hasHandoverFeature || rName.includes('인수인계') || rName.includes('인계')) {
+          return { canAccess: true, isAdmin: false, isHandoverManager: true, roleTitle: role.roleName || '인수인계 담당자' };
+        }
+      }
+    }
+  }
+
+  // 6. 소속 부서 업무(tasks) 중 '인수인계' 관련 업무 배정자
+  if (org.departments) {
+    for (const dept of org.departments) {
+      if (dept.tasks) {
+        for (const task of dept.tasks) {
+          const tName = task.taskName || '';
+          if (tName.includes('인수인계') || tName.includes('인계')) {
+            if (task.assignedEmails?.some(e => e.toLowerCase() === emailLower)) {
+              return { canAccess: true, isAdmin: false, isHandoverManager: true, roleTitle: `${dept.name} ${tName} 담당` };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 7. 부서별 부원 업무 할당 매핑 (deptMemberDuties)
+  if (org.deptMemberDuties) {
+    for (const deptId in org.deptMemberDuties) {
+      const memberDuties = org.deptMemberDuties[deptId]?.[emailLower] || [];
+      if (memberDuties.some(d => d.includes('인수인계') || d === 'handover')) {
+        return { canAccess: true, isAdmin: false, isHandoverManager: true, roleTitle: '인수인계 담당' };
+      }
+    }
+  }
+
+  return { canAccess: false, isAdmin: false, isHandoverManager: false, roleTitle: '' };
+}
+
+/**
+ * 방과후학교 시스템 접근 권한 확인
+ * - 방과후 담당자, 본인 개설 강좌 보유 교사, 강사, 관리자
+ */
+export function checkAfterschoolAccessPermission(
+  email?: string | null,
+  profile?: UserProfile | null,
+  org?: Partial<OrgStructure> | null,
+  myCoursesCount: number = 0
+): boolean {
+  if (profile?.role === '강사') return true;
+  if (myCoursesCount > 0) return true;
+  if (!email) return false;
+
+  const emailLower = email.trim().toLowerCase();
+  if (profile?.isAdmin) return true;
+
+  if (org?.afterschoolManagers?.some((m) => m && m.trim().toLowerCase() === emailLower)) return true;
+  if (org?.afterschoolManager && org.afterschoolManager.trim().toLowerCase() === emailLower) return true;
+
+  if (
+    org?.customDutyRoles?.some(
+      (r) =>
+        (r.roleName.includes('방과후') || r.permissions?.features?.includes('afterschool_admin')) &&
+        r.teacherEmails?.some((e) => e && e.trim().toLowerCase() === emailLower)
+    )
+  ) {
+    return true;
+  }
+
+  if (org?.departments) {
+    for (const dept of org.departments) {
+      if (dept.tasks) {
+        for (const task of dept.tasks) {
+          if (
+            task.taskName.includes('방과후') &&
+            task.assignedEmails?.some((e) => e && e.trim().toLowerCase() === emailLower)
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * 스쿨버스 시스템 접근 권한 확인
+ * - 스쿨버스 담당자, 스쿨버스 노선 배정 교사, 강사, 관리자
+ */
+export function checkBusAccessPermission(
+  email?: string | null,
+  profile?: UserProfile | null,
+  org?: Partial<OrgStructure> | null
+): boolean {
+  if (profile?.role === '강사') return true;
+  if ((profile as any)?.assignedBusId) return true;
+  if (!email) return false;
+
+  const emailLower = email.trim().toLowerCase();
+  if (profile?.isAdmin) return true;
+
+  if (org?.busManagers?.some((m) => m && m.trim().toLowerCase() === emailLower)) return true;
+  if (org?.busManager && org.busManager.trim().toLowerCase() === emailLower) return true;
+
+  if (
+    org?.customDutyRoles?.some(
+      (r) =>
+        (r.roleName.includes('버스') || r.roleName.includes('스쿨버스') || r.permissions?.features?.includes('bus_admin')) &&
+        r.teacherEmails?.some((e) => e && e.trim().toLowerCase() === emailLower)
+    )
+  ) {
+    return true;
+  }
+
+  if (org?.departments) {
+    for (const dept of org.departments) {
+      if (dept.tasks) {
+        for (const task of dept.tasks) {
+          if (
+            (task.taskName.includes('버스') || task.taskName.includes('교통')) &&
+            task.assignedEmails?.some((e) => e && e.trim().toLowerCase() === emailLower)
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * 학생 봉사활동 시스템 접근 권한 확인
+ * - 봉사활동 담당자, 커스텀 봉사 직책, 관리자
+ */
+export function checkVolunteerAccessPermission(
+  email?: string | null,
+  profile?: UserProfile | null,
+  org?: Partial<OrgStructure> | null
+): boolean {
+  if (profile?.role === '강사') return false;
+  if (!email) return false;
+
+  const emailLower = email.trim().toLowerCase();
+  if (profile?.isAdmin) return true;
+
+  if (org?.volunteerManager && org.volunteerManager.trim().toLowerCase() === emailLower) return true;
+  if ((org as any)?.volunteerManagers?.some((m: string) => m && m.trim().toLowerCase() === emailLower)) return true;
+
+  if (
+    org?.customDutyRoles?.some(
+      (r) =>
+        (r.roleName.includes('봉사') || r.roleName.includes('봉사활동')) &&
+        r.teacherEmails?.some((e) => e && e.trim().toLowerCase() === emailLower)
+    )
+  ) {
+    return true;
+  }
+
+  if (org?.departments) {
+    for (const dept of org.departments) {
+      if (dept.tasks) {
+        for (const task of dept.tasks) {
+          if (
+            task.taskName.includes('봉사') &&
+            task.assignedEmails?.some((e) => e && e.trim().toLowerCase() === emailLower)
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+
+
+

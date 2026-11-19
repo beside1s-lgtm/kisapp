@@ -1214,6 +1214,8 @@ export function PeEventManagement({ allStudents = [] }: PeEventManagementProps) 
 
       // sessionStorage에 공문서 기안 데이터 저장
       sessionStorage.setItem('pending_doc_draft', JSON.stringify({
+        templateKey: 'pe_event',
+        dutyName: '학교 체육/PAPS 관리',
         title: draftTitle,
         content: bodyHtml,
         attachments
@@ -1224,7 +1226,7 @@ export function PeEventManagement({ allStudents = [] }: PeEventManagementProps) 
         description: `전자결재 기안 작성 페이지로 이동합니다. (붙임 ${attachments.length}건 탑재됨)`,
       });
 
-      router.push('/new?peTemplate=true');
+      router.push('/new?peTemplate=true&templateKey=pe_event');
     } catch (e: any) {
       console.error(e);
       toast({ variant: 'destructive', title: '기안문 생성 실패', description: e.message });

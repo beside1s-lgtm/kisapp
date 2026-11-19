@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { Course, SyllabusSession, AttendanceRecord, Classroom } from './types';
+import { computeSettlement, courseScheduleForTerm, termFromSettings, termLabel, termPeriodLabel, type SettlementTerm } from './settlement';
 
 // Export Enrollment List to Excel
 export function exportEnrollmentsToExcel(
@@ -926,11 +927,13 @@ export function parseSyllabusExcelFile(file: File): Promise<SyllabusSession[]> {
 }
 
 /**
- * 방과후학교 운영 결과 보고 및 수당 지급 청구용 종합 통합 엑셀 워크북 생성
- * - 시트 1: [강사료정산_총괄표] (강좌별 총이수차시 × 차시당단가로 정확한 강사료 계산)
- * - 시트 2: [출석부_취합본] (학생별 출결 현황 및 출석률)
- * - 시트 3: [강사출근부_취합본] (회차별 수업일자 및 강사 출근 서명 기록)
- * - 시트 4~N: 제출 완료 강좌별 개별 출석부/출근부 상세 시트
+ * 방과후학교 운영 결과 보고 및 수당 지급 청구용 종합 엑셀 (기안문 붙임) — 현재 학기 운영 현황 기준
+ * - 시트 1: [강사별_강사료정산표] 강사마다 정규·대강·결근 차시와 지급액
+ * - 시트 2: [강좌별_운영현황] 운영 기간·계획/실시 차시·증빙서류 결재 상태
+ * - 시트 3: [결근·대강_내역] "결근: OOO / 대강: OOO"
+ * - 시트 4: [출석부_취합본] 학생별 출결
+ * - 시트 5: [강사출근부_취합본] 회차·강사별 출근(결근·대강) 기록
+ * 정산 원칙은 settlement.ts 참고 (실제 수업한 회차만, 공동 강사는 각자 출근 차시만큼)
  */
 export function generateAfterschoolSettlementWorkbook(
   courses: Course[],
@@ -938,168 +941,155 @@ export function generateAfterschoolSettlementWorkbook(
   attendanceRecords: AttendanceRecord[],
   approvalDocs: any[],
   teacherFee: number = 800000,
-  termName: string = '2026-1학기',
-  substituteRecords: import('./types').SubstituteRecord[] = []
+  termName: string = '',
+  substituteRecords: import('./types').SubstituteRecord[] = [],
+  term?: SettlementTerm
 ): XLSX.WorkBook {
+  const t: SettlementTerm = term || { ...termFromSettings({ teacherFee }), semester: termName };
+  if (!term) t.fee = teacherFee;
+  const result = computeSettlement(courses, attendanceRecords, substituteRecords, approvalDocs, t);
+  const cur = t.currency || 'VND';
+  const period = termPeriodLabel(t);
+  const title = `${termName || termLabel(t)} 방과후학교`;
   const workbook = XLSX.utils.book_new();
+  const addSheet = (name: string, header: string, rows: any[]) => {
+    const ws = XLSX.utils.aoa_to_sheet([[header], []]);
+    if (rows.length) XLSX.utils.sheet_add_json(ws, rows, { origin: 'A3' });
+    else XLSX.utils.sheet_add_aoa(ws, [['(해당 없음)']], { origin: 'A3' });
+    XLSX.utils.book_append_sheet(workbook, ws, name);
+  };
 
-  // 1. [강사료정산_총괄표] 생성
-  let grandTotalStudents = 0;
-  let grandTotalSessions = 0;
-  let grandTotalAmount = 0;
-  let rowIdx = 1;
+  // 1. 강사별 강사료 정산표
+  const instRows: any[] = result.instructors.map((s, i) => ({
+    '순번': i + 1,
+    '강사명': s.name,
+    '담당 강좌': s.courses.filter((c) => c.regular || c.absent).map((c) => c.title).join(', ') || '-',
+    '정규 수업 차시': s.regularSessions,
+    '대강 차시': s.coveredSessions,
+    '결근 차시(미지급)': s.absentSessions,
+    '지급 차시': s.paidSessions,
+    [`차시당 단가(${cur})`]: t.fee,
+    [`지급액(${cur})`]: s.amount,
+    '비고': [
+      ...s.courses.filter((c) => c.covered).map((c) => `대강: ${c.title} ${c.covered}차시`),
+      ...s.courses.filter((c) => c.absent).map((c) => `결근: ${c.title} ${c.absent}차시`),
+    ].join(' / ') || '-',
+  }));
+  instRows.push({
+    '순번': '합계',
+    '강사명': `${result.totals.instructors}명`,
+    '담당 강좌': `${result.totals.courses}개 강좌`,
+    '정규 수업 차시': result.instructors.reduce((sum, s) => sum + s.regularSessions, 0),
+    '대강 차시': result.instructors.reduce((sum, s) => sum + s.coveredSessions, 0),
+    '결근 차시(미지급)': result.instructors.reduce((sum, s) => sum + s.absentSessions, 0),
+    '지급 차시': result.totals.paidSessions,
+    [`차시당 단가(${cur})`]: '-',
+    [`지급액(${cur})`]: result.totals.amount,
+    '비고': '총 청구액',
+  });
+  addSheet('강사별_강사료정산표', `${title} 강사별 강사료 정산표 (운영 기간 ${period}, 실제 수업한 차시 기준)`, instRows);
 
-  const settlementRows: any[] = [];
+  // 2. 강좌별 운영 현황
+  addSheet(
+    '강좌별_운영현황',
+    `${title} 강좌별 운영 현황 (운영 기간 ${period})`,
+    result.courses.map((r, i) => ({
+      '순번': i + 1,
+      '강좌명': r.course.title,
+      '강사': r.instructors.join(', ') || '-',
+      '수강 학생 수': r.course.currentStudents || 0,
+      '강좌 운영 기간': r.firstDate ? `${r.firstDate} ~ ${r.lastDate}` : '-',
+      '수업 요일': (r.course.classDays || []).join(', ') || '-',
+      '수업 시간': r.course.classTime || '-',
+      '계획 회차': r.plannedLessons,
+      '계획 차시': r.plannedSessions,
+      '실시 회차': r.conductedLessons,
+      '실시 차시': r.conductedSessions,
+      '증빙서류(출석부·출근부)': r.evidence,
+    }))
+  );
 
-  courses.forEach((c) => {
-    const isSubmitted = (approvalDocs || []).some((d: any) => d.courseId === c.id);
-    const sessionsPerLesson = c.sessionsPerClass || 2;
-    const totalSessions = c.totalSessions || (c.operatingWeeks ? c.operatingWeeks * sessionsPerLesson : 20);
-    
-    // 해당 강좌의 보결 기록 조회
-    const courseSubs = (substituteRecords || []).filter((s) => s.courseId === c.id);
-    const totalSubSessions = courseSubs.reduce((sum, s) => sum + (s.sessionCount || sessionsPerLesson), 0);
-    const originalTeacherSessions = Math.max(0, totalSessions - totalSubSessions);
-    const originalTeacherAmount = originalTeacherSessions * teacherFee;
+  // 3. 결근·대강 내역
+  addSheet(
+    '결근·대강_내역',
+    `${title} 결근·대강 내역`,
+    result.substituteEvents.map((e, i) => ({
+      '순번': i + 1,
+      '날짜': e.dateStr || e.date,
+      '강좌명': e.courseTitle,
+      '회차': `${e.dayIndex}회차`,
+      '차시': e.sessions,
+      '구분': e.substituteInstructor ? '대강' : '결근',
+      '내용': `결근: ${e.absentInstructor} / 대강: ${e.substituteInstructor || '없음'}`,
+      '강사료 처리': !e.conducted
+        ? '수업 기록 없음 (정산 제외)'
+        : e.substituteInstructor
+          ? `${e.absentInstructor} 미지급, ${e.substituteInstructor} 지급`
+          : `${e.absentInstructor} 미지급`,
+      '사유': e.reason || '-',
+    }))
+  );
 
-    grandTotalStudents += (c.currentStudents || 0);
-    grandTotalSessions += totalSessions;
-    grandTotalAmount += (totalSessions * teacherFee);
+  // 4. 출석부 취합본
+  const attRows: any[] = [];
+  result.courses.forEach((r) => {
+    const c = r.course;
+    // 현재 학기 회차표에 있는 차시만, 같은 차시 기록이 여러 건이면 한 번만 (출석 기록이 하나라도 있으면 출석)
+    const termSessions = new Set(courseScheduleForTerm(c, t).flatMap((d) => d.sessionNos));
+    (enrollments || [])
+      .filter((e: any) => e.courseId === c.id && e.status === 'ENROLLED')
+      .forEach((enr: any) => {
+        const bySession = new Map<number, string>();
+        (attendanceRecords || []).forEach((x: any) => {
+          if (x.courseId !== c.id || x.studentId !== enr.studentId || !termSessions.has(x.sessionNo) || !x.status) return;
+          if (bySession.get(x.sessionNo) !== 'ATTEND') bySession.set(x.sessionNo, x.status);
+        });
+        const recs = Array.from(bySession.values());
+        const att = recs.filter((v) => v === 'ATTEND').length;
+        const abs = recs.filter((v) => v === 'ABSENT').length;
+        attRows.push({
+          '순번': attRows.length + 1,
+          '강좌명': c.title,
+          '강사': r.instructors.join(', ') || '-',
+          '학년': enr.grade,
+          '반': enr.classNum,
+          '번호': enr.studentNum,
+          '학생 이름': enr.name,
+          '출석 차시': att,
+          '결석 차시': abs,
+          '출석률': recs.length ? `${Math.round((att / recs.length) * 100)}%` : '-',
+        });
+      });
+  });
+  addSheet('출석부_취합본', `${title} 수강생 출석부 취합본 (운영 기간 ${period})`, attRows);
 
-    // 원 강사 정산 행
-    settlementRows.push({
-      '순번': rowIdx++,
-      '강좌명': c.title,
-      '담당강사': [c.instructorName, c.instructor2].filter(Boolean).join(', ') || '-',
-      '수강학생수(명)': c.currentStudents || 0,
-      '운영기간': `${c.startDate || '2026-03-30'} ~ ${c.endDate || '2026-06-20'}`,
-      '수업요일': (c.classDays || []).join(', ') || '-',
-      '수업시간': c.classTime || '-',
-      '총이수차시': originalTeacherSessions,
-      '차시당단가(VND)': teacherFee,
-      '청구강사료(VND)': originalTeacherAmount,
-      '서류제출상태': isSubmitted ? '제출완료 (정산대상)' : '미제출 (정산보류)',
-      '비고': courseSubs.length > 0 ? `원강사 (보결 ${totalSubSessions}차시 제외)` : (isSubmitted ? '출석부/출근부 검토완료' : '서류 미비')
-    });
-
-    // 보결 강사 정산 행 추가
-    courseSubs.forEach((sub) => {
-      const subSessions = sub.sessionCount || sessionsPerLesson;
-      const subAmount = subSessions * teacherFee;
-      settlementRows.push({
-        '순번': `${rowIdx++} (보결)`,
-        '강좌명': `[보결] ${c.title} (${sub.dateStr || `${sub.dayIndex}회차`})`,
-        '담당강사': `${sub.substituteInstructor} (원강사: ${c.instructorName || sub.originalInstructor} 대강)`,
-        '수강학생수(명)': c.currentStudents || 0,
-        '운영기간': sub.dateStr || '-',
-        '수업요일': '-',
-        '수업시간': c.classTime || '-',
-        '총이수차시': subSessions,
-        '차시당단가(VND)': teacherFee,
-        '청구강사료(VND)': subAmount,
-        '서류제출상태': isSubmitted ? '제출완료 (보결지급)' : '미제출',
-        '비고': `보결 수당 지급 (${sub.reason || '사유 미기재'})`
+  // 5. 강사출근부 취합본 (회차 × 강사)
+  const workRows: any[] = [];
+  result.courses.forEach((r) => {
+    const c = r.course;
+    const days = courseScheduleForTerm(c, t);
+    const checked = new Set((attendanceRecords || []).filter((x: any) => x.courseId === c.id && (x.status || x.markSymbol)).map((x: any) => x.sessionNo));
+    days.forEach((d) => {
+      const conducted = d.sessionNos.some((no) => checked.has(no));
+      const dayEvents = result.substituteEvents.filter((e) => e.courseId === c.id && e.dayIndex === d.dayIndex);
+      const names = Array.from(new Set([...r.instructors, ...dayEvents.map((e) => e.absentInstructor)]));
+      names.forEach((inst) => {
+        const ev = dayEvents.find((e) => e.absentInstructor === inst);
+        workRows.push({
+          '순번': workRows.length + 1,
+          '강좌명': c.title,
+          '회차': `${d.dayIndex}회차`,
+          '날짜': d.dateStr,
+          '차시': `${d.startSessionNo}~${d.endSessionNo}차시`,
+          '강사': inst,
+          '출근 기록': !conducted ? '수업 기록 없음' : ev ? (ev.substituteInstructor ? `결근 → 대강: ${ev.substituteInstructor}` : '결근') : '출근',
+          '지급 대상': !conducted ? '-' : ev ? ev.substituteInstructor || '없음' : inst,
+          '사유': ev?.reason || '-',
+        });
       });
     });
   });
-
-  // 합계 행 추가
-  settlementRows.push({
-    '순번': '합계' as any,
-    '강좌명': `${courses.length}개 강좌`,
-    '담당강사': '-',
-    '수강학생수(명)': grandTotalStudents,
-    '운영기간': '-',
-    '수업요일': '-',
-    '수업시간': '-',
-    '총이수차시': grandTotalSessions,
-    '차시당단가(VND)': '-' as any,
-    '청구강사료(VND)': grandTotalAmount,
-    '서류제출상태': `제출: ${courses.filter(c => (approvalDocs || []).some((d: any) => d.courseId === c.id)).length}개 / 미제출: ${courses.filter(c => !(approvalDocs || []).some((d: any) => d.courseId === c.id)).length}개`,
-    '비고': '총 청구액'
-  });
-
-  const wsSettlement = XLSX.utils.json_to_sheet(settlementRows);
-  XLSX.utils.book_append_sheet(workbook, wsSettlement, '강사료정산_총괄표');
-
-  // 2. [출석부_취합본] 생성
-  const attendanceSummaryRows: any[] = [];
-  let attIdx = 1;
-
-  courses.forEach((c) => {
-    const cEnrs = (enrollments || []).filter((e: any) => e.courseId === c.id && e.status === 'ENROLLED');
-    const isSubmitted = (approvalDocs || []).some((d: any) => d.courseId === c.id);
-
-    cEnrs.forEach((enr: any) => {
-      const studentRecords = (attendanceRecords || []).filter((r: any) => r.courseId === c.id && r.studentId === enr.studentId);
-      const attendedCount = studentRecords.filter((r: any) => r.status === 'ATTEND').length;
-      const absentCount = studentRecords.filter((r: any) => r.status === 'ABSENT').length;
-      const totalRecorded = studentRecords.length;
-      const attRate = totalRecorded > 0 ? `${Math.round((attendedCount / totalRecorded) * 100)}%` : '-';
-
-      attendanceSummaryRows.push({
-        '순번': attIdx++,
-        '강좌명': c.title,
-        '담당강사': c.instructorName || '-',
-        '학년': enr.grade,
-        '반': enr.classNum,
-        '번호': enr.studentNum,
-        '학생이름': enr.name,
-        '출석차시': attendedCount,
-        '결석차시': absentCount,
-        '출석률': attRate,
-        '스쿨버스': enr.kisbusNo || '-',
-        '학부모연락처': enr.parentPhone || '-',
-        '서류제출여부': isSubmitted ? '제출' : '미제출'
-      });
-    });
-  });
-
-  if (attendanceSummaryRows.length > 0) {
-    const wsAttendance = XLSX.utils.json_to_sheet(attendanceSummaryRows);
-    XLSX.utils.book_append_sheet(workbook, wsAttendance, '출석부_취합본');
-  }
-
-  // 3. [강사출근부_취합본] 생성
-  const workRegisterRows: any[] = [];
-  let workIdx = 1;
-
-  courses.forEach((c) => {
-    const isSubmitted = (approvalDocs || []).some((d: any) => d.courseId === c.id);
-    const sessionsPerLesson = c.sessionsPerClass || 2;
-    const totalSessions = c.totalSessions || (c.operatingWeeks ? c.operatingWeeks * sessionsPerLesson : 20);
-    const totalLessons = Math.ceil(totalSessions / sessionsPerLesson);
-
-    for (let i = 1; i <= totalLessons; i++) {
-      const startSess = (i - 1) * sessionsPerLesson + 1;
-      const endSess = Math.min(i * sessionsPerLesson, totalSessions);
-      const sessionNos = Array.from({ length: endSess - startSess + 1 }, (_, k) => startSess + k);
-      const hasChecked = (attendanceRecords || []).some((r: any) => r.courseId === c.id && sessionNos.includes(r.sessionNo || 0) && r.status);
-      
-      // 보결 여부 확인
-      const subRecord = (substituteRecords || []).find((s) => s.courseId === c.id && s.dayIndex === i);
-      const teacherName = subRecord ? `[보결] ${subRecord.substituteInstructor}` : (c.instructorName || '강사');
-      const stampText = hasChecked ? `${teacherName} (인)` : '-';
-
-      workRegisterRows.push({
-        '순번': workIdx++,
-        '강좌명': c.title,
-        '담당강사': teacherName,
-        '회차': `${i}회차`,
-        '차시범위': `${startSess}~${endSess}차시`,
-        '수업시간': c.classTime || '-',
-        '수업진행(출결체크)': hasChecked ? '진행완료' : '미체크/미수업',
-        '강사서명날인': stampText,
-        '서류제출상태': isSubmitted ? '제출완료' : '미제출',
-        '보결사유': subRecord ? (subRecord.reason || '보결 수업') : '-'
-      });
-    }
-  });
-
-  if (workRegisterRows.length > 0) {
-    const wsWork = XLSX.utils.json_to_sheet(workRegisterRows);
-    XLSX.utils.book_append_sheet(workbook, wsWork, '강사출근부_취합본');
-  }
+  addSheet('강사출근부_취합본', `${title} 강사출근부 취합본 (운영 기간 ${period})`, workRows);
 
   return workbook;
 }
@@ -1113,7 +1103,7 @@ export function exportAfterschoolSettlementWorkbook(
   filename: string = '방과후학교_출석부_및_강사출근부_취합본.xlsx',
   substituteRecords: import('./types').SubstituteRecord[] = []
 ) {
-  const wb = generateAfterschoolSettlementWorkbook(courses, enrollments, attendanceRecords, approvalDocs, teacherFee, '2026-1학기', substituteRecords);
+  const wb = generateAfterschoolSettlementWorkbook(courses, enrollments, attendanceRecords, approvalDocs, teacherFee, '', substituteRecords);
   XLSX.writeFile(wb, filename);
 }
 

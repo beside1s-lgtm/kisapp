@@ -518,7 +518,14 @@ ${matchedEvent?.totalBudget ? `<p style="line-height: 1.8; margin-bottom: 8px; m
       sessionStorage.setItem('pending_doc_draft', JSON.stringify({
         title: draftTitle,
         content: bodyHtml,
-        attachments
+        attachments,
+        ...(task.driveTargetFolderId ? { driveTargetFolderId: task.driveTargetFolderId } : {}),
+        ...(task.driveTargetFolderUrl ? { driveTargetFolderUrl: task.driveTargetFolderUrl } : {}),
+        ...(task.driveTargetFolderLabel ? { driveTargetFolderLabel: task.driveTargetFolderLabel } : {}),
+        ...(task.driveTargetDeptName ? { driveTargetDeptName: task.driveTargetDeptName } : {}),
+        ...(task.driveTargetTaskName ? { driveTargetTaskName: task.driveTargetTaskName } : {}),
+        ...(typeof task.addToHandover === 'boolean' ? { addToHandover: task.addToHandover } : {}),
+        ...(task.handoverCategory ? { handoverCategory: task.handoverCategory } : {}),
       }));
 
       toast({
@@ -667,14 +674,29 @@ ${matchedEvent?.totalBudget ? `<p style="line-height: 1.8; margin-bottom: 8px; m
     }
   };
 
+  // 업무 완료 처리 (학년 말 인수인계 타임라인 자동 연동 포함)
+  const handleCompleteTask = async () => {
+    try {
+      await updateDepartmentTaskStatus(task.id, 'completed');
+      toast({
+        title: '업무 완료 처리됨',
+        description: task.addToHandover
+          ? '업무가 완료되었으며 학년 말 인수인계 타임라인에 제목과 일시가 등록되었습니다.'
+          : '업무 상태가 완료로 변경되었습니다.',
+      });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: '완료 처리 실패', description: err.message });
+    }
+  };
+
   // 업무 마감/재개 토글
   const handleToggleStatus = async () => {
-    const nextStatus = task.status === 'closed' ? 'active' : 'closed';
+    const nextStatus = task.status === 'closed' || task.status === 'completed' ? 'active' : 'closed';
     try {
       await updateDepartmentTaskStatus(task.id, nextStatus);
       toast({ 
         title: nextStatus === 'closed' ? '업무 마감 완료' : '업무 재활성화 완료',
-        description: nextStatus === 'closed' ? '추가 제출이 마감되었습니다.' : '다시 제출할 수 있습니다.'
+        description: nextStatus === 'closed' ? '추가 제출이 마감되었습니다.' : '다시 진행 중 상태로 전환되었습니다.'
       });
     } catch (err: any) {
       toast({ variant: 'destructive', title: '상태 변경 실패', description: err.message });
@@ -767,11 +789,31 @@ ${matchedEvent?.totalBudget ? `<p style="line-height: 1.8; margin-bottom: 8px; m
               <Badge className="bg-indigo-600 text-white text-[10px] px-1.5 py-0 h-4 leading-none font-bold">
                 {task.creatorDept || '부서 업무'}
               </Badge>
-              <Badge variant="outline" className={task.status === 'closed' ? 'bg-slate-100 text-slate-600 text-[10px]' : 'bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]'}>
-                {task.status === 'closed' ? '마감됨' : '진행 중'}
+              <Badge
+                variant="outline"
+                className={
+                  task.status === 'completed'
+                    ? 'bg-emerald-600 text-white border-emerald-600 text-[10px] font-bold'
+                    : task.status === 'closed'
+                      ? 'bg-slate-100 text-slate-600 text-[10px]'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]'
+                }
+              >
+                {task.status === 'completed' ? '업무 완료' : task.status === 'closed' ? '마감됨' : '진행 중'}
               </Badge>
             </div>
             <div className="flex items-center gap-1.5">
+              {task.status !== 'completed' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCompleteTask}
+                  className="h-7 text-xs font-bold text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 rounded-lg px-2.5"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                  업무 완료
+                </Button>
+              )}
               <Button 
                 variant="ghost" 
                 size="sm" 
@@ -779,7 +821,7 @@ ${matchedEvent?.totalBudget ? `<p style="line-height: 1.8; margin-bottom: 8px; m
                 className="h-7 text-xs text-slate-500 hover:text-slate-900 rounded-lg px-2"
               >
                 <Lock className="w-3 h-3 mr-1" />
-                {task.status === 'closed' ? '업무 재개' : '업무 마감'}
+                {task.status === 'closed' || task.status === 'completed' ? '업무 재개' : '업무 마감'}
               </Button>
               <Button 
                 variant="ghost" 

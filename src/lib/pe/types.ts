@@ -62,11 +62,19 @@ export type MeasurementRecord = {
   gender?: '남' | '여';
 };
 
+export interface MeasurementPeriodCriteria {
+  highMin: number;   // '잘함' 최소 점수 (기본 8)
+  midMin: number;    // '보통' 최소 점수 (기본 5)
+  itemNames?: string[]; // 해당 주간에 측정/합산할 종목명 목록
+}
+
 export type MeasurementPeriod = {
   id: string;
   name: string;
   startDate: string;
   endDate: string;
+  items?: string[]; // 종목명 또는 종목 ID
+  criteria?: MeasurementPeriodCriteria;
 };
 
 export type ItemStatistics = {

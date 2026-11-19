@@ -138,7 +138,7 @@ export type ParentFormData = {
   gradeClassNumber: string;
   /** 공통 학생 키 (통합학생계정 문서 ID) — 출결·방과후·버스 연동에 사용 */
   masterStudentId?: string;
-  
+
   // 결석계 전용
   absencePeriod?: { startDate: string; endDate: string; totalDays: number };
   absenceType?: AbsenceType;
@@ -369,6 +369,8 @@ export type Department = {
   headName?: string | null; // 부장 교사 이름
   memberEmails: string[]; // 부원 교사 이메일 배열
   tasks?: DepartmentTaskAssignment[]; // 부서 내 담당 업무 목록
+  successorHeadEmail?: string | null; // 차년도 후임 부장 교사 이메일
+  memberSuccessors?: { [currentMemberEmail: string]: string }; // 부원별 차년도 후임자 이메일 매핑
 };
 
 export type SubjectTeacherGroup = {
@@ -416,8 +418,11 @@ export type OrgStructure = {
   systemManagers?: string[]; // 시스템 설정 담당자들 (이메일 배열)
   peTeachers?: string[]; // 학교 체육 담당 교사들 (이메일 배열)
   healthTeachers?: string[]; // 보건교사들 (이메일 배열)
+  safetyManagers?: string[]; // 안전지도 담당자들 (이메일 배열)
   specialTeachers?: string[]; // 특수교사들 (이메일 배열)
   librarianTeachers?: string[]; // 사서교사들 (이메일 배열)
+  handoverManagers?: string[]; // 학년 말 인수인계 담당자들 (이메일 배열)
+  returningTeacherEmails?: string[]; // 올해 학교를 떠나는 귀임 교원 (조직도 > 부서 관리 > 후임 설정에서 체크)
   volunteerManager?: string; // 봉사활동 업무 담당자 (1인 이메일)
   subjectTeacherGroups?: SubjectTeacherGroup[]; // 교과전담교사 그룹 (과목명 커스텀 등록 + 담당 선생님 지정)
   customDutyRoles?: CustomDutyRole[]; // 동적으로 추가된 업무 담당 직책 목록
@@ -539,6 +544,13 @@ export type ApprovalDocPayload = {
   isVolunteerBatch?: boolean;
   aggregatedDocIds?: string[];
   batchDocId?: string;
+  addToHandover?: boolean; // 학년 말 인수인계 기록 포함 여부
+  handoverCategory?: string; // 인수인계 업무 분류 (예: 교무, 학생안전, 연구기획, 방과후 등)
+  driveTargetFolderId?: string; // 편철 저장 대상 Google Drive 폴더 ID
+  driveTargetFolderUrl?: string; // 편철 저장 대상 Google Drive 폴더 URL
+  driveTargetFolderLabel?: string; // 편철 저장 문서함 라벨 (예: '예체능방과후부 > 스쿨버스 운영')
+  driveTargetDeptName?: string; // 편철 저장 대상 부서명
+  driveTargetTaskName?: string; // 편철 저장 대상 하위 업무 폴더명
   footerInfo?: {
       address: string;
       phone: string;
@@ -598,6 +610,22 @@ export interface TaskAttachment {
   driveFileId?: string;
 }
 
+export interface GoogleDriveTaskFolder {
+  name: string;
+  id: string;
+  url: string;
+  specialKey?: 'absenceDone' | 'fieldTripDone' | 'gradeMaterials' | 'peResults' | 'safetyInspection';
+}
+
+export interface GoogleDriveDepartmentFolder {
+  deptId?: string;
+  deptName: string;
+  folderId: string;
+  folderUrl: string;
+  taskFolders: GoogleDriveTaskFolder[];
+  lastSyncedAt?: string;
+}
+
 export interface GoogleDriveYearFolders {
   yearFolderId: string;
   yearFolderUrl: string;
@@ -605,18 +633,27 @@ export interface GoogleDriveYearFolders {
   approvalDoneUrl?: string;
   taskWorkId?: string;
   taskWorkUrl?: string;
+  /** 차년도 인수인계 보관 폴더 (학년도 루트 하위 '인수인계') */
+  handoverDoneId?: string;
+  handoverDoneUrl?: string;
   absenceDoneId?: string;
   absenceDoneUrl?: string;
   fieldTripDoneId?: string;
   fieldTripDoneUrl?: string;
-  /** 05_학년별 수업자료 공유 폴더 */
+  /** 학년별 수업자료 공유 폴더 (학년부 하위) */
   gradeMaterialsId?: string;
   gradeMaterialsUrl?: string;
   /** 학년별 하위 폴더: key = "1" ~ "6" */
   gradeSubFolders?: Record<string, { id: string; url: string }>;
-  /** 06_체육 측정 결과 폴더 */
+  /** 체육 측정 결과 폴더 (예체능방과후부 하위) */
   peResultsId?: string;
   peResultsUrl?: string;
+  /** 안전점검표 폴더 (자치생활부 하위) */
+  safetyInspectionId?: string;
+  safetyInspectionUrl?: string;
+  /** 조직도 부서별 폴더 및 하위 업무 폴더 맵 (key = 부서명) */
+  departmentFolders?: Record<string, GoogleDriveDepartmentFolder>;
+  lastSyncedAt?: string;
 }
 
 export interface GoogleDriveConfig {
@@ -682,7 +719,15 @@ export interface DepartmentTask {
   targetNames?: Record<string, string>;
   taskType: 'file_submission' | 'acknowledgment' | 'simple_check' | 'text_response' | 'sheets_custom' | 'sheets_template' | 'html_draft';
   deadline: string;
-  status: 'active' | 'closed';
+  status: 'active' | 'completed' | 'closed';
+  completedAt?: string;
+  addToHandover?: boolean;
+  handoverCategory?: string;
+  driveTargetFolderId?: string;
+  driveTargetFolderUrl?: string;
+  driveTargetFolderLabel?: string;
+  driveTargetDeptName?: string;
+  driveTargetTaskName?: string;
   submissions?: Record<string, TaskSubmission>;
   category?: 'general' | 'event' | 'routine';
   routineConfig?: RoutineScheduleConfig;
@@ -768,3 +813,4 @@ export interface MonthlyEducationPlan {
 }
 
 export type { MeasurementItem } from './pe/types';
+export * from './types/handover';

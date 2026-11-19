@@ -12,6 +12,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { SidebarProvider } from '@/components/layout/sidebar-context';
+import { InspectionPopupWatcher } from '@/components/safety/inspection/InspectionPopupWatcher';
+import { HandoverPopupWatcher } from '@/components/handover/HandoverPopupWatcher';
+import { CustomFeatureRequestWatcher } from '@/components/custom-duty/CustomFeatureRequestWatcher';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, profile, profileLoading, isParent } = useAuth();
@@ -97,6 +100,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+      <InspectionPopupWatcher />
+      <HandoverPopupWatcher />
+      <CustomFeatureRequestWatcher />
     </SidebarProvider>
   );
 }

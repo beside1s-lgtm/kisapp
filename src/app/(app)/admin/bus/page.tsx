@@ -2691,9 +2691,9 @@ ${leaderRowsHtml}
                 }
             ];
 
-            sessionStorage.setItem('pending_doc_draft', JSON.stringify({ title, content, attachments }));
+            sessionStorage.setItem('pending_doc_draft', JSON.stringify({ templateKey: 'bus_doc_3', templateName: docType3.category, title, content, attachments }));
             setIsBusDocModalOpen(false);
-            router.push('/new?busTemplate=true');
+            router.push('/new?busTemplate=true&templateKey=bus_doc_3');
             toast({ title: '등교지도 수당 기안 생성', description: `[${title}] 양식으로 기안 작성이 구동됩니다. (붙임 3개 — 계획서 + ${docSemesterName} 수불부 + ${vacationLabel} 수불부)` });
             return;
         }
@@ -2728,9 +2728,9 @@ ${leaderRowsHtml}
             ? docType.attachmentsGenerator(docAcademicYear, docSemesterName, docConfig.academicCalendar, buses, routes, destinations, teachers, loadedOrgStructure, loadedUsers, dutyScheduleRows) 
             : [];
         
-        sessionStorage.setItem('pending_doc_draft', JSON.stringify({ title, content, attachments }));
+        sessionStorage.setItem('pending_doc_draft', JSON.stringify({ templateKey: `bus_doc_${typeId}`, templateName: docType.category, title, content, attachments }));
         setIsBusDocModalOpen(false);
-        router.push('/new?busTemplate=true');
+        router.push(`/new?busTemplate=true&templateKey=bus_doc_${typeId}`);
         toast({ title: '스쿨버스 공문서 기안 생성', description: `[${title}] 양식으로 기안 작성이 구동됩니다.` });
     };
 
@@ -2848,9 +2848,9 @@ ${leaderRowsHtml}
             }
         ];
 
-        sessionStorage.setItem('pending_doc_draft', JSON.stringify({ title, content, attachments }));
+        sessionStorage.setItem('pending_doc_draft', JSON.stringify({ templateKey: 'bus_doc_2', templateName: docType.category, title, content, attachments }));
         setIsLeaderModalOpen(false);
-        router.push('/new?busTemplate=true');
+        router.push('/new?busTemplate=true&templateKey=bus_doc_2');
         toast({ title: '봉사활동 시간 인정 기안문 생성', description: `수정된 명단(${editableLeaders.length}명)으로 기안 작성이 구동됩니다.` });
     };
 

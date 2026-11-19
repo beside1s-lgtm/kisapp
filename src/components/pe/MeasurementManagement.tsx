@@ -26,6 +26,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import { Plus, Loader2, Trash2, Pencil, Swords, Target, CalendarRange, Check, X, ChevronRight, Youtube, Calendar as CalendarIcon } from 'lucide-react';
 import type { MeasurementItem, RecordType, MeasurementPeriod } from '@/lib/pe/types';
 import {
@@ -704,8 +705,10 @@ function AddSportDialog({ onAddItem, allItems, onRefresh }: { onAddItem: (item: 
     const { toast } = useToast();
 
     const baseCategories = ['배구', '농구', '야구', '축구', '피구'];
-    const currentCategories = [...new Set(allItems.filter(i => !i.isPaps && i.category !== '기타').map(i => i.category as string))];
-    const categories = [...new Set([...baseCategories, ...currentCategories])].sort();
+    const currentCategories = allItems
+        .filter(i => !i.isPaps && i.category && i.category.trim() !== '' && i.category.trim() !== '기타')
+        .map(i => i.category!.trim());
+    const categories = Array.from(new Set([...baseCategories, ...currentCategories])).sort();
 
     const deactivatedInCategory = useMemo(() => {
         if (!selectedCategory) return [];
@@ -734,8 +737,8 @@ function AddSportDialog({ onAddItem, allItems, onRefresh }: { onAddItem: (item: 
                     <div className="space-y-2">
                         <Label>카테고리 선택</Label>
                         <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-2">
-                            {categories.map(cat => (
-                                <Button key={cat} variant={selectedCategory === cat ? "default" : "outline"} onClick={() => setSelectedCategory(cat)} className="justify-between">
+                            {categories.map((cat, index) => (
+                                <Button key={`sport-cat-${cat}-${index}`} variant={selectedCategory === cat ? "default" : "outline"} onClick={() => setSelectedCategory(cat)} className="justify-between">
                                     {cat} <ChevronRight className="h-4 w-4 opacity-50" />
                                 </Button>
                             ))}
@@ -886,52 +889,350 @@ function AddCustomItemDialog({ onAddItem }: { onAddItem: (item: Omit<Measurement
   );
 }
 
-function SchoolPeriodDialog({ school, onUpdate, items, onToggleItem }: { school: any, onUpdate: (periods: MeasurementPeriod[]) => Promise<void>, items: MeasurementItem[], onToggleItem: (item: MeasurementItem, checked: boolean) => Promise<void> }) {
+function SchoolPeriodDialog({ school, onUpdate, items, onToggleItem }: { school: any, onUpdate: (periods: MeasurementPeriod[]) => Promise<void>, items: MeasurementItem[], onToggleItem?: (item: MeasurementItem, checked: boolean) => Promise<void> }) {
     const [isOpen, setIsOpen] = useState(false);
-    const [periods, setPeriods] = useState<MeasurementPeriod[]>(school?.measurementPeriods || []);
-    useEffect(() => { if (isOpen) setPeriods(school?.measurementPeriods || []); }, [isOpen, school]);
+    const [periods, setPeriods] = useState<MeasurementPeriod[]>([]);
+    const [selectedPeriodId, setSelectedPeriodId] = useState<string>('');
+    const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        if (isOpen) {
+            const rawPeriods: any[] = school?.measurementPeriods || [];
+            const initialPeriods: MeasurementPeriod[] = rawPeriods.map((p: any) => ({
+                ...p,
+                items: p.items || p.criteria?.itemNames || [],
+                criteria: p.criteria || {
+                    highMin: 8,
+                    midMin: 5,
+                    itemNames: p.items || [],
+                }
+            }));
+            setPeriods(initialPeriods);
+            if (initialPeriods.length > 0) {
+                setSelectedPeriodId(initialPeriods[0].id);
+            } else {
+                setSelectedPeriodId('');
+            }
+        }
+    }, [isOpen, school]);
+
     const activeItems = useMemo(() => items.filter(i => !i.isDeactivated && !i.isArchived), [items]);
+
+    const selectedPeriod = useMemo(() => {
+        return periods.find(p => p.id === selectedPeriodId) || periods[0] || null;
+    }, [periods, selectedPeriodId]);
+
     const addPeriod = () => {
-        setPeriods([...periods, { id: crypto.randomUUID(), name: `${periods.length + 1}차 측정`, startDate: format(new Date(), 'yyyy-MM-dd'), endDate: format(new Date(), 'yyyy-MM-dd') }]);
+        const newId = crypto.randomUUID();
+        const newPeriod: MeasurementPeriod = {
+            id: newId,
+            name: `${periods.length + 1}차 측정`,
+            startDate: format(new Date(), 'yyyy-MM-dd'),
+            endDate: format(new Date(), 'yyyy-MM-dd'),
+            items: [],
+            criteria: {
+                highMin: 8,
+                midMin: 5,
+                itemNames: []
+            }
+        };
+        setPeriods([...periods, newPeriod]);
+        setSelectedPeriodId(newId);
     };
+
+    const removePeriod = (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const filtered = periods.filter(p => p.id !== id);
+        setPeriods(filtered);
+        if (selectedPeriodId === id) {
+            setSelectedPeriodId(filtered.length > 0 ? filtered[0].id : '');
+        }
+    };
+
+    const updateSelectedPeriod = (updater: (prev: MeasurementPeriod) => MeasurementPeriod) => {
+        if (!selectedPeriod) return;
+        setPeriods(prev => prev.map(p => p.id === selectedPeriod.id ? updater(p) : p));
+    };
+
+    const toggleItemForPeriod = (itemName: string) => {
+        if (!selectedPeriod) return;
+        const currentItems = selectedPeriod.criteria?.itemNames || selectedPeriod.items || [];
+        const exists = currentItems.includes(itemName);
+        const updated = exists 
+            ? currentItems.filter(n => n !== itemName)
+            : [...currentItems, itemName];
+
+        updateSelectedPeriod(prev => ({
+            ...prev,
+            items: updated,
+            criteria: {
+                ...(prev.criteria || { highMin: 8, midMin: 5 }),
+                itemNames: updated,
+            }
+        }));
+    };
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            await onUpdate(periods);
+            setIsOpen(false);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const highMin = selectedPeriod?.criteria?.highMin ?? 8;
+    const midMin = selectedPeriod?.criteria?.midMin ?? 5;
+    const selectedItemNames = selectedPeriod?.criteria?.itemNames || selectedPeriod?.items || [];
+
     return (
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
-            <DialogTrigger asChild><Button variant="outline" className="border-primary text-primary hover:bg-primary/5"><CalendarRange className="mr-2 h-4 w-4" /> 측정 주간 & 종목 설정</Button></DialogTrigger>
-            <DialogContent className="max-w-2xl">
-                <DialogHeader><DialogTitle>학교 공통 측정 설정</DialogTitle><DialogDescription>측정 기간과 해당 주간에 측정할 종목을 선택하세요.</DialogDescription></DialogHeader>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
-                    <div className="space-y-4">
-                        <h4 className="font-bold flex items-center gap-2"><CalendarIcon className="h-4 w-4" /> 기간 설정</h4>
-                        <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
-                            {periods.map((p, index) => (
-                                <div key={p.id} className="p-3 bg-muted/50 rounded-lg border space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <Input value={p.name} onChange={e => setPeriods(periods.map(pr => pr.id === p.id ? {...pr, name: e.target.value} : pr))} className="h-8 font-bold" />
-                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPeriods(periods.filter(pr => pr.id !== p.id))}><X className="h-4 w-4" /></Button>
+            <DialogTrigger asChild>
+                <Button variant="outline" className="border-primary text-primary hover:bg-primary/5">
+                    <CalendarRange className="mr-2 h-4 w-4" /> 측정 주간 & 종목 설정
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-6">
+                <DialogHeader>
+                    <DialogTitle className="text-lg font-bold flex items-center gap-2">학교 공통 측정 설정</DialogTitle>
+                    <DialogDescription className="text-xs text-muted-foreground">
+                        측정 기간과 해당 주간에 측정할 종목 및 종합 평가 기준을 설정하세요.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-5 py-3 flex-1 min-h-0 overflow-hidden">
+                    {/* 좌측: 기간 목록 */}
+                    <div className="md:col-span-5 flex flex-col min-h-0 border-r pr-4 space-y-3">
+                        <div className="flex items-center justify-between shrink-0">
+                            <h4 className="font-bold flex items-center gap-1.5 text-sm">
+                                <CalendarIcon className="h-4 w-4 text-blue-600" /> 기간 목록
+                            </h4>
+                            <Button 
+                                size="sm" 
+                                variant="default" 
+                                className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1" 
+                                onClick={addPeriod}
+                            >
+                                + 주간 추가
+                            </Button>
+                        </div>
+
+                        <div className="flex-1 min-h-0 overflow-y-auto space-y-2.5 pr-1">
+                            {periods.map((p) => {
+                                const isSelected = selectedPeriod?.id === p.id;
+                                return (
+                                    <div
+                                        key={p.id}
+                                        onClick={() => setSelectedPeriodId(p.id)}
+                                        className={cn(
+                                            "p-3 rounded-lg border transition-all cursor-pointer space-y-2",
+                                            isSelected 
+                                                ? "border-blue-500 bg-blue-50/70 ring-1 ring-blue-500 shadow-xs" 
+                                                : "border-slate-200 bg-white hover:border-slate-300"
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <Input
+                                                value={p.name}
+                                                onClick={(e) => e.stopPropagation()}
+                                                onChange={e => {
+                                                    const val = e.target.value;
+                                                    setPeriods(prev => prev.map(pr => pr.id === p.id ? { ...pr, name: val } : pr));
+                                                }}
+                                                className="h-8 font-bold text-sm bg-white"
+                                                placeholder="주간명 (예: 피클볼 평가)"
+                                            />
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-7 w-7 text-slate-400 hover:text-destructive hover:bg-red-50 shrink-0"
+                                                onClick={(e) => removePeriod(p.id, e)}
+                                                title="주간 삭제"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                        <div className="flex items-center gap-1 text-xs">
+                                            <Input
+                                                type="date"
+                                                value={p.startDate}
+                                                onClick={(e) => e.stopPropagation()}
+                                                onChange={e => {
+                                                    const val = e.target.value;
+                                                    setPeriods(prev => prev.map(pr => pr.id === p.id ? { ...pr, startDate: val } : pr));
+                                                }}
+                                                className="h-7 text-xs bg-white px-1.5"
+                                            />
+                                            <span className="text-slate-400 font-medium">~</span>
+                                            <Input
+                                                type="date"
+                                                value={p.endDate}
+                                                onClick={(e) => e.stopPropagation()}
+                                                onChange={e => {
+                                                    const val = e.target.value;
+                                                    setPeriods(prev => prev.map(pr => pr.id === p.id ? { ...pr, endDate: val } : pr));
+                                                }}
+                                                className="h-7 text-xs bg-white px-1.5"
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <Input type="date" value={p.startDate} onChange={e => setPeriods(periods.map(pr => pr.id === p.id ? {...pr, startDate: e.target.value} : pr))} className="h-8 text-xs" />
-                                        <span>~</span>
-                                        <Input type="date" value={p.endDate} onChange={e => setPeriods(periods.map(pr => pr.id === p.id ? {...pr, endDate: e.target.value} : pr))} className="h-8 text-xs" />
-                                    </div>
+                                );
+                            })}
+
+                            {periods.length === 0 && (
+                                <div className="p-8 text-center text-xs text-muted-foreground border border-dashed rounded-lg">
+                                    등록된 측정 주간이 없습니다.<br />우측 상단의 '+ 주간 추가' 버튼을 눌러 추가하세요.
                                 </div>
-                            ))}
-                            <Button variant="outline" className="w-full border-dashed" onClick={addPeriod}>+ 주간 추가</Button>
+                            )}
                         </div>
                     </div>
-                    <div className="space-y-4 border-l pl-6">
-                        <h4 className="font-bold flex items-center gap-2"><Target className="h-4 w-4" /> 측정 종목 선택</h4>
-                        <div className="space-y-1 max-h-[300px] overflow-y-auto pr-2">
-                            {activeItems.map(item => (
-                                <div key={item.id} className="flex items-center space-x-3 p-2 hover:bg-secondary rounded-md">
-                                    <Checkbox id={`mp-${item.id}`} checked={item.isMeasurementWeek || false} onCheckedChange={(c) => onToggleItem(item, !!c)} />
-                                    <label htmlFor={`mp-${item.id}`} className="text-sm font-medium leading-none cursor-pointer flex-1">{item.name}</label>
+
+                    {/* 우측: 선택 주간 종목 및 종합 평가 산출 기준 */}
+                    <div className="md:col-span-7 flex flex-col min-h-0 space-y-4 pl-1">
+                        {selectedPeriod ? (
+                            <>
+                                {/* 상단: 종목 선택 */}
+                                <div className="space-y-2 flex-1 min-h-0 flex flex-col">
+                                    <div className="flex items-center justify-between shrink-0">
+                                        <h4 className="font-bold flex items-center gap-1.5 text-sm text-slate-800">
+                                            <Target className="h-4 w-4 text-emerald-600" />
+                                            <span>[{selectedPeriod.name}] 종목 선택</span>
+                                            <span className="text-xs font-normal text-muted-foreground">
+                                                ({selectedItemNames.length}개 선택됨)
+                                            </span>
+                                        </h4>
+                                    </div>
+                                    <div className="flex-1 min-h-0 max-h-[220px] overflow-y-auto pr-1 border rounded-lg p-2 bg-slate-50/50 space-y-1">
+                                        {activeItems.map(item => {
+                                            const isChecked = selectedItemNames.includes(item.name);
+                                            return (
+                                                <div
+                                                    key={item.id}
+                                                    onClick={() => toggleItemForPeriod(item.name)}
+                                                    className={cn(
+                                                        "flex items-center space-x-3 p-2 rounded-md transition-colors cursor-pointer text-xs",
+                                                        isChecked ? "bg-blue-100/60 font-semibold text-blue-900" : "hover:bg-slate-100 text-slate-700"
+                                                    )}
+                                                >
+                                                    <Checkbox
+                                                        id={`mp-item-${item.id}`}
+                                                        checked={isChecked}
+                                                        onCheckedChange={() => toggleItemForPeriod(item.name)}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                    <label
+                                                        htmlFor={`mp-item-${item.id}`}
+                                                        className="text-xs font-medium leading-none cursor-pointer flex-1"
+                                                    >
+                                                        {item.name}
+                                                    </label>
+                                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-white shrink-0">
+                                                        {item.isPaps ? 'PAPS' : (item.category || '기타')}
+                                                    </Badge>
+                                                </div>
+                                            );
+                                        })}
+                                        {activeItems.length === 0 && (
+                                            <div className="p-4 text-center text-xs text-muted-foreground">
+                                                활성화된 종목이 없습니다.
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            ))}
-                        </div>
+
+                                {/* 하단: 종합 평가 산출 기준 (점수 합산) */}
+                                <div className="shrink-0 p-3.5 bg-slate-50 border rounded-lg space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <span className="font-bold text-xs sm:text-sm text-slate-800 flex items-center gap-1.5">
+                                            📊 종합 평가 산출 기준 (점수 합산)
+                                        </span>
+                                        <span className="text-[11px] text-muted-foreground">
+                                            합산 점수 = 선택 종목 기록의 합
+                                        </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-semibold text-slate-700 block">
+                                                '잘함' 최소 점수 (이상)
+                                            </label>
+                                            <div className="flex items-center gap-1.5">
+                                                <Input
+                                                    type="number"
+                                                    min={0}
+                                                    value={highMin}
+                                                    onChange={e => {
+                                                        const val = parseInt(e.target.value) || 0;
+                                                        updateSelectedPeriod(prev => ({
+                                                            ...prev,
+                                                            criteria: {
+                                                                ...(prev.criteria || { highMin: 8, midMin: 5 }),
+                                                                highMin: val,
+                                                                itemNames: prev.criteria?.itemNames || prev.items || []
+                                                            }
+                                                        }));
+                                                    }}
+                                                    className="h-8 w-24 text-center font-bold bg-white text-emerald-700"
+                                                />
+                                                <span className="text-xs text-slate-600">점 이상</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-semibold text-slate-700 block">
+                                                '보통' 최소 점수 (이상)
+                                            </label>
+                                            <div className="flex items-center gap-1.5">
+                                                <Input
+                                                    type="number"
+                                                    min={0}
+                                                    value={midMin}
+                                                    onChange={e => {
+                                                        const val = parseInt(e.target.value) || 0;
+                                                        updateSelectedPeriod(prev => ({
+                                                            ...prev,
+                                                            criteria: {
+                                                                ...(prev.criteria || { highMin: 8, midMin: 5 }),
+                                                                midMin: val,
+                                                                itemNames: prev.criteria?.itemNames || prev.items || []
+                                                            }
+                                                        }));
+                                                    }}
+                                                    className="h-8 w-24 text-center font-bold bg-white text-blue-700"
+                                                />
+                                                <span className="text-xs text-slate-600">점 이상</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="text-[11px] bg-blue-50/80 border border-blue-200 text-blue-900 rounded p-2.5 space-y-1">
+                                        <div className="font-semibold flex items-center gap-1">
+                                            💡 설정된 기준 안내: 잘함: {highMin}점 이상 | 보통: {midMin}점 ~ {Math.max(0, highMin - 1)}점 | 노력요함: {Math.max(0, midMin - 1)}점 이하
+                                        </div>
+                                        <div className="text-[10px] text-blue-700">
+                                            (선택된 종목들의 측정 기록이 모두 합산되어 학생별 종합 등급이 자동 판정됩니다)
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground border rounded-lg">
+                                좌측에서 기간을 선택하거나 신규 주간을 추가하세요.
+                            </div>
+                        )}
                     </div>
                 </div>
-                <DialogFooter><DialogClose asChild><Button variant="outline">닫기</Button></DialogClose><Button onClick={() => { onUpdate(periods); setIsOpen(false); }}>저장</Button></DialogFooter>
+
+                <DialogFooter className="mt-2 shrink-0">
+                    <DialogClose asChild>
+                        <Button variant="outline">취소</Button>
+                    </DialogClose>
+                    <Button onClick={handleSave} disabled={isSaving}>
+                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+                        설정 저장
+                    </Button>
+                </DialogFooter>
             </DialogContent>
         </Dialog>
     );

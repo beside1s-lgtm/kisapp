@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SlidersHorizontal, CheckCircle2, RotateCcw, AlertCircle } from 'lucide-react';
 import type { OrgStructure, UserProfile } from '@/lib/types';
-import { checkPeAccessPermission, checkHealthAccessPermission, checkHomeroomAccessPermission } from '@/lib/services/permissionService';
+import { checkPeAccessPermission, checkHealthAccessPermission, checkHomeroomAccessPermission, checkSafetyAccessPermission } from '@/lib/services/permissionService';
 import { updateUserCustomMajorTasks } from '@/lib/services/userService';
 
 export interface TaskAssignmentContext {
@@ -23,6 +23,7 @@ export interface TaskAssignmentContext {
   hasAssignedBus?: boolean;
   canAccessPe?: boolean;
   canAccessHealth?: boolean;
+  canAccessSafety?: boolean;
   isHomeroomTeacher?: boolean;
 }
 
@@ -145,6 +146,20 @@ export const ALL_MAJOR_TASKS: MajorTaskDefinition[] = [
       if (ctx.isAdmin) return true;
       if (ctx.canAccessHealth) return true;
       return checkHealthAccessPermission(ctx.email, ctx.profile, ctx.orgData);
+    },
+  },
+  {
+    id: 'safety',
+    name: '학생 안전지도 관리',
+    badge: '안전지도',
+    description: '교내외 순찰 일지, 통학로 안전지도 및 안전사고 대장 관리',
+    getHref: () => '/teacher/safety',
+    themeColor: 'rose',
+    checkAssigned: (ctx) => {
+      if (ctx.profile?.role === '강사') return false;
+      if (ctx.isAdmin) return true;
+      if (ctx.canAccessSafety) return true;
+      return checkSafetyAccessPermission(ctx.email, ctx.profile, ctx.orgData);
     },
   },
   {

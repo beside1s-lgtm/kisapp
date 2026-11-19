@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { getDb } from '@/lib/firebase';
 import { collection, doc, getDocs, query, setDoc, where } from 'firebase/firestore';
 import { findTeacherEmail, updateCachedSignature } from '@/lib/teachers/teacherRegistry';
+import { checkDrawnSignature } from '@/lib/signatureQuality';
 
 interface SignatureRegisterModalProps {
   open: boolean;
@@ -84,6 +85,12 @@ export function SignatureRegisterModal({
     if (signatureMode === 'draw' && !finalSignature) {
       if (sigCanvas.current && !sigCanvas.current.isEmpty()) {
         finalSignature = sigCanvas.current.getTrimmedCanvas().toDataURL('image/png');
+        // 한 획·점처럼 너무 작은 서명은 도장 자리에 "|"처럼 보이므로 다시 그리게 한다
+        const problem = await checkDrawnSignature(finalSignature);
+        if (problem) {
+          toast({ variant: 'destructive', title: '서명을 다시 그려 주세요', description: problem });
+          return;
+        }
       }
     }
 

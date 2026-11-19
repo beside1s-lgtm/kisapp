@@ -12,6 +12,34 @@ import {
 import { getDb } from '@/lib/firebase';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { DepartmentTask, TaskSubmission } from '@/lib/types';
+import { syncCompletedTaskToHandoverTimeline } from '@/lib/services/handoverService';
+
+function areAllRecipientsSubmitted(
+  task: Partial<DepartmentTask>,
+  submissions: Record<string, TaskSubmission>
+): boolean {
+  const targetEmails = task.targetEmails || [];
+  if (targetEmails.length === 0) return false;
+
+  const targetNames = task.targetNames || {};
+  const seenGrades = new Set<string>();
+  Object.values(targetNames).forEach(name => {
+    const m = String(name || '').match(/([1-6])학년/);
+    if (m) seenGrades.add(m[1]);
+  });
+
+  if (seenGrades.size > 0) {
+    return Array.from(seenGrades).every(g =>
+      Object.entries(submissions).some(([k, s]) => String(s?.grade) === g || k.endsWith(`_${g}`))
+    );
+  }
+
+  const uniqueEmails = Array.from(new Set(targetEmails.map(e => e.trim().toLowerCase()).filter(Boolean)));
+  if (uniqueEmails.length === 0) return false;
+  return uniqueEmails.every(
+    em => Boolean(submissions[em]) || Object.values(submissions).some(s => s?.submitterEmail?.toLowerCase() === em)
+  );
+}
 
 function getTasksCol() {
   return collection(getDb(), 'department_tasks');
@@ -130,10 +158,36 @@ export async function submitDepartmentTaskResponse(
       [emailKey]: submission,
     };
 
-    await setDoc(docRef, cleanUndefined({
+    const nowIso = new Date().toISOString();
+    const shouldAutoComplete =
+      data.category !== 'routine' &&
+      data.status !== 'closed' &&
+      areAllRecipientsSubmitted(data, updatedSubmissions);
+
+    const updates: Partial<DepartmentTask> = {
       submissions: updatedSubmissions,
-      updatedAt: new Date().toISOString()
-    }), { merge: true });
+      updatedAt: nowIso,
+      ...(shouldAutoComplete
+        ? {
+            status: 'completed' as const,
+            completedAt: data.completedAt || nowIso,
+          }
+        : {}),
+    };
+
+    await setDoc(docRef, cleanUndefined(updates), { merge: true });
+
+    if (shouldAutoComplete && data.addToHandover) {
+      try {
+        await syncCompletedTaskToHandoverTimeline(taskId, {
+          ...data,
+          ...updates,
+          id: taskId,
+        });
+      } catch (hcErr) {
+        console.warn('[DepartmentTaskService] 완료 업무 타임라인 자동 연동 경고:', hcErr);
+      }
+    }
 
     return { success: true };
   } catch (error: any) {
@@ -317,7 +371,32 @@ export async function updateDepartmentTaskStatus(
 ): Promise<void> {
   try {
     const docRef = doc(getTasksCol(), taskId);
-    await setDoc(docRef, { status, updatedAt: new Date().toISOString() }, { merge: true });
+    const snap = await getDoc(docRef);
+    const prevData = snap.exists() ? (snap.data() as DepartmentTask) : null;
+    const nowIso = new Date().toISOString();
+
+    const updates: Record<string, any> = {
+      status,
+      updatedAt: nowIso,
+    };
+    if (status === 'completed') {
+      updates.completedAt = nowIso;
+    }
+
+    await setDoc(docRef, updates, { merge: true });
+
+    if (status === 'completed' && prevData?.addToHandover) {
+      try {
+        await syncCompletedTaskToHandoverTimeline(taskId, {
+          ...prevData,
+          id: taskId,
+          status: 'completed',
+          completedAt: nowIso,
+        });
+      } catch (hcErr) {
+        console.warn('[DepartmentTaskService] 완료 상태 타임라인 자동 연동 경고:', hcErr);
+      }
+    }
   } catch (error) {
     console.error('[DepartmentTaskService] updateDepartmentTaskStatus error:', error);
     throw error;

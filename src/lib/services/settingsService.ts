@@ -954,6 +954,10 @@ export function onMaterialRequestsUpdate(
       } as import('@/lib/afterschool/types').MaterialRequest));
       callback(list);
     }
+  }, (err) => {
+    // 로그인 전(권한 없음) 등: 빈 목록으로 처리
+    console.warn('[MaterialRequestService] onMaterialRequestsUpdate error:', err?.code || err);
+    callback([]);
   });
 }
 
@@ -1053,6 +1057,10 @@ export function onExpenseProofsUpdate(
       } as import('@/lib/afterschool/types').ExpenseProof));
       callback(list);
     }
+  }, (err) => {
+    // 로그인 전(권한 없음) 등: 빈 목록으로 처리
+    console.warn('[ExpenseProofService] onExpenseProofsUpdate error:', err?.code || err);
+    callback([]);
   });
 }
 

@@ -7,7 +7,7 @@ import { getTeacherHomeroom } from "@/lib/services/permissionService";
 import { DocumentList } from "@/components/document-list";
 import { useAuth } from "@/hooks/use-auth";
 import { ApprovalDoc, OrgStructure, DutyRolePermission } from "@/lib/types";
-import { CalendarCheck, Loader2, Search, X, ArrowLeft, Printer, CheckSquare, Square } from "lucide-react";
+import { CalendarCheck, Loader2, Search, X, ArrowLeft, Printer, CheckSquare, Square, UploadCloud, ExternalLink } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,16 +16,20 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { BatchDocumentPrintModal } from "@/components/batch-document-print-modal";
 import { MainLayout } from "@/components/layout/main-layout";
+import { useToast } from "@/hooks/use-toast";
+import { getGoogleDriveConfig } from "@/lib/services/settingsService";
 
 export default function AttendanceRegistryPage() {
     const router = useRouter();
     const { user, profile } = useAuth();
+    const { toast } = useToast();
     const [docs, setDocs] = useState<ApprovalDoc[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // 다중 선택 및 일괄 인쇄 상태
+    // 다중 선택 및 일괄 인쇄 / Google Drive 저장 상태
     const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
     const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+    const [autoStartDriveSave, setAutoStartDriveSave] = useState(false);
 
     // 담임 교사 및 권한 상태
     const [homeroomInfo, setHomeroomInfo] = useState<{ grade: string; classNum: string; gradeClassKey: string } | null>(null);
@@ -178,6 +182,24 @@ export default function AttendanceRegistryPage() {
         setSelectedDocIds([]);
     };
 
+    // Google Drive 03_결석계(완료) 폴더로 일괄 아카이빙
+    // Google Drive 03_결석계(완료) 폴더로 인쇄 출력물 그대로 PDF 일괄 저장
+    const handleSyncToDrive = () => {
+        const targetDocs = selectedDocIds.length > 0 ? selectedDocs : filteredDocs;
+        if (targetDocs.length === 0) {
+            toast({ title: '저장할 결석계가 없습니다.' });
+            return;
+        }
+
+        // 아무것도 선택하지 않고 전체 저장을 누른 경우 전체 선택으로 채움
+        if (selectedDocIds.length === 0) {
+            setSelectedDocIds(filteredDocs.map(d => d.id));
+        }
+
+        setAutoStartDriveSave(true);
+        setIsPrintModalOpen(true);
+    };
+
     // 선택된 문서 목록
     const selectedDocs = useMemo(() => {
         return filteredDocs.filter(d => selectedDocIds.includes(d.id));
@@ -326,7 +348,21 @@ export default function AttendanceRegistryPage() {
                 <div className="flex items-center gap-2">
                     <Button
                         type="button"
-                        onClick={() => setIsPrintModalOpen(true)}
+                        onClick={handleSyncToDrive}
+                        disabled={filteredDocs.length === 0}
+                        variant="outline"
+                        className="h-8 px-3.5 text-xs font-bold text-emerald-800 border-emerald-300 bg-white hover:bg-emerald-50 flex items-center gap-1.5 shadow-2xs shrink-0"
+                        title="화면의 결석계 인쇄 서식 그대로 Google Drive 03_결석계(완료) 폴더에 PDF로 저장합니다"
+                    >
+                        <UploadCloud className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>드라이브 일괄 저장 ({selectedDocIds.length > 0 ? `선택 ${selectedDocIds.length}건` : `전체 ${filteredDocs.length}건`})</span>
+                    </Button>
+                    <Button
+                        type="button"
+                        onClick={() => {
+                            setAutoStartDriveSave(false);
+                            setIsPrintModalOpen(true);
+                        }}
                         disabled={selectedDocIds.length === 0}
                         className="h-8 px-3.5 text-xs font-bold bg-primary hover:bg-primary/90 text-white flex items-center gap-1.5 shadow-2xs shrink-0"
                     >
@@ -343,16 +379,21 @@ export default function AttendanceRegistryPage() {
                 onSelectDoc={handleSelectDoc}
                 onPrintSingleDoc={(doc) => {
                     setSelectedDocIds([doc.id]);
+                    setAutoStartDriveSave(false);
                     setIsPrintModalOpen(true);
                 }}
             />
 
-            {/* 일괄 인쇄 모달 */}
+            {/* 일괄 인쇄 및 Google Drive 저장 모달 */}
             <BatchDocumentPrintModal
                 isOpen={isPrintModalOpen}
-                onClose={() => setIsPrintModalOpen(false)}
+                onClose={() => {
+                    setIsPrintModalOpen(false);
+                    setAutoStartDriveSave(false);
+                }}
                 documents={selectedDocs}
-                title="결석계 일괄 인쇄"
+                title="결석계 일괄 인쇄 및 Google Drive 저장"
+                autoStartDriveSave={autoStartDriveSave}
             />
         </MainLayout>
     );

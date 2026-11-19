@@ -38,3 +38,11 @@ description: 전자결재, 학교 조직도 및 수기 결재선, 대용량 학�
 3. **관리자 권한 토글 및 슈퍼 관리자 한정**:
    - `isAdmin: true` 강제 주입은 최상위 슈퍼 관리자(`beside1s@kshcm.net`)로만 한정 (일반 전담 계정 하드코딩 금지).
    - 관리자 토글 변경 시 `updateProfile({ isAdmin: checked })`로 즉시 동기화, 설정 모달 열림 시 `fetchUsers(true)`로 캐시 무효화.
+
+## 6. 전용 업무 공문서 기안 및 컴팩트 HTML 붙임문서 표준 (스쿨버스/안전지도 공통)
+1. **시스템 표준 기안기(`/new`) 단일화 연동**:
+   - 각 업무 화면에서 별도 자체 결재선 폼을 만들지 않고, 공문서 선택 모달에서 `sessionStorage.setItem('pending_doc_draft', JSON.stringify({ title, content, attachments }))` 후 `router.push('/new')`로 핸드오버하여 시스템 표준 결재선(부장, 교감, 교장)을 지정하도록 단일화한다.
+2. **컴팩트 레이아웃 및 HTML 첨부파일 & 원클릭 PDF 출력**:
+   - 붙임 문서는 원본 서식의 틀에 얽매여 페이지 하단에 과도한 공백을 남기지 않고, Noto Sans KR 스타일의 컴팩트하고 알찬 웹 공문서로 제작한다.
+   - **단일 페이지 완결 원칙**: 2페이지 내용이 3~4줄에 불과한 경우 패딩, 마진, 행 높이를 최적화하여 A4 1장에 빈틈없이 꽉 차게 완결(Single Page)하며, 인쇄 시 표 행 중간 쪼개짐을 방지하기 위해 `table, tr, td, th { page-break-inside: avoid !important; }`를 강제한다.
+   - 첨부파일은 HTML 데이터 URI로 생성하여 `attachments`에 동봉하고, 상단에 `[PDF 다운로드 / 인쇄하기]` 버튼과 `@media print` 스타일을 내장하여 열람 시 즉시 깔끔한 A4 PDF 출력을 지원한다.

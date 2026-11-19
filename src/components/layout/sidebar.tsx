@@ -30,9 +30,11 @@ import {
   Stethoscope,
   Users2,
   HeartHandshake,
+  ShieldAlert,
   Settings2,
   Pin,
-  Sparkles
+  Sparkles,
+  ArrowRightLeft
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -45,7 +47,16 @@ import {
   getParentServiceDocuments 
 } from '@/lib/services/documentService';
 import { onAfterschoolCoursesUpdate, onOrgStructureUpdate } from '@/lib/services/settingsService';
-import { checkPeAccessPermission, checkHealthAccessPermission, checkHomeroomAccessPermission } from '@/lib/services/permissionService';
+import { 
+  checkPeAccessPermission, 
+  checkHealthAccessPermission, 
+  checkHomeroomAccessPermission, 
+  checkSafetyAccessPermission, 
+  checkHandoverAdminPermission,
+  checkAfterschoolAccessPermission,
+  checkBusAccessPermission,
+  checkVolunteerAccessPermission,
+} from '@/lib/services/permissionService';
 import type { Course } from '@/lib/afterschool/types';
 import type { OrgStructure } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -54,11 +65,17 @@ import { useSidebar } from './sidebar-context';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { SidebarShortcutsModal } from '@/components/sidebar-shortcuts-modal';
 import { SidebarFeatureSearch } from '@/components/layout/feature-search';
-import { 
-  ALL_SHORTCUT_ITEMS, 
-  getSavedShortcutIds, 
-  ShortcutItem 
+import {
+  ALL_SHORTCUT_ITEMS,
+  getSavedShortcutIds,
+  ShortcutItem
 } from '@/lib/sidebarShortcuts';
+import {
+  resolveAssignedCustomDuties,
+  onAllCustomDutyWorkspacesUpdate,
+  getCustomDutyHref,
+} from '@/lib/services/customDutyService';
+import type { CustomDutyWorkspace } from '@/lib/types/customDuty';
 
 type NavItemProps = {
   href: string;
@@ -215,6 +232,15 @@ export default function AppSidebar() {
     return checkHealthAccessPermission(user?.email, profile, orgStructure);
   }, [user?.email, profile, orgStructure]);
 
+  const canAccessSafety = useMemo(() => {
+    return checkSafetyAccessPermission(user?.email, profile, orgStructure);
+  }, [user?.email, profile, orgStructure]);
+
+  // 학년 말 인수인계 총괄 업무 담당자 권한 (담당자, 교무부장, 관리자 전용)
+  const canAccessHandover = useMemo(() => {
+    return checkHandoverAdminPermission(profile, orgStructure).canAccess;
+  }, [profile, orgStructure]);
+
   // 담임 업무 바로가기 노출 조건: 학급 담임, 학생출결 담당자, 시스템 설정 담당자만 노출
   const canAccessHomeroom = useMemo(() => {
     if (!user?.email || isParent) return false;
@@ -230,6 +256,36 @@ export default function AppSidebar() {
     if (orgStructure?.systemManagers?.some((m) => m.toLowerCase() === emailLower)) return true;
     return false;
   }, [user?.email, isParent, profile, orgStructure]);
+
+  // 방과후학교 접근 권한 판별
+  const canAccessAfterschool = useMemo(() => {
+    if (!user?.email || isParent) return false;
+    return checkAfterschoolAccessPermission(user.email, profile, orgStructure, myAfterschoolCourses.length);
+  }, [user?.email, isParent, profile, orgStructure, myAfterschoolCourses.length]);
+
+  // 스쿨버스 접근 권한 판별
+  const canAccessBus = useMemo(() => {
+    if (!user?.email || isParent) return false;
+    return checkBusAccessPermission(user.email, profile, orgStructure);
+  }, [user?.email, isParent, profile, orgStructure]);
+
+  // 학생 봉사활동 접근 권한 판별
+  const canAccessVolunteer = useMemo(() => {
+    if (!user?.email || isParent) return false;
+    return checkVolunteerAccessPermission(user.email, profile, orgStructure);
+  }, [user?.email, isParent, profile, orgStructure]);
+
+  const [customWorkspacesMap, setCustomWorkspacesMap] = useState<Record<string, CustomDutyWorkspace>>({});
+  useEffect(() => {
+    if (!user || isParent) return;
+    const unsub = onAllCustomDutyWorkspacesUpdate((map) => setCustomWorkspacesMap(map));
+    return () => unsub();
+  }, [user, isParent]);
+
+  const myCustomDuties = useMemo(() => {
+    if (!user?.email || isParent) return [];
+    return resolveAssignedCustomDuties(user.email, orgStructure, profile);
+  }, [user?.email, isParent, orgStructure, profile]);
 
   useEffect(() => {
     if (!user || isParent) return;
@@ -360,6 +416,7 @@ export default function AppSidebar() {
       '/teacher/overtime',
       '/teacher/substitution',
       '/teacher/disease',
+      '/teacher/handover',
       '/teacher/registry',
     ].some((p) => pathname === p || pathname?.startsWith(p + '/'));
 
@@ -369,6 +426,7 @@ export default function AppSidebar() {
       '/teacher/bus',
       '/teacher/pe',
       '/teacher/health',
+      '/teacher/safety',
       '/volunteer',
       '/admin/students',
     ].some((p) => pathname === p || pathname?.startsWith(p + '/'));
@@ -464,6 +522,7 @@ export default function AppSidebar() {
     '/teacher/overtime',
     '/teacher/substitution',
     '/teacher/disease',
+    '/teacher/handover',
     '/teacher/registry',
   ].some((p) => pathname === p || pathname?.startsWith(p + '/'));
 
@@ -473,6 +532,7 @@ export default function AppSidebar() {
     '/teacher/bus',
     '/teacher/pe',
     '/teacher/health',
+    '/teacher/safety',
     '/volunteer',
     '/admin/students',
   ].some((p) => pathname === p || pathname?.startsWith(p + '/'));
@@ -566,7 +626,9 @@ export default function AppSidebar() {
                   <NavItem href="/registry" label="문서등록대장" icon={<ListFilter size={16} />} isSubItem />
                   <NavItem href="/attendance-registry" label="결석계 보관함" icon={<CalendarCheck size={16} />} count={parentAbsenceCount} isSubItem badgeColor="bg-primary text-primary-foreground" />
                   <NavItem href="/field-trip-registry" label="체험학습 문서함" icon={<FileText size={16} />} count={parentFieldTripCount} isSubItem badgeColor="bg-primary text-primary-foreground" />
-                  <NavItem href="/volunteer?tab=registry" label="봉사활동 대장" icon={<HeartHandshake size={16} />} isSubItem />
+                  {canAccessVolunteer && (
+                    <NavItem href="/volunteer?tab=registry" label="봉사활동 대장" icon={<HeartHandshake size={16} />} isSubItem />
+                  )}
                 </DropdownSection>
 
                 <div className="h-px bg-border/60 my-1 mx-1"></div>
@@ -586,6 +648,9 @@ export default function AppSidebar() {
                   <NavItem href="/teacher/overtime" label="초과근무" icon={<Clock size={16} />} isSubItem />
                   <NavItem href="/teacher/substitution" label="보결 관리" icon={<UserPlus size={16} />} isSubItem />
                   <NavItem href="/teacher/disease" label="건강/질병 신고" icon={<Activity size={16} />} isSubItem />
+                  {canAccessHandover && (
+                    <NavItem href="/teacher/handover" label="학년 말 인수인계" icon={<ArrowRightLeft size={16} />} isSubItem />
+                  )}
                   <NavItem href="/teacher/registry" label="교원 서비스 조회" icon={<ListFilter size={16} />} isSubItem />
                 </DropdownSection>
 
@@ -603,23 +668,45 @@ export default function AppSidebar() {
                   {canAccessHomeroom && (
                     <NavItem href="/teacher/homeroom" label="담임 업무 (출결/체험 대리)" icon={<Users2 size={16} />} isSubItem />
                   )}
-                  <NavItem 
-                    href={myAfterschoolCourses[0]?.id ? `/teacher/afterschool?courseId=${myAfterschoolCourses[0].id}` : '/teacher/afterschool'} 
-                    label={afterschoolShortcutLabel || "방과후 수업 관리"} 
-                    icon={<BookOpen size={16} />} 
-                    isSubItem 
-                  />
-                  <NavItem href="/teacher/bus" label="스쿨버스 탑승 관리" icon={<Bus size={16} />} isSubItem />
+                  {canAccessAfterschool && (
+                    <NavItem 
+                      href={myAfterschoolCourses[0]?.id ? `/teacher/afterschool?courseId=${myAfterschoolCourses[0].id}` : '/teacher/afterschool'} 
+                      label={afterschoolShortcutLabel || "방과후 수업 관리"} 
+                      icon={<BookOpen size={16} />} 
+                      isSubItem 
+                    />
+                  )}
+                  {canAccessBus && (
+                    <NavItem href="/teacher/bus" label="스쿨버스 탑승 관리" icon={<Bus size={16} />} isSubItem />
+                  )}
                   {canAccessPe && (
                     <NavItem href="/teacher/pe" label="학교 체육 (PAPS)" icon={<Activity size={16} />} isSubItem />
                   )}
                   {canAccessHealth && (
                     <NavItem href="/teacher/health" label="학생 건강 (보건실)" icon={<Stethoscope size={16} />} isSubItem />
                   )}
-                  <NavItem href="/volunteer" label="학생 봉사활동" icon={<HeartHandshake size={16} />} isSubItem />
+                  {canAccessSafety && (
+                    <NavItem href="/teacher/safety" label="학생 안전지도 관리" icon={<ShieldAlert size={16} />} isSubItem />
+                  )}
+                  {canAccessVolunteer && (
+                    <NavItem href="/volunteer" label="학생 봉사활동" icon={<HeartHandshake size={16} />} isSubItem />
+                  )}
                   {canAccessStudentAdmin && (
                     <NavItem href="/admin/students" label="통합 학생 계정 관리" icon={<Users size={16} />} isSubItem />
                   )}
+                  {myCustomDuties.map((cd) => {
+                    const ws = customWorkspacesMap[cd.workspaceId];
+                    const href = getCustomDutyHref(cd.dutyName, ws?.upgradedRoute);
+                    return (
+                      <NavItem
+                        key={cd.workspaceId}
+                        href={href}
+                        label={cd.dutyName}
+                        icon={<FileText size={16} />}
+                        isSubItem
+                      />
+                    );
+                  })}
                 </DropdownSection>
 
                 <div className="h-px bg-border/60 my-1 mx-1"></div>

@@ -184,6 +184,53 @@ export async function getUsersDirectory(forceRefresh = false): Promise<UserProfi
   }
 }
 
+// ─── 교원 서명/도장 디렉토리 메모리 캐시 (TTL: 5분) ───────────────────────────
+let _signaturesCache: Record<string, string> | null = null;
+let _signaturesCacheTime: number = 0;
+
+export function invalidateSignaturesCache() {
+  _signaturesCache = null;
+  _signaturesCacheTime = 0;
+}
+
+/**
+ * 전교 교원 및 사용자의 실제 등록 서명(도장 이미지) 맵 조회
+ * - email(소문자) -> signature
+ * - name(트림) -> signature
+ * - fallback: doc.id -> signature
+ */
+export async function getTeacherSignaturesDirectory(forceRefresh = false): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (!forceRefresh && _signaturesCache && (now - _signaturesCacheTime) < USERS_CACHE_TTL) {
+    return _signaturesCache;
+  }
+  const map: Record<string, string> = {};
+  try {
+    const snapshot = await getDocs(getUsersCol());
+    snapshot.forEach((d: any) => {
+      const data = d.data();
+      const sig = data.signature;
+      if (sig && typeof sig === 'string' && sig.trim().length > 0) {
+        const trimmedSig = sig.trim();
+        if (data.email) {
+          map[String(data.email).trim().toLowerCase()] = trimmedSig;
+        }
+        if (d.id && d.id.includes('@')) {
+          map[String(d.id).trim().toLowerCase()] = trimmedSig;
+        }
+        if (data.name) {
+          map[String(data.name).trim()] = trimmedSig;
+        }
+      }
+    });
+    _signaturesCache = map;
+    _signaturesCacheTime = now;
+  } catch (error) {
+    console.error("[UserService] getTeacherSignaturesDirectory failed:", error);
+  }
+  return map;
+}
+
 export function onUsersDirectoryUpdate(callback: (users: UserProfile[]) => void) {
   return onSnapshot(getUsersCol(), (snapshot) => {
     const list = snapshot.docs.map((d: any) => {
@@ -383,6 +430,7 @@ export async function bulkRegisterUsers(fileData: string) {
         systemManagers: currentOrg.systemManagers || [],
         peTeachers: currentOrg.peTeachers || [],
         healthTeachers: currentOrg.healthTeachers || [],
+        safetyManagers: currentOrg.safetyManagers || [],
         specialTeachers: currentOrg.specialTeachers || [],
         librarianTeachers: currentOrg.librarianTeachers || [],
         subjectTeacherGroups: currentOrg.subjectTeacherGroups || [],
@@ -611,6 +659,7 @@ export async function syncAllUsersToOrgStructure(): Promise<{ success: boolean; 
       systemManagers: [...(currentOrg.systemManagers || [])],
       peTeachers: [...(currentOrg.peTeachers || [])],
       healthTeachers: [...(currentOrg.healthTeachers || [])],
+      safetyManagers: [...(currentOrg.safetyManagers || [])],
       specialTeachers: [...(currentOrg.specialTeachers || [])],
       librarianTeachers: [...(currentOrg.librarianTeachers || [])],
       subjectTeacherGroups: [...(currentOrg.subjectTeacherGroups || [])],

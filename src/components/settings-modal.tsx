@@ -1,12 +1,17 @@
 'use client';
 
 import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache, normalizeGrade, resolveDepartment, syncAllUsersToOrgStructure, isFacultyMember, resetParentPin } from '@/lib/services/userService';
+import { buildStaffApiHeaders } from '@/lib/staffApiHeaders';
 import { createMasterStudent, updateMasterStudent, deleteMasterStudent } from '@/lib/services/masterStudentService';
 import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES, getGoogleDriveConfig, saveGoogleDriveConfig, DEFAULT_GOOGLE_DRIVE_CONFIG } from '@/lib/services/settingsService';
 import { getAuditLogs } from '@/lib/services/documentService';
+import { getSchoolFacilities } from '@/lib/services/safetyService';
+import type { SchoolFacility } from '@/lib/safety/types';
 import { DocConfig, UserProfile, OrgStructure, DelegationRule, AcademicCalendarConfig, AcademicEvent, AcademicSemesterPeriod, FieldTripBlackoutPeriod, DEFAULT_FIELD_TRIP_BLACKOUT_PERIODS, CustomDutyRole, DutyRolePermission, DutyRoleAttendanceScope, ClassPeriodSchedule, DEFAULT_PERIOD_SCHEDULES, GoogleDriveConfig } from '@/lib/types';
+import { buildDepartmentSyncPlans } from '@/lib/drive/deptFolderMapping';
 import { cn, compressImage, generateAcademicIcsFile } from '@/lib/utils';
 import { ChangeEvent, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { createPortal } from 'react-dom';
 import { useToast } from '@/hooks/use-toast';
 import { OrgSettingsTab } from './settings/OrgSettingsTab';
 import {
@@ -108,6 +113,9 @@ function getUserDepartmentOrClass(email: string, orgStructure: OrgStructure): st
 
   if (orgStructure.healthTeachers?.map(m => m.toLowerCase()).includes(emailLower)) {
     roles.push('보건교사');
+  }
+  if (orgStructure.safetyManagers?.map(m => m.toLowerCase()).includes(emailLower)) {
+    roles.push('안전지도 담당');
   }
   if (orgStructure.specialTeachers?.map(m => m.toLowerCase()).includes(emailLower)) {
     roles.push('특수교사');
@@ -217,10 +225,12 @@ export const DEFAULT_DELEGATION_STANDARDS: DelegationCategoryStandard[] = [
 export const AVAILABLE_FEATURE_PERMISSIONS = [
   { id: 'pe_admin', label: '학교 체육/PAPS 관리', desc: 'PAPS 측정 및 기록 입력, 성장 분석, 대회/리그 관리, AI 문제 출제' },
   { id: 'health_admin', label: '학생 건강/보건실 관리', desc: '학생 건강기록부 작성/관리, 법정 서식 및 예방접종/검진 관리' },
+  { id: 'safety_admin', label: '학생 안전지도 관리', desc: '교내외 순찰 일지, 통학로 안전지도 및 안전사고 접수·조치 대장 관리' },
   { id: 'afterschool_admin', label: '방과후학교 총괄 관리', desc: '강좌 개설/폐강, 강사/수강생 관리, 출석부 총괄, 수강료 정산' },
   { id: 'bus_admin', label: '스쿨버스 운영 관리', desc: '노선 및 호차 관리, 학생 탑승 배정, 탑승료 청구' },
   { id: 'student_admin', label: '학생출결 및 학적 총괄 관리', desc: '전교생 마스터 DB 및 결석계/체험학습 전체 조회/출력 권한' },
   { id: 'duty_admin', label: '교원 복무/근태 관리', desc: '교원 휴가/출장 복무 승인 대장, 초과근무, 보결 관리' },
+  { id: 'handover_admin', label: '학년 말 인수인계 총괄 관리', desc: '전 교원 인수인계 현황 대시보드, 작성 요청 공지 발송, 차년도 업무 배정 및 인수자 자동 라우팅' },
   { id: 'system_admin', label: '시스템 설정 관리', desc: '학사일정, 조직도, 전결규정, 사용자 관리 모달 접근' },
 ];
 
@@ -254,6 +264,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, DutyRolePermission> = {
     documents: ['doc_absence'],
     attendanceScope: { type: 'all' }
   },
+  safety: {
+    features: ['safety_admin'],
+    documents: ['doc_absence', 'doc_fieldtrip'],
+    attendanceScope: { type: 'all' }
+  },
   special: {
     features: [],
     documents: ['doc_absence', 'doc_fieldtrip'],
@@ -262,6 +277,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, DutyRolePermission> = {
   librarian: {
     features: [],
     documents: []
+  },
+  handover: {
+    features: ['handover_admin'],
+    documents: ['doc_registry']
   },
 };
 
@@ -330,6 +349,7 @@ function DutyRolePermissionModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
         className="max-w-lg p-5"
+        hideCloseButton={true}
         onPointerDownOutside={(e) => e.preventDefault()}
       >
         <DialogHeader className="pb-3 border-b space-y-1">
@@ -527,19 +547,90 @@ export function SearchableUserSelect({
 }: SearchableUserSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const updatePosition = () => {
+    if (!triggerRef.current) return;
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const dialogEl = triggerRef.current.closest('[role="dialog"]') as HTMLElement | null;
+
+    setPortalTarget(dialogEl || document.body);
+
+    const cs = dialogEl ? window.getComputedStyle(dialogEl) : null;
+    const bTop = cs ? parseFloat(cs.borderTopWidth) || 0 : 0;
+    const bLeft = cs ? parseFloat(cs.borderLeftWidth) || 0 : 0;
+    const bRight = cs ? parseFloat(cs.borderRightWidth) || 0 : 0;
+    const bBottom = cs ? parseFloat(cs.borderBottomWidth) || 0 : 0;
+
+    const containerRect = dialogEl
+      ? dialogEl.getBoundingClientRect()
+      : { top: 0, left: 0, right: window.innerWidth, bottom: window.innerHeight };
+
+    // 아래 공간이 부족하면 위쪽으로 자동 배치
+    const spaceBelow = window.innerHeight - triggerRect.bottom;
+    const openUpward = spaceBelow < 270 && triggerRect.top > spaceBelow;
+
+    const nextStyle: React.CSSProperties = {
+      position: 'fixed',
+      zIndex: 9999,
+    };
+
+    if (openUpward) {
+      nextStyle.bottom = containerRect.bottom - bBottom - triggerRect.top + 4;
+    } else {
+      nextStyle.top = triggerRect.bottom - (containerRect.top + bTop) + 4;
+    }
+
+    if (align === 'end') {
+      nextStyle.right = containerRect.right - bRight - triggerRect.right;
+    } else {
+      nextStyle.left = triggerRect.left - (containerRect.left + bLeft);
+    }
+
+    setDropdownStyle(nextStyle);
+  };
 
   useEffect(() => {
     if (!open) return;
+
+    updatePosition();
+    const focusTimer = setTimeout(() => searchInputRef.current?.focus(), 0);
+
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(target) &&
+        (!panelRef.current || !panelRef.current.contains(target))
+      ) {
         setOpen(false);
         setSearch('');
       }
     };
+
+    const handleScrollOrResize = (e: Event) => {
+      if (panelRef.current && e.target instanceof Node && panelRef.current.contains(e.target)) {
+        return;
+      }
+      updatePosition();
+    };
+
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [open]);
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    return () => {
+      clearTimeout(focusTimer);
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+    };
+  }, [open, align]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return users;
@@ -552,12 +643,106 @@ export function SearchableUserSelect({
 
   const selectedUser = users.find(u => u.email?.toLowerCase() === value?.toLowerCase());
 
+  const dropdownPanel = open && portalTarget ? createPortal(
+    <div
+      ref={panelRef}
+      style={dropdownStyle}
+      onWheel={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+      className={cn(
+        "p-2 bg-white shadow-2xl border border-slate-200 rounded-xl space-y-1.5 animate-in fade-in-0 zoom-in-95",
+        panelWidthClass
+      )}
+    >
+      <div className="relative flex items-center">
+        <Search className="absolute left-2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+        <Input
+          ref={searchInputRef}
+          placeholder="이름/이메일 검색..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-8 pl-7 pr-6 text-xs bg-slate-50 border-slate-200 focus-visible:bg-white"
+        />
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch('')}
+            className="absolute right-2 text-xs text-slate-400 hover:text-slate-600 font-bold"
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      <div
+        className="max-h-52 overflow-y-auto divide-y divide-slate-100 pr-0.5"
+        onWheel={(e) => e.stopPropagation()}
+      >
+        {allowUnassign && (
+          <button
+            type="button"
+            onClick={() => {
+              onSelect('');
+              setOpen(false);
+              setSearch('');
+            }}
+            className="w-full text-left py-1.5 px-2 text-xs rounded-md text-slate-500 hover:bg-slate-100 font-medium"
+          >
+            {unassignLabel}
+          </button>
+        )}
+
+        {filtered.length === 0 ? (
+          <div className="text-xs py-4 text-center text-slate-400">
+            '{search}' 검색 결과 없음
+          </div>
+        ) : (
+          filtered.map(u => {
+            const isSelected = value?.toLowerCase() === u.email?.toLowerCase();
+            return (
+              <button
+                key={u.email}
+                type="button"
+                onClick={() => {
+                  onSelect(u.email);
+                  setOpen(false);
+                  setSearch('');
+                }}
+                className={`w-full text-left py-1.5 px-2 text-xs rounded-md transition-colors flex items-center justify-between hover:bg-indigo-50 ${
+                  isSelected ? 'bg-indigo-50/80 font-bold text-indigo-900' : 'text-slate-800'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="font-semibold">{u.name}</span>
+                  <span className="text-[10px] text-slate-400 truncate max-w-[100px]">{u.email}</span>
+                </div>
+                {isSelected && (
+                  <Check className="h-3.5 w-3.5 text-indigo-600 shrink-0 ml-1" />
+                )}
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>,
+    portalTarget
+  ) : null;
+
   return (
     <div ref={containerRef} className="relative inline-block w-full">
       <Button
+        ref={triggerRef}
         type="button"
         variant="outline"
-        onClick={() => setOpen(prev => !prev)}
+        onClick={() => {
+          if (!open) {
+            updatePosition();
+            setOpen(true);
+          } else {
+            setOpen(false);
+            setSearch('');
+          }
+        }}
         className={cn("w-full justify-between font-normal border-slate-300 hover:bg-slate-50 shadow-2xs", triggerClassName)}
       >
         <span className="truncate">
@@ -567,84 +752,7 @@ export function SearchableUserSelect({
         </span>
         <ChevronsUpDown className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
       </Button>
-
-      {open && (
-        <div 
-          className={cn(
-            "absolute top-full mt-1 p-2 z-[9999] bg-white shadow-2xl border border-slate-200 rounded-xl space-y-1.5 animate-in fade-in-0 zoom-in-95",
-            panelWidthClass,
-            align === 'end' ? 'right-0' : 'left-0'
-          )}
-        >
-          <div className="relative flex items-center">
-            <Search className="absolute left-2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-            <Input
-              autoFocus
-              placeholder="이름/이메일 검색..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 pl-7 pr-6 text-xs bg-slate-50 border-slate-200 focus-visible:bg-white"
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="absolute right-2 text-xs text-slate-400 hover:text-slate-600 font-bold"
-              >
-                ×
-              </button>
-            )}
-          </div>
-
-          <div className="max-h-52 overflow-y-auto divide-y divide-slate-100 pr-0.5">
-            {allowUnassign && (
-              <button
-                type="button"
-                onClick={() => {
-                  onSelect('');
-                  setOpen(false);
-                  setSearch('');
-                }}
-                className="w-full text-left py-1.5 px-2 text-xs rounded-md text-slate-500 hover:bg-slate-100 font-medium"
-              >
-                {unassignLabel}
-              </button>
-            )}
-
-            {filtered.length === 0 ? (
-              <div className="text-xs py-4 text-center text-slate-400">
-                '{search}' 검색 결과 없음
-              </div>
-            ) : (
-              filtered.map(u => {
-                const isSelected = value?.toLowerCase() === u.email?.toLowerCase();
-                return (
-                  <button
-                    key={u.email}
-                    type="button"
-                    onClick={() => {
-                      onSelect(u.email);
-                      setOpen(false);
-                      setSearch('');
-                    }}
-                    className={`w-full text-left py-1.5 px-2 text-xs rounded-md transition-colors flex items-center justify-between hover:bg-indigo-50 ${
-                      isSelected ? 'bg-indigo-50/80 font-bold text-indigo-900' : 'text-slate-800'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 truncate">
-                      <span className="font-semibold">{u.name}</span>
-                      <span className="text-[10px] text-slate-400 truncate max-w-[100px]">{u.email}</span>
-                    </div>
-                    {isSelected && (
-                      <Check className="h-3.5 w-3.5 text-indigo-600 shrink-0 ml-1" />
-                    )}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
+      {dropdownPanel}
     </div>
   );
 }
@@ -856,13 +964,29 @@ export function SettingsModal() {
     toast({ title: '기본값 복원됨', description: '학교 규정 기본 8개 불인정 기간으로 초기화되었습니다.' });
   };
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [facilities, setFacilities] = useState<SchoolFacility[]>([]);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedHomeroomFile, setSelectedHomeroomFile] = useState<File | null>(null);
   const [selectedDeptFile, setSelectedDeptFile] = useState<File | null>(null);
   const [activeMainTab, setActiveMainTab] = useState<string>('general');
-  const [org, setOrg] = useState<OrgStructure>({ principal: '', principalName: '', vicePrincipal: '', vicePrincipalName: '', administrativeHead: '', administrativeHeadName: '', academicHead: '', academicHeadName: '', gradeHeads: {}, homerooms: {}, gradeSubjects: {}, departments: [], afterschoolManager: '', busManager: '', volunteerManager: '', afterschoolManagers: [], busManagers: [], systemManagers: [], peTeachers: [], healthTeachers: [], specialTeachers: [], librarianTeachers: [], subjectTeacherGroups: [], customDutyRoles: [], dutyRoleDepts: {} });
-  const [orgSubTab, setOrgSubTab] = useState<'leadership' | 'duties' | 'grades' | 'departments'>('leadership');
+  const [org, setOrg] = useState<OrgStructure>({ principal: '', principalName: '', vicePrincipal: '', vicePrincipalName: '', administrativeHead: '', administrativeHeadName: '', academicHead: '', academicHeadName: '', gradeHeads: {}, homerooms: {}, gradeSubjects: {}, departments: [], afterschoolManager: '', busManager: '', volunteerManager: '', afterschoolManagers: [], busManagers: [], systemManagers: [], peTeachers: [], healthTeachers: [], safetyManagers: [], specialTeachers: [], librarianTeachers: [], subjectTeacherGroups: [], customDutyRoles: [], dutyRoleDepts: {} });
+  const [orgSubTab, setOrgSubTab] = useState<'leadership' | 'duties' | 'grades' | 'departments' | 'facilities'>('leadership');
+  const [autoOpenFeatureRequests, setAutoOpenFeatureRequests] = useState(false);
+
+  useEffect(() => {
+    const handleOpenFeatureManager = () => {
+      setIsOpen(true);
+      setActiveMainTab('org');
+      setOrgSubTab('duties');
+      fetchOrgStructure();
+      setAutoOpenFeatureRequests(true);
+    };
+    window.addEventListener('openCustomFeatureRequestManager', handleOpenFeatureManager);
+    return () => {
+      window.removeEventListener('openCustomFeatureRequestManager', handleOpenFeatureManager);
+    };
+  }, []);
   const [isDutyRolesOpen, setIsDutyRolesOpen] = useState(true);
   const [isSubjectGroupOpen, setIsSubjectGroupOpen] = useState(false);
   const [newCustomDutyRoleName, setNewCustomDutyRoleName] = useState('');
@@ -960,20 +1084,29 @@ export function SettingsModal() {
     }
   };
 
-  const handleSyncFolders = async () => {
+  const handleSyncFolders = async (options?: { academicYear?: string; targetDeptNames?: string[] }) => {
     if (!googleDriveConfig.rootFolderId) {
-      toast({ variant: 'destructive', title: '루트 폴더 ID 필요', description: '먼저 중앙 루트 폴더 링크 또는 ID를 입력해주세요.' });
+      toast({ variant: 'destructive', title: '루트 폴더 ID 필요', description: '먼저 [일반] 탭의 Google Drive 중앙 저장소 설정에서 루트 폴더 링크 또는 ID를 입력해주세요.' });
       return;
     }
+
+    const targetYear = options?.academicYear || selectedAcademicYear;
+    const targetDeptNames = options?.targetDeptNames;
+    const departmentPlans = buildDepartmentSyncPlans(orgRef.current, targetDeptNames);
 
     setIsSyncingFolders(true);
     try {
       const res = await fetch('/api/drive/sync-folders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await buildStaffApiHeaders(),
         body: JSON.stringify({
           rootFolderId: googleDriveConfig.rootFolderId,
-          academicYear: selectedAcademicYear
+          academicYear: targetYear,
+          targetDeptNames,
+          syncCommonFolders: !targetDeptNames || targetDeptNames.length === 0,
+          departmentPlans,
+          orgStructure: orgRef.current,
+          existingYearFolders: googleDriveConfig.yearlyFolders?.[targetYear],
         })
       });
       const data = await res.json();
@@ -993,8 +1126,8 @@ export function SettingsModal() {
         setGoogleDriveConfig(nextCfg);
         await saveGoogleDriveConfig(nextCfg, profile?.email || '관리자');
         toast({
-          title: `${selectedAcademicYear}학년도 폴더 동기화 완료`,
-          description: `${selectedAcademicYear}학년도 폴더 및 결재완료, 업무작업, 결석계, 체험학습 전용 하위 폴더가 성공적으로 연동되었습니다.`
+          title: `${targetYear}학년도 Google Drive 폴더 동기화 완료`,
+          description: data.message || `${targetYear}학년도 부서 및 업무 하위 폴더가 성공적으로 연동되었습니다.`
         });
       } else {
         toast({ variant: 'destructive', title: '동기화 실패', description: data.error });
@@ -1141,6 +1274,7 @@ export function SettingsModal() {
           systemManagers: data.systemManagers || [],
           peTeachers: data.peTeachers || [],
           healthTeachers: data.healthTeachers || [],
+          safetyManagers: data.safetyManagers || [],
           specialTeachers: data.specialTeachers || [],
           librarianTeachers: data.librarianTeachers || [],
           volunteerManager: data.volunteerManager || '',
@@ -1172,6 +1306,7 @@ export function SettingsModal() {
       });
       fetchUsers(true);
       fetchAuditLogs();
+      getSchoolFacilities().then(setFacilities).catch(() => {});
     }
   }, [isOpen]);
 
@@ -1335,13 +1470,12 @@ export function SettingsModal() {
     }, '권한 설정이 저장되었습니다.');
   };
 
-  // 부서 내 특정 교원에게 소관 업무 지정 (실시간 저장)
-  const assignDutyToMember = (dutyKeyOrId: string, email: string, deptName?: string) => {
+  // 부서 내 특정 교원에게 담당 업무 지정 (실시간 저장)
+  // 중요: 교원에게 업무를 배정할 때 직책의 소속 부서(dutyRoleDepts, customDutyRole.deptName)는 절대 덮어쓰지 않는다.
+  // 직책의 소속 부서는 [업무 담당 설정] 탭에서 지정한 부서로 고정 유지되어야 한다.
+  const assignDutyToMember = (dutyKeyOrId: string, email: string) => {
     updateAndSaveOrg(prev => {
       let next = { ...prev };
-      if (deptName && ['afterschool', 'bus', 'system', 'pe', 'health', 'special', 'librarian', 'volunteer'].includes(dutyKeyOrId)) {
-        next.dutyRoleDepts = { ...(next.dutyRoleDepts || {}), [dutyKeyOrId]: deptName };
-      }
       if (dutyKeyOrId === 'afterschool') {
         const cur = next.afterschoolManagers || [];
         if (!cur.includes(email)) next.afterschoolManagers = [...cur, email];
@@ -1357,12 +1491,18 @@ export function SettingsModal() {
       } else if (dutyKeyOrId === 'health') {
         const cur = next.healthTeachers || [];
         if (!cur.includes(email)) next.healthTeachers = [...cur, email];
+      } else if (dutyKeyOrId === 'safety') {
+        const cur = next.safetyManagers || [];
+        if (!cur.includes(email)) next.safetyManagers = [...cur, email];
       } else if (dutyKeyOrId === 'special') {
         const cur = next.specialTeachers || [];
         if (!cur.includes(email)) next.specialTeachers = [...cur, email];
       } else if (dutyKeyOrId === 'librarian') {
         const cur = next.librarianTeachers || [];
         if (!cur.includes(email)) next.librarianTeachers = [...cur, email];
+      } else if (dutyKeyOrId === 'handover') {
+        const cur = next.handoverManagers || [];
+        if (!cur.includes(email)) next.handoverManagers = [...cur, email];
       } else if (dutyKeyOrId === 'volunteer') {
         next.volunteerManager = email;
       } else {
@@ -1371,7 +1511,6 @@ export function SettingsModal() {
             const cur = r.teacherEmails || [];
             return {
               ...r,
-              deptName: deptName || r.deptName,
               teacherEmails: cur.includes(email) ? cur : [...cur, email]
             };
           }
@@ -1413,10 +1552,14 @@ export function SettingsModal() {
         next.peTeachers = (next.peTeachers || []).filter(e => e !== email);
       } else if (dutyKeyOrId === 'health' || dutyKeyOrId === '보건교사') {
         next.healthTeachers = (next.healthTeachers || []).filter(e => e !== email);
+      } else if (dutyKeyOrId === 'safety' || dutyKeyOrId === '안전지도' || dutyKeyOrId === '안전지도 담당' || dutyKeyOrId === '안전지도 담당자') {
+        next.safetyManagers = (next.safetyManagers || []).filter(e => e !== email);
       } else if (dutyKeyOrId === 'special' || dutyKeyOrId === '특수교사') {
         next.specialTeachers = (next.specialTeachers || []).filter(e => e !== email);
       } else if (dutyKeyOrId === 'librarian' || dutyKeyOrId === '사서교사') {
         next.librarianTeachers = (next.librarianTeachers || []).filter(e => e !== email);
+      } else if (dutyKeyOrId === 'handover' || dutyKeyOrId === '인수인계' || dutyKeyOrId === '학년 말 인수인계' || dutyKeyOrId === '학년 말 인수인계 담당') {
+        next.handoverManagers = (next.handoverManagers || []).filter(e => e !== email);
       } else if (dutyKeyOrId === 'volunteer' || dutyKeyOrId === '봉사활동' || dutyKeyOrId === '봉사활동 담당') {
         if (next.volunteerManager === email) next.volunteerManager = '';
       } else {
@@ -2527,10 +2670,10 @@ export function SettingsModal() {
                           <div>
                             <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                               <Folder className="w-3.5 h-3.5 text-indigo-600" />
-                              학년도별 폴더 자동 구성
+                              학년도별 폴더 자동 구성 (조직도 부서 연동)
                             </h5>
                             <p className="text-[10.5px] text-slate-500">
-                              학년도 폴더 안에 결재완료문서, 업무작업문서, 결석계, 체험학습 전용 하위 폴더 4종이 자동 생성됩니다.
+                              학년도 폴더 안에 공통 폴더(결재완료·업무작업)와 조직도의 각 부서별 폴더 및 부서 귀속 업무 하위 폴더가 자동 생성됩니다.
                             </p>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -2547,12 +2690,12 @@ export function SettingsModal() {
                               type="button"
                               size="sm"
                               variant="outline"
-                              onClick={handleSyncFolders}
+                              onClick={() => handleSyncFolders()}
                               disabled={isSyncingFolders || !googleDriveConfig.rootFolderId}
                               className="h-7 px-2.5 text-xs font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 shrink-0 cursor-pointer shadow-2xs"
                             >
                               {isSyncingFolders ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RotateCcw className="w-3 h-3 mr-1" />}
-                              폴더 동기화
+                              전체 폴더 동기화
                             </Button>
                           </div>
                         </div>
@@ -2562,49 +2705,126 @@ export function SettingsModal() {
                           <div className="space-y-2">
                             {Object.entries(googleDriveConfig.yearlyFolders)
                               .sort(([a], [b]) => b.localeCompare(a))
-                              .map(([year, yf]) => (
-                              <div key={year} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                                    <Folder className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                    {year}학년도
-                                  </span>
-                                  {yf.yearFolderUrl && (
-                                    <a href={yf.yearFolderUrl} target="_blank" rel="noreferrer"
-                                      className="px-2 py-0.5 text-[10.5px] bg-white border border-slate-300 text-indigo-600 hover:text-indigo-800 font-bold rounded flex items-center gap-1 shadow-2xs">
-                                      <span>폴더 열기</span>
-                                      <ExternalLink className="w-2.5 h-2.5" />
-                                    </a>
-                                  )}
-                                </div>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
-                                  {[
-                                    { name: '01_결재완료문서', url: yf.approvalDoneUrl },
-                                    { name: '02_업무작업문서', url: yf.taskWorkUrl },
-                                    { name: '03_결석계(완료)', url: yf.absenceDoneUrl },
-                                    { name: '04_체험학습신청서', url: yf.fieldTripDoneUrl },
-                                    { name: '05_학년별 수업자료', url: yf.gradeMaterialsUrl },
-                                    { name: '06_체육 측정 결과', url: yf.peResultsUrl },
-                                  ].map((f, i) => (
-                                    <div key={i} className="flex items-center justify-between bg-white border border-slate-100 rounded-lg px-2 py-1">
-                                      <span className="text-[10px] text-slate-600 truncate pr-1">{f.name}</span>
-                                      {f.url ? (
-                                        <a href={f.url} target="_blank" rel="noreferrer"
-                                          className="text-[9.5px] text-indigo-600 font-bold flex items-center gap-0.5 shrink-0">
-                                          열기 <ExternalLink className="w-2 h-2" />
+                              .map(([year, yf]) => {
+                                const deptEntries = Object.values(yf.departmentFolders || {});
+                                return (
+                                  <div key={year} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                                        <Folder className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                        {year}학년도
+                                        {deptEntries.length > 0 && (
+                                          <Badge variant="outline" className="text-[9.5px] font-bold bg-indigo-50 text-indigo-700 border-indigo-200 px-1.5 py-0">
+                                            부서 {deptEntries.length}개 연동
+                                          </Badge>
+                                        )}
+                                      </span>
+                                      {yf.yearFolderUrl && (
+                                        <a href={yf.yearFolderUrl} target="_blank" rel="noreferrer"
+                                          className="px-2 py-0.5 text-[10.5px] bg-white border border-slate-300 text-indigo-600 hover:text-indigo-800 font-bold rounded flex items-center gap-1 shadow-2xs">
+                                          <span>폴더 열기</span>
+                                          <ExternalLink className="w-2.5 h-2.5" />
                                         </a>
-                                      ) : (
-                                        <span className="text-[9.5px] text-slate-300 shrink-0">미생성</span>
                                       )}
                                     </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
+
+                                    {/* 공통 폴더 (결재완료, 업무작업, 인수인계) */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-1">
+                                      {[
+                                        { name: '01_결재완료문서 (공통)', url: yf.approvalDoneUrl },
+                                        { name: '02_업무작업문서 (공통)', url: yf.taskWorkUrl },
+                                        { name: '인수인계 (공통)', url: yf.handoverDoneUrl },
+                                      ].map((f, i) => (
+                                        <div key={i} className="flex items-center justify-between bg-white border border-slate-200/80 rounded-lg px-2 py-1">
+                                          <span className="text-[10px] font-semibold text-slate-600 truncate pr-1">{f.name}</span>
+                                          {f.url ? (
+                                            <a href={f.url} target="_blank" rel="noreferrer"
+                                              className="text-[9.5px] text-indigo-600 font-bold flex items-center gap-0.5 shrink-0">
+                                              열기 <ExternalLink className="w-2 h-2" />
+                                            </a>
+                                          ) : (
+                                            <span className="text-[9.5px] text-slate-300 shrink-0">미생성</span>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+
+                                    {/* 부서별 폴더 및 하위 업무 폴더 트리 */}
+                                    {deptEntries.length > 0 ? (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                        {deptEntries.map((df) => (
+                                          <div key={df.deptName} className="bg-white border border-indigo-100 rounded-lg p-2 space-y-1">
+                                            <div className="flex items-center justify-between gap-1 border-b border-slate-100 pb-1">
+                                              <span className="text-[11px] font-bold text-slate-800 truncate flex items-center gap-1">
+                                                <Folder className="w-3 h-3 text-indigo-600 shrink-0" />
+                                                {df.deptName}
+                                              </span>
+                                              <a
+                                                href={df.folderUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="text-[9.5px] text-indigo-600 hover:underline font-bold flex items-center gap-0.5 shrink-0"
+                                              >
+                                                열기 <ExternalLink className="w-2 h-2" />
+                                              </a>
+                                            </div>
+                                            {df.taskFolders && df.taskFolders.length > 0 ? (
+                                              <div className="flex flex-wrap gap-1 pt-0.5">
+                                                {df.taskFolders.map((tf) => (
+                                                  <a
+                                                    key={tf.id || tf.name}
+                                                    href={tf.url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="inline-flex items-center gap-0.5 text-[9.5px] px-1.5 py-0.5 rounded bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 font-medium transition-colors"
+                                                    title={`${df.deptName} > ${tf.name} 폴더 열기`}
+                                                  >
+                                                    <span>{tf.name}</span>
+                                                    <ExternalLink className="w-2 h-2 text-indigo-500" />
+                                                  </a>
+                                                ))}
+                                              </div>
+                                            ) : (
+                                              <span className="text-[9.5px] text-slate-400">배정된 하위 업무 없음</span>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-1.5">
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                                          {[
+                                            { name: '결석계(완료)', url: yf.absenceDoneUrl },
+                                            { name: '체험학습신청서(완료)', url: yf.fieldTripDoneUrl },
+                                            { name: '학년부 (각 학년)', url: yf.gradeMaterialsUrl },
+                                            { name: '체육 측정 결과', url: yf.peResultsUrl },
+                                            { name: '안전점검표', url: yf.safetyInspectionUrl },
+                                          ].map((f, i) => (
+                                            <div key={i} className="flex items-center justify-between bg-white border border-slate-100 rounded-lg px-2 py-1">
+                                              <span className="text-[10px] text-slate-600 truncate pr-1">{f.name}</span>
+                                              {f.url ? (
+                                                <a href={f.url} target="_blank" rel="noreferrer"
+                                                  className="text-[9.5px] text-indigo-600 font-bold flex items-center gap-0.5 shrink-0">
+                                                  열기 <ExternalLink className="w-2 h-2" />
+                                                </a>
+                                              ) : (
+                                                <span className="text-[9.5px] text-slate-300 shrink-0">미생성</span>
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                        <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                                          상단 [전체 폴더 동기화] 또는 [조직도 &gt; 부서 관리]의 [드라이브 동기화]를 실행하면 각 부서 폴더 하위로 구조가 자동 정비됩니다.
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                           </div>
                         ) : (
                           <div className="py-3 text-center text-[11px] text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                            학년도를 선택하고 '폴더 동기화'를 눌러 Drive 폴더를 자동 생성하세요.
+                            학년도를 선택하고 '전체 폴더 동기화'를 눌러 부서별 Drive 폴더를 자동 생성하세요.
                           </div>
                         )}
                       </div>
@@ -3167,6 +3387,16 @@ export function SettingsModal() {
             handleDeptUpload={handleDeptUpload}
             handleDownloadDeptTemplate={handleDownloadDeptTemplate}
             selectedDeptFile={selectedDeptFile}
+            googleDriveConfig={googleDriveConfig}
+            selectedAcademicYear={selectedAcademicYear}
+            setSelectedAcademicYear={setSelectedAcademicYear}
+            academicYearOptions={academicYearOptions}
+            isSyncingFolders={isSyncingFolders}
+            onSyncDepartmentFolders={(targetDeptNames, yearOverride) =>
+              handleSyncFolders({ academicYear: yearOverride, targetDeptNames })
+            }
+            autoOpenFeatureRequests={autoOpenFeatureRequests}
+            onConsumedAutoOpenFeatureRequests={() => setAutoOpenFeatureRequests(false)}
           />
 
           <TabsContent value="delegation" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
@@ -3473,6 +3703,7 @@ export function SettingsModal() {
                       <TableRow>
                           <TableHead className="w-[150px]">사용자</TableHead>
                           <TableHead>소속 (학년/부서)</TableHead>
+                          <TableHead className="w-[140px]">담당 시설(학급)</TableHead>
                           <TableHead className="w-[140px]">직책</TableHead>
                           <TableHead className="w-[80px] text-center">연가(일)</TableHead>
                           <TableHead className="w-[85px]">관리자</TableHead>
@@ -3530,6 +3761,7 @@ export function SettingsModal() {
                                             <>
                                               <SelectItem value="/admin/bus">스쿨버스 관리자</SelectItem>
                                               <SelectItem value="/teacher/pe">학교체육</SelectItem>
+                                              <SelectItem value="/teacher/safety">학생 안전지도 관리</SelectItem>
                                               <SelectItem value="/inbox">전자결재 대시보드</SelectItem>
                                             </>
                                           )}
@@ -3537,6 +3769,9 @@ export function SettingsModal() {
                                       </Select>
                                     )}
                                   </div>
+                              </TableCell>
+                              <TableCell className="align-top pt-3 text-xs text-slate-400 font-medium">
+                                -
                               </TableCell>
                               <TableCell className="align-top pt-3"></TableCell>
                               <TableCell></TableCell>
@@ -3593,6 +3828,60 @@ export function SettingsModal() {
                               )}
                             </div>
                           </TableCell>
+                          {/* 담당 시설(학급) 컬럼 */}
+                          <TableCell className="text-xs">
+                            {(() => {
+                              const userEmailLower = (user.email || '').toLowerCase().trim();
+                              const userName = (user.name || '').trim();
+
+                              // 1. 등록된 시설 및 학급 목록에서 해당 교원 검색
+                              const assignedFacs = facilities.filter(
+                                (f) =>
+                                  (f.assignedTeacherEmail && f.assignedTeacherEmail.toLowerCase().trim() === userEmailLower) ||
+                                  (f.assignedTeacherName && f.assignedTeacherName.trim() === userName)
+                              );
+
+                              if (assignedFacs.length > 0) {
+                                return (
+                                  <div className="flex flex-wrap gap-1 items-center max-w-[200px]">
+                                    {assignedFacs.map((fac) => (
+                                      <Badge
+                                        key={fac.id}
+                                        variant="outline"
+                                        className={`text-[11px] font-bold px-2 py-0.5 ${
+                                          fac.category === 'classroom'
+                                            ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                            : 'bg-purple-50 text-purple-800 border-purple-200'
+                                        }`}
+                                      >
+                                        {fac.fullName || fac.name}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                );
+                              }
+
+                              // 2. fallback: org.homerooms 담임 정보 확인 (예: '4-3')
+                              const homeroomEntry = Object.entries(org.homerooms || {}).find(
+                                ([_, email]) => email && email.toLowerCase().trim() === userEmailLower
+                              );
+                              if (homeroomEntry) {
+                                const [key] = homeroomEntry;
+                                const parts = key.split('-');
+                                const label = parts.length === 2 ? `${parts[0]}학년 ${parts[1]}반` : key;
+                                return (
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-amber-50 text-amber-800 border-amber-300 text-[11px] font-bold px-2 py-0.5"
+                                  >
+                                    {label}
+                                  </Badge>
+                                );
+                              }
+
+                              return <span className="text-slate-400 font-medium">-</span>;
+                            })()}
+                          </TableCell>
                           <TableCell>
                           <div className="flex flex-col gap-1.5">
                             <Select 
@@ -3621,6 +3910,7 @@ export function SettingsModal() {
                                     <>
                                       <SelectItem value="/admin/bus">스쿨버스 관리자</SelectItem>
                                       <SelectItem value="/teacher/pe">학교체육</SelectItem>
+                                      <SelectItem value="/teacher/safety">학생 안전지도 관리</SelectItem>
                                       <SelectItem value="/inbox">전자결재 대시보드</SelectItem>
                                     </>
                                   )}

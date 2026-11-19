@@ -2,8 +2,8 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
-import { exportToExcel, getQuizResultsBySchool, getQuizAssignments, deleteRecordsByDateAndItem } from '@/lib/services/peService';
-import type { Student, MeasurementItem, MeasurementRecord, QuizResult, QuizAssignment, SportsClub } from '@/lib/pe/types';
+import { exportToExcel, getQuizResultsBySchool, getQuizAssignments, deleteRecordsByDateAndItem, getSchoolByName } from '@/lib/services/peService';
+import type { Student, MeasurementItem, MeasurementRecord, QuizResult, QuizAssignment, SportsClub, MeasurementPeriod } from '@/lib/pe/types';
 import { getPapsGrade, calculatePapsScore, getCustomItemGrade } from '@/lib/pe/paps';
 import { calculateRanks } from '@/lib/services/peService';
 import {
@@ -29,7 +29,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { FileDown, Calendar as CalendarIcon, BookOpen, Trash2, Loader2, CloudUpload, ExternalLink, HardDrive, CheckCircle2, Printer } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { FileDown, Calendar as CalendarIcon, BookOpen, Trash2, Loader2, CloudUpload, ExternalLink, HardDrive, CheckCircle2, Printer, Filter, ArrowUp, ArrowDown, RotateCcw, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -106,6 +108,38 @@ export default function RecordBrowser({
   
   const [quizResults, setQuizResults] = useState<QuizResult[]>([]);
   const [quizAssignments, setQuizAssignments] = useState<QuizAssignment[]>([]);
+  const [measurementPeriods, setMeasurementPeriods] = useState<MeasurementPeriod[]>([]);
+
+  useEffect(() => {
+    if (school) {
+      getSchoolByName(school).then(s => {
+        if (s?.measurementPeriods) {
+          setMeasurementPeriods(s.measurementPeriods);
+        }
+      }).catch(console.error);
+    }
+  }, [school]);
+
+  const isPeriodSelected = selectedItem.startsWith('period:');
+  const currentPeriodId = isPeriodSelected ? selectedItem.replace('period:', '') : null;
+  const currentPeriod = useMemo(() => {
+    return currentPeriodId ? measurementPeriods.find(p => p.id === currentPeriodId) || null : null;
+  }, [currentPeriodId, measurementPeriods]);
+  const periodItems = useMemo(() => {
+    return currentPeriod?.criteria?.itemNames || currentPeriod?.items || [];
+  }, [currentPeriod]);
+
+  // 엑셀 스타일 컬럼별 선택 필터 상태: { [columnKey]: string[] (선택된 값들) }
+  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
+  const [columnSearchTerm, setColumnSearchTerm] = useState<Record<string, string>>({});
+
+  const clearAllFilters = () => {
+    setColumnFilters({});
+  };
+
+  const isAnyFilterActive = useMemo(() => {
+    return Object.values(columnFilters).some(arr => arr && arr.length > 0);
+  }, [columnFilters]);
 
   // Google Drive 체육 결과 아카이빙 상태
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
@@ -359,6 +393,106 @@ export default function RecordBrowser({
   const studentItemTableData = useMemo(() => {
     if (!selectedItem || !school) return [];
 
+    if (isPeriodSelected && currentPeriod) {
+        let filteredStudents = allStudents;
+        if (selectedClubId !== 'all') {
+            const club = sportsClubs.find(c => c.id === selectedClubId);
+            if (club) filteredStudents = filteredStudents.filter(s => club.memberIds.includes(s.id));
+        } else if (itemGradeFilter !== 'all') {
+            filteredStudents = filteredStudents.filter(s => s.grade === itemGradeFilter);
+            if (itemClassNumFilter !== 'all') {
+                filteredStudents = filteredStudents.filter(s => s.classNum === itemClassNumFilter);
+            }
+        }
+
+        const highMin = currentPeriod.criteria?.highMin ?? 8;
+        const midMin = currentPeriod.criteria?.midMin ?? 5;
+
+        const rawList = filteredStudents.map(student => {
+            const studentRecords = allRecords.filter(r => r.studentId === student.id);
+            const itemScores: Record<string, number | null> = {};
+            let latestDate: string | null = null;
+            let hasAnyScore = false;
+            let sumScore = 0;
+
+            periodItems.forEach((itemName: string) => {
+                const records = studentRecords.filter(r => r.item === itemName);
+                if (records.length > 0) {
+                    // 기간 내 기록 우선, 없으면 전체 최신 기록
+                    const periodFiltered = records.filter(r => 
+                      (!currentPeriod.startDate || r.date >= currentPeriod.startDate) &&
+                      (!currentPeriod.endDate || r.date <= currentPeriod.endDate)
+                    );
+                    const pool = periodFiltered.length > 0 ? periodFiltered : records;
+                    const sorted = [...pool].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                    const rec = sorted[0];
+                    const numVal = typeof rec.value === 'number' ? rec.value : parseFloat(rec.value as any);
+                    if (!isNaN(numVal)) {
+                        itemScores[itemName] = numVal;
+                        sumScore += numVal;
+                        hasAnyScore = true;
+                    } else {
+                        itemScores[itemName] = null;
+                    }
+                    if (!latestDate || rec.date > latestDate) {
+                        latestDate = rec.date;
+                    }
+                } else {
+                    itemScores[itemName] = null;
+                }
+            });
+
+            const totalScore = hasAnyScore ? sumScore : null;
+            let evaluationResult = '-';
+            if (totalScore !== null) {
+                if (totalScore >= highMin) {
+                    evaluationResult = '잘함';
+                } else if (totalScore >= midMin) {
+                    evaluationResult = '보통';
+                } else {
+                    evaluationResult = '노력요함';
+                }
+            }
+
+            return {
+                ...student,
+                latestDate: latestDate || '-',
+                periodItemScores: itemScores,
+                totalScore,
+                evaluationResult,
+                value: totalScore,
+                recordGrade: null,
+                quizTitle: null,
+                score: null,
+                passed: false,
+            };
+        });
+
+        // 순위 계산 (총점이 있는 학생 대상 동점자 동일 순위)
+        const scoredStudents = rawList
+            .filter(s => s.totalScore !== null)
+            .sort((a, b) => (b.totalScore as number) - (a.totalScore as number));
+
+        const totalScored = scoredStudents.length;
+        const rankMap = new Map<string, number>();
+        let currentRank = 1;
+
+        for (let i = 0; i < scoredStudents.length; i++) {
+            if (i > 0 && scoredStudents[i].totalScore === scoredStudents[i - 1].totalScore) {
+                rankMap.set(scoredStudents[i].id, rankMap.get(scoredStudents[i - 1].id)!);
+            } else {
+                currentRank = i + 1;
+                rankMap.set(scoredStudents[i].id, currentRank);
+            }
+        }
+
+        return rawList.map(s => ({
+            ...s,
+            rank: s.totalScore !== null ? rankMap.get(s.id) || null : null,
+            totalRanked: totalScored,
+        }));
+    }
+
     if (selectedItem === 'theory-exam') {
         let filteredStudents = allStudents;
         if (selectedClubId !== 'all') {
@@ -463,12 +597,108 @@ export default function RecordBrowser({
       };
     });
 
-  }, [school, selectedItem, itemGradeFilter, itemClassNumFilter, itemDateFilter, allStudents, allRecords, allItems, quizResults, quizAssignments]);
+  }, [school, selectedItem, itemGradeFilter, itemClassNumFilter, itemDateFilter, allStudents, allRecords, allItems, quizResults, quizAssignments, isPeriodSelected, currentPeriod, periodItems]);
 
+  // 컬럼별 고유 값 목록 추출 함수 (엑셀 필터 팝오버용)
+  const getDistinctColumnValues = (colKey: string): string[] => {
+    const set = new Set<string>();
+    studentItemTableData.forEach(student => {
+      let rawVal = '';
+      if (colKey === 'name') rawVal = student.name;
+      else if (colKey === 'grade') rawVal = `${student.grade}학년`;
+      else if (colKey === 'classNum') rawVal = `${student.classNum}반`;
+      else if (colKey === 'studentNum') rawVal = `${student.studentNum}번`;
+      else if (colKey === 'gender') rawVal = student.gender || '-';
+      else if (colKey === 'latestDate') rawVal = (student as any).latestDate || '-';
+      else if (colKey === 'totalScore') {
+        const val = (student as any).totalScore;
+        rawVal = val !== null && val !== undefined ? `${val}점` : '-';
+      }
+      else if (colKey === 'evaluationResult') rawVal = (student as any).evaluationResult || '-';
+      else if (colKey === 'value') {
+        rawVal = (student as any).value !== null && (student as any).value !== undefined
+          ? `${(student as any).value}${selectedItemInfo?.unit || ''}`
+          : '-';
+      }
+      else if (colKey === 'recordGrade') rawVal = (student as any).recordGrade ? `${(student as any).recordGrade}등급` : '-';
+      else if (colKey === 'rank') {
+        rawVal = (student as any).rank ? `${(student as any).rank}/${(student as any).totalRanked}` : '-';
+      }
+      else if ((student as any).periodItemScores && (student as any).periodItemScores[colKey] !== undefined) {
+        const score = (student as any).periodItemScores[colKey];
+        rawVal = score !== null && score !== undefined ? `${score}개` : '-';
+      }
+      else if (colKey === 'height') rawVal = (student as any).height ? `${(student as any).height}cm` : '-';
+      else if (colKey === 'weight') rawVal = (student as any).weight ? `${(student as any).weight}kg` : '-';
+      else if (colKey === 'quizTitle') rawVal = (student as any).quizTitle || '-';
+      else if (colKey === 'score') rawVal = (student as any).score || '-';
+      else if (colKey === 'passed') rawVal = (student as any).passed !== undefined ? ((student as any).passed ? '통과' : '미통과') : '-';
+      else rawVal = String((student as any)[colKey] ?? '-');
+
+      set.add(rawVal);
+    });
+
+    return Array.from(set).sort((a, b) => {
+      const numA = parseFloat(a);
+      const numB = parseFloat(b);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b);
+    });
+  };
+
+  // 1단계: 엑셀 스타일 컬럼별 필터 적용
+  const filteredItemData = useMemo(() => {
+    if (!Object.keys(columnFilters).length) return studentItemTableData;
+
+    return studentItemTableData.filter(student => {
+      for (const [colKey, selectedValues] of Object.entries(columnFilters)) {
+        if (!selectedValues || selectedValues.length === 0) continue;
+
+        let rawVal = '';
+        if (colKey === 'name') rawVal = student.name;
+        else if (colKey === 'grade') rawVal = `${student.grade}학년`;
+        else if (colKey === 'classNum') rawVal = `${student.classNum}반`;
+        else if (colKey === 'studentNum') rawVal = `${student.studentNum}번`;
+        else if (colKey === 'gender') rawVal = student.gender || '-';
+        else if (colKey === 'latestDate') rawVal = (student as any).latestDate || '-';
+        else if (colKey === 'totalScore') {
+          const val = (student as any).totalScore;
+          rawVal = val !== null && val !== undefined ? `${val}점` : '-';
+        }
+        else if (colKey === 'evaluationResult') rawVal = (student as any).evaluationResult || '-';
+        else if (colKey === 'value') {
+          rawVal = (student as any).value !== null && (student as any).value !== undefined
+            ? `${(student as any).value}${selectedItemInfo?.unit || ''}`
+            : '-';
+        }
+        else if (colKey === 'recordGrade') rawVal = (student as any).recordGrade ? `${(student as any).recordGrade}등급` : '-';
+        else if (colKey === 'rank') {
+          rawVal = (student as any).rank ? `${(student as any).rank}/${(student as any).totalRanked}` : '-';
+        }
+        else if ((student as any).periodItemScores && (student as any).periodItemScores[colKey] !== undefined) {
+          const score = (student as any).periodItemScores[colKey];
+          rawVal = score !== null && score !== undefined ? `${score}개` : '-';
+        }
+        else if (colKey === 'height') rawVal = (student as any).height ? `${(student as any).height}cm` : '-';
+        else if (colKey === 'weight') rawVal = (student as any).weight ? `${(student as any).weight}kg` : '-';
+        else if (colKey === 'quizTitle') rawVal = (student as any).quizTitle || '-';
+        else if (colKey === 'score') rawVal = (student as any).score || '-';
+        else if (colKey === 'passed') rawVal = (student as any).passed !== undefined ? ((student as any).passed ? '통과' : '미통과') : '-';
+        else rawVal = String((student as any)[colKey] ?? '-');
+
+        if (!selectedValues.includes(rawVal)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [studentItemTableData, columnFilters, selectedItemInfo]);
+
+  // 2단계: 다중 정렬 적용
   const sortedItemData = useMemo(() => {
-      if (!itemSort.length) return studentItemTableData;
+      if (!itemSort.length) return filteredItemData;
       
-      return [...studentItemTableData].sort((a,b) => {
+      return [...filteredItemData].sort((a,b) => {
         for (const sort of itemSort) {
             const { column, direction } = sort;
             const isAsc = direction === 'ascending';
@@ -479,8 +709,15 @@ export default function RecordBrowser({
             else if(column === 'grade') { valA = a.grade; valB = b.grade }
             else if(column === 'classNum') { valA = a.classNum; valB = b.classNum }
             else if(column === 'studentNum') { valA = a.studentNum; valB = b.studentNum }
+            else if(column === 'gender') { valA = a.gender; valB = b.gender }
             else if(column === 'latestDate'){ valA = (a as any).latestDate; valB = (b as any).latestDate }
             else if(column === 'value'){ valA = (a as any).value || (a as any).score; valB = (b as any).value || (b as any).score }
+            else if(column === 'totalScore'){ valA = (a as any).totalScore; valB = (b as any).totalScore }
+            else if(column === 'evaluationResult'){ valA = (a as any).evaluationResult; valB = (b as any).evaluationResult }
+            else if((a as any).periodItemScores && (a as any).periodItemScores[column] !== undefined){
+              valA = (a as any).periodItemScores[column];
+              valB = (b as any).periodItemScores[column];
+            }
             else if(column === 'recordGrade'){ valA = (a as any).recordGrade; valB = (b as any).recordGrade }
             else if(column === 'rank'){ valA = (a as any).rank; valB = (b as any).rank }
             else { valA = (a as any)[column]; valB = (b as any)[column]; }
@@ -490,7 +727,7 @@ export default function RecordBrowser({
             if (valB == null) return -1;
             
             let comparison = 0;
-            if (column === 'value' || column === 'recordGrade' || column === 'rank' || column === 'grade' || column === 'classNum' || column === 'studentNum') {
+            if (column === 'value' || column === 'totalScore' || ((a as any).periodItemScores && (a as any).periodItemScores[column] !== undefined) || column === 'recordGrade' || column === 'rank' || column === 'grade' || column === 'classNum' || column === 'studentNum') {
                 const itemInfo = allItems.find(i => i.name === selectedItem);
                 
                 const numA = parseFloat(valA);
@@ -515,7 +752,42 @@ export default function RecordBrowser({
         }
         return 0;
       });
-  }, [studentItemTableData, itemSort, selectedItem, allItems]);
+  }, [filteredItemData, itemSort, selectedItem, allItems]);
+
+  const handleSetSort = (column: string, direction: 'ascending' | 'descending') => {
+    setItemSort([{ column, direction }]);
+  };
+
+  const handleToggleColumnFilterValue = (colKey: string, val: string, allVals: string[]) => {
+    const currentSelected = columnFilters[colKey] !== undefined 
+      ? columnFilters[colKey] 
+      : allVals; // 초기에는 전체 선택 상태
+
+    const isChecked = currentSelected.includes(val);
+    const nextSelected = isChecked
+      ? currentSelected.filter(v => v !== val)
+      : [...currentSelected, val];
+
+    setColumnFilters(prev => ({
+      ...prev,
+      [colKey]: nextSelected
+    }));
+  };
+
+  const handleSelectAllColumnFilter = (colKey: string, allVals: string[], selectAll: boolean) => {
+    setColumnFilters(prev => ({
+      ...prev,
+      [colKey]: selectAll ? allVals : []
+    }));
+  };
+
+  const clearColumnFilter = (colKey: string) => {
+    setColumnFilters(prev => {
+      const next = { ...prev };
+      delete next[colKey];
+      return next;
+    });
+  };
 
 
   const handleItemDownloadExcel = () => {
@@ -525,6 +797,30 @@ export default function RecordBrowser({
         title: '다운로드 실패',
         description: '다운로드할 데이터가 없습니다.',
       });
+      return;
+    }
+
+    if (isPeriodSelected && currentPeriod) {
+      const periodName = currentPeriod.name || '종합평가';
+      const dataToExport = sortedItemData.map(s => {
+        const row: any = {
+          '학년': s.grade,
+          '반': s.classNum,
+          '번호': s.studentNum,
+          '이름': s.name,
+          '최근 측정일': (s as any).latestDate || '-',
+        };
+        periodItems.forEach((itemName: string) => {
+          row[itemName] = (s as any).periodItemScores?.[itemName] ?? '-';
+        });
+        row['총점(합산)'] = (s as any).totalScore ?? '-';
+        row['평가 결과'] = (s as any).evaluationResult || '-';
+        row['순위'] = (s as any).rank ? `${(s as any).rank}/${(s as any).totalRanked}` : '-';
+        return row;
+      });
+      const fileName = `${periodName}_종합평가_현황_${new Date().toISOString().split('T')[0]}.xlsx`;
+      exportToExcel(fileName, dataToExport);
+      toast({ title: '다운로드 시작', description: `${periodName} 종합평가 현황을 엑셀 파일로 다운로드합니다.` });
       return;
     }
 
@@ -644,6 +940,18 @@ export default function RecordBrowser({
           </TabsList>
 
           <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+            {activeTab === 'item' && isAnyFilterActive && (
+              <Button
+                onClick={clearAllFilters}
+                variant="outline"
+                size="sm"
+                className="h-7 sm:h-8 px-2 text-xs text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700 font-semibold gap-1 cursor-pointer"
+                title="모든 컬럼 필터 초기화"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">필터 초기화</span>
+              </Button>
+            )}
             <Button
               onClick={() => setIsPrintDialogOpen(true)}
               variant="outline"
@@ -845,19 +1153,60 @@ export default function RecordBrowser({
           {/* 종목별 기록 필터: 1줄 컴팩트 배치 */}
           <div className="flex items-center gap-1 sm:gap-1.5 bg-white p-1.5 sm:p-2 rounded-xl border border-slate-200/80 shadow-xs w-full overflow-hidden shrink-0">
             {/* 1. 종목 선택 */}
-            <Select value={selectedItem} onValueChange={(v) => { setSelectedItem(v); setItemDateFilter('latest'); }}>
-              <SelectTrigger className="w-[78px] sm:w-[140px] h-7 sm:h-8 text-[11px] sm:text-xs font-semibold px-1 sm:px-2 shrink-0 [&>svg]:hidden sm:[&>svg]:block">
+            <Select value={selectedItem} onValueChange={(v) => { setSelectedItem(v); setItemDateFilter('latest'); clearAllFilters(); }}>
+              <SelectTrigger className="w-[82px] sm:w-[150px] h-7 sm:h-8 text-[11px] sm:text-xs font-semibold px-1 sm:px-2 shrink-0 [&>svg]:hidden sm:[&>svg]:block">
                 <span className="truncate">
-                  {selectedItem === 'theory-exam' ? '이론평가' : (selectedItem ? selectedItem.slice(0, 4) : '종목')}
+                  {isPeriodSelected ? (
+                    currentPeriod ? `🏅 ${currentPeriod.name}` : '종합평가'
+                  ) : selectedItem === 'theory-exam' ? '이론평가' : (selectedItem ? selectedItem.slice(0, 5) : '종목')}
                 </span>
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="theory-exam" className="font-bold text-primary flex items-center">
-                  <BookOpen className="h-3.5 w-3.5 mr-1.5" /> 이론 평가
+              <SelectContent className="max-h-[400px]">
+                {measurementPeriods.length > 0 && (
+                  <>
+                    <div className="px-2 py-1.5 text-[11px] font-bold text-blue-600 bg-blue-50/50 flex items-center gap-1">
+                      🏆 기간 종합 평가 ({measurementPeriods.length})
+                    </div>
+                    {measurementPeriods.map((p) => (
+                      <SelectItem key={`period-${p.id}`} value={`period:${p.id}`} className="font-semibold text-blue-900 text-xs pl-4">
+                        🏅 {p.name}
+                      </SelectItem>
+                    ))}
+                  </>
+                )}
+
+                <div className="px-2 py-1.5 text-[11px] font-bold text-slate-500 border-t mt-1 flex items-center gap-1">
+                  <BookOpen className="h-3 w-3 text-slate-500" /> 이론 평가
+                </div>
+                <SelectItem value="theory-exam" className="font-bold text-primary flex items-center text-xs pl-4">
+                  📖 이론 평가
                 </SelectItem>
-                {itemsWithRecords.map((item) => (
-                  <SelectItem key={item.id} value={item.name}>{item.name}</SelectItem>
-                ))}
+
+                {itemsWithRecords.filter(i => i.isPaps).length > 0 && (
+                  <>
+                    <div className="px-2 py-1.5 text-[11px] font-bold text-slate-500 border-t mt-1">
+                      PAPS 정규 종목 ({itemsWithRecords.filter(i => i.isPaps).length})
+                    </div>
+                    {itemsWithRecords.filter(i => i.isPaps).map((item) => (
+                      <SelectItem key={item.id} value={item.name} className="text-xs pl-4">
+                        {item.name}
+                      </SelectItem>
+                    ))}
+                  </>
+                )}
+
+                {itemsWithRecords.filter(i => !i.isPaps).length > 0 && (
+                  <>
+                    <div className="px-2 py-1.5 text-[11px] font-bold text-slate-500 border-t mt-1">
+                      선택 및 기타 종목 ({itemsWithRecords.filter(i => !i.isPaps).length})
+                    </div>
+                    {itemsWithRecords.filter(i => !i.isPaps).map((item) => (
+                      <SelectItem key={item.id} value={item.name} className="text-xs pl-4">
+                        {item.name}
+                      </SelectItem>
+                    ))}
+                  </>
+                )}
               </SelectContent>
             </Select>
 
@@ -909,7 +1258,7 @@ export default function RecordBrowser({
             </Select>
 
             {/* 5. 날짜: 모바일은 아이콘만 */}
-            {selectedItem && selectedItem !== 'theory-exam' && itemDatesForSelected.length > 0 && (
+            {selectedItem && selectedItem !== 'theory-exam' && !isPeriodSelected && itemDatesForSelected.length > 0 && (
               <Select value={itemDateFilter} onValueChange={setItemDateFilter}>
                 <SelectTrigger className="w-7 sm:w-auto h-7 sm:h-8 p-0 sm:px-2 text-[11px] sm:text-xs font-semibold shrink-0 justify-center sm:justify-start [&>svg]:hidden sm:[&>svg]:block" title="기록일 필터">
                   <CalendarIcon className="h-3.5 w-3.5 shrink-0 sm:mr-1" />
@@ -932,7 +1281,17 @@ export default function RecordBrowser({
             <Table className="w-full table-fixed">
               <TableHeader className="sticky top-0 z-10 bg-slate-100 shadow-2xs">
                 <TableRow className="h-8 bg-slate-100/90">
-                  {[
+                  {(isPeriodSelected && currentPeriod ? [
+                    { key: 'grade', label: '학년', isNarrow: true },
+                    { key: 'classNum', label: '반', isNarrow: true },
+                    { key: 'studentNum', label: '번호', isNarrow: true },
+                    { key: 'name', label: '이름', isName: true },
+                    { key: 'latestDate', label: '최근 측정일' },
+                    ...periodItems.map(itemName => ({ key: itemName, label: itemName })),
+                    { key: 'totalScore', label: '총점(합산)' },
+                    { key: 'evaluationResult', label: '평가 결과' },
+                    { key: 'rank', label: '순위' },
+                  ] : [
                     { key: 'studentNum', label: '번호', isNarrow: true },
                     { key: 'name', label: '이름', isName: true },
                     { key: 'gender', label: '성별', isGender: true },
@@ -951,63 +1310,213 @@ export default function RecordBrowser({
                       { key: 'recordGrade', label: '등급' },
                       { key: 'rank', label: '순위' },
                     ])
-                  ].map((header) => (
-                    <TableHead 
-                      key={header.key} 
-                      onClick={createSortHandler(header.key, itemSort, setItemSort)} 
-                      className={cn(
-                        "cursor-pointer hover:bg-muted p-0.5 sm:px-1 text-[11px] sm:text-xs font-bold select-none whitespace-nowrap text-center",
-                        header.isNarrow ? "w-[30px] sm:w-[50px] md:w-[60px]" : 
-                        header.isName ? "w-[52px] sm:w-[90px] md:w-[105px]" : 
-                        header.isGender ? "w-[26px] sm:w-[44px] md:w-[52px]" : 
-                        ""
-                      )}
-                      title={header.label}
-                    >
-                      <span className="truncate inline-block whitespace-nowrap">{getDisplayHeader(header.label)}</span>
-                      {getSortIndicator(header.key, itemSort)}
-                    </TableHead>
-                  ))}
+                  ]).map((header) => {
+                    const distinctVals = getDistinctColumnValues(header.key);
+                    const activeFilteredVals = columnFilters[header.key];
+                    const isColumnFiltered = activeFilteredVals !== undefined && activeFilteredVals.length < distinctVals.length;
+                    const currentSearch = (columnSearchTerm[header.key] || '').toLowerCase();
+                    const filteredDistinctVals = distinctVals.filter(v => v.toLowerCase().includes(currentSearch));
+                    const isAllChecked = !activeFilteredVals || activeFilteredVals.length === distinctVals.length;
+
+                    return (
+                      <TableHead 
+                        key={header.key} 
+                        className={cn(
+                          "p-0.5 sm:px-1 text-[11px] sm:text-xs font-bold select-none whitespace-nowrap text-center transition-colors group",
+                          header.isNarrow ? "w-[36px] sm:w-[50px] md:w-[60px]" : 
+                          header.isName ? "w-[60px] sm:w-[95px] md:w-[110px]" : 
+                          header.isGender ? "w-[30px] sm:w-[48px] md:w-[55px]" : "",
+                          isColumnFiltered && "bg-blue-100/80 text-blue-900 border-b-2 border-blue-600 font-extrabold"
+                        )}
+                        title={header.label}
+                      >
+                        <div className={cn("inline-flex items-center gap-0.5 sm:gap-1 w-full", header.isName ? "justify-start px-1" : "justify-center")}>
+                          <span 
+                            onClick={createSortHandler(header.key, itemSort, setItemSort)} 
+                            className="cursor-pointer hover:underline inline-flex items-center truncate"
+                            title="클릭 시 다중 정렬"
+                          >
+                            <span className="truncate">{getDisplayHeader(header.label)}</span>
+                            {getSortIndicator(header.key, itemSort)}
+                          </span>
+
+                          {/* 엑셀 스타일 드롭다운 필터/정렬 트리거 버튼 */}
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className={cn(
+                                  "h-4 w-4 sm:h-5 sm:w-5 p-0 rounded shrink-0 transition-colors",
+                                  isColumnFiltered ? "text-blue-700 font-bold bg-blue-200/70 hover:bg-blue-200" : "text-slate-400 hover:text-slate-700 hover:bg-slate-200/60"
+                                )}
+                                title={`${header.label} 정렬 및 필터`}
+                              >
+                                <Filter className={cn("h-2.5 w-2.5 sm:h-3 sm:w-3", isColumnFiltered && "fill-blue-700")} />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="start" className="w-56 p-2 space-y-2 shadow-xl border border-slate-200 text-xs bg-white z-50">
+                              {/* 상단: 오름차순/내림차순 정렬 */}
+                              <div className="space-y-0.5 pb-1.5 border-b border-slate-200">
+                                <button
+                                  onClick={() => handleSetSort(header.key, 'ascending')}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-100 text-left font-medium text-slate-700"
+                                >
+                                  <ArrowUp className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                                  <span>오름차순 정렬</span>
+                                </button>
+                                <button
+                                  onClick={() => handleSetSort(header.key, 'descending')}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-100 text-left font-medium text-slate-700"
+                                >
+                                  <ArrowDown className="h-3.5 w-3.5 text-red-600 shrink-0" />
+                                  <span>내림차순 정렬</span>
+                                </button>
+                              </div>
+
+                              {/* 중단: 필터 검색 입력창 */}
+                              <div className="relative">
+                                <Search className="absolute left-2 top-2 h-3 w-3 text-slate-400" />
+                                <Input 
+                                  placeholder="값 검색..."
+                                  value={columnSearchTerm[header.key] || ''}
+                                  onChange={e => setColumnSearchTerm(prev => ({ ...prev, [header.key]: e.target.value }))}
+                                  className="h-7 pl-7 text-[11px] bg-slate-50 border-slate-200"
+                                />
+                              </div>
+
+                              {/* (모두 선택) 체크박스 및 필터 해제 */}
+                              <div className="flex items-center justify-between px-1 pt-1 border-b pb-1 text-[11px]">
+                                <div className="flex items-center gap-1.5">
+                                  <Checkbox 
+                                    id={`filter-all-${header.key}`}
+                                    checked={isAllChecked}
+                                    onCheckedChange={(checked) => handleSelectAllColumnFilter(header.key, distinctVals, !!checked)}
+                                  />
+                                  <label htmlFor={`filter-all-${header.key}`} className="cursor-pointer font-semibold text-slate-700 text-xs">
+                                    (모두 선택)
+                                  </label>
+                                </div>
+                                {isColumnFiltered && (
+                                  <button 
+                                    onClick={() => clearColumnFilter(header.key)}
+                                    className="text-[10px] text-blue-600 hover:underline font-bold"
+                                  >
+                                    필터 해제
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* 하단: 고유 값 체크박스 목록 (스크롤) */}
+                              <div className="max-h-44 overflow-y-auto space-y-1 pr-1">
+                                {filteredDistinctVals.length > 0 ? (
+                                  filteredDistinctVals.map((val) => {
+                                    const currentSelected = activeFilteredVals !== undefined ? activeFilteredVals : distinctVals;
+                                    const isChecked = currentSelected.includes(val);
+                                    return (
+                                      <div 
+                                        key={val} 
+                                        onClick={() => handleToggleColumnFilterValue(header.key, val, distinctVals)}
+                                        className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-slate-100 cursor-pointer text-[11px]"
+                                      >
+                                        <Checkbox 
+                                          id={`filter-${header.key}-${val}`}
+                                          checked={isChecked}
+                                          onCheckedChange={() => {}}
+                                        />
+                                        <span className="truncate flex-1 font-medium text-slate-700">{val}</span>
+                                      </div>
+                                    );
+                                  })
+                                ) : (
+                                  <div className="text-center py-2 text-[10px] text-muted-foreground">
+                                    일치하는 항목 없음
+                                  </div>
+                                )}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      </TableHead>
+                    );
+                  })}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {sortedItemData.length > 0 ? (
                   sortedItemData.map((s, idx) => (
                     <TableRow key={`${s.id}-${idx}`} className="h-8 sm:h-9 hover:bg-slate-50/50">
-                      <TableCell className="p-0.5 sm:px-1 text-center text-[11px] sm:text-xs whitespace-nowrap">{s.studentNum}</TableCell>
-                      <TableCell className="p-0.5 sm:px-1 text-center font-bold text-[11px] sm:text-xs whitespace-nowrap truncate">{s.name}</TableCell>
-                      <TableCell className="p-0.5 sm:px-1 text-center text-[11px] sm:text-xs whitespace-nowrap">{s.gender || '-'}</TableCell>
-                      {selectedItem === 'theory-exam' ? (
+                      {isPeriodSelected && currentPeriod ? (
                         <>
-                          <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).quizTitle)}</TableCell>
-                          <TableCell className="p-0.5 text-center font-semibold text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).score)}</TableCell>
-                          <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).latestDate)}</TableCell>
-                          <TableCell className="p-0.5 text-center">
-                            {(s as any).passed !== undefined ? (
-                              (s as any).passed ? 
-                                <Badge className="bg-green-100 text-green-700 text-[10px] px-1 py-0">통과</Badge> : 
-                                <Badge variant="destructive" className="text-[10px] px-1 py-0">미통과</Badge>
-                            ) : '-'}
+                          <TableCell className="p-0.5 sm:px-1 text-center text-[11px] sm:text-xs whitespace-nowrap">{s.grade}</TableCell>
+                          <TableCell className="p-0.5 sm:px-1 text-center text-[11px] sm:text-xs whitespace-nowrap">{s.classNum}</TableCell>
+                          <TableCell className="p-0.5 sm:px-1 text-center text-[11px] sm:text-xs whitespace-nowrap">{s.studentNum}</TableCell>
+                          <TableCell className="p-0.5 sm:px-1 text-center font-bold text-[11px] sm:text-xs whitespace-nowrap truncate">{s.name}</TableCell>
+                          <TableCell className="p-0.5 sm:px-1 text-center text-[11px] sm:text-xs whitespace-nowrap">{(s as any).latestDate || '-'}</TableCell>
+                          {periodItems.map((itemName: string) => {
+                            const score = (s as any).periodItemScores?.[itemName];
+                            return (
+                              <TableCell key={itemName} className="p-0.5 sm:px-1 text-center font-medium text-[11px] sm:text-xs whitespace-nowrap">
+                                {score !== null && score !== undefined ? score : '-'}
+                              </TableCell>
+                            );
+                          })}
+                          <TableCell className="p-0.5 sm:px-1 text-center font-bold text-[11px] sm:text-xs whitespace-nowrap text-blue-700">
+                            {(s as any).totalScore !== null && (s as any).totalScore !== undefined ? (s as any).totalScore : '-'}
+                          </TableCell>
+                          <TableCell className="p-0.5 sm:px-1 text-center whitespace-nowrap">
+                            {(s as any).evaluationResult === '잘함' ? (
+                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold hover:bg-emerald-100 text-[10px] sm:text-xs px-1.5 py-0">잘함</Badge>
+                            ) : (s as any).evaluationResult === '보통' ? (
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-300 font-bold hover:bg-blue-100 text-[10px] sm:text-xs px-1.5 py-0">보통</Badge>
+                            ) : (s as any).evaluationResult === '노력요함' ? (
+                              <Badge className="bg-amber-100 text-amber-900 border-amber-300 font-bold hover:bg-amber-100 text-[10px] sm:text-xs px-1.5 py-0">노력요함</Badge>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="p-0.5 sm:px-1 text-center text-[11px] sm:text-xs whitespace-nowrap text-slate-600 font-medium">
+                            {(s as any).rank ? `${(s as any).rank}/${(s as any).totalRanked}` : '-'}
                           </TableCell>
                         </>
                       ) : (
                         <>
-                          <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).latestDate)}</TableCell>
-                          {allItems.find(i => i.name === selectedItem)?.isCompound && (
+                          <TableCell className="p-0.5 sm:px-1 text-center text-[11px] sm:text-xs whitespace-nowrap">{s.studentNum}</TableCell>
+                          <TableCell className="p-0.5 sm:px-1 text-center font-bold text-[11px] sm:text-xs whitespace-nowrap truncate">{s.name}</TableCell>
+                          <TableCell className="p-0.5 sm:px-1 text-center text-[11px] sm:text-xs whitespace-nowrap">{s.gender || '-'}</TableCell>
+                          {selectedItem === 'theory-exam' ? (
                             <>
-                              <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).height)}</TableCell>
-                              <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).weight)}</TableCell>
+                              <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).quizTitle)}</TableCell>
+                              <TableCell className="p-0.5 text-center font-semibold text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).score)}</TableCell>
+                              <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).latestDate)}</TableCell>
+                              <TableCell className="p-0.5 text-center">
+                                {(s as any).passed !== undefined ? (
+                                  (s as any).passed ? 
+                                    <Badge className="bg-green-100 text-green-700 text-[10px] px-1 py-0">통과</Badge> : 
+                                    <Badge variant="destructive" className="text-[10px] px-1 py-0">미통과</Badge>
+                                ) : '-'}
+                              </TableCell>
+                            </>
+                          ) : (
+                            <>
+                              <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).latestDate)}</TableCell>
+                              {allItems.find(i => i.name === selectedItem)?.isCompound && (
+                                <>
+                                  <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).height)}</TableCell>
+                                  <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">{getDisplayCellValue((s as any).weight)}</TableCell>
+                                </>
+                              )}
+                              <TableCell className="p-0.5 text-center font-bold text-[11px] sm:text-xs truncate">
+                                {(s as any).value !== undefined && (s as any).value !== null ? getDisplayCellValue(`${(s as any).value}${allItems.find(i => i.name === selectedItem)?.unit || ''}`) : '-'}
+                              </TableCell>
+                              <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">
+                                {(s as any).recordGrade ? `${(s as any).recordGrade}등급` : '-'}
+                              </TableCell>
+                              <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">
+                                {(s as any).rank ? `${(s as any).rank}/${(s as any).totalRanked}` : '-'}
+                              </TableCell>
                             </>
                           )}
-                          <TableCell className="p-0.5 text-center font-bold text-[11px] sm:text-xs truncate">
-                            {(s as any).value !== undefined && (s as any).value !== null ? getDisplayCellValue(`${(s as any).value}${allItems.find(i => i.name === selectedItem)?.unit || ''}`) : '-'}
-                          </TableCell>
-                          <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">
-                            {(s as any).recordGrade ? `${(s as any).recordGrade}등급` : '-'}
-                          </TableCell>
-                          <TableCell className="p-0.5 text-center text-[11px] sm:text-xs truncate">
-                            {(s as any).rank ? `${(s as any).rank}/${(s as any).totalRanked}` : '-'}
-                          </TableCell>
                         </>
                       )}
                     </TableRow>

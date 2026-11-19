@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { buildStaffApiHeaders } from '@/lib/staffApiHeaders';
 import { useAuth } from '@/hooks/use-auth';
 import { cn } from '@/lib/utils';
 import type { TargetGroupType } from '@/lib/types';
@@ -51,11 +52,23 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import type { TaskAttachment, RoutineScheduleConfig } from '@/lib/types';
+import type { TaskAttachment, RoutineScheduleConfig, GoogleDriveConfig } from '@/lib/types';
 import { calculateCurrentRoutineCycle, formatDateToYYYYMMDD } from '@/lib/routineTaskUtils';
 import { GoogleDrivePickerModal } from './google-drive-picker-modal';
 import { getDriveTypeInfo } from '@/lib/services/googleDriveService';
-import { getGoogleDriveConfig } from '@/lib/services/settingsService';
+import { getGoogleDriveConfig, getOrgStructure } from '@/lib/services/settingsService';
+import {
+  listDriveFilingFolderOptions,
+  resolveDefaultFilingFolderOption,
+  resolveDriveFoldersForDuties,
+  inferHandoverCategoryFromTarget,
+  type DriveFilingFolderOption,
+} from '@/lib/drive/deptFolderMapping';
+import {
+  resolveTeacherFilingDutiesList,
+  CURRENT_SCHOOL_YEAR,
+} from '@/lib/services/handoverService';
+import { DriveFilingHandoverCard } from '@/components/document-form/DriveFilingHandoverCard';
 import { 
   onSystemTaskTemplatesUpdate, 
   saveSystemTaskTemplate, 
@@ -476,6 +489,13 @@ export function CreateDepartmentTaskDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [customSearchQuery, setCustomSearchQuery] = useState('');
 
+  // 생성 문서 저장 폴더(Google Drive) & 학년 말 인수인계 타임라인 자동 추가 옵션 (기본 체크)
+  const [driveConfig, setDriveConfig] = useState<GoogleDriveConfig | null>(null);
+  const [resolvedOrgData, setResolvedOrgData] = useState<any>(orgData || null);
+  const [selectedFilingValue, setSelectedFilingValue] = useState<string>('');
+  const [addToHandover, setAddToHandover] = useState<boolean>(true);
+  const userEditedFilingRef = useRef<boolean>(false);
+
   // ── 행사/프로젝트 전용 상태 ──
   const [eventType, setEventType] = useState<string>('sports_day');
   const [startDate, setStartDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
@@ -528,16 +548,80 @@ export function CreateDepartmentTaskDialog({
     return (orgData?.departments || []).map((d: any) => d.name);
   }, [orgData]);
 
-  // Set default selected dept only when dialog opens
+  // Set default selected dept & load Drive/Org config when dialog opens
   useEffect(() => {
     if (open) {
+      setAddToHandover(true);
+      userEditedFilingRef.current = false;
+
       if (myDepartments.length > 0) {
         setSelectedDepts([myDepartments[0].name]);
       } else if (allDepartments.length > 0) {
         setSelectedDepts([allDepartments[0]]);
       }
+
+      getGoogleDriveConfig()
+        .then(cfg => {
+          if (cfg) setDriveConfig(cfg);
+        })
+        .catch(() => {});
+
+      if (orgData) {
+        setResolvedOrgData(orgData);
+      } else {
+        getOrgStructure()
+          .then(org => {
+            if (org) setResolvedOrgData(org);
+          })
+          .catch(() => {});
+      }
     }
-  }, [open]);
+  }, [open, orgData]);
+
+  const effectiveOrg = resolvedOrgData || orgData;
+  const creatorDeptName = useMemo(() => {
+    if (myDepartments.length > 0 && myDepartments[0]?.name) return myDepartments[0].name;
+    return profile?.dept || '';
+  }, [myDepartments, profile?.dept]);
+
+  const myAssignedFilingDuties = useMemo(() => {
+    if (!profile?.email || !effectiveOrg) return [];
+    return resolveTeacherFilingDutiesList(profile.email, effectiveOrg, creatorDeptName);
+  }, [profile?.email, effectiveOrg, creatorDeptName]);
+
+  const myMatchedDriveFolders = useMemo(() => {
+    if (!driveConfig || myAssignedFilingDuties.length === 0) return [];
+    return resolveDriveFoldersForDuties(
+      myAssignedFilingDuties,
+      driveConfig,
+      CURRENT_SCHOOL_YEAR,
+      creatorDeptName,
+      effectiveOrg
+    );
+  }, [myAssignedFilingDuties, driveConfig, creatorDeptName, effectiveOrg]);
+
+  const filingOptions = useMemo(
+    () => listDriveFilingFolderOptions(driveConfig, effectiveOrg, CURRENT_SCHOOL_YEAR, myMatchedDriveFolders),
+    [driveConfig, effectiveOrg, myMatchedDriveFolders]
+  );
+
+  const selectedFilingOption = useMemo(
+    () => filingOptions.find(o => o.value === selectedFilingValue) || null,
+    [filingOptions, selectedFilingValue]
+  );
+
+  useEffect(() => {
+    if (!open || userEditedFilingRef.current) return;
+    if (filingOptions.length === 0) return;
+
+    const defaultOpt = resolveDefaultFilingFolderOption(filingOptions, {
+      myMatchedFolders: myMatchedDriveFolders,
+      teacherDeptName: creatorDeptName,
+    });
+    if (defaultOpt) {
+      setSelectedFilingValue(defaultOpt.value);
+    }
+  }, [open, filingOptions, myMatchedDriveFolders, creatorDeptName]);
 
   // 행사 및 루틴 템플릿 전환 시 기본값 설정
   useEffect(() => {
@@ -742,25 +826,42 @@ export function CreateDepartmentTaskDialog({
       }
 
       let autoGeneratedSheetUrl: string | undefined = undefined;
+      let resolvedFolderIdFromApi: string | undefined = undefined;
+      let resolvedFolderUrlFromApi: string | undefined = undefined;
       let finalAttachments = [...attachments];
 
-      // Google Drive 연동 활성화 상태 시 Google Spreadsheet 자동 생성 (파일명: 업무 제목)
+      const activeFilingOpt =
+        filingOptions.find(o => o.value === selectedFilingValue) || selectedFilingOption;
+
+      // Google Drive 연동 활성화 상태 시 Google Spreadsheet 자동 생성 (파일명: 업무 제목, 저장 폴더: 사용자 선택 담당 폴더)
       if (taskType === 'sheets_template') {
         try {
-          const driveCfg = await getGoogleDriveConfig();
+          const driveCfg = driveConfig || (await getGoogleDriveConfig());
           if (driveCfg && driveCfg.enabled && driveCfg.rootFolderId) {
-            const targetFolderId = driveCfg.subFolders?.taskWorkId || driveCfg.rootFolderId;
+            const now = new Date();
+            const curAcadYear = String(now.getMonth() + 1 >= 3 ? now.getFullYear() : now.getFullYear() - 1);
+            const fallbackFolderId =
+              driveCfg.yearlyFolders?.[curAcadYear]?.taskWorkId ||
+              driveCfg.subFolders?.taskWorkId ||
+              driveCfg.rootFolderId;
+            const targetFolderId = activeFilingOpt?.folderId || (activeFilingOpt?.isVirtual ? '' : fallbackFolderId);
             const createRes = await fetch('/api/drive/create-sheet', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: await buildStaffApiHeaders(),
               body: JSON.stringify({
                 title: title.trim(),
-                parentFolderId: targetFolderId,
+                parentFolderId: targetFolderId || undefined,
+                academicYear: curAcadYear,
+                deptName: activeFilingOpt?.deptName,
+                folderName: activeFilingOpt?.folderName,
+                rootFolderId: driveCfg.rootFolderId,
                 columns: parsedTemplateColumns,
                 columnDefs: templateColumns.filter(c => c.name.trim())
               })
             });
             const createData = await createRes.json();
+            if (createData.folderId) resolvedFolderIdFromApi = createData.folderId;
+            if (createData.folderUrl) resolvedFolderUrlFromApi = createData.folderUrl;
             if (createData.success && createData.sheetUrl) {
               autoGeneratedSheetUrl = createData.sheetUrl;
               // 참고자료 목록에도 자동 생성된 구글 시트 추가
@@ -812,11 +913,17 @@ export function CreateDepartmentTaskDialog({
         finalDeadline = formatDateToYYYYMMDD(cycleInfo.cycleDeadline);
       }
 
+      const resolvedHandoverCategory = inferHandoverCategoryFromTarget(
+        activeFilingOpt?.deptName || selectedDepts[0] || profile?.dept,
+        activeFilingOpt?.folderName,
+        [title.trim(), ...myAssignedFilingDuties]
+      );
+
       const res = await createDepartmentTask({
         title: title.trim(),
         description: description.trim() || (taskCategory === 'event' ? purpose : ''),
         attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
-        creatorEmail: profile?.email || '',
+        creatorEmail: (profile?.email || '').trim().toLowerCase(),
         creatorName: profile?.name || '교직원',
         creatorDept: selectedDepts[0] || profile?.dept || '소속',
         targetType,
@@ -828,6 +935,13 @@ export function CreateDepartmentTaskDialog({
         sheetsConfig,
         deadline: finalDeadline,
         status: 'active',
+        addToHandover,
+        handoverCategory: resolvedHandoverCategory,
+        driveTargetFolderId: resolvedFolderIdFromApi || activeFilingOpt?.folderId || '',
+        driveTargetFolderUrl: resolvedFolderUrlFromApi || activeFilingOpt?.folderUrl || '',
+        driveTargetFolderLabel: activeFilingOpt?.label || '',
+        driveTargetDeptName: activeFilingOpt?.deptName || '',
+        driveTargetTaskName: activeFilingOpt?.folderName || '',
         category: taskCategory,
         routineConfig: routinePayload,
         eventDetails: eventPayload,
@@ -842,13 +956,15 @@ export function CreateDepartmentTaskDialog({
               ? '행사 계획 생성 및 업무 할당 완료' 
               : '업무 생성 완료', 
           description: autoGeneratedSheetUrl 
-            ? `Google Drive에 업무 시트가 자동 생성되었으며, 총 ${targetRecipients.emails.length}명에게 할당되었습니다.`
+            ? `Google Drive(${activeFilingOpt?.label || '선택 폴더'})에 업무 시트가 자동 생성되었으며, 총 ${targetRecipients.emails.length}명에게 할당되었습니다.`
             : `총 ${targetRecipients.emails.length}명에게 업무가 성공적으로 할당되었습니다.` 
         });
         setTitle('');
         setDescription('');
         setCustomSheetUrl('');
         setSelectedCustomEmails([]);
+        setAddToHandover(true);
+        userEditedFilingRef.current = false;
         onOpenChange(false);
       } else {
         toast({ variant: 'destructive', title: '생성 실패', description: res.error });
@@ -1738,6 +1854,31 @@ export function CreateDepartmentTaskDialog({
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* ── 6. 생성 문서 저장 폴더 & 학년 말 인수인계 타임라인 자동 추가 ── */}
+            <div className="pt-2 border-t border-slate-200/80">
+              <DriveFilingHandoverCard
+                compact
+                options={filingOptions}
+                selectedValue={selectedFilingValue}
+                selectedOption={selectedFilingOption}
+                onSelectFolder={(val) => {
+                  if (!val) return;
+                  const matched = filingOptions.find(o => o.value === val) || null;
+                  if (!matched) return;
+                  userEditedFilingRef.current = true;
+                  setSelectedFilingValue(matched.value);
+                }}
+                addToHandover={addToHandover}
+                onToggleAddToHandover={(checked) => setAddToHandover(!!checked)}
+                driveEnabled={driveConfig?.enabled !== false}
+                idSuffix="dept_task"
+                folderTitle="생성 문서 저장 폴더 (Google Drive)"
+                folderHelpText="이 업무 요청에서 생성·연계되는 문서가 선택한 폴더에 저장됩니다. (기본: 내 담당 업무 폴더)"
+                handoverLabel="학년 말 인수인계 타임라인에 추가"
+                handoverHelpText="업무 완료 상태가 되면 학년 말 인수인계 타임라인에 업무 제목과 일시가 자동 추가됩니다."
+              />
             </div>
           </div>
 

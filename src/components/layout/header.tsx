@@ -23,6 +23,7 @@ import { subscribePendingApprovals, checkAndScheduleDutyNotification } from '@/l
 import { DropdownMenuTriggerItem } from '../ui/dropdown-menu-trigger-item';
 import { useSidebar } from './sidebar-context';
 import { LanguageSwitcher } from './language-switcher';
+import { resolveAssignedCustomDuties } from '@/lib/services/customDutyService';
 
 export function AppHeader() {
   const { user, profile, logout, profileLoading } = useAuth();
@@ -121,6 +122,13 @@ export function AppHeader() {
     if (orgData.busManagers?.map((m: string) => m.toLowerCase()).includes(emailLower)) {
       managerList.push('스쿨버스');
     }
+
+    const customDuties = resolveAssignedCustomDuties(profile.email, orgData, profile);
+    customDuties.forEach((cd) => {
+      if (!managerList.includes(cd.dutyName)) {
+        managerList.push(cd.dutyName);
+      }
+    });
 
     return {
       belongs: belongsList.length > 0 ? belongsList.join(', ') : (profile.dept || '미배정 소속'),

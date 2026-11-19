@@ -138,7 +138,9 @@ export interface SubstituteRecord {
   createdAt: string;
   recordType?: 'SUBSTITUTE' | 'ABSENCE'; // 보결 등록 또는 결근 처리
   isAbsence?: boolean; // 결근 처리 여부
-  targetInstructor?: string; // 특정 강사 대상 (복수 강사 강좌인 경우)
+  targetInstructor?: string; // 결근한 강사 (복수 강사 강좌인 경우)
+  substituteEmail?: string; // 대강 강사의 시스템 계정 이메일 (교직원 명단에서 고른 경우)
+  updatedAt?: string;
 }
 
 export interface RefundRequest {

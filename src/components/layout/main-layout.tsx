@@ -14,6 +14,7 @@ import { useTranslation } from '@/hooks/use-translation';
 import { LanguageSwitcher } from './language-switcher';
 import { MobileBottomNav } from './mobile-bottom-nav';
 import { cn } from '@/lib/utils';
+import { EvidenceApprovalNotice } from '@/components/afterschool/EvidenceApprovalNotice';
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -343,6 +344,8 @@ export const MainLayout: FC<MainLayoutProps> = ({
             </div>
           )}
       </header>
+      {/* 교감 선생님에게만: 결재 대기 중인 방과후 강사료 증빙서류 알림 */}
+      <EvidenceApprovalNotice />
       <main className={cn(
         "flex-1 w-full max-w-full min-w-0 min-h-0",
         isFixedScreen

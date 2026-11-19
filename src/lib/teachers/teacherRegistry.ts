@@ -117,6 +117,21 @@ export function courseInstructorEmail(course: Record<string, any> | null | undef
   return (f && normalizeTeacherEmail(course.instructorEmails?.[f])) || '';
 }
 
+/** 강좌 강사 칸 연결 이메일, 없으면 그 강좌 결근·대강 기록에서 고른 대강 강사 계정 이메일 */
+export function instructorSealEmail(
+  course: Record<string, any> | null | undefined,
+  name: unknown,
+  substitutes: Array<{ courseId?: string; substituteInstructor?: string; substituteEmail?: string }> = []
+): string {
+  const fromCourse = courseInstructorEmail(course, name);
+  if (fromCourse) return fromCourse;
+  const nk = normalizeTeacherName(name);
+  const hit = (substitutes || []).find(
+    (s) => s.courseId === course?.id && s.substituteEmail && normalizeTeacherName(s.substituteInstructor) === nk
+  );
+  return normalizeTeacherEmail(hit?.substituteEmail);
+}
+
 /** 이름(+연결 이메일)으로 시스템 계정의 서명 이미지를 찾는다. 없으면 '' */
 export function findTeacherSignature(book: TeacherSignatureBook | null | undefined, name: unknown, email?: unknown): string {
   if (!book) return '';
@@ -130,7 +145,7 @@ export function findTeacherSignature(book: TeacherSignatureBook | null | undefin
  */
 export async function collectCourseSignatures(
   course: Record<string, any>,
-  substitutes: Array<{ courseId?: string; substituteInstructor?: string; isAbsence?: boolean }> = []
+  substitutes: Array<{ courseId?: string; substituteInstructor?: string; substituteEmail?: string; isAbsence?: boolean }> = []
 ): Promise<Record<string, string>> {
   const book = await getTeacherSignatureBook(true);
   const names = new Set<string>();
@@ -141,7 +156,7 @@ export async function collectCourseSignatures(
     .forEach((s) => { const v = String(s.substituteInstructor || '').trim(); if (v && v !== '결근') names.add(v); });
   const out: Record<string, string> = {};
   names.forEach((n) => {
-    const sig = findTeacherSignature(book, n, courseInstructorEmail(course, n));
+    const sig = findTeacherSignature(book, n, instructorSealEmail(course, n, substitutes));
     if (sig) out[n] = sig;
   });
   return out;

@@ -22,6 +22,8 @@ import {
   Undo2,
   XCircle,
   Sparkles,
+  ShieldAlert,
+  ArrowRightLeft,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -103,6 +105,16 @@ export const ALL_FEATURES: FeatureItem[] = [
     categoryLabel: '교육활동',
     description: '보건실 방문 일지, 약품 및 학생 건강기록 관리',
     keywords: ['보건실', '양호실', '건강기록', '투약'],
+  },
+  {
+    id: 'safety',
+    label: '학생 안전지도 관리',
+    href: '/teacher/safety',
+    iconName: 'ShieldAlert',
+    category: 'education',
+    categoryLabel: '교육활동',
+    description: '교내외 순찰 일지, 통학로 안전지도 및 안전사고 접수·조치 대장 관리',
+    keywords: ['안전', '안전지도', '순찰', '안전사고', '학교안전', '생활지도'],
   },
   {
     id: 'volunteer',
@@ -277,6 +289,16 @@ export const ALL_FEATURES: FeatureItem[] = [
     keywords: ['감염병', '질병', '독감', '병결', '코로나', '보건실'],
   },
   {
+    id: 'teacher-handover',
+    label: '학년 말 인수인계',
+    href: '/teacher/handover',
+    iconName: 'ArrowRightLeft',
+    category: 'teacher',
+    categoryLabel: '교원 서비스',
+    description: '1년간 기안 문서 자동 로드, 업무별 타임라인 정리, 전년도 업무 폴더 연동 및 차년도 인수자 자동 배정',
+    keywords: ['인수인계', '인계서', '업무분장', '학년말', '후임자', '인수'],
+  },
+  {
     id: 'teacher-registry',
     label: '교원 서비스 조회',
     href: '/teacher/registry',
@@ -350,6 +372,8 @@ const FEATURE_ICON_MAP: Record<string, LucideIcon> = {
   Calendar,
   Undo2,
   XCircle,
+  ShieldAlert,
+  ArrowRightLeft,
 };
 
 export function getFeatureIcon(iconName: string, className = 'w-3.5 h-3.5'): React.ReactElement {

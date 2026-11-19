@@ -27,6 +27,7 @@ import {
 import type { HomeroomHomework, HomeroomHomeworkCheck } from '@/lib/types/homeroomClass';
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import { HomeworkArchiveView } from './HomeworkArchiveView';
+import { motion } from 'framer-motion';
 
 export interface HwDayStats {
   hwCount: number;
@@ -78,6 +79,7 @@ export function HomeworkTabContent({
   calendarDays,
   classLabel,
   onToggleConfirm,
+  isFullscreen = false,
 }: {
   dateNavMode: 'dropdown' | 'calendar';
   setDateNavMode: (mode: 'dropdown' | 'calendar') => void;
@@ -109,6 +111,7 @@ export function HomeworkTabContent({
   calendarDays: CalendarDay[];
   classLabel?: string;
   onToggleConfirm?: (hwId: string, isConfirmed: boolean) => void;
+  isFullscreen?: boolean;
 }) {
   // 1. 서브 뷰 모드: 'active' (미확인 숙제 피드) | 'archive' (확인된 숙제 보관함)
   const [subViewMode, setSubViewMode] = useState<'active' | 'archive'>('active');
@@ -712,36 +715,71 @@ export function HomeworkTabContent({
                     )}
                   </CardHeader>
 
-                  <CardContent className="p-3.5">
-                    {/* 학생별 원터치 체크 그리드 */}
-                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-1.5">
+                  <CardContent className={isFullscreen ? 'p-5 sm:p-6' : 'p-3.5'}>
+                    {/* 학생별 원터치 체크 그리드 (전체화면 시 대형 전자칠판 터치에 최적화) */}
+                    <div
+                      className={`grid ${
+                        isFullscreen
+                          ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3 sm:gap-4'
+                          : 'grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-1.5'
+                      }`}
+                    >
                       {students.map((s) => {
                         const sid = s.studentId || s.id || '';
                         const isDone = doneIdSet.has(sid);
 
                         return (
-                          <button
+                          <motion.button
                             key={sid}
                             type="button"
+                            whileHover={{ scale: 1.03, y: -2 }}
+                            whileTap={{ scale: 0.95, y: 1 }}
+                            transition={{ type: 'spring', stiffness: 500, damping: 22 }}
                             onClick={() => handleToggleHwCheck(selectedHw.id, sid, s.name)}
-                            className={`p-2 rounded-xl border flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer ${
-                              isDone
-                                ? 'bg-emerald-50/80 border-emerald-300 text-emerald-900 shadow-xs'
-                                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                            className={`flex flex-col items-center justify-center gap-1 transition-all cursor-pointer select-none border-b-4 ${
+                              isFullscreen
+                                ? `p-4 sm:p-5 rounded-2xl ${
+                                    isDone
+                                      ? 'bg-emerald-50 border-emerald-400 text-emerald-950 shadow-md border-b-emerald-600'
+                                      : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-800 shadow-sm border-b-slate-300'
+                                  }`
+                                : `p-2 rounded-xl border ${
+                                    isDone
+                                      ? 'bg-emerald-50/80 border-emerald-300 text-emerald-900 shadow-xs border-b-emerald-500'
+                                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 border-b-slate-300'
+                                  }`
                             }`}
                           >
-                            <span className="text-[10px] text-slate-400 font-medium">
+                            <span
+                              className={`font-bold ${
+                                isFullscreen ? 'text-xs text-slate-400' : 'text-[10px] text-slate-400'
+                              }`}
+                            >
                               {s.studentNum ? `${s.studentNum}번` : ''}
                             </span>
-                            <span className="text-xs font-bold tracking-tight">{s.name}</span>
+                            <span
+                              className={`tracking-tight ${
+                                isFullscreen
+                                  ? 'text-base sm:text-lg font-black text-slate-900'
+                                  : 'text-xs font-bold'
+                              }`}
+                            >
+                              {s.name}
+                            </span>
                             <div
-                              className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black mt-0.5 ${
-                                isDone ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'
+                              className={`rounded-full flex items-center justify-center font-black mt-1 shadow-xs ${
+                                isFullscreen
+                                  ? isDone
+                                    ? 'w-7 h-7 text-sm bg-emerald-500 text-white'
+                                    : 'w-7 h-7 text-xs bg-slate-100 text-slate-300'
+                                  : isDone
+                                  ? 'w-4 h-4 text-[10px] bg-emerald-500 text-white'
+                                  : 'w-4 h-4 text-[10px] bg-slate-100 text-slate-300'
                               }`}
                             >
                               {isDone ? '✓' : ''}
                             </div>
-                          </button>
+                          </motion.button>
                         );
                       })}
                     </div>

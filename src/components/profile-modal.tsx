@@ -3,6 +3,7 @@
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/utils';
+import { checkDrawnSignature } from '@/lib/signatureQuality';
 import { useEffect, useState, useRef } from 'react';
 import { SignaturePad, type SignaturePadRef } from './ui/signature-pad';
 import {
@@ -104,6 +105,13 @@ export function ProfileModal({ children, open: controlledOpen, onOpenChange: set
       if (signatureMode === 'draw') {
         if (sigCanvas.current && !sigCanvas.current.isEmpty()) {
           const canvasData = sigCanvas.current.toDataURL('image/png');
+          // 한 획·점처럼 너무 작은 서명은 결재·출근부 도장 자리에 "|"처럼 보이므로 다시 그리게 한다
+          const problem = await checkDrawnSignature(canvasData);
+          if (problem) {
+            toast({ variant: 'destructive', title: '서명을 다시 그려 주세요', description: problem });
+            setIsSaving(false);
+            return;
+          }
           finalSignature = await compressImage(canvasData);
         } else {
           finalSignature = sigPreview || profile.signature || '';

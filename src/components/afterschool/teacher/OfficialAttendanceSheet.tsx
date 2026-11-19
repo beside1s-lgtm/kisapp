@@ -83,6 +83,8 @@ export interface OfficialAttendanceSheetProps {
   getInstructorSeal: (teacherName: string) => string | undefined;
   onRequestSignature?: (teacherName: string, courseId?: string) => void;
   onClose: () => void;
+  /** 'page': 팝업 없이 본문만 (증빙서류 일괄 출력용, 각 쪽에 evidence-print-page 클래스) */
+  variant?: 'modal' | 'page';
 }
 
 // 2페이지 분리 기준 (30명 초과 시에만 2페이지 분리)
@@ -96,6 +98,7 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
   getInstructorSeal,
   onRequestSignature,
   onClose,
+  variant = 'modal',
 }) => {
   // Portal SSR 가드: 클라이언트 마운트 후에만 portal 렌더링
   const [mounted, setMounted] = useState(false);
@@ -255,6 +258,29 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
   const titlePaddingClass = (!isMultiPage && students.length <= 18)
     ? 'pt-[8mm] pb-0'
     : 'pt-[4mm] pb-0';
+
+  const renderPages = (pageClass: (pageIdx: number) => string) =>
+    pageStudentsList.map((pageStudents, pageIdx) => (
+      <div key={pageIdx} className={pageClass(pageIdx)}>
+        <div className={`text-center ${titlePaddingClass}`}>
+          <h1 className="text-xl sm:text-2xl font-black tracking-wider text-black font-sans leading-tight">{courseTitle}</h1>
+        </div>
+        {renderInstructorArea()}
+        <table className="w-full border-collapse border-2 border-black text-black text-xs font-sans text-center">
+          {renderTableHead()}
+          {renderTableBody(pageStudents, pageIdx * 30, rowHeightClass)}
+        </table>
+      </div>
+    ));
+
+  // 일괄 출력용: 팝업·포털 없이 쪽 단위 본문만
+  if (variant === 'page') {
+    return (
+      <div className="text-slate-950 font-sans">
+        {renderPages(() => 'evidence-print-page evidence-page-attendance')}
+      </div>
+    );
+  }
 
   if (!mounted) return null;
 

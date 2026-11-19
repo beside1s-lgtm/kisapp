@@ -890,6 +890,11 @@ export default function TeacherHomeroomApplyPage() {
               학급 담임
             </Badge>
           ) : null}
+          {selectedClassKey && (
+            <Badge variant="outline" className="bg-blue-50 text-[#2471B2] border-blue-200 text-[11px] font-black px-2 py-0.5 rounded-full shrink-0 shadow-2xs">
+              {formatClassLabel(selectedClassKey)}
+            </Badge>
+          )}
         </div>
       } 
       contentClassName="px-1.5 sm:px-3 pb-1.5 sm:pb-3 pt-0 font-body flex flex-col"

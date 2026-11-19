@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGoogleDriveClient } from '@/lib/server/googleAuth';
+import { denyIfNotStaff } from '@/lib/server/staffRequestAuth';
 
 export async function GET(req: NextRequest) {
+  // 로그인한 교직원만 호출 가능
+  const denied = await denyIfNotStaff(req, '[list-files]');
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(req.url);
     const folderId = searchParams.get('folderId');

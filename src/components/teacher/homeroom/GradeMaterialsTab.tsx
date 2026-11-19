@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { buildStaffAuthHeaders } from '@/lib/staffApiHeaders';
 import {
   Folder,
   FolderOpen,
@@ -154,7 +155,9 @@ export function GradeMaterialsTab({ classKey, classLabel }: GradeMaterialsTabPro
     }
     setIsLoadingFiles(true);
     try {
-      const res = await fetch(`/api/drive/list-files?folderId=${encodeURIComponent(gradeFolderId)}`);
+      const res = await fetch(`/api/drive/list-files?folderId=${encodeURIComponent(gradeFolderId)}`, {
+        headers: await buildStaffAuthHeaders(),
+      });
       const data = await res.json();
       if (data.success && Array.isArray(data.files)) {
         setFiles(data.files);
@@ -195,6 +198,7 @@ export function GradeMaterialsTab({ classKey, classLabel }: GradeMaterialsTabPro
 
         const res = await fetch('/api/drive/upload-file', {
           method: 'POST',
+          headers: await buildStaffAuthHeaders(),
           body: formData,
         });
         const data = await res.json();
@@ -275,7 +279,7 @@ export function GradeMaterialsTab({ classKey, classLabel }: GradeMaterialsTabPro
                 {currentAcademicYear}학년도 학년별 수업자료 공유소
               </h3>
               <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-xs font-bold">
-                05_학년별 수업자료 공유
+                학년부 &gt; 학년별 폴더
               </Badge>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">

@@ -22,7 +22,18 @@ function NewDocumentContent() {
             const pendingDraft = sessionStorage.getItem('pending_doc_draft');
             if (pendingDraft) {
                 try {
-                    const { title, content, attachments } = JSON.parse(pendingDraft);
+                    const {
+                        title,
+                        content,
+                        attachments,
+                        driveTargetFolderId,
+                        driveTargetFolderUrl,
+                        driveTargetFolderLabel,
+                        driveTargetDeptName,
+                        driveTargetTaskName,
+                        addToHandover,
+                        handoverCategory,
+                    } = JSON.parse(pendingDraft);
                     sessionStorage.removeItem('pending_doc_draft');
                     setTemplateDoc({
                         id: '',
@@ -35,6 +46,13 @@ function NewDocumentContent() {
                         status: 'DRAFT',
                         createdAt: new Date().toISOString(),
                         approvalLine: [],
+                        ...(driveTargetFolderId ? { driveTargetFolderId } : {}),
+                        ...(driveTargetFolderUrl ? { driveTargetFolderUrl } : {}),
+                        ...(driveTargetFolderLabel ? { driveTargetFolderLabel } : {}),
+                        ...(driveTargetDeptName ? { driveTargetDeptName } : {}),
+                        ...(driveTargetTaskName ? { driveTargetTaskName } : {}),
+                        ...(typeof addToHandover === 'boolean' ? { addToHandover } : {}),
+                        ...(handoverCategory ? { handoverCategory } : {}),
                     } as any);
                     setLoading(false);
                     return;

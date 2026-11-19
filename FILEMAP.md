@@ -103,6 +103,7 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
 * `src/app/teacher/bus/page.tsx` : 스쿨버스 탑승 지도 교사용 화면 (전체 탑승, QR 체크)
 * `src/app/api/drive/` : Google Drive 연동 API (폴더 동기화, 결석계 완결 PDF 자동 아카이빙, 시트 생성 등)
   * `src/app/api/drive/archive-absence/route.ts` : 결석계 최종 승인 시 Google Drive 03_결석계(완료) 폴더에 소견서 포함 완결 PDF 자동 아카이빙
+  * `src/app/api/drive/archive-handover/route.ts` : 학년 말 인수인계(업무 및 비품) 교감 최종 결재 완료 시 Google Drive 인수인계 폴더에 A4 완결 PDF 자동 아카이빙
 
 ---
 
@@ -132,7 +133,7 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
 
 ### 다. 담임 학급 관리 (`src/components/teacher/homeroom/`)
 * `HomeroomAttendanceTab.tsx` : 담임 일일 출석부 탭
-* `ClassManagementTab.tsx` : 학급 관리 종합 탭 (아래 하위 컴포넌트 호출)
+* `ClassManagementTab.tsx` : 학급 관리 종합 탭 (칠판 알림, 숙제 확인, 행동 관찰, 기록·상담, 월별 현황, 자료 공유, 수업 도구 7대 서브탭 오케스트레이션)
 * **`class-management/` 서브 모듈**:
   * `HomeworkTabContent.tsx` : 미확인 과제 통합 피드, 시간순 정렬 및 담임 확인 처리
   * `HomeworkArchiveView.tsx` : 확인된 숙제 아카이브 보관함, 학생별 제출 통계/4단계 평가 산출 및 XLSX 다운로드
@@ -143,6 +144,29 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
   * `BehaviorInputDialog.tsx` : 행동 기록 빠른 입력 팝업
   * `EditHomeworkDialog.tsx` : 과제 수정 모달
   * `MemoHistoryDialog.tsx` : 과거 메모 이력 조회 모달
+* **`tools/` (수업 도구 종합 서브 모듈)**:
+  * `ClassToolsMainTab.tsx` : 수업 도구 메인 컨테이너 (자리 배치, 칭찬, 뽑기, 팀 나누기, 칠판, 숙제 6대 핵심 도구 탭 및 전체화면 오케스트레이션)
+  * `PraiseTabContent.tsx` : 칭찬 전용 탭 (우리 반 칭찬 온도계 게이지 및 학생별 10개 단위 보석 티어 칭찬 도장판 그리드, 원터치 칭찬 부여)
+  * `RandomPickerTab.tsx` : 1~12명 발표자 및 인원 랜덤 뽑기 탭 (원클릭 칩 선택, 긴장감 넘치는 롤링 셔플 애니메이션, 당첨자 영웅 카드 및 즉시 칭찬 연동)
+  * `TeamGeneratorTab.tsx` : 모둠/팀 나누기 탭 (팀 개수/팀당 인원수 분할, 성별 균등 배분, 팀별 컬러 카드, 팀장 랜덤 뽑기, 명단 복사 및 A4 인쇄)
+  * `EditTeamModal.tsx` : 모둠/팀 커스텀 설정 모달 (팀 이름 임의 변경, 8대 테마 색상 팔레트 선택, 팀장 수동 변경 및 자리배치 책상 색상 실시간 연동)
+* **`seating/` (자리 배치 & 칭찬 관리 서브 모듈)**:
+  * `SeatingTabContent.tsx` : 자리 배치 & 칭찬 관리 메인 탭 컨테이너 (배치도 선택/생성/저장/삭제, 뽑기/팀 나누기 슬라이드 다운 탭 바 오케스트레이션, 카운트다운/결과 모달, A4 인쇄/명단 복사)
+  * `SeatingBoardView.tsx` : 교실 칠판 및 좌석 그리드 뷰 (우클릭 학생 카드 모달 연동, 팀 나누기 연동 책상 색상 통일 및 팀 배지, 등급 아이콘 연동 별 배지, 룰렛 하이라이트 애니메이션, 사진 숨김 모드 2단 분리)
+  * `SeatingPraiseWidget.tsx` : 자리 배치도 내 칭찬 현황 접이식(Collapsible) 위젯 (학급/분단/팀 드롭다운 선택, 실시간 온도계 및 통계 카드, 칭찬 탭 디폴트 뷰 연동)
+  * `SeatingPickerBar.tsx` : 자리 배치도 상단 슬라이드 다운 발표자 뽑기 탭 바 (인원수 증감, 성별 필터, 중복 제외, 룰렛 트리거)
+  * `PickerResultModal.tsx` : 발표자 뽑기 당첨 결과 축하 팝업 모달 (당첨 학생 대형 카드, 성별/번호, 원터치 칭찬 도장, 다시 뽑기)
+  * `SeatingTeamBar.tsx` : 자리 배치도 상단 슬라이드 다운 팀 나누기 탭 바 (나누기 방식/팀 수 선택, 팀별 명단 보기 메뉴, 팀 나누기 실행)
+  * `TeamResultModal.tsx` : 팀 나누기 결과 팝업 모달 (각 팀별 이름, 색상 팔레트, 팀원 목록 및 자리배치도 실시간 색상 연동 확인)
+  * `TeamListModal.tsx` : 팀별 상세 명단 확인 및 팀 이름/색상 수정 모달
+  * `StudentDetailModal.tsx` : 좌석 우클릭 시 화면 중앙 대형 학생 정보 카드 및 수업·학급 관리 톱니바퀴 모달 (대형 프로필/아바타, 번호/성명/성별/팀 배지, 칭찬 게이지, 관리 4대 탭: 16종 학급 캐릭터 아바타 등록/복원, 과제 제출 토글/통계, 칭찬 점수/사유 가산, 상담·관찰 일지 등록/열람/삭제)
+  * `PraiseModal.tsx` : 좌석 클릭 시 학생 칭찬 포인트 부여/차감(+1, +2, +3, +5, -1), 칭찬 등급 직관적 아이콘(새싹/줄기/꽃봉오리/열매/나무/황금숲) 표출, 칭찬 사유 태그 및 좌석 고정/이동/비우기 관리 모달
+  * `PraiseGaugeBar.tsx` : 학급 전체/분단별/모둠별 3대 뷰 전환 칭찬 온도계 프로그레스 바, 다주기(오늘/이번주/월간/학기/연간) 목표 드롭다운 선택 및 목표 점수 설정 팝오버, 실시간 집계 게이지 & 1등 왕관 배지 바
+  * `PraiseGrowthSettingModal.tsx` : 칭찬 성장 체계(티어) 가이드 및 커스텀 설정 모달 (새싹, 줄기, 꽃봉오리, 열매, 나무, 황금숲 성장 로드맵 및 단계별 기준 점수/명칭 커스텀 편집)
+  * `ViewOptionsPopover.tsx` : 학생 사진, 칭찬 포인트, 모둠/학급 게이지, 성별 배지 표시 여부를 켜고 끄는 선택적 보기 설정 팝오버
+  * `SeatingConfigModal.tsx` : 자리배치도 대형 설정 모달 (분단형, 모둠형, 자유형 3대 대형, 짝꿍 성별 설정, 결과보기 효과 선택)
+  * `StudentAssignModal.tsx` : 좌석 사전 지정(고정 핀) 및 학생 수동 배정/고정 해제/비우기 모달
+  * `CountdownOverlay.tsx` : 3, 2, 1 카운트다운 및 줄바꿈 없는 고급 '배정 완료!' 축하 카드 오버레이 애니메이션
 * `GradeMaterialsTab.tsx` : 학년 자료실 탭
 * `ParentConsultationTab.tsx` : 학부모 상담 관리 탭
 * `HomeroomProxyApplyForm.tsx` : 담임 대리 결석/체험학습 신청 폼
@@ -207,7 +231,19 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
 * `create-weekly-proposal-dialog.tsx` : 주간 교육계획안 제출 모달
 * `create-weekly-schedule-dialog.tsx` : 주간 주요일정 등록 모달
 
-### 자. 전자결재 및 공통 (`src/components/document-form/`, `src/components/inbox/`)
+### 자. 시스템 설정 및 조직도 (`src/components/settings/`, `src/components/settings-modal.tsx`)
+* `settings-modal.tsx` : 시스템 환경설정 메인 모달 (일반, 학사일정, 조직도, 전결규정, 사용자, 감사로그 탭 통합 관리 및 교직원 테이블 내 '담당 시설(학급)' 컬럼·배지 표출)
+* `settings/OrgSettingsTab.tsx` : 조직도 관리 메인 탭 (학교 리더십, 업무 담당, 학년별 담임/교과, 부서 관리, 시설 및 학급 5대 서브탭 오케스트레이션)
+* `settings/FacilitiesOrgTab.tsx` : [시설 및 학급] 전용 조직도 서브탭 (학교 전체 시설/학급 등록·수정·삭제, 순수 교직원 인라인 담당 배정, 차년도 학급 및 시설 매핑 토글, 2026년 시설/담당자 ➔ 2027년 시설/인수자 4단 확장 헤더 테이블 및 일괄 저장 지원)
+
+### 차. 학년 말 인수인계 및 비품 인계서 (`src/components/handover/`)
+* `src/app/(app)/teacher/handover/page.tsx` : 학년 말 인수인계 통합 메인 페이지 (업무 인수인계 vs 비품 인수인계 2대 메인 모드 탭, 교무부장/관리자 전용 상단 인수인계 제어 토글 `[열림(잠그기)] / [잠김(열기)]`, 전역 마감 배너 및 잠금 상태 하위 전파)
+* **`src/components/handover/fixture/` (학급・특별실 비품 인수인계 모듈)**:
+  * `FixtureHandoverMainTab.tsx` : 비품 인수인계 종합 대시보드 및 서브탭 (잠금 상태 연동, 제출 완료 전용 뷰/회수 액션 전환, 내 작성/수정, 수신 비품 목록, 교무부장 총괄 확인, 교감 최종 결재, 전체 목록)
+  * `FixtureHandoverEditor.tsx` : 비품 인계서 작성/수정 에디터 (시스템 설정 [시설 및 학급] 실시간 연동, 특별실 검색 및 정식 시설 칩 선택기, 윈도우 비밀번호 가로 행 입력, 교원 전용 후임 인수자 자동완성 검색, 잠금 시 비활성화)
+  * `FixtureHandoverViewer.tsx` : 비품 인계서 상세 뷰어 (A4 인쇄 미리보기, 인계자 제출 회수 기능, 3단계 인계・인수・입회 전자 서명 날인 현황 카드, 잠금 시 회수/수정 차단)
+
+### 카. 전자결재 및 공통 (`src/components/document-form/`, `src/components/inbox/`)
 * `document-form/` : 기안서 폼 컨테이너 및 결재선/공람 다이얼로그
 * `inbox/OvertimeBarChart.tsx` : 부서/개인별 초과근무 시간대별 시각화 차트
 * `official-document-print.tsx` : 표준 기안문 인쇄 서식
@@ -222,6 +258,10 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
 ### 가. Firestore 서비스 계층 (`src/lib/services/`)
 * `settingsService.ts` : 학교 기본 설정, 조직도, 직책, 학사일정 조회/저장
 * `userService.ts` : 교직원 사용자 프로필 및 권한 동기화
+* `safetyService.ts` : 학교 시설 및 학급 점검 대장, 월별 안전점검표, 교사 이메일 자동 매칭 보강
+* `fixtureHandoverService.ts` : 학급・특별실 비품 인수인계 CRUD, 문서 회수(recallFixtureDocument), 품목 지속 템플릿 학습, 전자서명/직인도장 자동 날인, 교감 최종 입회 및 Google Drive 완결 PDF 자동 아카이빙 연동, A4 인쇄 HTML 생성
+* `handoverLockService.ts` : 학년 말 인수인계 전역 잠금/해제(Firestore `settings/handover_lock_{year}` SSOT) 관리, 교감 최종 결재 완료 시 자동 잠금 및 교무부장(관리자) 재오픈 토글 제어 서비스
+* `handoverService.ts` : 교원 업무 인수인계 기안문서 자동 연동, 후임자 자동 라우팅, 교무부장 일괄 상신, 교감 최종 결재 및 Google Drive 완결 PDF 자동 아카이빙 연동
 * `masterStudentService.ts` : 통합 마스터 학생 DB upsert, 검색, 휴지통 백업
 * `homeroomClassService.ts` : 담임 학급 배정 및 학생 목록 서비스
 * `homeroomAttendanceSync.ts` : 출석부와 학부모 신청서 실시간 연동
@@ -230,8 +270,12 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
 * `weeklyEducationPlanService.ts` : 주간 교육계획안 관리
 * `monthlyEducationPlanService.ts` : 월간 교육계획안 관리
 * `peService.ts` : PAPS 측정 기록 및 체육 통계 CRUD
+* `seatingService.ts` : 학급 랜덤 자리 배치 CRUD (Firestore `homeroom_classes/{classKey}/seating_plans` SSOT), 사전 고정 좌석 보존 알고리즘, 성별 짝꿍 매칭(이성/동성/랜덤), 이전 짝꿍 중복 방지
 * `healthService.ts` : 보건실 건강기록부 및 신체검사 데이터 CRUD
 * `notificationService.ts` : 결재/출결/버스 알림 전송
+* `src/lib/types/teams.ts` : 학급 팀 나누기 모델, 8대 테마 색상 팔레트 및 로컬 동기화 헬퍼
+* `src/lib/types/avatars.ts` : 학급 전용 학생 캐릭터 아바타(16종 프리셋) 모델 및 마스터 사진 보존 로컬 스토리지 헬퍼
+* `src/lib/types/seating.ts` : 자리배치도 3대 대형 설정 모델, 좌석 슬롯, 칭찬 티어/성장 단계 계산 엔진
 
 ### 나. 스쿨버스 로직 (`src/lib/kisbus/`)
 * `assignments.ts` : 등교/하교/방과후 버스 좌석 배정 엔진

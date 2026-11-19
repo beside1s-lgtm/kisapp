@@ -47,7 +47,17 @@ service cloud.firestore {
         (
           isSignedIn() && (
             ((resource.data.get('requesterId', '') == request.auth.uid || (getEmail() != '' && resource.data.get('requesterEmail', '').lower() == getEmail())) && (resource.data.get('status', '') in ['pending', 'recalled', 'rejected', 'draft'])) ||
-            (resource.data.get('approverEmails', null) != null && getEmail() != '' && getEmail() in resource.data.approverEmails)
+            (resource.data.get('approverEmails', null) != null && getEmail() != '' && getEmail() in resource.data.approverEmails) ||
+            (
+              resource.data.get('status', '') == 'approved' &&
+              getEmail() != '' &&
+              exists(/databases/$(database)/documents/users/$(getEmail())) &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'driveTargetFolderId', 'driveTargetFolderUrl', 'driveTargetFolderLabel',
+                'driveTargetDeptName', 'driveTargetTaskName',
+                'driveArchived', 'driveFileId', 'driveFileUrl', 'archivedAt', 'updatedAt'
+              ])
+            )
           )
         );
     }
@@ -66,6 +76,9 @@ service cloud.firestore {
       match /history/{historyId} {
         allow read, create: if true;
       }
+    }
+    match /deleted_master_students/{id} {
+      allow read, write: if true;
     }
 
     // settings 컬렉션 보안 규칙
@@ -285,6 +298,40 @@ service cloud.firestore {
     // --- [담임 교실 관리 시스템 (칠판 알림 메모, 숙제, 행동관찰, 보호자상담)] ---
     match /homeroom_classes/{document=**} {
       allow read, write: if isSignedIn();
+    }
+
+    // --- [학생 안전지도 및 안전점검 시스템] ---
+    match /safety_patrol_logs/{id} {
+      allow read, write: if true;
+    }
+    match /safety_incidents/{id} {
+      allow read, write: if true;
+    }
+    match /safety_facilities/{id} {
+      allow read, write: if true;
+    }
+    match /safety_school_facilities/{id} {
+      allow read, write: if true;
+    }
+    match /safety_monthly_inspections/{id} {
+      allow read, write: if true;
+    }
+
+    // --- [학년 말 인수인계 시스템] ---
+    match /handover_documents/{id} {
+      allow read, write: if true;
+    }
+    match /handover_pool/{id} {
+      allow read, write: if true;
+    }
+    match /teacher_assignments/{id} {
+      allow read, write: if true;
+    }
+    match /fixture_handovers/{id} {
+      allow read, write: if true;
+    }
+    match /fixture_templates/{id} {
+      allow read, write: if true;
     }
   }
 }

@@ -1,15 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGoogleDriveClient } from '@/lib/server/googleAuth';
+import { resolveDeptArchiveFolder } from '@/lib/server/driveDeptFolderHelper';
+import { SPECIAL_FOLDER_DEFS } from '@/lib/drive/deptFolderMapping';
 import { Readable } from 'stream';
 import { format } from 'date-fns';
+import { discardDriveTempFile } from '@/lib/server/driveTempCleanup';
+import { denyIfNotStaff } from '@/lib/server/staffRequestAuth';
 
 interface ArchiveRequestBody {
   docId: string;
   docData: any;
   academicYear?: string;
+  rootFolderId?: string;
+  targetFolderId?: string;
+  deptName?: string;
 }
 
 export async function POST(req: NextRequest) {
+  // 로그인한 교직원만 호출 가능
+  const denied = await denyIfNotStaff(req, '[archive-absence]');
+  if (denied) return denied;
+
   try {
     const body: ArchiveRequestBody = await req.json();
     const { docId, docData } = body;
@@ -32,89 +43,28 @@ export async function POST(req: NextRequest) {
 
     const drive = getGoogleDriveClient();
 
-    // 1. 중앙 저장소 설정 및 결석계 완료 폴더 ID 확인
-    // 현재 학년도 계산 (3월 기준)
+    // 1. 중앙 저장소 설정 및 부서 하위 결석계 완료 폴더 ID 확인
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1;
     const academicYear = body.academicYear || String(currentMonth >= 3 ? currentYear : currentYear - 1);
+    const rootFolderId = body.rootFolderId || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
+    const def = SPECIAL_FOLDER_DEFS.absenceDone;
 
-    // rootFolderId 환경변수 또는 sync-folders 호출
-    const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
-    let targetFolderId: string | null = null;
-
-    // 만약 rootFolderId가 설정되어 있다면 학년도 폴더 내 '03_결석계(완료)' 검색/생성
-    if (rootFolderId) {
-      try {
-        const yearFolderName = `${academicYear}학년도`;
-        const rootList = await drive.files.list({
-          q: `'${rootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-          fields: 'files(id, name)',
-          supportsAllDrives: true,
-          includeItemsFromAllDrives: true,
-        });
-        let yearFolder = rootList.data.files?.find(f => f.name === yearFolderName);
-        let yearFolderId = yearFolder?.id;
-
-        if (!yearFolderId) {
-          const newYf = await drive.files.create({
-            requestBody: {
-              name: yearFolderName,
-              mimeType: 'application/vnd.google-apps.folder',
-              parents: [rootFolderId],
-            },
-            fields: 'id',
-            supportsAllDrives: true,
-          });
-          yearFolderId = newYf.data.id!;
-        }
-
-        // '03_결석계(완료)' 검색 또는 생성
-        const subList = await drive.files.list({
-          q: `'${yearFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-          fields: 'files(id, name)',
-          supportsAllDrives: true,
-          includeItemsFromAllDrives: true,
-        });
-        const absenceFolder = subList.data.files?.find(
-          f => f.name === '03_결석계(완료)' || (f.name && f.name.includes('결석계'))
-        );
-
-        if (absenceFolder?.id) {
-          targetFolderId = absenceFolder.id;
-        } else {
-          const newAf = await drive.files.create({
-            requestBody: {
-              name: '03_결석계(완료)',
-              mimeType: 'application/vnd.google-apps.folder',
-              parents: [yearFolderId],
-            },
-            fields: 'id',
-            supportsAllDrives: true,
-          });
-          targetFolderId = newAf.data.id!;
-        }
-      } catch (fErr) {
-        console.warn('[archive-absence] 루트 폴더 탐색 경고, 대체 폴더 검색 진행:', fErr);
-      }
-    }
-
-    // 만약 targetFolderId가 없다면 드라이브 전체에서 '03_결석계(완료)' 폴더 검색
-    if (!targetFolderId) {
-      const searchRes = await drive.files.list({
-        q: "name = '03_결석계(완료)' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
-        fields: 'files(id, name)',
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-      });
-      if (searchRes.data.files && searchRes.data.files.length > 0) {
-        targetFolderId = searchRes.data.files[0].id!;
-      }
-    }
+    const { folderId: targetFolderId } = await resolveDeptArchiveFolder({
+      drive,
+      academicYear,
+      deptName: body.deptName || def.defaultDept,
+      folderName: def.folderName,
+      legacyNames: def.legacyNames,
+      requestedTargetFolderId: body.targetFolderId,
+      rootFolderId,
+      logPrefix: '[archive-absence]',
+    });
 
     if (!targetFolderId) {
       return NextResponse.json(
-        { success: false, error: 'Google Drive에 03_결석계(완료) 폴더를 찾을 수 없습니다.' },
+        { success: false, error: `Google Drive에 ${def.defaultDept} > ${def.folderName} 폴더를 찾을 수 없습니다.` },
         { status: 404 }
       );
     }
@@ -305,6 +255,7 @@ export async function POST(req: NextRequest) {
         requestBody: {
           name: `temp_convert_${docNo}`,
           mimeType: 'application/vnd.google-apps.document',
+          parents: [targetFolderId],
         },
         media: {
           mimeType: 'text/html',
@@ -347,7 +298,7 @@ export async function POST(req: NextRequest) {
 
       // 임시 파일 정리
       try {
-        await drive.files.delete({ fileId: tempId, supportsAllDrives: true });
+        await discardDriveTempFile(drive, tempId, '[archive-absence]');
       } catch {}
     } catch (convertErr) {
       console.warn('[archive-absence] PDF 변환 실패, HTML 원본으로 직접 저장 대체:', convertErr);

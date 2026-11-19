@@ -1,10 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGoogleDriveClient, getGoogleSheetsClient } from '@/lib/server/googleAuth';
+import { resolveDeptArchiveFolder } from '@/lib/server/driveDeptFolderHelper';
+import { denyIfNotStaff } from '@/lib/server/staffRequestAuth';
 
 export async function POST(req: NextRequest) {
+  // 로그인한 교직원만 호출 가능
+  const denied = await denyIfNotStaff(req, '[create-sheet]');
+  if (denied) return denied;
+
   try {
     const body = await req.json();
-    const { title, parentFolderId, columns, columnDefs } = body;
+    const {
+      title,
+      parentFolderId,
+      columns,
+      columnDefs,
+      academicYear,
+      deptName,
+      folderName,
+      rootFolderId,
+    } = body;
 
     if (!title || !title.trim()) {
       return NextResponse.json({ success: false, error: '업무 제목(파일명)이 제공되지 않았습니다.' }, { status: 400 });
@@ -12,6 +27,35 @@ export async function POST(req: NextRequest) {
 
     const drive = getGoogleDriveClient();
     const sheets = getGoogleSheetsClient();
+
+    // 저장 대상 Google Drive 폴더 확정 (사용자 지정 폴더 ID 또는 부서 하위 폴더)
+    let resolvedFolderId: string | null = parentFolderId || null;
+    let resolvedFolderUrl: string | null = parentFolderId
+      ? `https://drive.google.com/drive/folders/${parentFolderId}`
+      : null;
+
+    if (parentFolderId || deptName || folderName) {
+      const now = new Date();
+      const curY = now.getFullYear();
+      const curM = now.getMonth() + 1;
+      const defaultYear = String(curM >= 3 ? curY : curY - 1);
+
+      const folderRes = await resolveDeptArchiveFolder({
+        drive,
+        academicYear: academicYear || defaultYear,
+        deptName: (deptName || '교무기획부').trim(),
+        folderName: (folderName || '02_업무작업문서(시트_첨부파일)').trim(),
+        legacyNames: [folderName || '02_업무작업문서(시트_첨부파일)'],
+        requestedTargetFolderId: parentFolderId || undefined,
+        rootFolderId: rootFolderId || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID,
+        allowGlobalDirectCreate: Boolean(deptName && folderName),
+        logPrefix: '[create-sheet]',
+      });
+      if (folderRes.folderId) {
+        resolvedFolderId = folderRes.folderId;
+        resolvedFolderUrl = folderRes.folderUrl;
+      }
+    }
 
     // 1. 헤더 목록 추출
     let headers: string[] = [];
@@ -32,8 +76,8 @@ export async function POST(req: NextRequest) {
       mimeType: 'application/vnd.google-apps.spreadsheet'
     };
 
-    if (parentFolderId) {
-      fileMetadata.parents = [parentFolderId];
+    if (resolvedFolderId) {
+      fileMetadata.parents = [resolvedFolderId];
     }
 
     const createRes = await drive.files.create({
@@ -124,6 +168,8 @@ export async function POST(req: NextRequest) {
       fileId,
       fileName: title.trim(),
       sheetUrl,
+      folderId: resolvedFolderId,
+      folderUrl: resolvedFolderUrl,
       headers
     });
   } catch (error: any) {

@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
-import { getGoogleDriveConfig, saveGoogleDriveConfig } from '@/lib/services/settingsService';
+import { buildStaffApiHeaders, buildStaffAuthHeaders } from '@/lib/staffApiHeaders';
+import { getGoogleDriveConfig, getOrgStructure, saveGoogleDriveConfig } from '@/lib/services/settingsService';
 import type { Student, MeasurementItem, MeasurementRecord } from '@/lib/pe/types';
 import { getPapsGrade, calculatePapsScore } from '@/lib/pe/paps';
 
@@ -115,18 +116,21 @@ export async function exportPeToGoogleDrive(options: PeArchiveExportOptions): Pr
     const currentMonth = new Date().getMonth() + 1;
     const academicYear = options.academicYear || String(currentMonth >= 3 ? currentYear : currentYear - 1);
 
-    // 06_체육 측정 결과 폴더 확인 및 필요 시 자동 동기화
+    // 체육 측정 결과 폴더 확인 및 필요 시 조직도 부서 기반 자동 동기화
     let peResultsId = driveConfig.yearlyFolders?.[academicYear]?.peResultsId;
     let peResultsUrl = driveConfig.yearlyFolders?.[academicYear]?.peResultsUrl;
 
     if (!peResultsId) {
-      // sync-folders API 호출하여 자동 생성
+      const orgData = await getOrgStructure().catch(() => null);
+      // sync-folders API 호출하여 예체능방과후부 하위 폴더 자동 생성
       const syncRes = await fetch('/api/drive/sync-folders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await buildStaffApiHeaders(),
         body: JSON.stringify({
           rootFolderId: driveConfig.rootFolderId,
-          academicYear
+          academicYear,
+          orgStructure: orgData || undefined,
+          existingYearFolders: driveConfig.yearlyFolders?.[academicYear]
         })
       });
       const syncData = await syncRes.json();
@@ -148,7 +152,7 @@ export async function exportPeToGoogleDrive(options: PeArchiveExportOptions): Pr
     if (!peResultsId) {
       return {
         success: false,
-        error: '06_체육 측정 결과 폴더 ID를 확인하거나 생성하지 못했습니다. 중앙 저장소 권한을 확인해 주세요.'
+        error: '체육 측정 결과 폴더 ID를 확인하거나 생성하지 못했습니다. 중앙 저장소 권한을 확인해 주세요.'
       };
     }
 
@@ -310,6 +314,7 @@ export async function exportPeToGoogleDrive(options: PeArchiveExportOptions): Pr
 
     const uploadRes = await fetch('/api/drive/upload-file', {
       method: 'POST',
+      headers: await buildStaffAuthHeaders(),
       body: formData,
     });
     const uploadData = await uploadRes.json();

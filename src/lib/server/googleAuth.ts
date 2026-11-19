@@ -3,7 +3,8 @@ import { google } from 'googleapis';
 const SCOPES = [
   'https://www.googleapis.com/auth/drive',
   'https://www.googleapis.com/auth/drive.file',
-  'https://www.googleapis.com/auth/spreadsheets'
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/documents'
 ];
 
 /**
@@ -37,4 +38,9 @@ export function getGoogleDriveClient() {
 export function getGoogleSheetsClient() {
   const auth = getGoogleServiceAuth();
   return google.sheets({ version: 'v4', auth });
+}
+
+export function getGoogleDocsClient() {
+  const auth = getGoogleServiceAuth();
+  return google.docs({ version: 'v1', auth });
 }

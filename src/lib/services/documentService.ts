@@ -1,4 +1,5 @@
 import { getDb, auth } from '@/lib/firebase';
+import { buildStaffApiHeaders } from '@/lib/staffApiHeaders';
 import {
   collection,
   doc,
@@ -32,9 +33,26 @@ import type {
 import { getUserProfileByEmail, saveUserProfile } from '@/lib/services/userService';
 import { syncParentApplicationDatesToAttendance } from '@/lib/services/homeroomAttendanceSync';
 import { getTeacherHomeroom } from '@/lib/services/permissionService';
+import { getDocConfig, getGoogleDriveConfig, getOrgStructure } from '@/lib/services/settingsService';
+import { pickYearFoldersForLookup, resolveSpecialDutyDepartment } from '@/lib/drive/deptFolderMapping';
+import { syncCompletedApprovalToHandoverTimeline } from '@/lib/services/handoverService';
 
-const getApprovalsCol = () => collection(getDb(), 'approvals');
-const getSettingsCol = () => collection(getDb(), 'settings');
+function toIsoStringSafe(timestamp: any): string | null {
+  if (!timestamp) return null;
+  if (timestamp instanceof Timestamp) return timestamp.toDate().toISOString();
+  if (typeof timestamp === 'string' && !Number.isNaN(Date.parse(timestamp))) return timestamp;
+  if (typeof timestamp?.toDate === 'function') return timestamp.toDate().toISOString();
+  if (typeof timestamp?.seconds === 'number') return new Date(timestamp.seconds * 1000).toISOString();
+  try {
+    const d = new Date(timestamp);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  } catch {
+    return null;
+  }
+}
+
+export const getApprovalsCol = () => collection(getDb(), 'approvals');
+export const getSettingsCol = () => collection(getDb(), 'settings');
 
 // ─────────────────────────────────────────────────────────────
 // kisbus 스쿨버스 연동: 결석/체험학습 승인 시 notBoarding 처리
@@ -346,32 +364,58 @@ export async function getPendingDocuments(userId: string, userEmail: string, use
 
 const REGISTRY_PAGE_SIZE = 30;
 
-export async function getRegistryDocuments(lastDoc?: DocumentSnapshot) {
-  const constraints: any[] = [
-    where('status', '==', 'approved'),
-    orderBy('completedAt', 'desc'),
-    limit(REGISTRY_PAGE_SIZE),
-  ];
-  if (lastDoc) constraints.push(startAfter(lastDoc));
+export async function getRegistryDocuments(
+  lastDoc?: DocumentSnapshot,
+  maxScanBatches = 10,
+  options?: { includeFaceToFace?: boolean }
+) {
+  const includeFaceToFace = options?.includeFaceToFace ?? true;
+  const isVolunteerDoc = (d: ApprovalDoc) =>
+    Boolean(d.docType?.startsWith('volunteer')) ||
+    Boolean(d.volunteerFormData) ||
+    Boolean((d as any).isVolunteer) ||
+    Boolean((d as any).isVolunteerBatch);
 
-  const q = query(getApprovalsCol(), ...constraints);
+  const collected: ApprovalDoc[] = [];
+  let cursor: DocumentSnapshot | undefined = lastDoc;
+  let hasMoreRaw = true;
+  let batches = 0;
+
   try {
-    const snapshot = await getDocs(q);
-    const docs = serializeDocs(snapshot.docs, 'completedAt');
-    // 대면 결재 문서, 학부모 문서(출결/체험학습) 및 봉사활동 문서 제외 (각각 별도 전용 대장으로 관리)
-    const isVolunteerDoc = (d: ApprovalDoc) =>
-      Boolean(d.docType?.startsWith('volunteer')) ||
-      Boolean(d.volunteerFormData) ||
-      Boolean((d as any).isVolunteer) ||
-      Boolean((d as any).isVolunteerBatch);
+    // 최근 결재완료 건이 학부모(결석계/체험학습)·봉사 문서로 연속 채워져 빈 페이지(0건)가 나오는 현상을 방지하기 위해
+    // 실제 일반 문서등록대장 대상 건이 1페이지 분량 모일 때까지 연속 배치를 스캔한다.
+    while (collected.length < REGISTRY_PAGE_SIZE && hasMoreRaw && batches < maxScanBatches) {
+      batches++;
+      const constraints: any[] = [
+        where('status', '==', 'approved'),
+        orderBy('completedAt', 'desc'),
+        limit(REGISTRY_PAGE_SIZE),
+      ];
+      if (cursor) constraints.push(startAfter(cursor));
 
-    const filtered = docs.filter((d: ApprovalDoc) => d.docType !== 'parent' && !d.isFaceToFace && !isVolunteerDoc(d));
-    const lastVisible = snapshot.docs[snapshot.docs.length - 1] ?? null;
-    const hasMore = snapshot.docs.length === REGISTRY_PAGE_SIZE;
-    return { docs: filtered, lastVisible, hasMore };
+      const snapshot = await getDocs(query(getApprovalsCol(), ...constraints));
+      const docs = serializeDocs(snapshot.docs, 'completedAt');
+      const filtered = docs.filter(
+        (d: ApprovalDoc) =>
+          d.docType !== 'parent' &&
+          (includeFaceToFace || !d.isFaceToFace) &&
+          !isVolunteerDoc(d)
+      );
+      collected.push(...filtered);
+
+      cursor = snapshot.docs[snapshot.docs.length - 1] ?? undefined;
+      hasMoreRaw = snapshot.docs.length === REGISTRY_PAGE_SIZE;
+      if (!cursor) break;
+    }
+
+    return {
+      docs: collected,
+      lastVisible: cursor ?? null,
+      hasMore: hasMoreRaw,
+    };
   } catch (error) {
     console.error('[DocService] getRegistryDocuments Error:', error);
-    return { docs: [], lastVisible: null, hasMore: false };
+    return { docs: collected, lastVisible: cursor ?? null, hasMore: false };
   }
 }
 
@@ -891,6 +935,207 @@ export async function updateDocument(docId: string, payload: ApprovalDocPayload,
   }
 }
 
+/**
+ * 최종 결재 완료된 문서의 Google Drive 선택 문서함 편철 저장 및 학년 말 인수인계 타임라인 자동 추가
+ */
+export async function archiveAndSyncCompletedApprovalDoc(
+  docId: string,
+  finalData: Partial<ApprovalDoc> & { id?: string },
+  options?: {
+    skipDriveArchive?: boolean;
+    skipApprovalsDocUpdate?: boolean;
+    skipHandoverSync?: boolean;
+    docConfigOverride?: Partial<DocConfig>;
+  }
+): Promise<{ archivedFileId?: string; archivedFileUrl?: string; archivedFolderUrl?: string }> {
+  let archivedFileId: string | undefined;
+  let archivedFileUrl: string | undefined;
+  let archivedFolderUrl: string | undefined;
+
+  const createdAtIso = toIsoStringSafe(finalData.createdAt) || new Date().toISOString();
+  const completedAtIso = toIsoStringSafe(finalData.completedAt) || new Date().toISOString();
+
+  // 1. 일반/부서/대외 문서: 선택한 편철 저장 문서함으로 결재완료문서(PDF) 저장
+  if (!options?.skipDriveArchive && finalData.docType !== 'parent') {
+    try {
+      const [driveConfig, fetchedDocConfig] = await Promise.all([
+        getGoogleDriveConfig().catch(() => null),
+        options?.docConfigOverride
+          ? Promise.resolve(options.docConfigOverride)
+          : getDocConfig().catch(() => ({} as Partial<DocConfig>)),
+      ]);
+
+      const completedDateObj = new Date(completedAtIso);
+      const y = completedDateObj.getFullYear();
+      const m = completedDateObj.getMonth() + 1;
+      const academicYear = String(m === 1 || m === 2 ? y - 1 : y);
+
+      const yf = pickYearFoldersForLookup(driveConfig, academicYear);
+      const targetFolderId =
+        finalData.driveTargetFolderId ||
+        yf?.approvalDoneId ||
+        driveConfig?.subFolders?.approvalDoneId ||
+        '';
+      const deptName = finalData.driveTargetDeptName || '교무기획부';
+      const folderName = finalData.driveTargetTaskName || '01_결재완료문서';
+
+      const shouldArchive = Boolean(
+        driveConfig?.enabled ||
+          targetFolderId ||
+          finalData.driveTargetTaskName ||
+          finalData.driveTargetDeptName
+      );
+
+      if (shouldArchive) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 12000);
+        try {
+          const res = await fetch('/api/drive/archive-approval', {
+            method: 'POST',
+            headers: await buildStaffApiHeaders(),
+            signal: controller.signal,
+            body: JSON.stringify({
+              docId,
+              docData: {
+                ...finalData,
+                id: docId,
+                createdAt: createdAtIso,
+                completedAt: completedAtIso,
+              },
+              academicYear,
+              rootFolderId: driveConfig?.rootFolderId,
+              targetFolderId: targetFolderId || undefined,
+              deptName,
+              folderName,
+              docConfig: fetchedDocConfig,
+            }),
+          });
+          const resData = await res.json().catch(() => null);
+          if (res.ok && resData?.success && resData?.file?.id) {
+            archivedFileId = resData.file.id;
+            archivedFileUrl = resData.file.webViewLink;
+            archivedFolderUrl = resData.file.folderUrl;
+
+            if (!options?.skipApprovalsDocUpdate) {
+              const docRef = doc(getApprovalsCol(), docId);
+              await firestoreUpdateDoc(docRef, {
+                driveArchived: true,
+                driveFileId: archivedFileId,
+                driveFileUrl: archivedFileUrl || '',
+                ...(archivedFolderUrl && !finalData.driveTargetFolderUrl
+                  ? { driveTargetFolderUrl: archivedFolderUrl }
+                  : {}),
+                archivedAt: serverTimestamp(),
+              }).catch(err => {
+                console.warn('[DocService] 결재완료문서 Drive 필드 업데이트 실패 (비치명적):', err);
+              });
+            }
+          } else if (resData?.error) {
+            console.warn('[DocService] Google Drive 편철 아카이빙 응답 경고:', resData.error);
+          }
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+    } catch (arcErr) {
+      console.warn('[DocService] Google Drive 편철 아카이빙 실패 (비치명적):', arcErr);
+    }
+  }
+
+  // 2. 인수인계 타임라인 자동 추가 (체크된 경우, 결재 완료 시점에 생성일자 기준 정렬 반영)
+  if (!options?.skipHandoverSync && finalData.addToHandover && finalData.requesterEmail) {
+    try {
+      await syncCompletedApprovalToHandoverTimeline(docId, {
+        ...finalData,
+        id: docId,
+        createdAt: createdAtIso,
+        completedAt: completedAtIso,
+        driveFileUrl: archivedFileUrl || finalData.driveFileUrl || '',
+        driveTargetFolderUrl: archivedFolderUrl || finalData.driveTargetFolderUrl || '',
+      });
+    } catch (handoverErr) {
+      console.warn('[DocService] 학년 말 인수인계 타임라인 자동 추가 오류 (비치명적):', handoverErr);
+    }
+  }
+
+  return { archivedFileId, archivedFileUrl, archivedFolderUrl };
+}
+
+/**
+ * 이미 결재 완료된 문서의 편철 폴더(저장 문서함) 정보를 수정·지정하고,
+ * 요청 시 Google Drive 해당 폴더로 결재완료문서 PDF 아카이빙도 함께 수행한다.
+ */
+export async function updateApprovedDocFilingFolder(params: {
+  docData: ApprovalDoc;
+  folderId: string;
+  folderUrl: string;
+  folderLabel: string;
+  deptName: string;
+  folderName: string;
+  alsoArchiveToDrive?: boolean;
+}): Promise<{
+  updatedFields: Partial<ApprovalDoc>;
+  driveArchived: boolean;
+  archiveError?: string;
+}> {
+  const {
+    docData,
+    folderId,
+    folderUrl,
+    folderLabel,
+    deptName,
+    folderName,
+    alsoArchiveToDrive = true,
+  } = params;
+
+  const baseFields: Partial<ApprovalDoc> = {
+    driveTargetFolderId: folderId || '',
+    driveTargetFolderUrl: folderUrl || '',
+    driveTargetFolderLabel: folderLabel || '',
+    driveTargetDeptName: deptName || '',
+    driveTargetTaskName: folderName || '',
+  };
+
+  const docRef = doc(getApprovalsCol(), docData.id);
+  await firestoreUpdateDoc(docRef, {
+    ...baseFields,
+    updatedAt: serverTimestamp(),
+  });
+
+  if (!alsoArchiveToDrive) {
+    return { updatedFields: baseFields, driveArchived: false };
+  }
+
+  try {
+    const res = await archiveAndSyncCompletedApprovalDoc(
+      docData.id,
+      { ...docData, ...baseFields },
+      { skipHandoverSync: true, skipApprovalsDocUpdate: false }
+    );
+    const mergedFields: Partial<ApprovalDoc> = {
+      ...baseFields,
+      ...(res.archivedFileId
+        ? {
+            driveArchived: true,
+            driveFileId: res.archivedFileId,
+            driveFileUrl: res.archivedFileUrl || '',
+          }
+        : {}),
+      ...(res.archivedFolderUrl ? { driveTargetFolderUrl: res.archivedFolderUrl } : {}),
+    };
+    return {
+      updatedFields: mergedFields,
+      driveArchived: Boolean(res.archivedFileId),
+    };
+  } catch (err: any) {
+    return {
+      updatedFields: baseFields,
+      driveArchived: false,
+      archiveError: err?.message || 'Google Drive 저장 중 오류가 발생했습니다.',
+    };
+  }
+}
+
 export async function approveDocument(docId: string, userProfile: UserProfile, updatedParentData?: any, approvalDateOverride?: string) {
   const docRef = doc(getApprovalsCol(), docId);
   try {
@@ -1056,15 +1301,28 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
                 userProfile.email || 'final_approval_sync'
               );
 
-              // ── 결석계 최종 승인 시: Google Drive 03_결석계(완료) 폴더에 자동 아카이빙 (소견서 포함) ──
-              if (finalData.parentFormData.type === 'absence') {
-                try {
+              // ── 결석계/체험학습 최종 승인 시: Google Drive 부서 하위 대상 폴더로 자동 아카이빙 ──
+              Promise.all([
+                getGoogleDriveConfig(),
+                getOrgStructure().catch(() => null),
+              ]).then(async ([driveConfig, orgData]) => {
+                const academicYear = '2026';
+                const yearFolders = driveConfig?.yearlyFolders?.[academicYear];
+
+                // 1) 결석계 최종 승인 시 자동 저장
+                if (finalData.parentFormData?.type === 'absence') {
+                  const targetFolderId = yearFolders?.absenceDoneId;
+                  const deptName = resolveSpecialDutyDepartment('absenceDone', orgData);
                   fetch('/api/drive/archive-absence', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: await buildStaffApiHeaders(),
                     body: JSON.stringify({
                       docId,
                       docData: finalData,
+                      academicYear,
+                      rootFolderId: driveConfig?.rootFolderId,
+                      targetFolderId,
+                      deptName,
                     }),
                   }).then(async (res) => {
                     const resData = await res.json();
@@ -1079,10 +1337,40 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
                   }).catch(arcErr => {
                     console.warn('[DocService] Google Drive 결석계 자동 아카이빙 비동기 호출 실패:', arcErr);
                   });
-                } catch (arcErr) {
-                  console.warn('[DocService] Google Drive 결석계 아카이빙 트리거 실패:', arcErr);
                 }
-              }
+
+                // 2) 체험학습 최종 승인 시 자동 저장
+                if (finalData.parentFormData?.type === 'field-trip' || finalData.parentFormData?.type === 'field-trip-report') {
+                  const targetFolderId = yearFolders?.fieldTripDoneId;
+                  const deptName = resolveSpecialDutyDepartment('fieldTripDone', orgData);
+                  fetch('/api/drive/archive-field-trip', {
+                    method: 'POST',
+                    headers: await buildStaffApiHeaders(),
+                    body: JSON.stringify({
+                      docId,
+                      docData: finalData,
+                      academicYear,
+                      rootFolderId: driveConfig?.rootFolderId,
+                      targetFolderId,
+                      deptName,
+                    }),
+                  }).then(async (res) => {
+                    const resData = await res.json();
+                    if (resData.success && resData.file?.id) {
+                      await firestoreUpdateDoc(docRef, {
+                        driveArchived: true,
+                        driveFileId: resData.file.id,
+                        driveFileUrl: resData.file.webViewLink,
+                        archivedAt: serverTimestamp(),
+                      });
+                    }
+                  }).catch(arcErr => {
+                    console.warn('[DocService] Google Drive 체험학습 자동 아카이빙 비동기 호출 실패:', arcErr);
+                  });
+                }
+              }).catch(cfgErr => {
+                console.warn('[DocService] Google Drive 설정 조회 실패:', cfgErr);
+              });
             }
 
             // ── 봉사활동 수합 기안문 최종 승인 시: 포함된 모든 개별 계획서 자동 승인(approved) 동기화 ──
@@ -1104,6 +1392,9 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
               });
               await Promise.all(subDocPromises);
             }
+
+            // ── 일반/부서/대외 결재문서 최종 승인 시: 선택한 편철 폴더(Google Drive) 자동 저장 & 학년 말 인수인계 타임라인 자동 추가 ──
+            await archiveAndSyncCompletedApprovalDoc(docId, { ...finalData, id: docId, docNo });
           }
         } catch (syncErr) {
           console.error('[DocumentService] 최종 승인 출석/버스/방과후/봉사활동 동기화 오류 (비치명적):', syncErr);
@@ -1998,6 +2289,8 @@ export async function createVolunteerBatchDocument(
       approvers,
       isVolunteerBatch: true,
       aggregatedDocIds,
+      addToHandover: true,
+      handoverCategory: '봉사활동',
       status: 'pending',
     }, drafterProfile.uid, drafterProfile);
 
