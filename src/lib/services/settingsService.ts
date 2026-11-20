@@ -309,6 +309,11 @@ export async function updateAfterschoolCourse(courseId: string, data: Partial<im
     payload = await withCourseInstructorAccounts({ ...data, instructorEmails: { ...(prev?.instructorEmails || {}), ...((data as any).instructorEmails || {}) } });
   }
   await setDoc(docRef, cleanUndefined(payload), { merge: true });
+  // setDoc(merge)은 맵 필드를 '합치기'만 해서 지운 강사 칸의 계정 연결이 남는다
+  // (→ 다시 불러올 때 그 연결로 지운 강사 이름이 되살아남). 연결 맵은 통째로 바꿔 쓴다.
+  if ((payload as any).instructorEmails) {
+    await updateDoc(docRef, { instructorEmails: cleanUndefined((payload as any).instructorEmails) });
+  }
 }
 
 export async function deleteAfterschoolCourse(courseId: string): Promise<void> {

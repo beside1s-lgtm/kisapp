@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X } from 'lucide-react';
+import { isActualSignature } from '@/lib/safety/stampHelper';
 
 // 대한민국 학교 공식 붉은색 원형 직인/서명 컴포넌트
 export const OfficialSeal: React.FC<{ name: string; signatureUrl?: string; size?: 'sm' | 'md' }> = ({
@@ -11,7 +12,7 @@ export const OfficialSeal: React.FC<{ name: string; signatureUrl?: string; size?
   size = 'sm',
 }) => {
   const isSm = size === 'sm';
-  if (signatureUrl && (signatureUrl.startsWith('http') || signatureUrl.startsWith('data:') || signatureUrl.startsWith('/') || signatureUrl.length > 50)) {
+  if (isActualSignature(signatureUrl)) {
     return (
       <img
         src={signatureUrl}
@@ -23,24 +24,15 @@ export const OfficialSeal: React.FC<{ name: string; signatureUrl?: string; size?
       />
     );
   }
-  const char = name ? (name.length >= 3 ? name.slice(-2) : name) : '인';
+  // 등록된 서명이 없으면 효력 없는 가짜 직인 대신, 직접 서명할 점선 원만 남김
+  const d = isSm ? '10.5mm' : '14mm';
   return (
     <span
-      className={`inline-flex items-center justify-center rounded-full border border-red-600 font-serif font-black text-red-600 select-none shrink-0 bg-red-50/50 leading-none shadow-2xs ${
-        isSm
-          ? 'w-[10.5mm] h-[10.5mm] min-w-[10.5mm] min-h-[10.5mm] text-[9px] border-[1.2px]'
-          : 'w-[14mm] h-[14mm] min-w-[14mm] min-h-[14mm] text-[11px] border-[1.5px]'
-      }`}
-      style={{
-        width: isSm ? '10.5mm' : '14mm',
-        height: isSm ? '10.5mm' : '14mm',
-        minWidth: isSm ? '10.5mm' : '14mm',
-        minHeight: isSm ? '10.5mm' : '14mm',
-        letterSpacing: '-0.06em',
-      }}
-      title={`${name} 직인`}
+      className="inline-block rounded-full select-none shrink-0"
+      style={{ width: d, height: d, minWidth: d, minHeight: d, border: '1px dashed #94a3b8' }}
+      title={`${name} 서명란 (서명 파일 미등록 — 출력 후 직접 서명)`}
+      aria-label={`${name} 서명란`}
     >
-      {char}
     </span>
   );
 };

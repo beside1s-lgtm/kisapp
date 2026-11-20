@@ -135,8 +135,44 @@ export function instructorSealEmail(
 /** 이름(+연결 이메일)으로 시스템 계정의 서명 이미지를 찾는다. 없으면 '' */
 export function findTeacherSignature(book: TeacherSignatureBook | null | undefined, name: unknown, email?: unknown): string {
   if (!book) return '';
-  const em = normalizeTeacherEmail(email) || resolveTeacher({ name }, book.index).email || '';
-  return (em && book.sigByEmail.get(em)) || book.sigByName.get(normalizeTeacherName(name)) || '';
+  const em = normalizeTeacherEmail(email);
+  if (em && book.sigByEmail.get(em)) return book.sigByEmail.get(em)!;
+  // 연결 이메일(예: 보결 기록에 남은 이메일)에 서명이 없으면 이름으로 교직원 계정을 다시 찾는다
+  const byName = resolveTeacher({ name }, book.index).email || '';
+  return (byName && book.sigByEmail.get(byName)) || book.sigByName.get(normalizeTeacherName(name)) || '';
+}
+
+/**
+ * 보결 강사처럼 이 강좌에 계정 연결이 없는 강사의 서명을 다른 강좌 기록에서 찾는다.
+ *  1) 다른 강좌의 그 강사 칸에 연결된 계정(instructorEmails)의 서명
+ *  2) 다른 강좌 증빙서류에 상신 때 담긴 그 강사 이름의 서명 (서명 등록 창은 계정을 못 찾으면 서류에만 저장함)
+ * 같은 이름의 서로 다른 서명이 여러 개면(동명이인) 쓰지 않는다.
+ */
+export function findSignatureFromRecords(
+  book: TeacherSignatureBook | null | undefined,
+  name: unknown,
+  docs: Array<{ instructorSignatures?: Record<string, string> } | null | undefined> = [],
+  courses: Array<Record<string, any> | null | undefined> = []
+): string {
+  const nk = normalizeTeacherName(name);
+  if (!nk) return '';
+  if (book) {
+    const fromAccounts = new Set<string>();
+    courses.forEach((c) => {
+      const em = courseInstructorEmail(c, name);
+      const sig = em ? book.sigByEmail.get(em) : '';
+      if (sig) fromAccounts.add(sig);
+    });
+    if (fromAccounts.size === 1) return Array.from(fromAccounts)[0];
+    if (fromAccounts.size > 1) return '';
+  }
+  const fromDocs = new Set<string>();
+  docs.forEach((d) => {
+    Object.entries(d?.instructorSignatures || {}).forEach(([k, v]) => {
+      if (normalizeTeacherName(k) === nk && typeof v === 'string' && v.trim()) fromDocs.add(v);
+    });
+  });
+  return fromDocs.size === 1 ? Array.from(fromDocs)[0] : '';
 }
 
 /**
@@ -253,6 +289,8 @@ export async function overlayCourseInstructorNames<T extends Record<string, any>
       let changed = false;
       const next: Record<string, any> = { ...c };
       COURSE_INSTRUCTOR_FIELDS.forEach((f) => {
+        // 비워 둔(지운) 강사 칸은 남아 있는 옛 연결로 되살리지 않음
+        if (!String(c[f] || '').trim()) return;
         const sys = emails[f] ? index.byEmail.get(emails[f]) : undefined;
         if (sys?.name && sys.name !== c[f]) {
           next[f] = sys.name;

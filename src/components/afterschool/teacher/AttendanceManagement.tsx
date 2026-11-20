@@ -12,11 +12,12 @@ import { getTeacherApplySettings, saveTeacherApplySettings, onTeacherApplySettin
 import { onAllHomeroomAttendanceByDateUpdate, type HomeroomAttendanceRecord } from '@/lib/services/homeroomAttendanceSync';
 import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
 import type { DocConfig, UserProfile } from '@/lib/types';
-import { collectCourseSignatures, findTeacherSignature, getTeacherSignatureBook, instructorSealEmail, type TeacherSignatureBook } from '@/lib/teachers/teacherRegistry';
+import { collectCourseSignatures, findTeacherSignature, findSignatureFromRecords, getTeacherSignatureBook, instructorSealEmail, type TeacherSignatureBook } from '@/lib/teachers/teacherRegistry';
 import { SignatureRegisterModal } from './SignatureRegisterModal';
 import { SubstituteModal } from './SubstituteModal';
 import { afterschoolDayMark, afterschoolTermHeader } from '@/lib/afterschool/attendanceMarks';
 import { EVIDENCE_STAGE_LABEL, canTeacherRecall, evidenceStage } from '@/lib/afterschool/evidenceApproval';
+import { isActualSignature } from '@/lib/safety/stampHelper';
 import { OfficialAttendanceSheet } from './OfficialAttendanceSheet';
 import { OfficialWorkRegister } from './OfficialWorkRegister';
 import { useTranslation } from '@/hooks/use-translation';
@@ -56,7 +57,7 @@ export const OfficialSeal: React.FC<{ name: string; signatureUrl?: string; size?
   signatureUrl,
   size = 'sm',
 }) => {
-  if (signatureUrl && (signatureUrl.startsWith('http') || signatureUrl.startsWith('data:') || signatureUrl.startsWith('/') || signatureUrl.length > 50)) {
+  if (isActualSignature(signatureUrl)) {
     return (
       <img
         src={signatureUrl}
@@ -69,20 +70,14 @@ export const OfficialSeal: React.FC<{ name: string; signatureUrl?: string; size?
       />
     );
   }
-  const char = name ? (name.length >= 3 ? name.slice(-2) : name) : '인';
+  // 등록된 서명이 없으면 효력 없는 가짜 직인 대신, 직접 서명할 점선 원만 남김
   return (
     <span
-      className="inline-flex items-center justify-center rounded-full border border-red-600 font-serif font-black text-red-600 select-none shrink-0 bg-red-50/50 leading-none shadow-2xs w-[15mm] h-[15mm] min-w-[15mm] min-h-[15mm] text-[11px] border-[1.5px] print:w-[15mm] print:h-[15mm]"
-      style={{
-        width: '15mm',
-        height: '15mm',
-        minWidth: '15mm',
-        minHeight: '15mm',
-        letterSpacing: '-0.06em'
-      }}
-      title={`${name} 직인`}
+      className="inline-block rounded-full select-none shrink-0"
+      style={{ width: '15mm', height: '15mm', minWidth: '15mm', minHeight: '15mm', border: '1px dashed #94a3b8' }}
+      title={`${name} 서명란 (서명 파일 미등록 — 출력 후 직접 서명)`}
+      aria-label={`${name} 서명란`}
     >
-      {char}
     </span>
   );
 };
@@ -369,7 +364,11 @@ export const AttendanceManagement: React.FC<AttendanceManagementProps> = ({
     //    (상신한 사람·로그인한 사람의 도장을 다른 강사 칸에 넣지 않는다)
     const docSigs = (targetApprovalDoc as any)?.instructorSignatures;
     if (docSigs && docSigs[cleanName]) return docSigs[cleanName];
-    return findTeacherSignature(sigBook, cleanName, instructorSealEmail(currentCourse, cleanName, substituteRecords));
+    // 3) 보결 강사 등: 다른 강좌에 연결된 그 강사 계정·다른 강좌 증빙서류에 담긴 서명
+    return (
+      findTeacherSignature(sigBook, cleanName, instructorSealEmail(currentCourse, cleanName, substituteRecords)) ||
+      findSignatureFromRecords(sigBook, cleanName, approvalDocs as any, courses)
+    );
   };
 
   const instructorSignature = getInstructorSeal(currentCourse?.instructorName || '');

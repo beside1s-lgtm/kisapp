@@ -226,6 +226,8 @@ function EvidenceApproval() {
           settings={settings}
           holidayDates={holidayDates}
           sigBook={sigBook}
+          allDocs={docs}
+          allCourses={Array.from(courseById.values())}
           onClose={() => setViewing(null)}
         />
       )}

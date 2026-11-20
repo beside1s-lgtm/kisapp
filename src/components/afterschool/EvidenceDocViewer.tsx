@@ -15,7 +15,7 @@ import {
 import { OfficialAttendanceSheet } from '@/components/afterschool/teacher/OfficialAttendanceSheet';
 import { OfficialWorkRegister } from '@/components/afterschool/teacher/OfficialWorkRegister';
 import { afterschoolDayMark, afterschoolTermHeader, attendanceMarkDisplay } from '@/lib/afterschool/attendanceMarks';
-import { instructorSealEmail, findTeacherSignature, type TeacherSignatureBook } from '@/lib/teachers/teacherRegistry';
+import { instructorSealEmail, findTeacherSignature, findSignatureFromRecords, type TeacherSignatureBook } from '@/lib/teachers/teacherRegistry';
 
 export type EvidenceDocType = 'ATTENDANCE' | 'WORK_REGISTER';
 
@@ -34,6 +34,9 @@ export interface EvidenceDocViewerProps {
   variant?: 'modal' | 'page';
   /** 수기 결재용 출력: 부장·교감 서명 칸을 비워 둔다 */
   hideApprovalSignatures?: boolean;
+  /** 보결 강사 서명을 다른 강좌 기록에서 찾을 때 쓰는 전체 증빙서류·강좌 */
+  allDocs?: SubmittedApprovalDoc[];
+  allCourses?: Course[];
 }
 
 export function buildCourseSchedule(c: Course, settings: any, holidayDates: any): ScheduleDay[] {
@@ -60,6 +63,8 @@ export function EvidenceDocViewer({
   onClose,
   variant = 'modal',
   hideApprovalSignatures = false,
+  allDocs = [],
+  allCourses = [],
 }: EvidenceDocViewerProps) {
   const scheduleDays = React.useMemo(() => buildCourseSchedule(c, settings, holidayDates), [c, settings, holidayDates]);
 
@@ -68,7 +73,10 @@ export function EvidenceDocViewer({
     const cleanName = instName.trim();
     const docSigs = (approvalDoc as any)?.instructorSignatures;
     if (docSigs && docSigs[cleanName]) return docSigs[cleanName];
-    return findTeacherSignature(sigBook, cleanName, instructorSealEmail(c, cleanName, substituteRecords as any));
+    return (
+      findTeacherSignature(sigBook, cleanName, instructorSealEmail(c, cleanName, substituteRecords as any)) ||
+      findSignatureFromRecords(sigBook, cleanName, allDocs as any, allCourses)
+    );
   };
 
   const isManagerApproved = !hideApprovalSignatures && (approvalDoc?.status === 'APPROVED' || Boolean(approvalDoc?.managerApproved));

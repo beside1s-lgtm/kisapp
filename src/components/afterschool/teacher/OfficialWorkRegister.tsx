@@ -3,6 +3,7 @@
 import React from 'react';
 import { Printer, X, Trash2 } from 'lucide-react';
 import { OfficialSeal } from './OfficialAttendanceSheet';
+import { isActualSignature } from '@/lib/safety/stampHelper';
 
 export interface WorkRegisterScheduleDay {
   dayIndex: number;
@@ -66,45 +67,41 @@ const WorkRegisterSeal: React.FC<{
   signatureUrl?: string;
   courseId?: string;
   onRequestSignature?: (name: string, courseId?: string) => void;
-}> = ({ name, signatureUrl, courseId, onRequestSignature }) => {
-  if (
-    signatureUrl &&
-    (signatureUrl.startsWith('http') ||
-      signatureUrl.startsWith('data:') ||
-      signatureUrl.startsWith('/') ||
-      signatureUrl.length > 50)
-  ) {
+  /** 도장 지름(mm) — 강사가 많으면 한 줄에 들어가도록 줄임 */
+  sizeMm?: number;
+}> = ({ name, signatureUrl, courseId, onRequestSignature, sizeMm = 11 }) => {
+  if (isActualSignature(signatureUrl)) {
     return (
       <img
         src={signatureUrl}
         alt="서명"
         className="object-contain inline-block shrink-0 w-auto h-auto"
         style={{
-          maxWidth: '12mm',
-          maxHeight: '11mm',
+          maxWidth: `${sizeMm + 1}mm`,
+          maxHeight: `${sizeMm}mm`,
         }}
         title={`${name} 서명`}
       />
     );
   }
 
-  // 등록된 서명이 없는 경우: 원형 직인만 표시하고, 클릭 시 서명 등록 모달 호출
-  const char = name ? (name.length >= 3 ? name.slice(-2) : name) : '인';
+  // 등록된 서명이 없는 경우: 효력 없는 가짜 직인 대신, 강사가 직접 서명할 점선 원만 남김
+  //  (화면에서는 눌러서 서명/도장을 등록할 수 있음)
   return (
     <button
       type="button"
       onClick={() => onRequestSignature?.(name, courseId)}
-      className="inline-flex items-center justify-center rounded-full border border-red-600 font-serif font-black text-red-600 select-none shrink-0 bg-red-50/50 leading-none shadow-2xs text-[11px] border-[1.5px] cursor-pointer hover:scale-105 transition-transform"
+      className="inline-block rounded-full bg-transparent select-none shrink-0 cursor-pointer hover:bg-slate-50 transition-colors"
       style={{
-        width: '11mm',
-        height: '11mm',
-        minWidth: '11mm',
-        minHeight: '11mm',
-        letterSpacing: '-0.06em',
+        width: `${sizeMm}mm`,
+        height: `${sizeMm}mm`,
+        minWidth: `${sizeMm}mm`,
+        minHeight: `${sizeMm}mm`,
+        border: '1px dashed #94a3b8',
       }}
-      title={`${name} 직인 (클릭하여 서명/도장 변경)`}
+      title={`${name} 서명란 (서명 파일 미등록 — 출력 후 직접 서명, 클릭하면 서명/도장 등록)`}
+      aria-label={`${name} 서명란`}
     >
-      {char}
     </button>
   );
 };
@@ -139,6 +136,15 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
   ].filter((name): name is string => Boolean(name && name.trim() !== mainInstructor.trim()));
 
   const allCourseInstructors = [mainInstructor, ...assistantInstructors];
+  /*
+   * 서명 칸(표 너비의 28%)에 강사 도장이 항상 한 줄로 들어가게 크기를 정한다.
+   * 일괄 출력(쪽 표 너비 182mm)은 강사 개별 출력(190mm)보다 좁아, 4명 이상이면 도장이 두 줄로 넘어가
+   * 표가 쪽 높이를 넘고 다음 쪽으로 밀려 겹쳐 출력되던 문제를 막는다.
+   */
+  const SEAL_GAP_MM = 1;
+  const sealCellInnerMm = 182 * 0.28 - 4; // 가장 좁은 경우(일괄 출력) 기준, 칸 안쪽 여백 제외
+  const sealCount = Math.max(1, allCourseInstructors.length);
+  const sealSizeMm = Math.min(11, Math.floor(((sealCellInnerMm - (sealCount - 1) * SEAL_GAP_MM) / sealCount) * 10) / 10);
 
   // 강의시간 표기 파싱 (예: 15:00 ~ 16:30 (8~9차시) -> 8-9교시)
   let displayClassTime = course.classTime || '';
@@ -269,7 +275,7 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
           style={{ border: '1px solid #000000', width: '28%' }}
         >
           {hasChecked ? (
-            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+            <div className="flex items-center justify-center flex-nowrap" style={{ gap: `${SEAL_GAP_MM}mm` }}>
               {allCourseInstructors.map((inst) => {
                 const sub = daySubs.find((s) => String(s.targetInstructor || (s as any).originalInstructor || mainInstructor).trim() === inst);
                 if (sub?.isAbsence) {
@@ -290,6 +296,7 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
                       signatureUrl={getInstructorSeal(sub.substituteInstructor || '')}
                       courseId={course.id}
                       onRequestSignature={onRequestSignature}
+                      sizeMm={sealSizeMm}
                     />
                   );
                 }
@@ -300,6 +307,7 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
                     signatureUrl={getInstructorSeal(inst)}
                     courseId={course.id}
                     onRequestSignature={onRequestSignature}
+                    sizeMm={sealSizeMm}
                   />
                 );
               })}

@@ -54,6 +54,9 @@ export function EvidenceApprovalCard({ courses, approvalDocs, sigBook, onViewDoc
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 같은 화면에서 바로 인쇄 창 (새 페이지를 열지 않음)
   const [printJob, setPrintJob] = useState<{ ids: string[]; manual: boolean } | null>(null);
+  // 증빙 서류 출력 종류: 출석부·출근부 모두 / 출석부만 / 출근부만
+  const [printKind, setPrintKind] = useState<'both' | 'attendance' | 'work'>('both');
+  const printKinds = { attendance: printKind !== 'work', work: printKind !== 'attendance' };
   const toApproveKey = toApprove.map((d) => d.id).join(',');
   useEffect(() => {
     setSelected(new Set(toApprove.map((d) => d.id)));
@@ -211,6 +214,29 @@ export function EvidenceApprovalCard({ courses, approvalDocs, sigBook, onViewDoc
         )}
       </button>
 
+      {/* 출력할 서류 종류 선택 (수기 결재용·결재 완료본 출력에 함께 적용) */}
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-bold text-slate-500 shrink-0">출력 서류</span>
+        <div className="flex-1 grid grid-cols-3 gap-1 bg-slate-100 rounded-xl p-1">
+          {([
+            ['both', '출석부 + 출근부'],
+            ['attendance', '출석부만'],
+            ['work', '출근부만'],
+          ] as const).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setPrintKind(k)}
+              className={`text-[11px] font-bold py-1.5 rounded-lg transition ${
+                printKind === k ? 'bg-white text-indigo-700 shadow-sm border border-indigo-200' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* 교감 상신 없이 종이로 결재받을 때: 부장·교감 서명 칸이 빈 출석부·출근부를 일괄 출력 */}
       {(() => {
         const printIds = toApprove.filter((d) => selected.has(d.id)).map((d) => d.id);
@@ -222,7 +248,7 @@ export function EvidenceApprovalCard({ courses, approvalDocs, sigBook, onViewDoc
             className="w-full bg-white hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400 text-slate-800 border border-slate-300 font-bold text-xs py-2.5 rounded-xl transition flex items-center justify-center gap-1.5"
             title="교감 상신 없이 출력해서 수기로 결재받을 때 사용합니다. 부장·교감 서명 칸은 비워서 출력됩니다."
           >
-            <Printer className="w-3.5 h-3.5" /> 증빙 서류 출력 — 수기 결재용, 부장·교감 서명 없음 ({printIds.length}건)
+            <Printer className="w-3.5 h-3.5" /> {printKind === 'both' ? '증빙 서류' : printKind === 'attendance' ? '출석부' : '출근부'} 출력 — 수기 결재용, 부장·교감 서명 없음 ({printIds.length}건)
           </button>
         );
       })()}
@@ -258,7 +284,7 @@ export function EvidenceApprovalCard({ courses, approvalDocs, sigBook, onViewDoc
       )}
 
       {printJob && (
-        <EvidenceBatchPrint ids={printJob.ids} manual={printJob.manual} autoPrint onClose={() => setPrintJob(null)} />
+        <EvidenceBatchPrint ids={printJob.ids} manual={printJob.manual} kinds={printKinds} autoPrint onClose={() => setPrintJob(null)} />
       )}
 
       {approved.length > 0 && (

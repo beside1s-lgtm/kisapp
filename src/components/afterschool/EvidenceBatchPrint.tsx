@@ -87,11 +87,13 @@ export interface EvidenceBatchPrintProps {
   manual?: boolean;
   /** 준비되면 바로 인쇄 창을 띄운다 */
   autoPrint?: boolean;
+  /** 출력할 서류 종류 (기본: 출석부·강사출근부 모두) */
+  kinds?: { attendance: boolean; work: boolean };
   /** 닫기 (autoPrint면 인쇄 창을 닫은 뒤 자동 호출) */
   onClose?: () => void;
 }
 
-export function EvidenceBatchPrint({ ids = [], manual = false, autoPrint = false, onClose }: EvidenceBatchPrintProps) {
+export function EvidenceBatchPrint({ ids = [], manual = false, autoPrint = false, kinds, onClose }: EvidenceBatchPrintProps) {
   const idKey = ids.join(',');
   const idFilter = useMemo(() => new Set(ids.filter(Boolean)), [idKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const {
@@ -99,7 +101,7 @@ export function EvidenceBatchPrint({ ids = [], manual = false, autoPrint = false
     substituteRecords, settings, holidayDates, sigBook, ready,
   } = useEvidenceData();
   const [mounted, setMounted] = useState(false);
-  const [include, setInclude] = useState({ attendance: true, work: true });
+  const [include, setInclude] = useState(() => kinds ?? { attendance: true, work: true });
   const [printing, setPrinting] = useState(autoPrint);
   const sheetRef = useRef<HTMLDivElement>(null);
   const printedRef = useRef(false);
@@ -114,7 +116,8 @@ export function EvidenceBatchPrint({ ids = [], manual = false, autoPrint = false
     [docs, courseById, idFilter, manual]
   );
 
-  const fileTitle = `${settings?.year || ''}-${settings?.semester || ''}_방과후학교_강사료_증빙서류(출석부·출근부)${manual ? '_수기결재용' : ''}`;
+  const kindLabel = include.attendance && include.work ? '출석부·출근부' : include.attendance ? '출석부' : '출근부';
+  const fileTitle = `${settings?.year || ''}-${settings?.semester || ''}_방과후학교_강사료_증빙서류(${kindLabel})${manual ? '_수기결재용' : ''}`;
   const doPrint = () => {
     const prev = document.title;
     document.title = fileTitle;
@@ -234,6 +237,8 @@ export function EvidenceBatchPrint({ ids = [], manual = false, autoPrint = false
               onClose: () => {},
               variant: 'page' as const,
               hideApprovalSignatures: manual,
+              allDocs: docs,
+              allCourses: Array.from(courseById.values()),
             };
             return (
               <React.Fragment key={d.id}>
