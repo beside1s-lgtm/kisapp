@@ -23,10 +23,13 @@ import {
   Inbox,
   Archive,
   Filter,
+  CalendarClock,
 } from 'lucide-react';
+import { RecurringHomeworkDialog } from './RecurringHomeworkDialog';
 import type { HomeroomHomework, HomeroomHomeworkCheck } from '@/lib/types/homeroomClass';
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import { HomeworkArchiveView } from './HomeworkArchiveView';
+import { SeatingDisplayToggles, useSeatingDisplayPrefs } from '../seating/SeatingDisplayToggles';
 import { motion } from 'framer-motion';
 
 export interface HwDayStats {
@@ -80,6 +83,7 @@ export function HomeworkTabContent({
   classLabel,
   onToggleConfirm,
   isFullscreen = false,
+  seatingClassKey,
 }: {
   dateNavMode: 'dropdown' | 'calendar';
   setDateNavMode: (mode: 'dropdown' | 'calendar') => void;
@@ -112,12 +116,18 @@ export function HomeworkTabContent({
   classLabel?: string;
   onToggleConfirm?: (hwId: string, isConfirmed: boolean) => void;
   isFullscreen?: boolean;
+  /** 있으면 [배치도에서 확인: 현황 바 / 책상] 체크 표시 (자리 배치도의 과제 현황 바·책상 카드 제출 표시) */
+  seatingClassKey?: string;
 }) {
+  const [seatingPrefs, setSeatingPrefs] = useSeatingDisplayPrefs(seatingClassKey || '');
   // 1. 서브 뷰 모드: 'active' (미확인 숙제 피드) | 'archive' (확인된 숙제 보관함)
   const [subViewMode, setSubViewMode] = useState<'active' | 'archive'>('active');
 
   // 2. 날짜별 필터 토글 상태 (기본값: false - 날짜 무관 전체 통합 피드)
   const [dateFilterEnabled, setDateFilterEnabled] = useState(false);
+
+  // 3. 정기 과제 설정 다이얼로그
+  const [recurringOpen, setRecurringOpen] = useState(false);
 
   // 담임 미확인 활성 숙제 목록 (시간순/최신순 정렬)
   const activeHomeworks = useMemo(() => {
@@ -187,6 +197,15 @@ export function HomeworkTabContent({
 
         {subViewMode === 'active' && (
           <div className="flex items-center gap-1.5 self-end sm:self-auto">
+            {seatingClassKey && (
+              <SeatingDisplayToggles
+                bar={seatingPrefs.hwBar}
+                cards={seatingPrefs.hwCards}
+                onBarChange={(v) => setSeatingPrefs({ hwBar: v })}
+                onCardsChange={(v) => setSeatingPrefs({ hwCards: v })}
+                cardsTitle="전체화면 자리 배치도의 책상마다 과제 제출 여부를 표시합니다"
+              />
+            )}
             <Button
               type="button"
               size="sm"
@@ -464,6 +483,18 @@ export function HomeworkTabContent({
                     <span className="sm:hidden text-[11px]">칠판</span>
                   </Button>
                 )}
+
+                {/* 정기 과제 설정 버튼 */}
+                <Button
+                  variant="outline"
+                  onClick={() => setRecurringOpen(true)}
+                  className="h-9 sm:h-10 text-xs font-bold border-violet-200 text-violet-700 hover:bg-violet-50 shrink-0 gap-1.5 px-2.5 sm:px-3 cursor-pointer whitespace-nowrap"
+                  title="정기 과제 설정"
+                >
+                  <CalendarClock className="w-4 h-4 shrink-0" />
+                  <span className="hidden sm:inline">정기 과제 설정</span>
+                  <span className="sm:hidden text-[11px]">정기</span>
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -790,6 +821,13 @@ export function HomeworkTabContent({
           )}
         </>
       )}
+
+      {/* 정기 과제 설정 다이얼로그 */}
+      <RecurringHomeworkDialog
+        open={recurringOpen}
+        onOpenChange={setRecurringOpen}
+        classKey={seatingClassKey || ''}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   LayoutGrid,
   Award,
@@ -20,8 +21,10 @@ import { RandomPickerTab } from './RandomPickerTab';
 import { TeamGeneratorTab } from './TeamGeneratorTab';
 import { MemoTabContent } from '../class-management/MemoTabContent';
 import { HomeworkTabContent } from '../class-management/HomeworkTabContent';
+import type { SeatingHomeworkOverlay } from '../seating/SeatingHomeworkWidget';
+import { useSeatingDisplayPrefs } from '../seating/SeatingDisplayToggles';
 
-export type ClassToolType = 'seating' | 'praise' | 'picker' | 'teams' | 'memo' | 'homework';
+export type ClassToolType = 'seating' | 'praise' | 'homework' | 'memo' | 'picker' | 'teams';
 
 export interface ClassToolsMainTabProps {
   classKey: string;
@@ -82,10 +85,43 @@ export const ClassToolsMainTab: React.FC<ClassToolsMainTabProps> = ({
   homeworkProps,
 }) => {
   const [activeTool, setActiveTool] = useState<ClassToolType>(initialTool);
+
+  // ─── 숙제 [배치도에서 확인]: 과제 현황 바 / (전체화면) 책상별 제출 표시를 따로 켜고 끔 — 학급별로 기억
+  const [seatingPrefs] = useSeatingDisplayPrefs(classKey);
+  const showHwOnSeating = seatingPrefs.hwBar || seatingPrefs.hwCards;
+
+  // 담임 미확인(진행 중) 숙제를 낸 순서대로 ①②③… — 과제 현황 바와 책상 카드가 같은 번호를 쓴다
+  const homeworkOverlay = React.useMemo<SeatingHomeworkOverlay | undefined>(() => {
+    if (!showHwOnSeating || !homeworkProps) return undefined;
+    const active = homeworkProps.homeworks
+      .filter((h) => !h.isTeacherConfirmed)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.createdAt || '').localeCompare(b.createdAt || ''));
+    const doneById = new Set<string>();
+    const doneByName = new Set<string>();
+    homeworkProps.homeworkChecks.forEach((c) => {
+      if (!c.checked) return;
+      if (c.studentId) doneById.add(`${c.hwId}|${c.studentId}`);
+      if (c.studentName) doneByName.add(`${c.hwId}|${c.studentName}`);
+    });
+    return {
+      items: active.map((h, i) => {
+        const st = homeworkProps.getHwStats(h.id);
+        return { id: h.id, title: h.title, date: h.date, no: i + 1, doneCount: st.doneCount, totalCount: st.totalCount, pct: st.pct };
+      }),
+      isDone: (hwId, studentId, studentName) =>
+        Boolean((studentId && doneById.has(`${hwId}|${studentId}`)) || (studentName && doneByName.has(`${hwId}|${studentName}`))),
+      onToggle: homeworkProps.handleToggleHwCheck,
+    };
+  }, [showHwOnSeating, homeworkProps]);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isPickerOpen, setIsPickerOpen] = useState<boolean>(false);
   const [isTeamOpen, setIsTeamOpen] = useState<boolean>(false);
+  const [mounted, setMounted] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // initialTool 변경 시 동기화
   useEffect(() => {
@@ -114,14 +150,15 @@ export const ClassToolsMainTab: React.FC<ClassToolsMainTabProps> = ({
     };
   }, []);
 
-  // 전체화면 토글
+  // 전체화면 토글 (document.documentElement를 전체화면화하여 Radix Portal 팝업/드롭다운이 Top Layer에 온전히 포함되도록 보장)
   const handleToggleFullscreen = async () => {
     try {
       if (!document.fullscreenElement && !isFullscreen) {
-        if (containerRef.current?.requestFullscreen) {
-          await containerRef.current.requestFullscreen();
-        } else if ((containerRef.current as any)?.webkitRequestFullscreen) {
-          await (containerRef.current as any).webkitRequestFullscreen();
+        const rootElem = document.documentElement;
+        if (rootElem.requestFullscreen) {
+          await rootElem.requestFullscreen();
+        } else if ((rootElem as any).webkitRequestFullscreen) {
+          await (rootElem as any).webkitRequestFullscreen();
         }
         setIsFullscreen(true);
       } else {
@@ -138,12 +175,12 @@ export const ClassToolsMainTab: React.FC<ClassToolsMainTabProps> = ({
     }
   };
 
-  return (
+  const content = (
     <div
       ref={containerRef}
       className={`w-full transition-colors duration-200 ${
         isFullscreen
-          ? 'fixed inset-0 z-50 bg-gradient-to-b from-slate-50 via-white to-blue-50/20 p-2 sm:p-2.5 overflow-hidden flex flex-col h-screen max-h-screen select-none'
+          ? 'fixed inset-0 top-0 left-0 right-0 bottom-0 z-[99999] bg-slate-50 px-2 py-1.5 sm:px-3 sm:py-2 overflow-hidden flex flex-col h-screen max-h-screen w-screen max-w-full select-none'
           : 'space-y-3 sm:space-y-4'
       }`}
     >
@@ -193,70 +230,7 @@ export const ClassToolsMainTab: React.FC<ClassToolsMainTabProps> = ({
             <span>칭찬</span>
           </motion.button>
 
-          {/* 3. 뽑기 (자리 배치 화면 내 슬라이드 다운 탭 바: 학교 공식 골드 #C49832) */}
-          <motion.button
-            type="button"
-            whileHover={{ scale: 1.02, y: -2 }}
-            whileTap={{ scale: 0.96, y: 1 }}
-            transition={{ type: 'spring', stiffness: 500, damping: 22 }}
-            onClick={() => {
-              setActiveTool('seating');
-              setIsPickerOpen((prev) => !prev);
-              setIsTeamOpen(false);
-            }}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl font-black text-xs sm:text-sm tracking-tight transition-all select-none whitespace-nowrap break-keep shrink-0 cursor-pointer ${
-              activeTool === 'seating' && isPickerOpen
-                ? 'bg-[#C49832] text-white border-b-4 border-[#8E6D21] shadow-md'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border-b-4 border-slate-300'
-            }`}
-          >
-            <Dice5 className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${activeTool === 'seating' && isPickerOpen ? 'text-white' : 'text-[#C49832]'}`} />
-            <span>뽑기</span>
-          </motion.button>
-
-          {/* 4. 팀 나누기 (자리 배치 화면 내 슬라이드 다운 탭 바: 학교 공식 레드 #B01E23) */}
-          <motion.button
-            type="button"
-            whileHover={{ scale: 1.02, y: -2 }}
-            whileTap={{ scale: 0.96, y: 1 }}
-            transition={{ type: 'spring', stiffness: 500, damping: 22 }}
-            onClick={() => {
-              setActiveTool('seating');
-              setIsTeamOpen((prev) => !prev);
-              setIsPickerOpen(false);
-            }}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl font-black text-xs sm:text-sm tracking-tight transition-all select-none whitespace-nowrap break-keep shrink-0 cursor-pointer ${
-              activeTool === 'seating' && isTeamOpen
-                ? 'bg-[#B01E23] text-white border-b-4 border-[#7E1519] shadow-md'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border-b-4 border-slate-300'
-            }`}
-          >
-            <Users className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${activeTool === 'seating' && isTeamOpen ? 'text-white' : 'text-[#B01E23]'}`} />
-            <span>팀 나누기</span>
-          </motion.button>
-
-          {/* 5. 칠판 (칠판 알림 축약형: 학교 공식 블루 #2471B2) */}
-          <motion.button
-            type="button"
-            whileHover={{ scale: 1.02, y: -2 }}
-            whileTap={{ scale: 0.96, y: 1 }}
-            transition={{ type: 'spring', stiffness: 500, damping: 22 }}
-            onClick={() => {
-              setActiveTool('memo');
-              setIsPickerOpen(false);
-              setIsTeamOpen(false);
-            }}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl font-black text-xs sm:text-sm tracking-tight transition-all select-none whitespace-nowrap break-keep shrink-0 cursor-pointer ${
-              activeTool === 'memo'
-                ? 'bg-[#2471B2] text-white border-b-4 border-[#1A5384] shadow-md'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border-b-4 border-slate-300'
-            }`}
-          >
-            <BookOpen className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${activeTool === 'memo' ? 'text-white' : 'text-[#2471B2]'}`} />
-            <span>칠판</span>
-          </motion.button>
-
-          {/* 6. 숙제 (숙제 확인 축약형: 학교 공식 골드 #C49832) */}
+          {/* 3. 숙제 (숙제 확인 축약형: 학교 공식 골드 #C49832) */}
           <motion.button
             type="button"
             whileHover={{ scale: 1.02, y: -2 }}
@@ -287,6 +261,69 @@ export const ClassToolsMainTab: React.FC<ClassToolsMainTabProps> = ({
               </span>
             ) : null}
           </motion.button>
+
+          {/* 4. 칠판 (칠판 알림 축약형: 학교 공식 블루 #2471B2) */}
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.02, y: -2 }}
+            whileTap={{ scale: 0.96, y: 1 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+            onClick={() => {
+              setActiveTool('memo');
+              setIsPickerOpen(false);
+              setIsTeamOpen(false);
+            }}
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl font-black text-xs sm:text-sm tracking-tight transition-all select-none whitespace-nowrap break-keep shrink-0 cursor-pointer ${
+              activeTool === 'memo'
+                ? 'bg-[#2471B2] text-white border-b-4 border-[#1A5384] shadow-md'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border-b-4 border-slate-300'
+            }`}
+          >
+            <BookOpen className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${activeTool === 'memo' ? 'text-white' : 'text-[#2471B2]'}`} />
+            <span>칠판</span>
+          </motion.button>
+
+          {/* 5. 뽑기 (자리 배치 화면 내 슬라이드 다운 탭 바: 학교 공식 골드 #C49832) */}
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.02, y: -2 }}
+            whileTap={{ scale: 0.96, y: 1 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+            onClick={() => {
+              setActiveTool('seating');
+              setIsPickerOpen((prev) => !prev);
+              setIsTeamOpen(false);
+            }}
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl font-black text-xs sm:text-sm tracking-tight transition-all select-none whitespace-nowrap break-keep shrink-0 cursor-pointer ${
+              activeTool === 'seating' && isPickerOpen
+                ? 'bg-[#C49832] text-white border-b-4 border-[#8E6D21] shadow-md'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border-b-4 border-slate-300'
+            }`}
+          >
+            <Dice5 className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${activeTool === 'seating' && isPickerOpen ? 'text-white' : 'text-[#C49832]'}`} />
+            <span>뽑기</span>
+          </motion.button>
+
+          {/* 6. 팀 나누기 (자리 배치 화면 내 슬라이드 다운 탭 바: 학교 공식 레드 #B01E23) */}
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.02, y: -2 }}
+            whileTap={{ scale: 0.96, y: 1 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+            onClick={() => {
+              setActiveTool('seating');
+              setIsTeamOpen((prev) => !prev);
+              setIsPickerOpen(false);
+            }}
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl font-black text-xs sm:text-sm tracking-tight transition-all select-none whitespace-nowrap break-keep shrink-0 cursor-pointer ${
+              activeTool === 'seating' && isTeamOpen
+                ? 'bg-[#B01E23] text-white border-b-4 border-[#7E1519] shadow-md'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border-b-4 border-slate-300'
+            }`}
+          >
+            <Users className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${activeTool === 'seating' && isTeamOpen ? 'text-white' : 'text-[#B01E23]'}`} />
+            <span>팀 나누기</span>
+          </motion.button>
         </div>
 
         {/* 우측: 전체화면 토글 버튼 (아이콘만 남김, 컴팩트한 사각 듀오링고 3D) */}
@@ -314,7 +351,14 @@ export const ClassToolsMainTab: React.FC<ClassToolsMainTabProps> = ({
       </div>
 
       {/* ─── 메인 뷰 컨테이너 (디스플레이 크기에 맞게 꽉 채우고 스크롤 원천 차단) ─── */}
-      <div className={`w-full flex-1 min-h-0 ${isFullscreen ? 'mt-1.5 sm:mt-2 flex flex-col overflow-hidden' : ''}`}>
+      {/* 자리 배치는 화면에 꽉 맞춰 스크롤 없이, 숙제 등 내용이 긴 도구는 전체화면에서도 아래까지 스크롤 */}
+      <div
+        className={`w-full flex-1 min-h-0 ${
+          isFullscreen
+            ? `mt-1.5 sm:mt-2 flex flex-col ${activeTool === 'seating' ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden overscroll-contain'}`
+            : ''
+        }`}
+      >
         <AnimatePresence mode="wait">
           {/* 1. 자리 배치 관리 */}
           {activeTool === 'seating' && (
@@ -336,6 +380,7 @@ export const ClassToolsMainTab: React.FC<ClassToolsMainTabProps> = ({
                 onClosePickerBar={() => setIsPickerOpen(false)}
                 isTeamBarOpen={isTeamOpen}
                 onCloseTeamBar={() => setIsTeamOpen(false)}
+                homeworkOverlay={homeworkOverlay}
               />
             </motion.div>
           )}
@@ -359,64 +404,7 @@ export const ClassToolsMainTab: React.FC<ClassToolsMainTabProps> = ({
             </motion.div>
           )}
 
-          {/* 3. 발표자 뽑기 (1~12명) */}
-          {activeTool === 'picker' && (
-            <motion.div
-              key="picker"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}
-            >
-              <RandomPickerTab
-                students={students}
-                classLabel={classLabel}
-                isFullscreen={isFullscreen}
-              />
-            </motion.div>
-          )}
-
-          {/* 4. 팀 나누기 (모둠 분할) */}
-          {activeTool === 'teams' && (
-            <motion.div
-              key="teams"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}
-            >
-              <TeamGeneratorTab
-                students={students}
-                classLabel={classLabel}
-                classKey={classKey}
-                isFullscreen={isFullscreen}
-              />
-            </motion.div>
-          )}
-
-          {/* 5. 칠판 (대형 칠판 에디터) */}
-          {activeTool === 'memo' && memoProps && (
-            <motion.div
-              key="memo"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}
-              className="w-full"
-            >
-              <MemoTabContent
-                todayDisplay={memoProps.todayDisplay}
-                memoContent={memoProps.memoContent}
-                setMemoContent={memoProps.setMemoContent}
-                handleSaveMemo={memoProps.handleSaveMemo}
-                handleOpenMemoHistory={memoProps.handleOpenMemoHistory}
-                setIsMemoFullscreenOpen={memoProps.setIsMemoFullscreenOpen}
-                isFullscreen={isFullscreen}
-              />
-            </motion.div>
-          )}
-
-          {/* 6. 숙제 (과제 체크 대시보드) */}
+          {/* 3. 숙제 (과제 체크 대시보드) */}
           {activeTool === 'homework' && homeworkProps && (
             <motion.div
               key="homework"
@@ -458,6 +446,64 @@ export const ClassToolsMainTab: React.FC<ClassToolsMainTabProps> = ({
                 classLabel={classLabel}
                 onToggleConfirm={homeworkProps.onToggleConfirm}
                 isFullscreen={isFullscreen}
+                seatingClassKey={classKey}
+              />
+            </motion.div>
+          )}
+
+          {/* 4. 칠판 (대형 칠판 에디터) */}
+          {activeTool === 'memo' && memoProps && (
+            <motion.div
+              key="memo"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+              className="w-full"
+            >
+              <MemoTabContent
+                todayDisplay={memoProps.todayDisplay}
+                memoContent={memoProps.memoContent}
+                setMemoContent={memoProps.setMemoContent}
+                handleSaveMemo={memoProps.handleSaveMemo}
+                handleOpenMemoHistory={memoProps.handleOpenMemoHistory}
+                setIsMemoFullscreenOpen={memoProps.setIsMemoFullscreenOpen}
+                isFullscreen={isFullscreen}
+              />
+            </motion.div>
+          )}
+
+          {/* 5. 발표자 뽑기 (1~12명) */}
+          {activeTool === 'picker' && (
+            <motion.div
+              key="picker"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+            >
+              <RandomPickerTab
+                students={students}
+                classLabel={classLabel}
+                isFullscreen={isFullscreen}
+              />
+            </motion.div>
+          )}
+
+          {/* 6. 팀 나누기 (모둠 분할) */}
+          {activeTool === 'teams' && (
+            <motion.div
+              key="teams"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+            >
+              <TeamGeneratorTab
+                students={students}
+                classLabel={classLabel}
+                classKey={classKey}
+                isFullscreen={isFullscreen}
               />
             </motion.div>
           )}
@@ -465,4 +511,10 @@ export const ClassToolsMainTab: React.FC<ClassToolsMainTabProps> = ({
       </div>
     </div>
   );
+
+  if (isFullscreen && mounted && typeof document !== 'undefined') {
+    return createPortal(content, document.body);
+  }
+
+  return content;
 };

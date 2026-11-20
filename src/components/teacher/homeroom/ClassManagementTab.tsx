@@ -33,6 +33,8 @@ import {
   deleteBehaviorRecord,
   onConsultationsUpdate,
   saveConsultation,
+  onRecurringHomeworksUpdate,
+  updateRecurringHomework,
 } from '@/lib/services/homeroomClassService';
 import type {
   HomeroomDailyMemo,
@@ -40,6 +42,7 @@ import type {
   HomeroomHomeworkCheck,
   HomeroomBehaviorRecord,
   HomeroomConsultation,
+  RecurringHomework,
 } from '@/lib/types/homeroomClass';
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import { HomeworkPresentationModal } from './HomeworkPresentationModal';
@@ -54,6 +57,7 @@ import { MatrixTabContent } from './class-management/MatrixTabContent';
 import { BehaviorInputDialog } from './class-management/BehaviorInputDialog';
 import { EditHomeworkDialog } from './class-management/EditHomeworkDialog';
 import { MemoHistoryDialog } from './class-management/MemoHistoryDialog';
+import { startClassStateSync, startTeacherPrefsSync } from '@/lib/services/classStateSync';
 
 interface ClassManagementTabProps {
   classKey: string;
@@ -116,6 +120,10 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
   // 5. 월별 숙제 매트릭스 필터
   const [matrixMonth, setMatrixMonth] = useState<string>('all');
 
+  // ─── 수업 도구 상태(칭찬·보상·팀·아바타·위젯 설정 등) 서버 동기화 — 다른 기기에서도 같은 상태
+  useEffect(() => startClassStateSync(classKey), [classKey]);
+  useEffect(() => startTeacherPrefsSync(userEmail), [userEmail]);
+
   // ─── 실시간 데이터 구독 ──────────────────────────────────────────
   useEffect(() => {
     if (!classKey) return;
@@ -135,12 +143,56 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
     // 4. 상담 메모 구독
     const unsubConsults = onConsultationsUpdate(classKey, (map) => setConsultations(map));
 
+    // 5. 정기 과제 자동 트리거 (오늘 날짜에 해당하는 반복 과제 자동 등록)
+    const unsubRecurring = onRecurringHomeworksUpdate(classKey, async (recurringList) => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayDateStr = format(today, 'yyyy-MM-dd');
+
+      for (const item of recurringList) {
+        if (!item.isActive) continue;
+        // 종료일 초과 시 스킵
+        if (item.endDate && todayDateStr > item.endDate) continue;
+        // 시작일 이전 스킵
+        if (todayDateStr < item.startDate) continue;
+        // 이미 오늘 트리거됐으면 스킵
+        if (item.lastTriggeredDate === todayDateStr) continue;
+
+        let shouldTrigger = false;
+
+        if (item.frequency === 'monthly' && item.monthDay != null) {
+          shouldTrigger = today.getDate() === item.monthDay;
+        } else if (item.weekDay != null) {
+          const todayWeekDay = today.getDay();
+          if (item.frequency === 'weekly') {
+            shouldTrigger = todayWeekDay === item.weekDay;
+          } else if (item.frequency === 'biweekly') {
+            const start = new Date(item.startDate);
+            start.setHours(0, 0, 0, 0);
+            if (todayWeekDay === item.weekDay) {
+              const msPerWeek = 7 * 24 * 3600 * 1000;
+              const weeksSinceStart = Math.round((today.getTime() - start.getTime()) / msPerWeek);
+              shouldTrigger = weeksSinceStart % 2 === 0;
+            }
+          }
+        }
+
+        if (shouldTrigger) {
+          const days = ['일', '월', '화', '수', '목', '금', '토'];
+          const dateWithDay = `${todayDateStr} (${days[today.getDay()]})`;
+          await addHomework(classKey, `[정기] ${item.title}`, todayDateStr, dateWithDay, '');
+          await updateRecurringHomework(classKey, item.id, { lastTriggeredDate: todayDateStr });
+        }
+      }
+    });
+
     return () => {
       unsubMemo();
       unsubHw();
       unsubHwChecks();
       unsubBehaviors();
       unsubConsults();
+      unsubRecurring();
     };
   }, [classKey, todayStr]);
 

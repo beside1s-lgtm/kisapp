@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Settings,
   User,
@@ -19,6 +19,10 @@ import {
   Check,
   Send,
   Calendar,
+  Upload,
+  Image as ImageIcon,
+  Camera,
+  Loader2,
 } from 'lucide-react';
 import {
   Dialog,
@@ -43,6 +47,7 @@ import {
   saveCustomAvatar,
   type CustomAvatarData,
 } from '@/lib/types/avatars';
+import { optimizeStudentPhoto } from '@/lib/utils/imageOptimizer';
 import {
   onHomeworksUpdate,
   onHomeworkChecksUpdate,
@@ -114,6 +119,10 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
     () => new Date().toISOString().split('T')[0]
   );
   const [isSubmittingConsult, setIsSubmittingConsult] = useState(false);
+
+  // 사용자 지정 사진 파일 업로드 및 자동 최적화 상태
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   // 모달이 열리거나 타깃 학생이 바뀔 때 초기화
   useEffect(() => {
@@ -192,6 +201,53 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
       title: '기본 사진 복원 완료',
       description: `[${studentName}] 학생의 아바타가 기본 학교 사진으로 복원되었습니다.`,
     });
+  };
+
+  // 사용자 지정 사진/이미지 파일 업로드 및 자동 최적화
+  const handleImageFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: '이미지 파일만 등록할 수 있습니다',
+        description: 'JPG, PNG, WebP 등 이미지 파일을 선택해주세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      // 1:1 규격(280x280) 중앙 크롭 및 자동 압축 (수십 KB로 최적화)
+      const result = await optimizeStudentPhoto(file, 280, 0.85);
+
+      const avatarData: CustomAvatarData = {
+        type: 'url',
+        value: result.dataUrl,
+        name: '직접 등록한 사진',
+        fileSize: result.optimizedSize,
+        updatedAt: new Date().toISOString(),
+      };
+
+      saveCustomAvatar(classKey, studentId, avatarData);
+      setCustomAvatar(avatarData);
+
+      toast({
+        title: '학생 사진 등록 및 용량 최적화 완료',
+        description: `사진이 성공적으로 등록되었습니다. (${result.originalSize} ➔ ${result.optimizedSize}로 자동 최적화)`,
+      });
+    } catch (err) {
+      console.error('Image optimization failed:', err);
+      toast({
+        title: '사진 등록 실패',
+        description: '이미지 최적화 처리 중 오류가 발생했습니다.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   // ─── 2. 숙제 토글 핸들러 ───
@@ -356,25 +412,33 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
               {/* 대형 프로필 사진 또는 커스텀 아바타 */}
               <div className="relative mb-4 group">
                 {customAvatar ? (
-                  <div
-                    className={`w-32 h-32 sm:w-36 sm:h-36 rounded-3xl flex flex-col items-center justify-center border-4 shadow-xl transition-transform transform group-hover:scale-105 ${customAvatar.bgClass || 'bg-amber-100'} ${customAvatar.borderClass || 'border-amber-300'}`}
-                  >
-                    <span className="text-6xl sm:text-7xl select-none filter drop-shadow">
-                      {customAvatar.emoji || '🦁'}
-                    </span>
-                    <span className="text-[11px] font-black mt-1 px-2 py-0.5 rounded-full bg-white/80 text-slate-800 shadow-2xs">
-                      {customAvatar.name || '학급 아바타'}
-                    </span>
-                  </div>
+                  customAvatar.type === 'url' ? (
+                    <img
+                      src={customAvatar.value}
+                      alt={studentName}
+                      className="w-56 h-56 sm:w-64 sm:h-64 lg:w-[272px] lg:h-[272px] rounded-[2rem] object-cover border-4 border-amber-300 shadow-xl transition-transform transform group-hover:scale-105"
+                    />
+                  ) : (
+                    <div
+                      className={`w-56 h-56 sm:w-64 sm:h-64 lg:w-[272px] lg:h-[272px] rounded-[2rem] flex flex-col items-center justify-center border-4 shadow-xl transition-transform transform group-hover:scale-105 ${customAvatar.bgClass || 'bg-amber-100'} ${customAvatar.borderClass || 'border-amber-300'}`}
+                    >
+                      <span className="text-8xl sm:text-9xl select-none filter drop-shadow">
+                        {customAvatar.emoji || '🦁'}
+                      </span>
+                      <span className="text-[11px] font-black mt-1 px-2 py-0.5 rounded-full bg-white/80 text-slate-800 shadow-2xs">
+                        {customAvatar.name || '학급 아바타'}
+                      </span>
+                    </div>
+                  )
                 ) : defaultPhotoUrl ? (
                   <img
                     src={defaultPhotoUrl}
                     alt={studentName}
-                    className="w-32 h-32 sm:w-36 sm:h-36 rounded-3xl object-cover border-4 border-amber-300 shadow-xl transition-transform transform group-hover:scale-105"
+                    className="w-56 h-56 sm:w-64 sm:h-64 lg:w-[272px] lg:h-[272px] rounded-[2rem] object-cover border-4 border-amber-300 shadow-xl transition-transform transform group-hover:scale-105"
                   />
                 ) : (
                   <div
-                    className={`w-32 h-32 sm:w-36 sm:h-36 rounded-3xl flex items-center justify-center font-black text-3xl sm:text-4xl border-4 shadow-xl text-white ${
+                    className={`w-56 h-56 sm:w-64 sm:h-64 lg:w-[272px] lg:h-[272px] rounded-[2rem] flex items-center justify-center font-black text-5xl sm:text-6xl border-4 shadow-xl text-white ${
                       isFemale ? 'bg-[#B01E23] border-rose-300' : 'bg-[#2471B2] border-blue-300'
                     }`}
                   >
@@ -382,10 +446,10 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
                   </div>
                 )}
 
-                {/* 학급 전용 아바타 적용 중 배지 */}
+                {/* 학급 전용 아바타/사진 적용 중 배지 */}
                 {customAvatar && (
-                  <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-violet-600 text-white font-black text-[10px] shadow-md border-2 border-white">
-                    학급 아바타
+                  <span className="absolute -top-2 -right-2 px-2.5 py-0.5 rounded-full bg-violet-600 text-white font-black text-[10px] shadow-md border-2 border-white">
+                    {customAvatar.type === 'url' ? '등록 사진' : '학급 아바타'}
                   </span>
                 )}
               </div>
@@ -429,87 +493,83 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
                 {targetSlot.groupId ? `${targetSlot.groupId}분단/모둠` : '지정 좌석'} · {targetSlot.row + 1}행 {targetSlot.col + 1}열
               </p>
 
-              {/* ─── 칭찬 온도계 & 포인트 요약 카드 ─── */}
-              <div className={`w-full max-w-md p-4 rounded-2xl border-2 transition-all shadow-xs ${praiseTier.cardBgClass} ${praiseTier.cardBorderClass} mb-4`}>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xl">{praiseTier.icon}</span>
-                    <span className="font-black text-slate-800 text-sm">{praiseTier.name}</span>
-                    <span className="text-xs text-slate-500 font-medium">({praiseTier.badgeClass.includes('green') ? '식물 성장 중' : '성장 로드맵'})</span>
+              {/* ─── 칭찬 · 과제 제출 · 상담·관찰: 한 줄에 같은 크기로 세 블록 ─── */}
+              <div className="w-full grid grid-cols-3 gap-3 mb-2 auto-rows-fr">
+                {/* 칭찬 (성장 단계·점수·게이지·바로 주기) */}
+                <div className={`p-3 rounded-2xl border-2 shadow-xs flex flex-col justify-between gap-2 min-w-0 ${praiseTier.cardBgClass} ${praiseTier.cardBorderClass}`}>
+                  <div className="flex items-center justify-between gap-1 text-xs font-bold text-slate-600 min-w-0">
+                    <span className="flex items-center gap-1 min-w-0">
+                      <span className="text-base leading-none">{praiseTier.icon}</span>
+                      <span className="font-black text-slate-800 truncate">{praiseTier.name}</span>
+                    </span>
+                    <span className="flex items-center gap-0.5 font-mono font-black text-amber-600 shrink-0">
+                      <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
+                      {praisePoints}점
+                    </span>
                   </div>
-                  <div className="flex items-center gap-1 font-mono font-black text-base text-amber-600 bg-white px-2.5 py-0.5 rounded-full border border-amber-200 shadow-2xs">
-                    <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
-                    <span>{praisePoints}점</span>
+                  <div className="w-full bg-white/80 rounded-full h-2.5 p-0.5 border border-slate-200 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-amber-400 to-amber-500 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, Math.max(5, (praisePoints % 20) * 5))}%` }}
+                    />
                   </div>
-                </div>
-
-                {/* 칭찬 게이지 진행바 */}
-                <div className="w-full bg-white/80 rounded-full h-3 p-0.5 border border-slate-200 overflow-hidden mb-2">
-                  <div
-                    className="h-full bg-gradient-to-r from-amber-400 to-amber-500 rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(100, Math.max(5, (praisePoints % 20) * 5))}%` }}
-                  />
-                </div>
-
-                {/* 칭찬 퀵 버튼 (+1, +2) */}
-                <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
-                  <span className="text-[11px] text-slate-500 font-medium">칭찬 바로 주기:</span>
-                  <div className="flex items-center gap-1.5">
+                  <div className="grid grid-cols-2 gap-1.5">
                     <Button
                       size="sm"
                       onClick={() => handlePraiseChange(1, '성실한 태도')}
-                      className="h-7 px-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg gap-1 shadow-xs"
+                      className="h-7 px-1 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg gap-0.5 shadow-xs"
+                      title="칭찬 바로 주기 +1점"
                     >
                       <Plus className="w-3.5 h-3.5" /> 1점
                     </Button>
                     <Button
                       size="sm"
                       onClick={() => handlePraiseChange(2, '훌륭한 참여')}
-                      className="h-7 px-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg gap-1 shadow-xs"
+                      className="h-7 px-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg gap-0.5 shadow-xs"
+                      title="칭찬 바로 주기 +2점"
                     >
                       <Plus className="w-3.5 h-3.5" /> 2점
                     </Button>
                   </div>
                 </div>
-              </div>
 
-              {/* ─── 요약 통계 2단 (과제 제출률 / 상담 기록) ─── */}
-              <div className="w-full max-w-md grid grid-cols-2 gap-3 mb-2">
+                {/* 과제 제출 */}
                 <div
                   onClick={() => {
                     setViewMode('MANAGE');
                     setManageTab('HOMEWORK');
                   }}
-                  className="p-3 bg-white rounded-2xl border border-slate-200 shadow-xs hover:border-[#2471B2] hover:bg-blue-50/30 cursor-pointer transition-all flex flex-col justify-between"
+                  className="p-3 bg-white rounded-2xl border-2 border-slate-200 shadow-xs hover:border-[#2471B2] hover:bg-blue-50/30 cursor-pointer transition-all flex flex-col justify-between gap-2 min-w-0"
                 >
-                  <div className="flex items-center justify-between text-xs font-bold text-slate-500">
-                    <span className="flex items-center gap-1">
-                      <BookOpen className="w-3.5 h-3.5 text-blue-600" />
-                      과제 제출
+                  <div className="flex items-center justify-between gap-1 text-xs font-bold text-slate-500">
+                    <span className="flex items-center gap-1 min-w-0">
+                      <BookOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span className="truncate">과제 제출</span>
                     </span>
-                    <span className="text-blue-600 font-bold">{hwCompletionRate}%</span>
+                    <span className="text-blue-600 font-bold shrink-0">{hwCompletionRate}%</span>
                   </div>
-                  <div className="mt-2 flex items-baseline gap-1">
-                    <span className="text-lg font-black text-slate-900">{completedHwCount}</span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-slate-900">{completedHwCount}</span>
                     <span className="text-xs text-slate-400">/ {homeworks.length}건 완료</span>
                   </div>
                 </div>
 
+                {/* 상담·관찰 */}
                 <div
                   onClick={() => {
                     setViewMode('MANAGE');
                     setManageTab('CONSULT');
                   }}
-                  className="p-3 bg-white rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 hover:bg-emerald-50/30 cursor-pointer transition-all flex flex-col justify-between"
+                  className="p-3 bg-white rounded-2xl border-2 border-slate-200 shadow-xs hover:border-emerald-500 hover:bg-emerald-50/30 cursor-pointer transition-all flex flex-col justify-between gap-2 min-w-0"
                 >
-                  <div className="flex items-center justify-between text-xs font-bold text-slate-500">
-                    <span className="flex items-center gap-1">
-                      <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                      상담·관찰
+                  <div className="flex items-center justify-between gap-1 text-xs font-bold text-slate-500">
+                    <span className="flex items-center gap-1 min-w-0">
+                      <MessageSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span className="truncate">상담·관찰</span>
                     </span>
-                    <span className="text-emerald-600 font-bold">{behaviors.length}건</span>
+                    <span className="text-emerald-600 font-bold shrink-0">{behaviors.length}건</span>
                   </div>
-                  <div className="mt-2 text-xs text-slate-600 line-clamp-1 font-medium">
+                  <div className="text-xs text-slate-600 line-clamp-2 font-medium">
                     {behaviors.length > 0 ? behaviors[0].content : '작성된 기록 없음'}
                   </div>
                 </div>
@@ -517,7 +577,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
             </div>
 
             {/* 카드 하단 바로가기 버튼 */}
-            <div className="w-full max-w-md pt-4 border-t border-slate-100 flex items-center justify-between gap-2 mt-4">
+            <div className="w-full pt-4 border-t border-slate-100 flex items-center justify-between gap-2 mt-4">
               <Button
                 variant="outline"
                 size="sm"
@@ -632,17 +692,17 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
                   탭 1: 아바타 관리 (통합 계정 사진 보존, 학급 관리 전용)
                   ──────────────────────────────────────────────────────── */}
               {manageTab === 'AVATAR' && (
-                <div className="space-y-5">
-                  <div className="p-4 bg-violet-50/70 border border-violet-200 rounded-2xl flex items-start gap-3">
+                <div className="space-y-4">
+                  <div className="p-3.5 bg-violet-50/70 border border-violet-200 rounded-2xl flex items-start gap-3">
                     <div className="p-2 bg-violet-100 rounded-xl text-violet-700 shrink-0 mt-0.5">
                       <Smile className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <h4 className="text-xs font-black text-violet-900 mb-0.5">
-                        학급 전용 학생 캐릭터 아바타 등록
+                        학급 전용 학생 사진 및 캐릭터 아바타 등록
                       </h4>
                       <p className="text-[11px] text-violet-700 leading-relaxed break-keep">
-                        학교 마스터 통합 계정의 원본 사진은 그대로 안전하게 보존되며, 담임 학급 관리와 자리배치도, 수업 도구에서만 귀여운 캐릭터 아바타로 표시됩니다.
+                        학교 마스터 통합 계정의 원본 사진은 그대로 안전하게 보존되며, 학급 관리와 자리배치도, 수업 도구에만 표시될 학생 사진 파일이나 캐릭터 아바타를 등록할 수 있습니다.
                       </p>
                     </div>
                   </div>
@@ -652,11 +712,19 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
                     <div className="flex items-center gap-3">
                       <div className="relative">
                         {customAvatar ? (
-                          <div
-                            className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl border-2 shadow-xs ${customAvatar.bgClass || 'bg-amber-100'} ${customAvatar.borderClass || 'border-amber-300'}`}
-                          >
-                            {customAvatar.emoji || '🦁'}
-                          </div>
+                          customAvatar.type === 'url' ? (
+                            <img
+                              src={customAvatar.value}
+                              alt={studentName}
+                              className="w-14 h-14 rounded-2xl object-cover border-2 border-violet-400 shadow-xs"
+                            />
+                          ) : (
+                            <div
+                              className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl border-2 shadow-xs ${customAvatar.bgClass || 'bg-amber-100'} ${customAvatar.borderClass || 'border-amber-300'}`}
+                            >
+                              {customAvatar.emoji || '🦁'}
+                            </div>
+                          )
                         ) : defaultPhotoUrl ? (
                           <img
                             src={defaultPhotoUrl}
@@ -679,10 +747,17 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
                           <span className="text-xs font-black text-slate-900">
                             {customAvatar ? customAvatar.name : '기본 학교 사진'}
                           </span>
+                          {customAvatar?.fileSize && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono text-emerald-700 border-emerald-300 bg-emerald-50">
+                              {customAvatar.fileSize}
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-[11px] text-slate-400 mt-0.5">
                           {customAvatar
-                            ? '학급 전용 아바타가 화면에 표시되고 있습니다.'
+                            ? customAvatar.type === 'url'
+                              ? '직접 등록한 최적화 사진이 학급 화면에 표시되고 있습니다.'
+                              : '학급 전용 캐릭터 아바타가 화면에 표시되고 있습니다.'
                             : '마스터 계정에 등록된 사진이 표시되고 있습니다.'}
                         </p>
                       </div>
@@ -693,7 +768,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
                         variant="outline"
                         size="sm"
                         onClick={handleResetToDefaultPhoto}
-                        className="h-8 px-3 rounded-xl text-xs font-bold text-rose-600 border-rose-200 hover:bg-rose-50 gap-1"
+                        className="h-8 px-3 rounded-xl text-xs font-bold text-rose-600 border-rose-200 hover:bg-rose-50 gap-1 shrink-0"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                         기본 사진으로 복원
@@ -701,10 +776,59 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
                     )}
                   </div>
 
-                  {/* 프리셋 아바타 그리드 (16종) */}
+                  {/* ─── 1. 사진 파일 직접 등록 (용량 자동 최적화) ─── */}
+                  <div className="p-4 bg-white rounded-2xl border-2 border-dashed border-violet-200 hover:border-violet-400 transition-colors shadow-2xs">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleImageFileUpload}
+                    />
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center shrink-0 mt-0.5">
+                          <Upload className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h5 className="text-xs font-black text-slate-900">내 PC에서 사진 파일 등록</h5>
+                            <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] px-1.5 py-0 font-bold">
+                              용량 자동 최적화 (1:1 크롭)
+                            </Badge>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                            스마트폰이나 카메라 고화질 사진(5MB~10MB)도 1:1 규격(20~30KB 내외)으로 자동 압축되어 빠르게 로딩됩니다.
+                          </p>
+                        </div>
+                      </div>
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={isUploading}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="h-9 px-4 rounded-xl text-xs font-black bg-violet-600 hover:bg-violet-700 text-white shrink-0 shadow-xs gap-1.5"
+                      >
+                        {isUploading ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>최적화 중...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Camera className="w-3.5 h-3.5" />
+                            <span>사진 파일 선택</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* ─── 2. 프리셋 캐릭터 아바타 그리드 (16종) ─── */}
                   <div>
                     <h5 className="text-xs font-black text-slate-700 mb-2.5 flex items-center gap-1">
-                      <span>캐릭터 아바타 선택</span>
+                      <span>또는 캐릭터 아바타 선택</span>
                       <span className="text-slate-400 font-normal">({AVATAR_PRESETS.length}종)</span>
                     </h5>
                     <div className="grid grid-cols-4 sm:grid-cols-8 gap-2.5">

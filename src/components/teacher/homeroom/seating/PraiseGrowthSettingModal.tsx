@@ -11,9 +11,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Sprout, Star, Sparkles, Check, RotateCcw, ArrowRight } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Sprout, Star, Sparkles, Check, RotateCcw, ArrowRight, Gift } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
+import type { DeskSlot } from '@/lib/types/seating';
+import { RewardManagerTab } from './reward/RewardManagerTab';
 
 export interface PraiseTierLevel {
   level: number;
@@ -126,19 +129,23 @@ interface PraiseGrowthSettingModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   classKey: string;
+  slots?: DeskSlot[];
 }
 
 export const PraiseGrowthSettingModal: React.FC<PraiseGrowthSettingModalProps> = ({
   isOpen,
   onOpenChange,
   classKey,
+  slots = [],
 }) => {
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<'tiers' | 'rewards'>('tiers');
   const [tiers, setTiers] = useState<PraiseTierLevel[]>(DEFAULT_GROWTH_TIERS);
 
   useEffect(() => {
     if (isOpen) {
       setTiers(getSavedGrowthTiers(classKey));
+      setActiveTab('tiers');
     }
   }, [isOpen, classKey]);
 
@@ -183,122 +190,155 @@ export const PraiseGrowthSettingModal: React.FC<PraiseGrowthSettingModalProps> =
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl p-6 max-h-[90vh] overflow-y-auto rounded-3xl border-2 border-slate-200">
-        <DialogHeader className="pb-3 border-b border-slate-100">
+      <DialogContent className="sm:max-w-2xl p-6 max-h-[90vh] overflow-y-auto rounded-3xl border-2 border-slate-200">
+        <DialogHeader className="pb-2 border-b border-slate-100">
           <DialogTitle className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-base font-black text-slate-900">
               <Sprout className="w-5 h-5 text-emerald-600" />
-              <span>칭찬 성장 체계 및 등급 가이드</span>
+              <span>칭찬 시스템 설정</span>
             </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={handleResetToDefault}
-              className="text-xs text-slate-500 hover:text-slate-800 h-8 gap-1"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>기본값 복원</span>
-            </Button>
+            {activeTab === 'tiers' && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleResetToDefault}
+                className="text-xs text-slate-500 hover:text-slate-800 h-8 gap-1"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>기본값 복원</span>
+              </Button>
+            )}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl text-xs text-emerald-900 flex items-start gap-2">
-            <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold">칭찬 점수가 쌓일수록 학생 카드의 등급과 색상이 진화합니다!</p>
-              <p className="text-[11px] text-emerald-700 mt-0.5">
-                아래에서 각 성장 단계의 이름과 필요 점수를 학급 상황에 맞게 직접 편집할 수 있습니다.
-              </p>
+        <Tabs
+          value={activeTab}
+          onValueChange={(val) => setActiveTab(val as 'tiers' | 'rewards')}
+          className="w-full"
+        >
+          <TabsList className="grid grid-cols-2 w-full p-1 bg-slate-100/90 rounded-2xl h-11 border border-slate-200 mt-1 mb-2">
+            <TabsTrigger
+              value="tiers"
+              className="rounded-xl font-black text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:text-emerald-700 data-[state=active]:shadow-xs gap-1.5 transition-all"
+            >
+              <Sprout className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span className="truncate">칭찬 성장 체계 및 등급 가이드</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="rewards"
+              className="rounded-xl font-black text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:text-amber-700 data-[state=active]:shadow-xs gap-1.5 transition-all"
+            >
+              <Gift className="w-4 h-4 text-amber-500 shrink-0" />
+              <span className="truncate">보상 관리</span>
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ─── 탭 1: 칭찬 성장 체계 및 등급 가이드 ─── */}
+          <TabsContent value="tiers" className="space-y-4 py-1 m-0 focus-visible:outline-none">
+            <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl text-xs text-emerald-900 flex items-start gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">칭찬 점수가 쌓일수록 학생 카드의 등급과 색상이 진화합니다!</p>
+                <p className="text-[11px] text-emerald-700 mt-0.5">
+                  아래에서 각 성장 단계의 이름과 필요 점수를 학급 상황에 맞게 직접 편집할 수 있습니다.
+                </p>
+              </div>
             </div>
-          </div>
 
-          {/* 성장 단계 목록 */}
-          <div className="space-y-2.5">
-            {tiers.map((tier, idx) => (
-              <motion.div
-                key={tier.level}
-                whileHover={{ scale: 1.01 }}
-                className={`p-3 rounded-2xl border-2 ${tier.cardBorderClass} ${tier.cardBgClass} flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs`}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl shrink-0 select-none">{tier.icon}</span>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono font-bold text-slate-400">
-                        Lv.{tier.level}
-                      </span>
-                      <Input
-                        type="text"
-                        value={tier.name}
-                        onChange={(e) => handleNameChange(idx, e.target.value)}
-                        className="h-8 text-xs font-black w-40 sm:w-44 bg-white/90 border border-slate-300 rounded-xl px-2"
-                        placeholder="등급 명칭 입력..."
-                      />
-                      <Badge className={`text-[10px] px-2 py-0.5 ${tier.badgeClass}`}>
-                        미리보기
-                      </Badge>
+            {/* 성장 단계 목록 */}
+            <div className="space-y-2.5">
+              {tiers.map((tier, idx) => (
+                <motion.div
+                  key={tier.level}
+                  whileHover={{ scale: 1.01 }}
+                  className={`p-3 rounded-2xl border-2 ${tier.cardBorderClass} ${tier.cardBgClass} flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl shrink-0 select-none">{tier.icon}</span>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono font-bold text-slate-400">
+                          Lv.{tier.level}
+                        </span>
+                        <Input
+                          type="text"
+                          value={tier.name}
+                          onChange={(e) => handleNameChange(idx, e.target.value)}
+                          className="h-8 text-xs font-black w-40 sm:w-44 bg-white/90 border border-slate-300 rounded-xl px-2"
+                          placeholder="등급 명칭 입력..."
+                        />
+                        <Badge className={`text-[10px] px-2 py-0.5 ${tier.badgeClass}`}>
+                          미리보기
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium">{tier.desc}</p>
                     </div>
-                    <p className="text-[11px] text-slate-500 font-medium">{tier.desc}</p>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0 bg-white/80 p-1.5 rounded-xl border border-slate-200">
-                  <span className="text-xs font-bold text-slate-600">기준:</span>
-                  {idx === 0 ? (
-                    <span className="text-xs font-mono font-black text-slate-700 px-2">
-                      0점 ~ {tier.maxPoints}점
-                    </span>
-                  ) : idx === tiers.length - 1 ? (
-                    <div className="flex items-center gap-1">
-                      <Input
-                        type="number"
-                        min="1"
-                        max="999"
-                        value={tier.minPoints}
-                        onChange={(e) => handleMinPointsChange(idx, Number(e.target.value) || 0)}
-                        className="h-7 w-16 text-xs font-mono font-black text-center bg-white border rounded-lg px-1"
-                      />
-                      <span className="text-xs font-bold text-slate-700">점 이상</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <Input
-                        type="number"
-                        min="1"
-                        max="999"
-                        value={tier.minPoints}
-                        onChange={(e) => handleMinPointsChange(idx, Number(e.target.value) || 0)}
-                        className="h-7 w-16 text-xs font-mono font-black text-center bg-white border rounded-lg px-1"
-                      />
-                      <span className="text-xs font-bold text-slate-500">~</span>
-                      <span className="text-xs font-mono font-black text-slate-700">{tier.maxPoints}점</span>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
+                  <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0 bg-white/80 p-1.5 rounded-xl border border-slate-200">
+                    <span className="text-xs font-bold text-slate-600">기준:</span>
+                    {idx === 0 ? (
+                      <span className="text-xs font-mono font-black text-slate-700 px-2">
+                        0점 ~ {tier.maxPoints}점
+                      </span>
+                    ) : idx === tiers.length - 1 ? (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          min="1"
+                          max="999"
+                          value={tier.minPoints}
+                          onChange={(e) => handleMinPointsChange(idx, Number(e.target.value) || 0)}
+                          className="h-7 w-16 text-xs font-mono font-black text-center bg-white border rounded-lg px-1"
+                        />
+                        <span className="text-xs font-bold text-slate-700">점 이상</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          min="1"
+                          max="999"
+                          value={tier.minPoints}
+                          onChange={(e) => handleMinPointsChange(idx, Number(e.target.value) || 0)}
+                          className="h-7 w-16 text-xs font-mono font-black text-center bg-white border rounded-lg px-1"
+                        />
+                        <span className="text-xs font-bold text-slate-500">~</span>
+                        <span className="text-xs font-mono font-black text-slate-700">{tier.maxPoints}점</span>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </TabsContent>
 
-        <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-slate-100">
+          {/* ─── 탭 2: 보상 관리 ─── */}
+          <TabsContent value="rewards" className="space-y-4 py-1 m-0 focus-visible:outline-none">
+            <RewardManagerTab classKey={classKey} slots={slots} />
+          </TabsContent>
+        </Tabs>
+
+        <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-slate-100">
           <Button
             type="button"
             variant="outline"
             onClick={() => onOpenChange(false)}
             className="rounded-2xl text-xs font-bold h-10"
           >
-            취소
+            {activeTab === 'tiers' ? '취소' : '닫기'}
           </Button>
-          <Button
-            type="button"
-            onClick={handleSave}
-            className="rounded-2xl text-xs font-black h-10 bg-[#2471B2] hover:bg-[#1E629D] text-white border-b-2 border-[#1A5384] shadow-xs"
-          >
-            <Check className="w-4 h-4 mr-1" />
-            성장 체계 저장
-          </Button>
+          {activeTab === 'tiers' && (
+            <Button
+              type="button"
+              onClick={handleSave}
+              className="rounded-2xl text-xs font-black h-10 bg-[#2471B2] hover:bg-[#1E629D] text-white border-b-2 border-[#1A5384] shadow-xs"
+            >
+              <Check className="w-4 h-4 mr-1" />
+              성장 체계 저장
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

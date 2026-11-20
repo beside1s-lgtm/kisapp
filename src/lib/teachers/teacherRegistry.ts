@@ -9,6 +9,7 @@
  */
 import { collection, doc, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { getDb } from '@/lib/firebase';
+import { isActualSignature } from '@/lib/safety/stampHelper';
 import { getKisbusDb } from '@/lib/kisbus/firebase';
 import type { UserProfile } from '@/lib/types';
 import {
@@ -42,7 +43,8 @@ function buildSignatureMaps(users: Array<Record<string, any>>) {
     const nameKey = normalizeTeacherName(u.name);
     if (nameKey) nameCount.set(nameKey, (nameCount.get(nameKey) || 0) + 1);
     const sig = typeof u.signature === 'string' ? u.signature.trim() : '';
-    if (!sig) return;
+    // 빈 이미지·가상 도장은 서명으로 치지 않음
+    if (!isActualSignature(sig)) return;
     const email = normalizeTeacherEmail(u.email || u.id);
     if (email) sigByEmail.set(email, sig);
     if (nameKey) nameSigs.set(nameKey, (nameSigs.get(nameKey) || new Set()).add(sig));
@@ -169,7 +171,7 @@ export function findSignatureFromRecords(
   const fromDocs = new Set<string>();
   docs.forEach((d) => {
     Object.entries(d?.instructorSignatures || {}).forEach(([k, v]) => {
-      if (normalizeTeacherName(k) === nk && typeof v === 'string' && v.trim()) fromDocs.add(v);
+      if (normalizeTeacherName(k) === nk && isActualSignature(v)) fromDocs.add(v);
     });
   });
   return fromDocs.size === 1 ? Array.from(fromDocs)[0] : '';

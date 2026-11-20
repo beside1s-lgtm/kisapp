@@ -196,7 +196,7 @@ export const SeatingPraiseWidget: React.FC<SeatingPraiseWidgetProps> = ({
       {/* ─── 위젯 헤더 바 (접힘/펼침 공통 상시 노출) ─── */}
       <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
         {/* 좌측: 타이틀 및 학급/팀/분단 선택 드롭다운 */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
           <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center text-white shadow-xs shrink-0">
             <Trophy className="w-4 h-4" />
           </div>
@@ -209,10 +209,10 @@ export const SeatingPraiseWidget: React.FC<SeatingPraiseWidgetProps> = ({
             value={viewMode}
             onValueChange={(val: PraiseWidgetViewMode) => setViewMode(val)}
           >
-            <SelectTrigger className="h-7 text-xs font-bold bg-slate-50 border-slate-200 hover:bg-slate-100 rounded-lg px-2 w-[115px] shrink-0">
+            <SelectTrigger className="h-7 text-xs font-bold bg-slate-50 border-slate-200 hover:bg-slate-100 rounded-lg px-2.5 w-[136px] sm:w-[145px] shrink-0 whitespace-nowrap break-keep [&>span]:whitespace-nowrap [&>span]:break-keep">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="z-[9999]">
+            <SelectContent className="z-[100000]">
               <SelectItem value="ALL" className="text-xs font-bold">
                 <span className="flex items-center gap-1.5">
                   <Users className="w-3.5 h-3.5 text-blue-600" />
@@ -235,7 +235,7 @@ export const SeatingPraiseWidget: React.FC<SeatingPraiseWidgetProps> = ({
           </Select>
 
           {/* 총 칭찬 점수 및 달성률 */}
-          <span className="text-xs font-black text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full shrink-0">
+          <span className="text-xs font-black text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full min-w-0 truncate">
             총 {totalClassPraise}점 / 목표 {targetGoal}점 ({pct}%)
           </span>
         </div>

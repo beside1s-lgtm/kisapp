@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Eraser, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
 import { compressImage } from '@/lib/utils';
+import { optimizeSignatureImage } from '@/lib/utils/imageOptimizer';
 import { useToast } from '@/hooks/use-toast';
 import { getDb } from '@/lib/firebase';
 import { collection, doc, getDocs, query, setDoc, where } from 'firebase/firestore';
@@ -64,19 +65,20 @@ export function SignatureRegisterModal({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64 = event.target?.result as string;
-      if (base64) {
-        try {
-          const compressed = await compressImage(base64, 300);
-          setSigPreview(compressed);
-        } catch {
-          setSigPreview(base64);
-        }
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const opt = await optimizeSignatureImage(file);
+      setSigPreview(opt.dataUrl);
+      toast({
+        title: '서명 이미지 최적화 완료',
+        description: `서명 파일이 준비되었습니다. (${opt.originalSize} ➔ ${opt.optimizedSize})`,
+      });
+    } catch {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setSigPreview(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSave = async () => {
@@ -84,13 +86,15 @@ export function SignatureRegisterModal({
 
     if (signatureMode === 'draw' && !finalSignature) {
       if (sigCanvas.current && !sigCanvas.current.isEmpty()) {
-        finalSignature = sigCanvas.current.getTrimmedCanvas().toDataURL('image/png');
+        const rawDrawn = sigCanvas.current.getTrimmedCanvas().toDataURL('image/png');
         // 한 획·점처럼 너무 작은 서명은 도장 자리에 "|"처럼 보이므로 다시 그리게 한다
-        const problem = await checkDrawnSignature(finalSignature);
+        const problem = await checkDrawnSignature(rawDrawn);
         if (problem) {
           toast({ variant: 'destructive', title: '서명을 다시 그려 주세요', description: problem });
           return;
         }
+        const opt = await optimizeSignatureImage(rawDrawn);
+        finalSignature = opt.dataUrl;
       }
     }
 

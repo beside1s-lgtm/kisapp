@@ -29,11 +29,12 @@ export const AVATAR_PRESETS: CustomAvatarPreset[] = [
 
 export interface CustomAvatarData {
   type: 'preset' | 'url';
-  value: string; // preset id or image url
+  value: string; // preset id or image url (base64)
   emoji?: string;
   name?: string;
   bgClass?: string;
   borderClass?: string;
+  fileSize?: string;
   updatedAt: string;
 }
 

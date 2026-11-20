@@ -137,6 +137,7 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
 * **`class-management/` 서브 모듈**:
   * `HomeworkTabContent.tsx` : 미확인 과제 통합 피드, 시간순 정렬 및 담임 확인 처리
   * `HomeworkArchiveView.tsx` : 확인된 숙제 아카이브 보관함, 학생별 제출 통계/4단계 평가 산출 및 XLSX 다운로드
+  * `RecurringHomeworkDialog.tsx` : 정기 과제(반복 과제) 설정 팝업 — 매주/격주/매월 주기, 요일/날짜 선택, 기간 설정, 활성/일시중지 토글, 삭제 관리. 해당 날짜 도달 시 자동 과제 추가 트리거 연동
   * `BehaviorTabContent.tsx` : 학생 행동특성 및 종합의견 기록
   * `MemoTabContent.tsx` : 일일 메모 및 특이사항 관리
   * `MatrixTabContent.tsx` : 학생 평가 매트릭스 뷰
@@ -145,7 +146,7 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
   * `EditHomeworkDialog.tsx` : 과제 수정 모달
   * `MemoHistoryDialog.tsx` : 과거 메모 이력 조회 모달
 * **`tools/` (수업 도구 종합 서브 모듈)**:
-  * `ClassToolsMainTab.tsx` : 수업 도구 메인 컨테이너 (자리 배치, 칭찬, 뽑기, 팀 나누기, 칠판, 숙제 6대 핵심 도구 탭 및 전체화면 오케스트레이션)
+  * `ClassToolsMainTab.tsx` : 수업 도구 메인 컨테이너 (자리 배치, 칭찬, 숙제, 칠판, 뽑기, 팀 나누기 6대 핵심 도구 탭 및 전체화면 오케스트레이션)
   * `PraiseTabContent.tsx` : 칭찬 전용 탭 (우리 반 칭찬 온도계 게이지 및 학생별 10개 단위 보석 티어 칭찬 도장판 그리드, 원터치 칭찬 부여)
   * `RandomPickerTab.tsx` : 1~12명 발표자 및 인원 랜덤 뽑기 탭 (원클릭 칩 선택, 긴장감 넘치는 롤링 셔플 애니메이션, 당첨자 영웅 카드 및 즉시 칭찬 연동)
   * `TeamGeneratorTab.tsx` : 모둠/팀 나누기 탭 (팀 개수/팀당 인원수 분할, 성별 균등 배분, 팀별 컬러 카드, 팀장 랜덤 뽑기, 명단 복사 및 A4 인쇄)
@@ -159,10 +160,19 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
   * `SeatingTeamBar.tsx` : 자리 배치도 상단 슬라이드 다운 팀 나누기 탭 바 (나누기 방식/팀 수 선택, 팀별 명단 보기 메뉴, 팀 나누기 실행)
   * `TeamResultModal.tsx` : 팀 나누기 결과 팝업 모달 (각 팀별 이름, 색상 팔레트, 팀원 목록 및 자리배치도 실시간 색상 연동 확인)
   * `TeamListModal.tsx` : 팀별 상세 명단 확인 및 팀 이름/색상 수정 모달
-  * `StudentDetailModal.tsx` : 좌석 우클릭 시 화면 중앙 대형 학생 정보 카드 및 수업·학급 관리 톱니바퀴 모달 (대형 프로필/아바타, 번호/성명/성별/팀 배지, 칭찬 게이지, 관리 4대 탭: 16종 학급 캐릭터 아바타 등록/복원, 과제 제출 토글/통계, 칭찬 점수/사유 가산, 상담·관찰 일지 등록/열람/삭제)
+  * `StudentDetailModal.tsx` : 좌석 우클릭 시 화면 중앙 대형 학생 정보 카드 및 수업·학급 관리 톱니바퀴 모달 (대형 프로필/아바타, 번호/성명/성별/팀 배지, 칭찬 게이지, 관리 4대 탭: 내 PC 사진 파일 직접 등록 및 용량 자동 최적화/16종 캐릭터 아바타 등록/복원, 과제 제출 토글/통계, 칭찬 점수/사유 가산, 상담·관찰 일지 등록/열람/삭제)
   * `PraiseModal.tsx` : 좌석 클릭 시 학생 칭찬 포인트 부여/차감(+1, +2, +3, +5, -1), 칭찬 등급 직관적 아이콘(새싹/줄기/꽃봉오리/열매/나무/황금숲) 표출, 칭찬 사유 태그 및 좌석 고정/이동/비우기 관리 모달
   * `PraiseGaugeBar.tsx` : 학급 전체/분단별/모둠별 3대 뷰 전환 칭찬 온도계 프로그레스 바, 다주기(오늘/이번주/월간/학기/연간) 목표 드롭다운 선택 및 목표 점수 설정 팝오버, 실시간 집계 게이지 & 1등 왕관 배지 바
-  * `PraiseGrowthSettingModal.tsx` : 칭찬 성장 체계(티어) 가이드 및 커스텀 설정 모달 (새싹, 줄기, 꽃봉오리, 열매, 나무, 황금숲 성장 로드맵 및 단계별 기준 점수/명칭 커스텀 편집)
+  * `PraiseGrowthSettingModal.tsx` : 칭찬 시스템 관리 통합 모달 (칭찬 성장 체계/티어 가이드 탭 & 포인트 통장 및 보상 관리 탭 2분할 제공)
+  * **`reward/` 서브 모듈 (포인트 통장 및 보상 관리)**:
+    * `RewardManagerTab.tsx` : 학급 포인트 통장 & 보상 관리 메인 탭 컨테이너 (포인트 통장 현황, 보상 아이템 목록, 거래 내역 3대 서브 탭 제어)
+    * `AccountListSubTab.tsx` : 학생별 포인트 통장 잔액 현황, 시중 유통 포인트 통계, 보상 교환 처리 및 포인트 수동 지급/차감 모달
+    * `RewardItemSettingSubTab.tsx` : 교사 보상 아이템 목록 설정 (쿠폰, 특권, 상품 등 아이템 추가/수정/삭제, 활성화 토글, 기본 추천 보상 복원)
+    * `TransactionHistorySubTab.tsx` : 포인트 적립(+), 보상 교환 소비(-), 수동 조정 내역 시간순 타임라인 및 필터 검색
+  * **`promotion/` 서브 모듈 (칭찬 성장 등급 승급 축하 순차 팝업)**:
+    * `PraisePromotionModal.tsx` : 등급 승급 축하 팝업 모달 (복수 승급 시 등급별 그룹화, 높은 등급부터 순차 팝업 큐 제어, 학생 사진/이름/승급 등급/축하 멘트)
+    * `ConfettiCanvas.tsx` : 모달 오픈 시 화면 전면 화려한 축하 폭죽 파티클 렌더링 캔버스 엔진
+  * `SeatingDisplayToggles.tsx` : 자리배치도 내 칭찬 현황 바 및 책상 등급 노출 여부를 제어하는 컴팩트 토글 컨트롤러
   * `ViewOptionsPopover.tsx` : 학생 사진, 칭찬 포인트, 모둠/학급 게이지, 성별 배지 표시 여부를 켜고 끄는 선택적 보기 설정 팝오버
   * `SeatingConfigModal.tsx` : 자리배치도 대형 설정 모달 (분단형, 모둠형, 자유형 3대 대형, 짝꿍 성별 설정, 결과보기 효과 선택)
   * `StudentAssignModal.tsx` : 좌석 사전 지정(고정 핀) 및 학생 수동 배정/고정 해제/비우기 모달
@@ -232,9 +242,10 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
 * `create-weekly-schedule-dialog.tsx` : 주간 주요일정 등록 모달
 
 ### 자. 시스템 설정 및 조직도 (`src/components/settings/`, `src/components/settings-modal.tsx`)
-* `settings-modal.tsx` : 시스템 환경설정 메인 모달 (일반, 학사일정, 조직도, 전결규정, 사용자, 감사로그 탭 통합 관리 및 교직원 테이블 내 '담당 시설(학급)' 컬럼·배지 표출)
+* `settings-modal.tsx` : 시스템 환경설정 메인 모달 (일반, 학사일정, 조직도, 전결규정, 사용자, 감사로그 탭 통합 관리, 교직원 테이블 내 '서명/도장' 컬럼 및 서명 등록/미등록 필터, '담당 시설(학급)' 컬럼·배지 표출)
 * `settings/OrgSettingsTab.tsx` : 조직도 관리 메인 탭 (학교 리더십, 업무 담당, 학년별 담임/교과, 부서 관리, 시설 및 학급 5대 서브탭 오케스트레이션)
 * `settings/FacilitiesOrgTab.tsx` : [시설 및 학급] 전용 조직도 서브탭 (학교 전체 시설/학급 등록·수정·삭제, 순수 교직원 인라인 담당 배정, 차년도 학급 및 시설 매핑 토글, 2026년 시설/담당자 ➔ 2027년 시설/인수자 4단 확장 헤더 테이블 및 일괄 저장 지원)
+* `settings/TeacherSignatureProxyModal.tsx` : 교직원 서명/도장 확인 및 대리 등록 모달 (실제 서명 판별 및 검증, 결재란 직인 날인 예시 시뮬레이션, 도장/서명 사진 초경량 투명화 최적화, 직접 그리기 서명패드 및 대리 등록·삭제 지원)
 
 ### 차. 학년 말 인수인계 및 비품 인계서 (`src/components/handover/`)
 * `src/app/(app)/teacher/handover/page.tsx` : 학년 말 인수인계 통합 메인 페이지 (업무 인수인계 vs 비품 인수인계 2대 메인 모드 탭, 교무부장/관리자 전용 상단 인수인계 제어 토글 `[열림(잠그기)] / [잠김(열기)]`, 전역 마감 배너 및 잠금 상태 하위 전파)
@@ -274,8 +285,13 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
 * `healthService.ts` : 보건실 건강기록부 및 신체검사 데이터 CRUD
 * `notificationService.ts` : 결재/출결/버스 알림 전송
 * `src/lib/types/teams.ts` : 학급 팀 나누기 모델, 8대 테마 색상 팔레트 및 로컬 동기화 헬퍼
-* `src/lib/types/avatars.ts` : 학급 전용 학생 캐릭터 아바타(16종 프리셋) 모델 및 마스터 사진 보존 로컬 스토리지 헬퍼
+* `src/lib/types/avatars.ts` : 학급 전용 학생 캐릭터 아바타(16종 프리셋) 및 직접 등록 사진(Base64) 모델, 로컬 스토리지 헬퍼
+* `src/lib/utils/imageOptimizer.ts` : 브라우저 Canvas 기반 학생 아바타 사진(1:1 중앙 크롭) 및 교직원 서명/도장(종횡비 보존 투명 PNG, <30KB) 자동 최적화 압축 유틸
 * `src/lib/types/seating.ts` : 자리배치도 3대 대형 설정 모델, 좌석 슬롯, 칭찬 티어/성장 단계 계산 엔진
+* `src/lib/types/praiseReward.ts` : 칭찬 보상 아이템, 학생별 소비형 포인트 통장(잔액/누적), 거래 내역 타입 모델
+* `src/lib/types/praisePromotion.ts` : 칭찬 성장 등급 승급 학생 정보 및 등급별 순차 그룹 모델
+* `src/lib/services/praiseRewardService.ts` : 보상 아이템 CRUD, 학생 계좌 싱크, 칭찬 적립/보상 소비/수동 입출금 및 거래 내역 영속화 엔진
+* `src/lib/services/praisePromotionStore.ts` : 승급 판별 평가 및 등급별 승급 이벤트 발행 버스
 
 ### 나. 스쿨버스 로직 (`src/lib/kisbus/`)
 * `assignments.ts` : 등교/하교/방과후 버스 좌석 배정 엔진

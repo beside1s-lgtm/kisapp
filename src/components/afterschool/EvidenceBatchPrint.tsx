@@ -39,6 +39,12 @@ const PRINT_CSS = `
       background: #ffffff !important;
       -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
     }
+    svg {
+      -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
+    }
+    svg circle {
+      stroke: #000000 !important;
+    }
     body > *:not(.evidence-batch-root) { display: none !important; }
     .evidence-batch-root {
       position: static !important; overflow: visible !important; height: auto !important;

@@ -12,6 +12,7 @@ import { isFemaleStudent, isMaleStudent } from '@/lib/services/seatingService';
 import { TEAM_COLOR_PALETTES, type ClassTeamData, type TeamColorTheme } from '@/lib/types/teams';
 import { getCustomAvatar } from '@/lib/types/avatars';
 import { StudentDetailModal } from './StudentDetailModal';
+import type { SeatingHomeworkOverlay } from './SeatingHomeworkWidget';
 
 interface SeatingBoardViewProps {
   slots: DeskSlot[];
@@ -31,6 +32,8 @@ interface SeatingBoardViewProps {
   onMoveOrSwap: (sourceSlotId: string, targetSlotId: string) => void;
   onQuickPraise?: (slotId: string, delta: number) => void;
   onPraiseChange?: (slotId: string, delta: number) => void;
+  /** 숙제 [배치도에서 확인] — 전체화면일 때만 책상 카드 오른쪽에 과제 제출 여부 표시 */
+  homeworkOverlay?: SeatingHomeworkOverlay;
 }
 
 export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
@@ -51,6 +54,7 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
   onMoveOrSwap,
   onQuickPraise,
   onPraiseChange,
+  homeworkOverlay,
 }) => {
   // 우클릭 학생 상세 & 관리 모달 상태
   const [detailSlot, setDetailSlot] = useState<DeskSlot | null>(null);
@@ -100,6 +104,7 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
 
   // 컨테이너 너비 실시간 측정 (ResizeObserver)
   const containerRef = useRef<HTMLDivElement>(null);
+  const [containerHeight, setContainerHeight] = useState<number>(0);
   const [containerWidth, setContainerWidth] = useState<number>(() =>
     typeof window !== 'undefined' ? window.innerWidth : 1200
   );
@@ -110,6 +115,7 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
       for (const entry of entries) {
         if (entry.contentRect.width > 0) {
           setContainerWidth(entry.contentRect.width);
+          setContainerHeight(entry.contentRect.height);
         }
       }
     });
@@ -117,27 +123,136 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
     return () => ro.disconnect();
   }, []);
 
-  // 화면 크기 및 분단 수에 따라 책상 카드 폭이 좁아졌을 때 사진을 자동 감춤 처리하여 겹침 및 이름 잘림(...)을 100% 원천 차단!
-  // 대형 사진(74~82px) + 이름(4~5글자 75px) + 성별(20px) + 여백/패딩(20px) = 최소 185px 이상 확보되어야 이름이 절대 ...으로 잘리지 않고 여유롭게 수납됨.
-  const canFitPhoto = React.useMemo(() => {
+  // ─── 책상 카드 폭 계산: 실제로 들어갈 카드 폭을 추정 (전체화면 카드 안 배치 계산에 사용)
+  const hwItems = homeworkOverlay?.items ?? [];
+  const hwWanted = isFullscreen && hwItems.length > 0;
+  // 과제 표시 중에는 분단·모둠 칸과 카드 최대 폭을 넓혀 화면 양옆 빈 공간을 쓴다
+  const DIV_MAX = hwWanted ? 820 : 460;
+  const CARD_MAX = hwWanted ? 380 : 260;
+
+  const estDeskWidth = React.useMemo(() => {
     if (config?.layoutType === 'ROW') {
       const divisionCount = config?.rowConfig?.divisionCount ?? 3;
-      const totalCols = divisionCount * 2;
-      const totalSpacing = (divisionCount - 1) * 14 + divisionCount * 24;
-      const widthPerDesk = (containerWidth - totalSpacing) / totalCols;
-      return widthPerDesk >= 185;
+      const divGap = 14;
+      const divWidth = Math.min(DIV_MAX, (containerWidth - (divisionCount - 1) * divGap) / divisionCount);
+      // 분단 안쪽: 테두리·패딩(~16) + 카드 사이 간격(6)
+      return Math.min(CARD_MAX, (divWidth - 22) / 2);
     }
     if (config?.layoutType === 'GROUP') {
-      return containerWidth >= 900;
+      const cols = containerWidth >= 1024 ? 4 : containerWidth >= 768 ? 3 : 2;
+      const groupWidth = Math.min(DIV_MAX, (containerWidth - (cols - 1) * 14) / cols);
+      return Math.min(CARD_MAX, (groupWidth - 22) / 2);
     }
     if (config?.layoutType === 'FREE') {
       const cols = config?.freeConfig?.gridCols ?? 6;
-      return (containerWidth / cols) >= 185;
+      return Math.min(CARD_MAX, (containerWidth - 20) / cols - 4);
     }
-    return true;
-  }, [config?.layoutType, config?.rowConfig, config?.freeConfig, containerWidth]);
+    return CARD_MAX;
+  }, [config?.layoutType, config?.rowConfig, config?.freeConfig, containerWidth, DIV_MAX, CARD_MAX]);
 
-  const shouldShowPhoto = viewOptions.showPhoto && canFitPhoto;
+  // 일반 화면: 카드 폭이 충분할 때만 사진 (사진 74~82px + 이름 + 배지 ≈ 185px)
+  const canFitPhoto = estDeskWidth >= 185;
+
+  // ─── 전체화면: 책상 한 줄 높이 (칭찬·과제 현황 바를 펼치면 줄어듦)
+  const rowHeight = React.useMemo(() => {
+    if (!isFullscreen || containerHeight <= 0) return 130;
+    const CHALK = 44; // 칠판 바 + 간격
+    if (config?.layoutType === 'ROW') {
+      const rows = Math.max(1, ...Array.from({ length: config?.rowConfig?.divisionCount ?? 3 }, (_, i) =>
+        new Set(slots.filter((sl) => sl.groupId === i + 1).map((sl) => sl.row)).size));
+      // 분단 배지(26) + 분단 칸 테두리·패딩(16) + 줄 간격(4)
+      return (containerHeight - CHALK - 42 - (rows - 1) * 4) / rows;
+    }
+    if (config?.layoutType === 'GROUP') {
+      const groupIds = Array.from(new Set(slots.filter((sl) => sl.groupId !== undefined).map((sl) => sl.groupId)));
+      const cols = containerWidth >= 1024 ? 4 : containerWidth >= 768 ? 3 : 2;
+      const groupRows = Math.max(1, Math.ceil(groupIds.length / cols));
+      const perGroup = Math.max(1, ...groupIds.map((g) => Math.ceil(slots.filter((sl) => sl.groupId === g).length / 2)));
+      return (containerHeight - CHALK - groupRows * 42 - (groupRows - 1) * 14 - groupRows * (perGroup - 1) * 4) / (groupRows * perGroup);
+    }
+    if (config?.layoutType === 'FREE') {
+      const rows = config?.freeConfig?.gridRows ?? 5;
+      return (containerHeight - CHALK - 20 - (rows - 1) * 4) / rows;
+    }
+    return 130;
+  }, [isFullscreen, containerHeight, containerWidth, config?.layoutType, config?.rowConfig, config?.freeConfig, slots]);
+
+  // ─── 전체화면 카드 안 배치 (카드 크기에 맞춰 사진·이름·과제 칸 크기를 계산 — 요소끼리 겹치지 않게)
+  //   세로가 넉넉: 사진(크기 가변) + 번호·칭찬 배지 + 이름 / 부족: 사진 숨김 / 아주 부족: 번호·배지도 숨기고 이름만
+  const fsLayout = React.useMemo(() => {
+    if (!isFullscreen) return null;
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    const deskH = Math.max(0, Math.min(rowHeight, 130));
+    const innerH = deskH - 14; // 테두리(2+4) + 위아래 여백(4+4)
+    const innerW = estDeskWidth - 16; // 테두리(2+2) + 좌우 여백(6+6)
+    const level: 'full' | 'compact' | 'mini' = innerH >= 44 ? 'full' : innerH >= 31 ? 'compact' : 'mini';
+
+    // 과제 칸: 과제명(앞 3글자) 위 + 제출 동그라미 아래, 과제가 많으면 여러 줄
+    let hw: null | { titleOn: boolean; dot: number; titleFont: number; perRow: number; capacity: number; itemW: number; colW: number } = null;
+    if (hwWanted && containerWidth >= 1024) {
+      const n = hwItems.length;
+      const titleOn = innerH >= 30;
+      // 사진(최소 48px)·이름 자리를 먼저 남기고, 남는 폭 안에서 과제 칸을 배치
+      const wantPhoto = level === 'full' && viewOptions.showPhoto;
+      const maxColW = innerW - 4 - (wantPhoto ? 76 + Math.min(innerH, 48) : 64);
+      // 글자를 크게 → 작게 줄여 가며 모든 과제가 들어가는 가장 큰 크기를 고른다 (끝내 안 들어가면 +n)
+      // 과제 칸은 카드 폭의 약 40%까지만 (이름·사진 자리 보호) — 넘치면 글자를 줄이고 줄 수를 늘림
+      const softColW = Math.min(maxColW, innerW * 0.4);
+      type HwPick = { dot: number; titleFont: number; itemW: number; rows: number; perRowMax: number };
+      let pick: HwPick | null = null;
+      let fallback: HwPick | null = null;
+      for (let tf = 15; tf >= 9; tf--) {
+        const dot = Math.round(clamp(titleOn ? tf / 0.62 : innerH * 0.8, 14, 26));
+        const titleFont = titleOn ? tf : 0;
+        const itemW = Math.max(dot, titleOn ? Math.ceil(titleFont * 3.1) : dot);
+        const itemH = dot + (titleOn ? titleFont + 3 : 0);
+        const rows = Math.max(1, Math.floor((innerH + 3) / (itemH + 3)));
+        const perRowMax = Math.max(1, Math.min(4, Math.floor((maxColW - 9 + 4) / (itemW + 4))));
+        const cand = { dot, titleFont: titleFont || 10, itemW, rows, perRowMax };
+        const perRow = Math.min(n, perRowMax, Math.max(1, Math.ceil(n / rows)));
+        const colW = perRow * itemW + (perRow - 1) * 4 + 9;
+        const fitsAll = rows * perRowMax >= n;
+        if (!titleOn || (fitsAll && colW <= softColW)) { pick = cand; break; }
+        if (fitsAll && !fallback) fallback = cand; // 다 들어가는 가장 큰 글자 (폭은 40% 초과)
+        pick = cand; // 끝까지 안 들어가면 가장 작은 글자 + '+n'
+      }
+      // 40% 안에 모두 들어가는 크기가 없으면: 다 들어가는 가장 큰 글자를 우선
+      if (fallback && !(pick && pick.rows * pick.perRowMax >= n && Math.min(n, pick.perRowMax, Math.ceil(n / pick.rows)) * (pick.itemW + 4) + 5 <= softColW)) pick = fallback;
+      if (pick && maxColW >= pick.itemW + 9) {
+        const perRow = Math.min(n, pick.perRowMax, Math.max(1, Math.ceil(n / pick.rows)));
+        const capacity = perRow * Math.min(pick.rows, Math.ceil(n / perRow));
+        const colW = perRow * pick.itemW + (perRow - 1) * 4 + 9; // 왼쪽 구분선·여백
+        hw = { titleOn, dot: pick.dot, titleFont: pick.titleFont, perRow, capacity, itemW: pick.itemW, colW };
+      }
+    }
+    const showHw = Boolean(hw && innerW - hw.colW - 4 >= 64);
+    const contentW = innerW - (showHw && hw ? hw.colW + 4 : 0);
+    const photo = level === 'full' && viewOptions.showPhoto ? Math.floor(Math.min(80, innerH, contentW - 76)) : 0;
+    return { innerH, innerW, level, hw: showHw ? hw : null, contentW, photo: photo >= 34 ? photo : 0 };
+  }, [isFullscreen, rowHeight, estDeskWidth, hwWanted, hwItems.length, containerWidth, viewOptions.showPhoto]);
+
+  const showHwOnCards = Boolean(fsLayout?.hw);
+  const isMini = fsLayout?.level === 'mini';
+  const shouldShowPhoto = fsLayout ? fsLayout.photo > 0 : viewOptions.showPhoto && canFitPhoto;
+
+  // 전체화면: 이름이 남는 공간을 최대한 채우도록 글자 크기 계산 (한글 1글자 ≈ 1em)
+  const fsNameFont = (name: string, withBadge: boolean): number | undefined => {
+    if (!fsLayout) return undefined;
+    const len = Math.max(2, [...name].length) * 1.06;
+    const badgeW = withBadge ? 26 : 0;
+    let w: number, h: number;
+    if (fsLayout.level === 'mini') {
+      w = fsLayout.contentW - 6;
+      h = fsLayout.innerH * 0.9;
+    } else if (fsLayout.photo > 0) {
+      w = fsLayout.contentW - fsLayout.photo - 14 - badgeW;
+      h = (fsLayout.innerH - 20) * 0.85;
+    } else {
+      w = fsLayout.contentW - 6 - badgeW;
+      h = (fsLayout.innerH - 17) * 0.95;
+    }
+    return Math.floor(Math.max(11, Math.min(44, h, w / len)));
+  };
 
   // 개별 슬롯 렌더러
   const renderDeskCard = (slot: DeskSlot, displayIndex: number) => {
@@ -147,9 +262,7 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
     // canFitPhoto = false (화면이 좁을 때)에는 사진을 감추고 카드 폭과 높이를 컴팩트하게 줄여 겹침과 이름 잘림을 원천 차단!
     // canFitPhoto = true (화면이 충분히 넓을 때)에는 빨간 동그라미 규격의 대형 사진(74~82px)과 함께 시원한 크기 적용!
     const cardSizeClass = isFullscreen
-      ? shouldShowPhoto
-        ? 'w-full max-w-[260px] h-full flex-1 min-w-0 min-h-[70px] lg:min-h-[88px] max-h-[130px]'
-        : 'w-full max-w-[190px] h-full flex-1 min-w-0 min-h-[52px] max-h-[90px]'
+      ? `w-full ${hwWanted ? 'max-w-[380px]' : 'max-w-[260px]'} h-full flex-1 min-w-0 min-h-0 max-h-[130px] overflow-hidden !px-1.5 !py-1`
       : shouldShowPhoto
       ? 'w-full flex-1 min-w-0 max-w-[260px] h-[84px] sm:h-[92px] lg:h-[98px]'
       : 'w-full flex-1 min-w-0 max-w-[170px] h-[52px] sm:h-[58px] lg:h-[62px]';
@@ -273,6 +386,79 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
       }
     };
 
+    // 카드 오른쪽 과제 제출 표시: 과제명(앞 3글자) + 제출 동그라미 (번호 = 과제 현황 바 번호, 초록 ✓ = 제출, 빨강 = 미제출, 누르면 바뀜)
+    const renderHomeworkColumn = () => {
+      const L = fsLayout?.hw;
+      if (!L || !homeworkOverlay || !isRevealed || !slot.studentName) return null;
+      const over = hwItems.length > L.capacity;
+      const shown = hwItems.slice(0, over ? Math.max(1, L.capacity - 1) : L.capacity);
+      const rest = hwItems.length - shown.length;
+      return (
+        <div
+          className="shrink-0 self-stretch flex items-center justify-center border-l border-slate-300/70 ml-1 pl-1.5 overflow-hidden"
+          style={{ width: L.colW }}
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className="grid gap-x-1 gap-y-[3px] justify-items-center content-center"
+            style={{ gridTemplateColumns: `repeat(${L.perRow}, ${L.itemW}px)` }}
+          >
+            {shown.map((h) => {
+              const done = homeworkOverlay.isDone(h.id, slot.studentId ?? undefined, slot.studentName ?? undefined);
+              const canToggle = Boolean(homeworkOverlay.onToggle && slot.studentId);
+              return (
+                <button
+                  key={h.id}
+                  type="button"
+                  disabled={!canToggle}
+                  title={`${h.no}. ${h.title} — ${done ? '제출' : '미제출'}${canToggle ? ' (눌러서 바꾸기)' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (canToggle) homeworkOverlay.onToggle!(h.id, slot.studentId!, slot.studentName!);
+                  }}
+                  className={`flex flex-col items-center gap-[3px] min-w-0 transition-transform active:scale-90 ${
+                    canToggle ? 'cursor-pointer hover:scale-105' : 'cursor-default'
+                  }`}
+                  style={{ width: L.itemW }}
+                >
+                  {L.titleOn && (
+                    <span
+                      className={`font-black leading-none whitespace-nowrap overflow-hidden max-w-full ${done ? 'text-emerald-700' : 'text-slate-700'}`}
+                      style={{ fontSize: L.titleFont }}
+                    >
+                      {[...h.title].slice(0, 3).join('')}
+                    </span>
+                  )}
+                  <span
+                    className={`rounded-full font-black flex items-center justify-center leading-none shrink-0 ${
+                      done
+                        ? 'bg-emerald-500 text-white border border-emerald-600 shadow-2xs'
+                        : 'bg-white text-rose-500 border-[1.5px] border-rose-300'
+                    }`}
+                    style={{ width: L.dot, height: L.dot, fontSize: Math.round(L.dot * 0.5) }}
+                  >
+                    {done ? '✓' : h.no}
+                  </span>
+                </button>
+              );
+            })}
+            {rest > 0 && (
+              <span className="self-end font-black text-slate-400 leading-none" style={{ fontSize: L.titleFont }}>
+                +{rest}
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    // 전체화면 사진 크기 (카드 높이에 맞춰 가변)
+    const photoStyle: React.CSSProperties | undefined =
+      fsLayout && fsLayout.photo > 0 ? { width: fsLayout.photo, height: fsLayout.photo } : undefined;
+    const photoPx = fsLayout?.photo ?? 0;
+    const hasGenderBadge = Boolean(viewOptions.showGenderBadge && (student?.gender || slot.studentGender));
+
     // 팀 나누기 연동: 학생이 속한 팀이 있으면 같은 팀끼리 같은 색상 적용
     const studentTeamInfo = slot.studentId
       ? studentTeamMap.get(slot.studentId) || (slot.studentNum ? studentTeamMap.get(String(slot.studentNum)) : undefined)
@@ -373,11 +559,21 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
               {movingSourceSlot ? '이동' : '+ 자리지정'}
             </span>
           </div>
+        ) : isMini ? (
+          /* 세로 공간이 아주 부족할 때: 이름만 (번호·칭찬 배지 숨김) */
+          <div className="flex-1 min-w-0 h-full flex items-center justify-center px-1 overflow-hidden select-none">
+            <span
+              className="font-black text-slate-900 tracking-tight whitespace-nowrap truncate text-[clamp(11px,1.15vw,15px)] leading-none"
+              style={fsLayout ? { fontSize: fsNameFont(slot.studentName, false) } : undefined}
+            >
+              {slot.studentName}
+            </span>
+          </div>
         ) : !shouldShowPhoto ? (
           /* 사진 숨김 모드 (작은 화면): 상하 2단 Flex 구조로 겹침 100% 원천 차단 */
-          <div className="w-full h-full flex flex-col justify-between py-1 px-1 sm:px-1.5 select-none">
+          <div className={`flex-1 min-w-0 w-full h-full flex flex-col justify-between select-none overflow-hidden ${fsLayout ? 'py-0 px-0.5' : 'py-1 px-1 sm:px-1.5'}`}>
             {/* 상단 1단: 우측 정렬된 [번호] [★ 별 배지(Popover)] [팀 배지] [고정 핀] */}
-            <div className="w-full flex items-center justify-end gap-1 shrink-0 text-slate-500 leading-none">
+            <div className="w-full min-w-0 flex items-center justify-end gap-1 shrink-0 text-slate-500 leading-none overflow-hidden">
               {slot.studentNum && (
                 <span className="text-[9px] sm:text-[10px] font-mono font-bold shrink-0">
                   {slot.studentNum}번
@@ -403,14 +599,14 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
             </div>
 
             {/* 하단 2단: 중앙 정렬된 학생 성명 + 성별 배지 (겹침 0%) */}
-            <div className="w-full flex items-center justify-center gap-1 min-w-0 pb-0.5">
+            <div className="w-full flex-1 min-h-0 flex items-center justify-center gap-1 min-w-0 pb-0.5">
               <span className={`font-black text-slate-900 tracking-tight whitespace-nowrap break-keep select-none ${
                 (slot.studentName?.length || 0) >= 5
                   ? 'text-[clamp(11px,1.15vw,13px)]'
                   : (slot.studentName?.length || 0) >= 4
                   ? 'text-[clamp(12px,1.25vw,14px)]'
                   : 'text-[clamp(13px,1.4vw,16px)]'
-              }`}>
+              } ${fsLayout ? 'leading-none' : ''}`} style={fsLayout ? { fontSize: fsNameFont(slot.studentName, hasGenderBadge) } : undefined}>
                 {slot.studentName}
               </span>
               {viewOptions.showGenderBadge && (student?.gender || slot.studentGender) && (
@@ -428,24 +624,37 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
           </div>
         ) : (
           /* 사진 표시 모드 (넓은 화면): 좌측 대형 사진 (빨간 원 크기) + 우측 상단 메타 정보 (우측 끝 밀착) + 중앙 학생 성명 */
-          <div className="w-full h-full flex items-center min-w-0 relative">
+          <div className="flex-1 w-full h-full flex items-center min-w-0 relative overflow-hidden">
             {/* 좌측 대형 사진: 화면이 충분히 넓을 때 (canFitPhoto=true) 빨간 동그라미 규격(68~82px)으로 확대 */}
             <div className="shrink-0 flex items-center justify-center pl-0.5">
               {customAvatar ? (
-                <div
-                  className={`w-[66px] h-[66px] sm:w-[74px] sm:h-[74px] lg:w-[80px] lg:h-[80px] rounded-full flex items-center justify-center text-3xl sm:text-4xl lg:text-5xl border-2 sm:border-[2.5px] shadow-sm select-none ${customAvatar.bgClass || 'bg-amber-100'} ${customAvatar.borderClass || 'border-amber-300'}`}
-                  title={`학급 아바타: ${customAvatar.name || ''}`}
-                >
-                  <span className="select-none filter drop-shadow-xs">{customAvatar.emoji || '🦁'}</span>
-                </div>
+                customAvatar.type === 'url' ? (
+                  <img
+                    src={customAvatar.value}
+                    alt={customAvatar.name || slot.studentName}
+                    style={photoStyle}
+                    className="w-[66px] h-[66px] sm:w-[74px] sm:h-[74px] lg:w-[80px] lg:h-[80px] rounded-full object-cover border-2 sm:border-[2.5px] border-amber-300 shadow-sm select-none"
+                    title={`등록된 학생 사진: ${customAvatar.name || ''}`}
+                  />
+                ) : (
+                  <div
+                    style={photoStyle ? { ...photoStyle, fontSize: Math.round(photoPx * 0.55) } : undefined}
+                    className={`w-[66px] h-[66px] sm:w-[74px] sm:h-[74px] lg:w-[80px] lg:h-[80px] rounded-full flex items-center justify-center text-3xl sm:text-4xl lg:text-5xl border-2 sm:border-[2.5px] shadow-sm select-none ${customAvatar.bgClass || 'bg-amber-100'} ${customAvatar.borderClass || 'border-amber-300'}`}
+                    title={`학급 아바타: ${customAvatar.name || ''}`}
+                  >
+                    <span className="select-none filter drop-shadow-xs">{customAvatar.emoji || '🦁'}</span>
+                  </div>
+                )
               ) : photoUrl ? (
                 <img
                   src={photoUrl}
                   alt={slot.studentName}
+                  style={photoStyle}
                   className="w-[66px] h-[66px] sm:w-[74px] sm:h-[74px] lg:w-[80px] lg:h-[80px] rounded-full object-cover border-2 sm:border-[2.5px] border-amber-300 shadow-sm select-none"
                 />
               ) : (
                 <div
+                  style={photoStyle ? { ...photoStyle, fontSize: Math.round(photoPx * 0.26) } : undefined}
                   className={`w-[66px] h-[66px] sm:w-[74px] sm:h-[74px] lg:w-[80px] lg:h-[80px] rounded-full flex items-center justify-center font-black text-sm sm:text-base lg:text-lg border-2 sm:border-[2.5px] shadow-sm select-none ${
                     isFemale
                       ? 'bg-rose-100 text-rose-700 border-rose-200'
@@ -458,7 +667,7 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
             </div>
 
             {/* 우측 상단 메타 정보: 번호 + 별 배지(Popover) + 팀 배지 + 고정 핀 (우측 끝 밀착!) */}
-            <div className="absolute top-1 sm:top-1.5 right-1 sm:right-2 flex items-center gap-1 z-10 select-none">
+            <div className={`absolute flex items-center gap-1 z-10 select-none ${fsLayout ? 'top-0 right-0.5' : 'top-1 sm:top-1.5 right-1 sm:right-2'}`}>
               {slot.studentNum && (
                 <span className="text-[10px] sm:text-[11px] lg:text-xs font-mono text-slate-500 font-bold shrink-0">
                   {slot.studentNum}번
@@ -484,14 +693,14 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
             </div>
 
             {/* 중앙: 학생 성명 + 성별 배지 ("이름을 가운데 놓고") */}
-            <div className="flex-1 min-w-0 flex items-center justify-center gap-1 sm:gap-1.5 select-none pl-2 pr-1 pt-3 sm:pt-4">
+            <div className={`flex-1 min-w-0 flex items-center justify-center gap-1 sm:gap-1.5 select-none ${fsLayout ? 'self-stretch pl-1.5 pr-0.5 pt-[20px]' : 'pl-2 pr-1 pt-3 sm:pt-4'}`}>
               <span className={`font-black text-slate-900 tracking-tight whitespace-nowrap break-keep select-none ${
                 (slot.studentName?.length || 0) >= 5
                   ? 'text-[clamp(12px,1.2vw,15px)]'
                   : (slot.studentName?.length || 0) >= 4
                   ? 'text-[clamp(13px,1.35vw,17px)]'
                   : 'text-[clamp(14px,1.5vw,19px)]'
-              }`}>
+              } ${fsLayout ? 'leading-none' : ''}`} style={fsLayout ? { fontSize: fsNameFont(slot.studentName, hasGenderBadge) } : undefined}>
                 {slot.studentName}
               </span>
               {viewOptions.showGenderBadge && (student?.gender || slot.studentGender) && (
@@ -508,6 +717,7 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
             </div>
           </div>
         )}
+        {renderHomeworkColumn()}
       </motion.div>
     );
   };
@@ -530,7 +740,7 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
           return (
             <div
               key={divNum}
-              className={`flex-1 min-w-0 max-w-[460px] flex flex-col items-center ${
+              className={`flex-1 min-w-0 ${hwWanted ? 'max-w-[820px]' : 'max-w-[460px]'} flex flex-col items-center ${
                 isFullscreen ? 'h-full' : ''
               }`}
             >
@@ -587,7 +797,7 @@ export const SeatingBoardView: React.FC<SeatingBoardViewProps> = ({
           return (
             <div
               key={gId}
-              className={`flex flex-col items-center rounded-xl sm:rounded-2xl bg-slate-50/80 border-2 border-slate-200/80 shadow-inner w-full min-w-0 max-w-[460px] ${
+              className={`flex flex-col items-center rounded-xl sm:rounded-2xl bg-slate-50/80 border-2 border-slate-200/80 shadow-inner w-full min-w-0 ${hwWanted ? 'max-w-[820px]' : 'max-w-[460px]'} ${
                 isFullscreen
                   ? 'h-full flex-1 min-h-0 justify-between p-1 sm:p-1.5'
                   : 'gap-1 p-1.5 sm:p-2 lg:p-2.5'

@@ -3,6 +3,7 @@
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/utils';
+import { optimizeSignatureImage } from '@/lib/utils/imageOptimizer';
 import { checkDrawnSignature } from '@/lib/signatureQuality';
 import { useEffect, useState, useRef } from 'react';
 import { SignaturePad, type SignaturePadRef } from './ui/signature-pad';
@@ -112,20 +113,24 @@ export function ProfileModal({ children, open: controlledOpen, onOpenChange: set
             setIsSaving(false);
             return;
           }
-          finalSignature = await compressImage(canvasData);
+          const opt = await optimizeSignatureImage(canvasData);
+          finalSignature = opt.dataUrl;
         } else {
           finalSignature = sigPreview || profile.signature || '';
         }
       } else {
-        if (sigPreview !== profile.signature) {
-          finalSignature = sigPreview ? await compressImage(sigPreview) : (profile.signature || '');
+        if (sigPreview && sigPreview !== profile.signature) {
+          const opt = await optimizeSignatureImage(sigPreview);
+          finalSignature = opt.dataUrl;
+        } else {
+          finalSignature = sigPreview || profile.signature || '';
         }
       }
       
       const updatedProfileData: Partial<UserProfile> = {
         name: name || profile.name || '강지욱',
         role: role || profile.role || '교사',
-        signature: finalSignature || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAAAyCAYAAACAnNXFAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAA0SURBVHhe7cExAQAAAMKg9U9tDC8gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADA3DVAAAYs42c0AAAAASUVORK5CYII=',
+        signature: finalSignature || '',
         isAdmin: effectiveIsAdmin
       };
       
@@ -164,11 +169,21 @@ export function ProfileModal({ children, open: controlledOpen, onOpenChange: set
     }
   };
   
-  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const reader = new FileReader();
-      reader.onloadend = () => setSigPreview(reader.result as string);
-      reader.readAsDataURL(e.target.files[0]);
+      const file = e.target.files[0];
+      try {
+        const opt = await optimizeSignatureImage(file);
+        setSigPreview(opt.dataUrl);
+        toast({
+          title: '서명 이미지 최적화 완료',
+          description: `서명 사진이 자동으로 최적화되었습니다. (${opt.originalSize} ➔ ${opt.optimizedSize})`,
+        });
+      } catch (err) {
+        const reader = new FileReader();
+        reader.onloadend = () => setSigPreview(reader.result as string);
+        reader.readAsDataURL(file);
+      }
     }
   };
 

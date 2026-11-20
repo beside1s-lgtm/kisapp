@@ -35,9 +35,12 @@ import type { DeskSlot } from '@/lib/types/seating';
 import { getPraiseTier, DEFAULT_SEATING_CONFIG } from '@/lib/types/seating';
 import { PraiseGaugeBar } from '../seating/PraiseGaugeBar';
 import { PraiseModal } from '../seating/PraiseModal';
+import { PraisePromotionModal } from '../seating/promotion/PraisePromotionModal';
 import { getSeatingPlans, saveSeatingPlan } from '@/lib/services/seatingService';
 import type { PraiseWidgetViewMode, PraiseWidgetConfig } from '../seating/SeatingPraiseWidget';
 import { DEFAULT_PRAISE_WIDGET_CONFIG } from '../seating/SeatingPraiseWidget';
+import { SeatingDisplayToggles, useSeatingDisplayPrefs } from '../seating/SeatingDisplayToggles';
+import { usePraisePoints, changePraisePoints, resetPraisePoints } from '@/lib/services/classPraiseStore';
 
 export interface PraiseTabContentProps {
   classKey: string;
@@ -55,9 +58,12 @@ export const PraiseTabContent: React.FC<PraiseTabContentProps> = ({
   isFullscreen = false,
 }) => {
   const { toast } = useToast();
+  // 자리 배치도의 칭찬 현황 바 / 책상 칭찬 등급 배지 표시
+  const [seatingPrefs, setSeatingPrefs] = useSeatingDisplayPrefs(classKey);
 
   // 학생별 칭찬 점수 맵 (studentId -> praisePoints)
-  const [studentPraiseMap, setStudentPraiseMap] = useState<Record<string, number>>({});
+  // 학생별 칭찬 점수 — 자리 배치도와 같은 단일 저장소(서버 동기화)
+  const studentPraiseMap = usePraisePoints(classKey);
   // 목표 점수 (기본 50점)
   const [targetGoal, setTargetGoal] = useState<number>(() => {
     if (typeof window !== 'undefined') {
@@ -104,17 +110,6 @@ export const PraiseTabContent: React.FC<PraiseTabContentProps> = ({
   useEffect(() => {
     if (!classKey) return;
 
-    // 1. 로컬스토리지 캐시 로드
-    const cachedPraise: Record<string, number> = {};
-    students.forEach((s) => {
-      const sid = s.studentId || s.id || '';
-      if (!sid) return;
-      const v = localStorage.getItem(`kis_praise_${classKey}_${sid}`);
-      if (v !== null) {
-        cachedPraise[sid] = Number(v) || 0;
-      }
-    });
-
     // 2. 배치도 슬롯 데이터 동기화
     getSeatingPlans(classKey).then((plans) => {
       if (plans.length > 0) {
@@ -129,16 +124,10 @@ export const PraiseTabContent: React.FC<PraiseTabContentProps> = ({
         latest.slots.forEach((slot) => {
           if (slot.studentId) {
             if (slot.groupId) gMap[slot.studentId] = slot.groupId;
-            if (slot.praisePoints !== undefined) {
-              if (cachedPraise[slot.studentId] === undefined) {
-                cachedPraise[slot.studentId] = slot.praisePoints;
-              }
-            }
           }
         });
         setStudentGroupMap(gMap);
       }
-      setStudentPraiseMap(cachedPraise);
     });
   }, [classKey, students]);
 
@@ -177,40 +166,30 @@ export const PraiseTabContent: React.FC<PraiseTabContentProps> = ({
     });
   };
 
-  // 칭찬 점수 증감 (delta)
+  // 칭찬 점수 증감 (delta) — 늘어난 점수는 포인트 통장에도 적립 및 등급 승급 시 순차 축하 팝업 표출
   const handlePraiseChange = (studentId: string, delta: number) => {
-    setStudentPraiseMap((prev) => {
-      const current = prev[studentId] || 0;
-      const next = Math.max(0, current + delta);
-      try {
-        localStorage.setItem(`kis_praise_${classKey}_${studentId}`, String(next));
-      } catch (e) {}
-      return { ...prev, [studentId]: next };
+    const st = students.find((x) => (x.studentId || x.id) === studentId);
+    changePraisePoints(classKey, studentId, st?.name || '학생', delta, {
+      studentNum: st?.studentNum || null,
+      gender: st?.gender || null,
+      photoUrl: st?.photoUrl || null,
     });
   };
 
   // 칭찬 점수 0점 초기화 (개별)
   const handlePraiseReset = (studentId: string) => {
-    setStudentPraiseMap((prev) => {
-      try {
-        localStorage.setItem(`kis_praise_${classKey}_${studentId}`, '0');
-      } catch (e) {}
-      return { ...prev, [studentId]: 0 };
-    });
+    resetPraisePoints(classKey, [studentId]);
   };
 
   // 학급 전체 칭찬 초기화
   const handleResetAllPraise = () => {
     if (confirm('학급 전체 학생의 칭찬 점수를 0점으로 초기화하시겠습니까?')) {
-      const resetMap: Record<string, number> = {};
-      students.forEach((s) => {
-        const sid = s.studentId || s.id || '';
-        resetMap[sid] = 0;
-        try {
-          localStorage.setItem(`kis_praise_${classKey}_${sid}`, '0');
-        } catch (e) {}
-      });
-      setStudentPraiseMap(resetMap);
+      resetPraisePoints(
+        classKey,
+        Array.from(
+          new Set([...students.map((x) => x.studentId || x.id || ''), ...Object.keys(studentPraiseMap)])
+        ).filter(Boolean)
+      );
       toast({
         title: '칭찬 초기화 완료',
         description: '모든 학생의 칭찬 점수가 0점으로 초기화되었습니다.',
@@ -263,35 +242,30 @@ export const PraiseTabContent: React.FC<PraiseTabContentProps> = ({
         targetGoal={targetGoal}
         onChangeTargetGoal={handleChangeTargetGoal}
         onResetPraise={handleResetAllPraise}
-      />
-
-      {/* ─── 본문: 학생 칭찬 도장/스탬프 카드 그리드 (10개 모일 때마다 색상 변화) ─── */}
-      <div className="bg-white/95 rounded-3xl p-4 sm:p-6 border-2 border-slate-200/90 shadow-sm">
-        <div className="flex items-center justify-between mb-4 px-1 flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-[#C49832]" />
-            <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-              학생별 칭찬 도장판 ({students.length}명)
-            </h3>
-            <Badge className="bg-amber-100 text-amber-900 text-xs font-bold border-amber-300">
-              성장 등급 체계 연동
-            </Badge>
-          </div>
-
-          <div className="flex items-center gap-2">
+        extraActions={
+          <>
+            <SeatingDisplayToggles
+              tone="amber"
+              bar={seatingPrefs.praiseBar}
+              cards={seatingPrefs.praiseCards}
+              onBarChange={(v) => setSeatingPrefs({ praiseBar: v })}
+              onCardsChange={(v) => setSeatingPrefs({ praiseCards: v })}
+              cardsLabel="책상 등급"
+              cardsTitle="자리 배치도의 책상마다 칭찬 등급 배지를 표시합니다"
+            />
             {/* 자리배치도 칭찬 위젯 기본 설정 팝오버 */}
             <Popover>
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 shadow-2xs transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 h-8 px-2.5 rounded-2xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border-2 border-slate-200/90 shadow-2xs transition-all cursor-pointer whitespace-nowrap shrink-0"
                   title="자리 배치도 화면에 표시될 칭찬 현황 위젯의 기본값(학급/분단/팀, 열림 여부)을 설정합니다."
                 >
                   <Sliders className="w-3.5 h-3.5 text-slate-600" />
                   <span>자리배치도 위젯 설정</span>
                 </button>
               </PopoverTrigger>
-              <PopoverContent className="w-80 p-4 bg-white shadow-xl rounded-2xl border border-slate-200 z-50">
+              <PopoverContent className="w-80 p-4 bg-white shadow-xl rounded-2xl border border-slate-200 z-[100000]">
                 <div className="space-y-3">
                   <div className="flex items-center gap-1.5 pb-2 border-b border-slate-100">
                     <Sliders className="w-4 h-4 text-amber-600" />
@@ -313,7 +287,7 @@ export const PraiseTabContent: React.FC<PraiseTabContentProps> = ({
                         <SelectTrigger className="h-8 text-xs font-bold bg-slate-50 border-slate-200">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="z-[99999]">
+                        <SelectContent className="z-[100000]">
                           <SelectItem value="ALL" className="text-xs font-bold">
                             학급 전체 칭찬
                           </SelectItem>
@@ -340,7 +314,7 @@ export const PraiseTabContent: React.FC<PraiseTabContentProps> = ({
                         <SelectTrigger className="h-8 text-xs font-bold bg-slate-50 border-slate-200">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="z-[99999]">
+                        <SelectContent className="z-[100000]">
                           <SelectItem value="closed" className="text-xs font-bold">
                             기본 접힘 (한 줄 요약 바)
                           </SelectItem>
@@ -358,11 +332,26 @@ export const PraiseTabContent: React.FC<PraiseTabContentProps> = ({
                 </div>
               </PopoverContent>
             </Popover>
+          </>
+        }
+      />
 
-            <span className="text-xs text-slate-400 hidden lg:inline">
-              💡 카드를 누르면 상세 칭찬을 줄 수 있고, 우측 [+1] 버튼을 누르면 원터치 칭찬이 부여됩니다.
-            </span>
+      {/* ─── 본문: 학생 칭찬 도장/스탬프 카드 그리드 (10개 모일 때마다 색상 변화) ─── */}
+      <div className="bg-white/95 rounded-3xl p-4 sm:p-6 border-2 border-slate-200/90 shadow-sm">
+        <div className="flex items-center justify-between mb-4 px-1 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <Trophy className="w-5 h-5 text-[#C49832]" />
+            <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+              학생별 칭찬 도장판 ({students.length}명)
+            </h3>
+            <Badge className="bg-amber-100 text-amber-900 text-xs font-bold border-amber-300">
+              성장 등급 체계 연동
+            </Badge>
           </div>
+
+          <span className="text-xs text-slate-400 hidden sm:inline font-medium">
+            💡 카드를 누르면 상세 칭찬을 줄 수 있고, 우측 [+1] 버튼을 누르면 원터치 칭찬이 부여됩니다.
+          </span>
         </div>
 
         {students.length === 0 ? (
@@ -475,6 +464,9 @@ export const PraiseTabContent: React.FC<PraiseTabContentProps> = ({
         onStartMove={() => {}}
         onClearSeat={() => {}}
       />
+
+      {/* ─── 칭찬 성장 등급 승급 축하 순차 팝업 모달 ─── */}
+      <PraisePromotionModal classKey={classKey} />
     </div>
   );
 };

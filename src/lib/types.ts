@@ -335,7 +335,9 @@ export type DocConfig = {
     afterschoolAccount?: string; // 방과후학교 납부 계좌 정보
     afterschoolQrImage?: string; // 방과후학교 납부 QR 이미지 데이터 URL
     annualSchoolDays?: number; // 연간 총 수업일수 설정
-    academicCalendar?: AcademicCalendarConfig; // 통합 학사 일정 및 학기 관리
+    academicCalendar?: AcademicCalendarConfig; // 통합 학사 일정 및 학기 관리 (academicCalendar.year = 시스템 전체 현재 학년도)
+    academicCalendarArchive?: Record<string, AcademicCalendarConfig>; // 학년도 전환 시 보관한 지난 학년도 학사 일정 (키: 학년도)
+    academicYearAppliedAt?: string; // 시스템 학년도를 마지막으로 적용한 시각 ISO
     enableAiDraft?: boolean; // 기안문 작성 화면 내 AI 초안 생성 기능 활성화 여부
     enableFaceToFaceApproval?: boolean; // 대면 결재 기능 활성화 여부 (켜지면 기안 시 문서번호 직접 입력 + 대면결재 버튼 표시, 자동채번 비활성화)
     afterschoolStageStatus?: 'RECRUITING' | 'APPLYING' | 'CONFIRMED' | 'OPERATING' | 'CLOSED';

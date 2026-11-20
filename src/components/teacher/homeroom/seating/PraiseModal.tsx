@@ -26,6 +26,8 @@ import { motion } from 'framer-motion';
 import type { DeskSlot } from '@/lib/types/seating';
 import { getPraiseTier } from '@/lib/types/seating';
 import type { MasterStudent } from '@/lib/types/masterStudent';
+import { getSavedAccounts } from '@/lib/services/praiseRewardService';
+import { getCustomAvatar } from '@/lib/types/avatars';
 
 interface PraiseModalProps {
   isOpen: boolean;
@@ -76,6 +78,7 @@ export const PraiseModal: React.FC<PraiseModalProps> = ({
   const isMale = !isFemale;
 
   const photo = student?.photoUrl || targetSlot.studentPhotoUrl;
+  const customAvatar = classKey && targetSlot.studentId ? getCustomAvatar(classKey, targetSlot.studentId) : null;
 
   const handleApplyPraise = (delta: number, reason?: string) => {
     onPraiseChange(targetSlot.id, delta);
@@ -107,7 +110,23 @@ export const PraiseModal: React.FC<PraiseModalProps> = ({
         {/* ─── 학생 기본 프로필 및 현재 칭찬 점수 (10점 단위 티어 색상 반영) ─── */}
         <div className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${praiseTier.cardBgClass} ${praiseTier.cardBorderClass}`}>
           <div className="flex items-center gap-3">
-            {photo ? (
+            {customAvatar ? (
+              customAvatar.type === 'url' ? (
+                <img
+                  src={customAvatar.value}
+                  alt={targetSlot.studentName || ''}
+                  className="w-14 h-14 rounded-full object-cover border-2 border-white shadow-sm"
+                />
+              ) : (
+                <div
+                  className={`w-14 h-14 rounded-full flex items-center justify-center text-3xl border-2 border-white shadow-sm ${
+                    customAvatar.bgClass || 'bg-amber-100'
+                  }`}
+                >
+                  {customAvatar.emoji || '🦁'}
+                </div>
+              )
+            ) : photo ? (
               <img
                 src={photo}
                 alt={targetSlot.studentName || ''}
@@ -140,9 +159,20 @@ export const PraiseModal: React.FC<PraiseModalProps> = ({
                   {isFemale ? '여' : '남'}
                 </Badge>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {targetSlot.isFixed ? '📌 자리 고정됨' : '자유 자리'}
-              </p>
+              <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5">
+                <span>{targetSlot.isFixed ? '📌 자리 고정됨' : '자유 자리'}</span>
+                {classKey && targetSlot.studentId && (() => {
+                  const acc = getSavedAccounts(classKey)[targetSlot.studentId];
+                  return acc ? (
+                    <>
+                      <span className="text-slate-300">•</span>
+                      <span className="font-mono font-bold text-amber-700 bg-amber-100/70 px-1.5 py-0.2 rounded-md">
+                        통장 {acc.balance}P
+                      </span>
+                    </>
+                  ) : null;
+                })()}
+              </div>
             </div>
           </div>
 

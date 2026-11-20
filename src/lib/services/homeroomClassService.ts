@@ -20,6 +20,7 @@ import type {
   HomeroomConsultation,
   ConsultationConfig,
   BookingSlot,
+  RecurringHomework,
 } from '@/lib/types/homeroomClass';
 
 // ─── 1. 일일 알림 메모 구독 및 저장 ──────────────────────────────────────────
@@ -584,4 +585,87 @@ export async function cancelConsultationSlot(
     },
     { merge: true }
   );
+}
+
+// ─── 정기 과제(반복 과제) 스케줄 CRUD ────────────────────────────────────────
+
+/** 정기 과제 목록 실시간 구독 */
+export function onRecurringHomeworksUpdate(
+  classKey: string,
+  callback: (items: RecurringHomework[]) => void
+): () => void {
+  if (!classKey) {
+    callback([]);
+    return () => {};
+  }
+  const db = getDb();
+  const colRef = collection(db, 'homeroom_classes', classKey, 'recurring_homeworks');
+  return onSnapshot(
+    colRef,
+    (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as RecurringHomework));
+      list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      callback(list);
+    },
+    (err) => {
+      console.warn('[HomeroomClassService] onRecurringHomeworksUpdate error:', err);
+      callback([]);
+    }
+  );
+}
+
+/** 정기 과제 추가 */
+export async function addRecurringHomework(
+  classKey: string,
+  data: Omit<RecurringHomework, 'id' | 'createdAt'>,
+  userEmail?: string
+): Promise<string> {
+  const db = getDb();
+  const id = `rhw_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const docRef = doc(db, 'homeroom_classes', classKey, 'recurring_homeworks', id);
+
+  // Firestore는 undefined 필드를 허용하지 않으므로 명시적으로 제거
+  const payload: Record<string, unknown> = {
+    id,
+    title: data.title,
+    frequency: data.frequency,
+    startDate: data.startDate,
+    isActive: data.isActive,
+    createdAt: new Date().toISOString(),
+    createdBy: userEmail || '',
+  };
+  if (data.weekDay !== undefined) payload.weekDay = data.weekDay;
+  if (data.monthDay !== undefined) payload.monthDay = data.monthDay;
+  if (data.endDate) payload.endDate = data.endDate;
+
+  await setDoc(docRef, payload);
+  return id;
+}
+
+/** 정기 과제 수정 */
+export async function updateRecurringHomework(
+  classKey: string,
+  id: string,
+  data: Partial<Omit<RecurringHomework, 'id' | 'createdAt' | 'createdBy'>>
+): Promise<void> {
+  const db = getDb();
+  const docRef = doc(db, 'homeroom_classes', classKey, 'recurring_homeworks', id);
+
+  // undefined 필드 제거 후 저장
+  const sanitized: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+  for (const [k, v] of Object.entries(data)) {
+    if (v !== undefined) sanitized[k] = v;
+  }
+
+  await setDoc(docRef, sanitized, { merge: true });
+}
+
+/** 정기 과제 삭제 */
+export async function deleteRecurringHomework(
+  classKey: string,
+  id: string
+): Promise<void> {
+  const db = getDb();
+  const docRef = doc(db, 'homeroom_classes', classKey, 'recurring_homeworks', id);
+  await deleteDoc(docRef);
 }

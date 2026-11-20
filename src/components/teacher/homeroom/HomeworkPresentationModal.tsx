@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { HomeroomHomework, HomeroomHomeworkCheck } from '@/lib/types/homeroomClass';
 import type { MasterStudent } from '@/lib/types/masterStudent';
@@ -82,6 +83,38 @@ export const HomeworkPresentationModal: React.FC<HomeworkPresentationModalProps>
     }
   }, [hasNext, activeHomeworks, currentIndex, onSelectHw]);
 
+  // 칠판 뷰는 브라우저 화면 전체(주소창·탭 포함)를 덮도록 전체화면으로 연다.
+  // 이미 전체화면(수업 도구 전체화면)이면 그대로 쓰고, 여기서 켠 전체화면만 닫을 때 끈다.
+  const enteredFsRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    if (!isOpen || typeof document === 'undefined') return;
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      document.documentElement
+        .requestFullscreen()
+        .then(() => {
+          enteredFsRef.current = true;
+        })
+        .catch(() => {});
+    }
+    // 전체화면에서 ESC는 브라우저가 먼저 가져가므로, 여기서 켠 전체화면이 풀리면 칠판 뷰도 닫는다
+    const onFsChange = () => {
+      if (enteredFsRef.current && !document.fullscreenElement) {
+        enteredFsRef.current = false;
+        onCloseRef.current();
+      }
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      if (enteredFsRef.current) {
+        enteredFsRef.current = false;
+        if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+      }
+    };
+  }, [isOpen]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isOpen) return;
@@ -118,10 +151,11 @@ export const HomeworkPresentationModal: React.FC<HomeworkPresentationModalProps>
     }, 300);
   };
 
-  return (
-    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-between p-3 sm:p-6 md:p-10 bg-[#0f172a] text-white select-none transition-colors duration-200" style={{ opacity: 1 }}>
+  // 부모(애니메이션 transform·헤더 쌓임 순서)에 갇히지 않게 body로 띄워 화면 전체를 덮는다
+  return createPortal(
+    <div className="fixed inset-0 z-[100000] flex flex-col items-center justify-between p-3 sm:p-6 md:p-8 bg-[#0f172a] text-white select-none transition-colors duration-200" style={{ opacity: 1 }}>
       {/* 상단 닫기 및 타이틀 영역 */}
-      <div className="w-full flex items-center justify-between max-w-6xl shrink-0 border-b border-slate-800 pb-3 sm:pb-4 gap-3">
+      <div className="w-full flex items-center justify-between max-w-[1800px] shrink-0 border-b border-slate-800 pb-3 sm:pb-4 gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs tracking-widest text-emerald-400 font-bold uppercase bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
@@ -191,7 +225,7 @@ export const HomeworkPresentationModal: React.FC<HomeworkPresentationModalProps>
       </div>
 
       {/* 중앙 미제출자 카드 영역 */}
-      <div className="flex-1 w-full max-w-6xl overflow-y-auto my-2 sm:my-6 py-2 sm:py-4 overscroll-contain flex flex-col">
+      <div className="flex-1 w-full max-w-[1800px] overflow-y-auto my-2 sm:my-6 py-2 sm:py-4 overscroll-contain flex flex-col">
         {mode === 'single' && currentHw && (
           <div className="w-full">
             {(() => {
@@ -315,6 +349,7 @@ export const HomeworkPresentationModal: React.FC<HomeworkPresentationModalProps>
       <div className="text-xs text-slate-400 tracking-wide text-center shrink-0">
         💡 학생 이름을 클릭하면 실시간 제출 완료 처리되며 화면에서 즉시 사라집니다.
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

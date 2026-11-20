@@ -69,6 +69,7 @@ interface PraiseGaugeBarProps {
   targetGoal?: number;
   onChangeTargetGoal?: (newGoal: number) => void;
   onResetPraise: () => void;
+  extraActions?: React.ReactNode;
 }
 
 export const PraiseGaugeBar: React.FC<PraiseGaugeBarProps> = ({
@@ -78,6 +79,7 @@ export const PraiseGaugeBar: React.FC<PraiseGaugeBarProps> = ({
   targetGoal = 50,
   onChangeTargetGoal,
   onResetPraise,
+  extraActions,
 }) => {
   // 1. 집계 뷰 모드: 'ALL'(학급 전체) | 'DIVISION'(분단별) | 'GROUP'(모둠별)
   const [viewMode, setViewMode] = useState<'ALL' | 'DIVISION' | 'GROUP'>(
@@ -383,47 +385,37 @@ export const PraiseGaugeBar: React.FC<PraiseGaugeBarProps> = ({
           </div>
         </div>
 
-        {/* 우측: 3대 뷰 모드 탭 (학급 전체 / 분단별 / 모둠별) + 칭찬 성장 체계 버튼 */}
+        {/* 우측: 칭찬 조회 범위 드롭다운 + 배치도 확인/위젯 설정 액션 + 칭찬 성장 체계 버튼 */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* 3대 뷰 모드 선택 세그먼트 */}
-          <div className="flex items-center p-1 bg-white/90 rounded-2xl border-2 border-slate-200/90 shadow-2xs">
-            <button
-              type="button"
-              onClick={() => setViewMode('ALL')}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
-                viewMode === 'ALL'
-                  ? 'bg-[#2471B2] text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>학급 전체</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('DIVISION')}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
-                viewMode === 'DIVISION'
-                  ? 'bg-[#2471B2] text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>분단별 칭찬</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('GROUP')}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
-                viewMode === 'GROUP'
-                  ? 'bg-[#2471B2] text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Grid className="w-3.5 h-3.5" />
-              <span>모둠별 칭찬</span>
-            </button>
-          </div>
+          {/* 칭찬 조회 범위 드롭다운 (가로폭 축소) */}
+          <Select value={viewMode} onValueChange={(val: 'ALL' | 'DIVISION' | 'GROUP') => setViewMode(val)}>
+            <SelectTrigger className="h-8 text-xs font-black bg-white border-2 border-slate-200/90 rounded-2xl px-2.5 w-[130px] sm:w-[140px] shrink-0 whitespace-nowrap break-keep shadow-2xs focus:ring-[#2471B2]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-2xl border-2 border-slate-200 shadow-lg z-[100000]">
+              <SelectItem value="ALL" className="text-xs font-bold">
+                <span className="flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-blue-600" />
+                  학급 전체
+                </span>
+              </SelectItem>
+              <SelectItem value="DIVISION" className="text-xs font-bold">
+                <span className="flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-emerald-600" />
+                  분단별 칭찬
+                </span>
+              </SelectItem>
+              <SelectItem value="GROUP" className="text-xs font-bold">
+                <span className="flex items-center gap-1.5">
+                  <Grid className="w-3.5 h-3.5 text-purple-600" />
+                  모둠별 칭찬
+                </span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* 그 옆자리로 배치된 추가 설정 (배치도에서 확인 토글 + 자리배치도 위젯 설정) */}
+          {extraActions}
 
           {/* 칭찬 성장 체계(티어) 모달 열기 버튼 */}
           <motion.button
@@ -435,7 +427,7 @@ export const PraiseGaugeBar: React.FC<PraiseGaugeBarProps> = ({
             className="flex items-center gap-1.5 h-8 px-3 rounded-2xl text-xs font-black bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs transition-all whitespace-nowrap"
           >
             <Sprout className="w-3.5 h-3.5 text-emerald-600" />
-            <span>성장 등급 체계</span>
+            <span>칭찬 시스템 설정</span>
           </motion.button>
 
           {/* 칭찬 전체 초기화 */}
@@ -626,11 +618,12 @@ export const PraiseGaugeBar: React.FC<PraiseGaugeBarProps> = ({
         </div>
       )}
 
-      {/* 칭찬 성장 체계(티어) 모달 */}
+      {/* 칭찬 성장 체계(티어) 및 보상 관리 모달 */}
       <PraiseGrowthSettingModal
         isOpen={isGrowthModalOpen}
         onOpenChange={setIsGrowthModalOpen}
         classKey={classKey}
+        slots={slots}
       />
     </div>
   );

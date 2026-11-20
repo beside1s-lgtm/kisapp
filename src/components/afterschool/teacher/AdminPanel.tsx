@@ -13,6 +13,7 @@ import { countOperatingDays, getCourseSessionsPerClass, generateCalendarSchedule
 import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
 import type { DocConfig, UserProfile } from '@/lib/types';
 import { collectCourseSignatures, findTeacherSignature, findSignatureFromRecords, getTeacherSignatureBook, instructorSealEmail, type TeacherSignatureBook } from '@/lib/teachers/teacherRegistry';
+import { isActualSignature } from '@/lib/safety/stampHelper';
 import { StudentManagement } from './StudentManagement';
 import { OfficialAttendanceSheet, OfficialSeal } from './OfficialAttendanceSheet';
 import { OfficialWorkRegister } from './OfficialWorkRegister';
@@ -2715,7 +2716,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           // 1) 상신 때 서류에 담긴 강사별 서명  2) 시스템 설정(사용자 관리)에 등록된 그 강사 본인의 서명
           //    (상신한 사람·로그인한 사람의 도장을 다른 강사 칸에 넣지 않는다)
           const docSigs = (targetDoc as any)?.instructorSignatures;
-          if (docSigs && docSigs[cleanName]) return docSigs[cleanName];
+          // 서류에 담긴 값이 빈 이미지·가상 도장이면 계정에 등록된 실제 서명을 가리지 않도록 건너뜀
+          if (docSigs && isActualSignature(docSigs[cleanName])) return docSigs[cleanName];
           // 3) 보결 강사 등: 다른 강좌에 연결된 그 강사 계정·다른 강좌 증빙서류에 담긴 서명
           return (
             findTeacherSignature(sigBook, cleanName, instructorSealEmail(c, cleanName, substituteRecords)) ||

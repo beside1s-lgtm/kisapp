@@ -43,12 +43,16 @@ import {
   generateRandomSeating,
   extractPartnersFromSlots,
 } from '@/lib/services/seatingService';
+import { usePraisePoints, changePraisePoints, resetPraisePoints } from '@/lib/services/classPraiseStore';
 import { SeatingBoardView } from './SeatingBoardView';
 import { SeatingConfigModal } from './SeatingConfigModal';
 import { StudentAssignModal } from './StudentAssignModal';
 import { PraiseModal } from './PraiseModal';
+import { PraisePromotionModal } from './promotion/PraisePromotionModal';
 import { PraiseGaugeBar } from './PraiseGaugeBar';
 import { SeatingPraiseWidget } from './SeatingPraiseWidget';
+import { SeatingHomeworkWidget, type SeatingHomeworkOverlay } from './SeatingHomeworkWidget';
+import { useSeatingDisplayPrefs } from './SeatingDisplayToggles';
 import { SeatingPickerBar, type PickerOptions } from './SeatingPickerBar';
 import { PickerResultModal } from './PickerResultModal';
 import { SeatingTeamBar, type TeamSplitOptions } from './SeatingTeamBar';
@@ -70,6 +74,8 @@ interface SeatingTabContentProps {
   onClosePickerBar?: () => void;
   isTeamBarOpen?: boolean;
   onCloseTeamBar?: () => void;
+  /** 숙제 [배치도에서 확인]을 켰을 때만 */
+  homeworkOverlay?: SeatingHomeworkOverlay;
 }
 
 export const SeatingTabContent: React.FC<SeatingTabContentProps> = ({
@@ -82,8 +88,14 @@ export const SeatingTabContent: React.FC<SeatingTabContentProps> = ({
   onClosePickerBar,
   isTeamBarOpen,
   onCloseTeamBar,
+  homeworkOverlay,
 }) => {
   const { toast } = useToast();
+
+  // ─── 칭찬·숙제 탭의 [배치도에서 확인] 설정 (현황 바 / 책상 표시)
+  const [displayPrefs] = useSeatingDisplayPrefs(classKey);
+  const showPraiseBar = displayPrefs.praiseBar;
+  const showHwBar = displayPrefs.hwBar;
 
   // ─── 발표자 뽑기 탭 바 및 팝업 상태 ───
   const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -309,6 +321,22 @@ export const SeatingTabContent: React.FC<SeatingTabContentProps> = ({
   const [currentSlots, setCurrentSlots] = useState<DeskSlot[]>([]);
   const [isDirty, setIsDirty] = useState(false);
 
+  // 칭찬 점수: 학생별 단일 저장소의 값을 배치도 슬롯에 덮어씀 (배치도마다 따로 저장하지 않음)
+  const praiseMap = usePraisePoints(classKey);
+  useEffect(() => {
+    setCurrentSlots((prev) => {
+      let changed = false;
+      const next = prev.map((s) => {
+        if (!s.studentId) return s;
+        const p = praiseMap[s.studentId] ?? 0;
+        if ((s.praisePoints ?? 0) === p) return s;
+        changed = true;
+        return { ...s, praisePoints: p };
+      });
+      return changed ? next : prev;
+    });
+  }, [praiseMap, currentSlots]);
+
   // 보기 옵션 (사진, 칭찬, 게이지, 성별)
   const [viewOptions, setViewOptions] = useState<SeatingViewOptions>(() => {
     if (typeof window !== 'undefined') {
@@ -319,6 +347,11 @@ export const SeatingTabContent: React.FC<SeatingTabContentProps> = ({
     }
     return DEFAULT_VIEW_OPTIONS;
   });
+  // 책상 카드 칭찬 등급 배지: 칭찬 탭의 [배치도에서 확인 › 책상 등급]을 끄면 숨김
+  const boardViewOptions = React.useMemo(
+    () => ({ ...viewOptions, showPraise: viewOptions.showPraise && displayPrefs.praiseCards }),
+    [viewOptions, displayPrefs.praiseCards]
+  );
 
   // 칭찬 온도계 목표 점수 상태 (기본 50점)
   const [praiseTargetGoal, setPraiseTargetGoal] = useState<number>(() => {
@@ -595,33 +628,44 @@ export const SeatingTabContent: React.FC<SeatingTabContentProps> = ({
   };
 
   // 칭찬 포인트 증감 핸들러
+  //  칭찬 점수는 학생별 단일 저장소(칭찬 탭과 공유, 서버 즉시 저장)에 기록 — 배치도 [저장] 불필요
   const handlePraiseChange = (slotId: string, delta: number) => {
-    setCurrentSlots((prev) =>
-      prev.map((s) =>
-        s.id === slotId
-          ? {
-              ...s,
-              praisePoints: Math.max(0, (s.praisePoints || 0) + delta),
-            }
-          : s
-      )
-    );
-    setIsDirty(true);
+    const target = currentSlots.find((s) => s.id === slotId);
+    if (!target || !target.studentId) return;
+
+    // 학생 마스터 메타 정보 조회 (사진, 번호, 성별)
+    const stMaster = studentsMap.get(target.studentId);
+    const photoUrl = stMaster?.photoUrl || target.studentPhotoUrl || null;
+    const studentNum = stMaster?.studentNum || target.studentNum || null;
+    const gender = stMaster?.gender || target.studentGender || null;
+
+    // 늘어난 점수는 포인트 통장에도 함께 적립되며, 등급 승급 시 축하 팝업이 순차 표출됨
+    changePraisePoints(classKey, target.studentId, target.studentName || '학생', delta, {
+      studentNum,
+      gender,
+      photoUrl,
+    });
   };
 
   // 칭찬 포인트 0점 초기화
   const handlePraiseReset = (slotId: string) => {
-    setCurrentSlots((prev) =>
-      prev.map((s) => (s.id === slotId ? { ...s, praisePoints: 0 } : s))
-    );
-    setIsDirty(true);
+    const target = currentSlots.find((s) => s.id === slotId);
+    if (target?.studentId) resetPraisePoints(classKey, [target.studentId]);
   };
 
   // 학급 전체 칭찬 포인트 초기화
   const handleResetAllPraise = () => {
     if (confirm('학급 전체 학생의 칭찬 점수를 0점으로 초기화하시겠습니까?')) {
-      setCurrentSlots((prev) => prev.map((s) => ({ ...s, praisePoints: 0 })));
-      setIsDirty(true);
+      resetPraisePoints(
+        classKey,
+        Array.from(
+          new Set([
+            ...currentSlots.map((s) => s.studentId || ''),
+            ...students.map((s) => s.studentId || s.id || ''),
+            ...Object.keys(praiseMap),
+          ])
+        ).filter(Boolean)
+      );
       toast({
         title: '칭찬 초기화 완료',
         description: '모든 학생의 칭찬 점수가 0점으로 초기화되었습니다.',
@@ -1088,13 +1132,13 @@ export const SeatingTabContent: React.FC<SeatingTabContentProps> = ({
             <div className="flex items-center justify-between gap-1.5 sm:gap-2 p-1.5 sm:p-2 rounded-2xl bg-white border-2 border-slate-200/90 shadow-sm flex-nowrap overflow-x-auto no-scrollbar">
               <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap shrink-0">
                 {/* 배치도 선택 드롭다운 */}
-                <div className="flex items-center gap-1.5 min-w-[150px] sm:min-w-[180px]">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <FolderOpen className="w-4 h-4 text-[#2471B2] shrink-0" />
                   <Select value={selectedPlanId || '__new__'} onValueChange={handleSelectPlan}>
-                    <SelectTrigger className="h-8 sm:h-9 text-xs font-bold border-2 border-slate-200 bg-slate-50/80 rounded-2xl focus:ring-[#2471B2]">
+                    <SelectTrigger className="h-8 sm:h-9 text-xs font-bold border-2 border-slate-200 bg-slate-50/80 rounded-2xl focus:ring-[#2471B2] w-[155px] sm:w-[175px] px-2.5 shrink-0 whitespace-nowrap break-keep [&>span]:truncate">
                       <SelectValue placeholder="배치도 선택..." />
                     </SelectTrigger>
-                    <SelectContent className="rounded-2xl border-2 border-slate-200 shadow-lg">
+                    <SelectContent className="rounded-2xl border-2 border-slate-200 shadow-lg z-[100000]">
                       <SelectItem value="__new__" className="text-xs font-black text-[#2471B2]">
                         + 새 배치도 만들기
                       </SelectItem>
@@ -1108,7 +1152,7 @@ export const SeatingTabContent: React.FC<SeatingTabContentProps> = ({
                 </div>
 
                 {/* 자리배치정보 배지 */}
-                <Badge className="bg-[#2471B2] text-white font-black text-xs px-2.5 py-1 rounded-2xl shadow-2xs whitespace-nowrap shrink-0">
+                <Badge className="bg-[#2471B2] text-white font-black text-xs px-2.5 py-1 rounded-2xl shadow-2xs whitespace-nowrap shrink-0 ml-0.5 sm:ml-1">
                   {currentConfig.layoutType === 'ROW'
                     ? `분단형 (${currentConfig.rowConfig.rowType}열, ${currentConfig.rowConfig.divisionCount}분단)`
                     : currentConfig.layoutType === 'GROUP'
@@ -1273,13 +1317,27 @@ export const SeatingTabContent: React.FC<SeatingTabContentProps> = ({
         existingTeamCount={classTeams.length}
       />
 
-      {/* ─── 자리 배치도 칭찬 현황 위젯 (접었다 폈다 할 수 있고 드롭다운으로 학급/팀/분단 선택) ─── */}
-      <SeatingPraiseWidget
-        slots={currentSlots}
-        config={currentConfig}
-        classKey={classKey}
-        targetGoal={praiseTargetGoal}
-      />
+      {/* ─── 칭찬 현황 바 · 과제 현황 바 (칭찬·숙제 탭의 [배치도에서 확인]으로 켜고 끔)
+               둘 다 켜면 넓은 화면에서 한 줄에 반씩, 하나만 켜면 한 줄 전체 ─── */}
+      {(showPraiseBar || showHwBar) && (
+        <div className="w-full flex flex-col lg:flex-row lg:items-start gap-x-2 mb-2">
+          {showPraiseBar && (
+            <div className="flex-1 min-w-0 [&>div]:!mb-0 mb-2 lg:mb-0">
+              <SeatingPraiseWidget
+                slots={currentSlots}
+                config={currentConfig}
+                classKey={classKey}
+                targetGoal={praiseTargetGoal}
+              />
+            </div>
+          )}
+          {showHwBar && homeworkOverlay && (
+            <div className="flex-1 min-w-0 [&>div]:!mb-0">
+              <SeatingHomeworkWidget items={homeworkOverlay.items} classKey={classKey} />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ─── 메인 칠판 및 좌석 배치도 보드 (어떤 디스플레이 크기에서든 100% 꽉 채우고 양 옆 잘림 방지) ─── */}
       <div className={`bg-white border-2 border-slate-200/90 rounded-2xl sm:rounded-3xl shadow-sm w-full overflow-hidden ${
@@ -1292,7 +1350,7 @@ export const SeatingTabContent: React.FC<SeatingTabContentProps> = ({
           config={currentConfig}
           revealedCount={revealedCount}
           movingSourceSlot={movingSourceSlot}
-          viewOptions={viewOptions}
+          viewOptions={boardViewOptions}
           studentsMap={studentsMap}
           teams={classTeams}
           isFullscreen={isFullscreen}
@@ -1305,6 +1363,7 @@ export const SeatingTabContent: React.FC<SeatingTabContentProps> = ({
           onMoveOrSwap={handleMoveOrSwap}
           onQuickPraise={handlePraiseChange}
           onPraiseChange={handlePraiseChange}
+          homeworkOverlay={displayPrefs.hwCards ? homeworkOverlay : undefined}
         />
       </div>
 
@@ -1389,6 +1448,8 @@ export const SeatingTabContent: React.FC<SeatingTabContentProps> = ({
         onStartMove={handleStartMove}
         onClearSeat={handleClearSeat}
       />
+      {/* ─── 칭찬 성장 등급 승급 축하 순차 팝업 모달 ─── */}
+      <PraisePromotionModal classKey={classKey} />
     </div>
   );
 };

@@ -211,18 +211,39 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
               {scheduleDays.map((d) => {
                 if (!enr) return <td key={d.dayIndex} className="border border-black align-middle">&nbsp;</td>;
                 const rm = getDayMark(enr.studentId, d.dayIndex);
-                const symbol = typeof rm === 'object' ? rm.symbol : rm;
-                const isO = symbol === 'O' || symbol === '출석';
-                const isTri = symbol === '△' || symbol === '지각' || symbol === '조퇴';
-                const isX = symbol === '×' || symbol === 'X' || symbol === '결석';
+                const symbol = typeof rm === 'object' && rm !== null ? rm.symbol : (rm || '');
+                const cleanSym = String(symbol || '').trim();
+                const isO = cleanSym === 'O' || cleanSym === 'o' || cleanSym === '○' || cleanSym === '◯' || cleanSym === '출석' || cleanSym === 'ATTEND';
+                const isTri = cleanSym === '△' || cleanSym === 'V' || cleanSym === 'v' || cleanSym === '지각' || cleanSym === '조퇴' || cleanSym === '개별하교' || cleanSym === 'LATE' || cleanSym === 'EARLY_LEAVE' || cleanSym === 'INDIVIDUAL_DISMISSAL';
+                const isX = cleanSym === '×' || cleanSym === 'X' || cleanSym === 'x' || cleanSym === '결석' || cleanSym === 'ABSENT';
+                const isDash = cleanSym === '―' || cleanSym === '-';
                 return (
                   <td
                     key={d.dayIndex}
-                    className={`border border-black text-[10.5px] font-bold align-middle ${
-                      isO ? 'text-black font-black' : isTri ? 'text-purple-700' : isX ? 'text-rose-600' : 'text-slate-300'
-                    }`}
+                    className="border border-black text-center align-middle p-0 leading-none"
                   >
-                    {isO ? 'O' : isTri ? '△' : isX ? '×' : (symbol && symbol !== '-' ? symbol : '')}
+                    {isO ? (
+                      <svg
+                        className="w-[13px] h-[13px] mx-auto inline-block align-middle print:w-[13px] print:h-[13px]"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        style={{ display: 'inline-block', verticalAlign: 'middle' }}
+                        aria-label="출석"
+                      >
+                        <circle cx="12" cy="12" r="8" stroke="#000000" strokeWidth="3.2" />
+                      </svg>
+                    ) : isTri ? (
+                      <span className="text-purple-700 font-black text-[11px] leading-none inline-block align-middle">△</span>
+                    ) : isX ? (
+                      <span className="text-rose-600 font-black text-[12px] leading-none inline-block align-middle">×</span>
+                    ) : isDash ? (
+                      <span className="text-slate-400 font-bold text-[11px] leading-none inline-block align-middle">―</span>
+                    ) : (
+                      <span className="text-slate-400 font-normal text-[10px] leading-none inline-block align-middle">
+                        {cleanSym && cleanSym !== '-' && cleanSym !== '·' ? cleanSym : ''}
+                      </span>
+                    )}
                   </td>
                 );
               })}
@@ -294,6 +315,13 @@ export const OfficialAttendanceSheet: React.FC<OfficialAttendanceSheetProps> = (
             background: #ffffff !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+          }
+          svg {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          svg circle {
+            stroke: #000000 !important;
           }
           /* admin UI 등 모달 외 모든 요소 레이아웃 공간까지 완전 제거 (11장 백지 방지) */
           body > *:not(.oas-modal-overlay) {

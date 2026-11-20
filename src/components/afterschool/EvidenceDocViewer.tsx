@@ -16,6 +16,7 @@ import { OfficialAttendanceSheet } from '@/components/afterschool/teacher/Offici
 import { OfficialWorkRegister } from '@/components/afterschool/teacher/OfficialWorkRegister';
 import { afterschoolDayMark, afterschoolTermHeader, attendanceMarkDisplay } from '@/lib/afterschool/attendanceMarks';
 import { instructorSealEmail, findTeacherSignature, findSignatureFromRecords, type TeacherSignatureBook } from '@/lib/teachers/teacherRegistry';
+import { isActualSignature } from '@/lib/safety/stampHelper';
 
 export type EvidenceDocType = 'ATTENDANCE' | 'WORK_REGISTER';
 
@@ -72,7 +73,8 @@ export function EvidenceDocViewer({
     if (!instName) return '';
     const cleanName = instName.trim();
     const docSigs = (approvalDoc as any)?.instructorSignatures;
-    if (docSigs && docSigs[cleanName]) return docSigs[cleanName];
+    // 서류에 담긴 값이 빈 이미지·가상 도장이면 계정에 등록된 실제 서명을 가리지 않도록 건너뜀
+    if (docSigs && isActualSignature(docSigs[cleanName])) return docSigs[cleanName];
     return (
       findTeacherSignature(sigBook, cleanName, instructorSealEmail(c, cleanName, substituteRecords as any)) ||
       findSignatureFromRecords(sigBook, cleanName, allDocs as any, allCourses)

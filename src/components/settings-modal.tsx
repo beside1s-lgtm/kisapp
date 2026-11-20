@@ -1,6 +1,9 @@
 'use client';
 
-import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache, normalizeGrade, resolveDepartment, syncAllUsersToOrgStructure, isFacultyMember, resetParentPin } from '@/lib/services/userService';
+import { bulkRegisterUsers, bulkRegisterStudents, getUsersDirectory, saveUserProfile, deleteUser, invalidateUsersCache, normalizeGrade, resolveDepartment, syncAllUsersToOrgStructure, isFacultyMember, resetParentPin, getTeacherSignaturesDirectory, invalidateSignaturesCache } from '@/lib/services/userService';
+import { updateCachedSignature } from '@/lib/teachers/teacherRegistry';
+import { isActualSignature } from '@/lib/safety/stampHelper';
+import { TeacherSignatureProxyModal } from './settings/TeacherSignatureProxyModal';
 import { buildStaffApiHeaders } from '@/lib/staffApiHeaders';
 import { createMasterStudent, updateMasterStudent, deleteMasterStudent } from '@/lib/services/masterStudentService';
 import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES, getGoogleDriveConfig, saveGoogleDriveConfig, DEFAULT_GOOGLE_DRIVE_CONFIG } from '@/lib/services/settingsService';
@@ -67,8 +70,10 @@ import {
   Clock,
   HardDrive,
   Folder,
-  ExternalLink
+  ExternalLink,
+  AlertTriangle
 } from 'lucide-react';
+import { shiftAcademicCalendarToYear } from '@/lib/services/academicCalendarService';
 import NextImage from 'next/image';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ScrollArea } from './ui/scroll-area';
@@ -965,6 +970,10 @@ export function SettingsModal() {
   };
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [facilities, setFacilities] = useState<SchoolFacility[]>([]);
+  const [signaturesMap, setSignaturesMap] = useState<Record<string, string>>({});
+  const [signatureProxyUser, setSignatureProxyUser] = useState<UserProfile | null>(null);
+  const [isSignatureProxyOpen, setIsSignatureProxyOpen] = useState(false);
+  const [sigFilter, setSigFilter] = useState<'all' | 'registered' | 'unregistered'>('all');
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedHomeroomFile, setSelectedHomeroomFile] = useState<File | null>(null);
@@ -1056,6 +1065,10 @@ export function SettingsModal() {
   // 3월 이후면 현재 연도, 1~2월이면 전년도가 현재 학년도
   const defaultAcademicYear = String(currentMonth >= 3 ? currentYear : currentYear - 1);
   const [selectedAcademicYear, setSelectedAcademicYear] = useState(defaultAcademicYear);
+  // 시스템 학년도 적용 (학사 일정 관리 탭 최상단) — 선택만 하고 [적용]을 눌러야 바뀜
+  const [yearToApply, setYearToApply] = useState<string>('');
+  // 학년도별 폴더: 현재 학년도만 펼치고, 다른 학년도는 작은 버튼으로 (누르면 펼침)
+  const [expandedFolderYear, setExpandedFolderYear] = useState<string | null>(null);
   // 학년도 목록: 현재 학년도 기준 ±2년 (내림차순)
   const academicYearOptions = Array.from({ length: 5 }, (_, i) => {
     const base = currentMonth >= 3 ? currentYear + 1 - i : currentYear - i;
@@ -1215,11 +1228,59 @@ export function SettingsModal() {
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
 
   const fetchUsers = async (forceRefresh = false) => {
-    if (forceRefresh) invalidateUsersCache();
-    const data = await getUsersDirectory(forceRefresh);
+    if (forceRefresh) {
+      invalidateUsersCache();
+      invalidateSignaturesCache();
+    }
+    const [data, sigMap] = await Promise.all([
+      getUsersDirectory(forceRefresh),
+      getTeacherSignaturesDirectory(forceRefresh).catch(() => ({} as Record<string, string>))
+    ]);
+    if (sigMap) setSignaturesMap(sigMap);
     // 이메일 기준으로 중복 제거 (Map 사용)
     const uniqueUsers = Array.from(new Map(data.map(user => [user.email || user.uid, user])).values());
     setUsers(uniqueUsers.sort((a, b) => (a.name || a.parentName || a.email || '').localeCompare(b.name || b.parentName || b.email || '', 'ko')));
+  };
+
+  const handleSaveTeacherSignature = async (targetUser: UserProfile, signatureDataUrl: string) => {
+    if (!targetUser?.email) return;
+    const emailLower = targetUser.email.toLowerCase().trim();
+    const userName = (targetUser.name || '').trim();
+
+    const result = await saveUserProfile(targetUser.uid, targetUser.email, { signature: signatureDataUrl });
+    if (result.success) {
+      invalidateSignaturesCache();
+      updateCachedSignature(targetUser.email, targetUser.name, signatureDataUrl);
+
+      setSignaturesMap(prev => {
+        const next = { ...prev };
+        if (signatureDataUrl) {
+          next[emailLower] = signatureDataUrl;
+          if (userName) next[userName] = signatureDataUrl;
+        } else {
+          delete next[emailLower];
+          if (userName) delete next[userName];
+        }
+        return next;
+      });
+
+      setUsers(prev => prev.map(u => {
+        if (u.email?.toLowerCase().trim() === emailLower) {
+          return { ...u, signature: signatureDataUrl };
+        }
+        return u;
+      }));
+
+      toast({
+        title: signatureDataUrl ? '서명(도장) 등록 완료' : '서명 삭제 완료',
+        description: signatureDataUrl
+          ? `${targetUser.name} 교직원의 서명(도장)이 등록되었습니다.`
+          : `${targetUser.name} 교직원의 서명이 삭제되었습니다.`
+      });
+    } else {
+      toast({ variant: 'destructive', title: '서명 저장 실패', description: result.error });
+      throw new Error(result.error || '저장 실패');
+    }
   };
 
   // 학생 탭 필터/검색/페이지네이션 상태
@@ -1296,6 +1357,10 @@ export function SettingsModal() {
         setHeaderPreview(data.headerImage || '');
         if (data.academicCalendar) {
           setAcademicCal(data.academicCalendar);
+          if (data.academicCalendar.year) {
+            setSelectedAcademicYear(String(data.academicCalendar.year));
+            setYearToApply(String(data.academicCalendar.year));
+          }
         } else if (data.annualSchoolDays) {
           setAcademicCal(prev => ({ ...prev, annualSchoolDays: data.annualSchoolDays || 190 }));
         }
@@ -1343,6 +1408,47 @@ export function SettingsModal() {
         setIsOpen(false);
       } else {
         toast({ variant: 'destructive', title: '저장 실패', description: result.error });
+      }
+    });
+  };
+
+  // ─── 시스템 학년도 적용: 앱 전체(방과후·스쿨버스·결재·학급 등)의 현재 학년도를 바꿈 ───
+  const handleApplyAcademicYear = () => {
+    const target = Number(yearToApply);
+    const prev = academicCal.year;
+    if (!target || target === prev) return;
+    const archived = config.academicCalendarArchive?.[String(target)];
+    const ok = confirm(
+      `시스템 학년도를 ${prev}학년도 → ${target}학년도로 바꿉니다.\n\n` +
+        `• 방과후·스쿨버스·결재·학급 관리 등 앱의 모든 기능이 ${target}학년도 기준으로 바뀝니다.\n` +
+        `• ${prev}학년도 학사 일정은 보관되며, 다시 ${prev}학년도로 돌아오면 그대로 불러옵니다.\n` +
+        (archived
+          ? `• 보관해 둔 ${target}학년도 학사 일정을 불러옵니다.\n`
+          : `• ${target}학년도 학기·방학 기간은 지난 일정을 1년씩 옮긴 초안으로 채워집니다. 적용 후 실제 날짜로 고쳐 주세요.\n`) +
+        `\n담임 선생님들이 [학급 관리 > 학급 기록 내보내기(보관용)]로 지난 학년도 학급 기록을 먼저 백업했는지 확인하셨나요?\n\n적용할까요?`
+    );
+    if (!ok) return;
+    startSaving(async () => {
+      const nextCal = archived ? { ...archived, year: target } : shiftAcademicCalendarToYear(academicCal, target);
+      const finalConfig: DocConfig = {
+        ...config,
+        annualSchoolDays: nextCal.annualSchoolDays,
+        academicCalendar: nextCal,
+        academicCalendarArchive: { ...(config.academicCalendarArchive || {}), [String(prev)]: academicCal },
+        academicYearAppliedAt: new Date().toISOString(),
+      };
+      const result = await saveDocConfig(finalConfig);
+      if (result.success) {
+        setConfig(finalConfig);
+        setAcademicCal(nextCal);
+        setSelectedAcademicYear(String(target));
+        setExpandedFolderYear(null);
+        toast({
+          title: `${target}학년도가 시스템 전체에 적용되었습니다.`,
+          description: archived ? '보관된 학사 일정을 불러왔습니다.' : '아래 학기·방학 기간을 실제 날짜로 고친 뒤 [학사 일정 설정 저장]을 눌러 주세요.',
+        });
+      } else {
+        toast({ variant: 'destructive', title: '학년도 적용 실패', description: result.error });
       }
     });
   };
@@ -2703,8 +2809,46 @@ export function SettingsModal() {
                         {/* 학년도별 폴더 현황 */}
                         {googleDriveConfig.yearlyFolders && Object.keys(googleDriveConfig.yearlyFolders).length > 0 ? (
                           <div className="space-y-2">
+                            {(() => {
+                              // 현재(시스템) 학년도 블록만 펼치고, 다른 학년도는 작은 버튼으로 접어 둠
+                              const years = Object.keys(googleDriveConfig.yearlyFolders || {}).sort((a, b) => b.localeCompare(a));
+                              const sysYear = String(academicCal.year || defaultAcademicYear);
+                              const mainYear = years.includes(sysYear) ? sysYear : years[0];
+                              const others = years.filter((y) => y !== mainYear);
+                              if (others.length === 0) return null;
+                              return (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10.5px] font-bold text-slate-400 mr-0.5">다른 학년도</span>
+                                  {others.map((y) => {
+                                    const on = expandedFolderYear === y;
+                                    return (
+                                      <button
+                                        key={y}
+                                        type="button"
+                                        onClick={() => setExpandedFolderYear(on ? null : y)}
+                                        className={`h-6 px-2 rounded-md border text-[10.5px] font-bold flex items-center gap-1 transition-colors ${
+                                          on
+                                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                                            : 'bg-white border-slate-200 text-slate-600 hover:bg-indigo-50 hover:border-indigo-200'
+                                        }`}
+                                        title={on ? `${y}학년도 폴더 접기` : `${y}학년도 폴더 펼치기`}
+                                      >
+                                        <Folder className="w-3 h-3" />
+                                        {y}학년도
+                                        <ChevronDown className={`w-3 h-3 transition-transform ${on ? 'rotate-180' : ''}`} />
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
                             {Object.entries(googleDriveConfig.yearlyFolders)
                               .sort(([a], [b]) => b.localeCompare(a))
+                              .filter(([year], _i, arr) => {
+                                const sysYear = String(academicCal.year || defaultAcademicYear);
+                                const mainYear = arr.some(([y]) => y === sysYear) ? sysYear : arr[0]?.[0];
+                                return year === mainYear || year === expandedFolderYear;
+                              })
                               .map(([year, yf]) => {
                                 const deptEntries = Object.values(yf.departmentFolders || {});
                                 return (
@@ -2858,6 +3002,74 @@ export function SettingsModal() {
           <TabsContent value="academicCalendar" className="flex-1 min-h-0 mt-0 data-[state=active]:flex flex-col">
             <div className="flex-1 overflow-y-auto px-6 py-4">
               <div className="space-y-5 text-xs">
+                {/* 🗓️ 시스템 학년도 적용 — 앱 전체의 현재 학년도 */}
+                {(() => {
+                  const appliedYear = academicCal.year || Number(defaultAcademicYear);
+                  const options = Array.from(
+                    new Set([
+                      ...[appliedYear - 2, appliedYear - 1, appliedYear, appliedYear + 1, appliedYear + 2],
+                      ...Object.keys(config.academicCalendarArchive || {}).map(Number),
+                    ])
+                  )
+                    .filter(Boolean)
+                    .sort((a, b) => b - a);
+                  const pick = yearToApply || String(appliedYear);
+                  const changed = Number(pick) !== appliedYear;
+                  return (
+                    <div className="rounded-2xl border-2 border-indigo-200 bg-gradient-to-r from-indigo-50 to-white p-4 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0 lg:min-w-[320px] flex-1">
+                        <div className="w-11 h-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                          <Calendar className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-black text-slate-900 text-sm sm:text-base">시스템 학년도</span>
+                            <Badge className="bg-indigo-600 hover:bg-indigo-600 text-white font-black text-xs px-2">
+                              현재 {appliedYear}학년도
+                            </Badge>
+                          </div>
+                          <p className="text-slate-500 text-[11px] sm:text-xs mt-0.5">
+                            여기서 적용한 학년도가 방과후·스쿨버스·결재·학급 관리 등 앱의 모든 기능에 일괄 적용됩니다.
+                            {config.academicYearAppliedAt && (
+                              <span className="text-slate-400"> (마지막 적용: {new Date(config.academicYearAppliedAt).toLocaleDateString('ko-KR')})</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <select
+                          value={pick}
+                          onChange={(e) => setYearToApply(e.target.value)}
+                          className="h-9 text-sm font-bold border border-indigo-300 rounded-lg px-2.5 bg-white text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
+                        >
+                          {options.map((yr) => (
+                            <option key={yr} value={String(yr)}>
+                              {yr}학년도{yr === appliedYear ? ' (현재)' : config.academicCalendarArchive?.[String(yr)] ? ' (보관됨)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          type="button"
+                          onClick={handleApplyAcademicYear}
+                          disabled={!changed || isSaving}
+                          className="h-9 px-4 font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg"
+                        >
+                          {isSaving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
+                          학년도 적용
+                        </Button>
+                      </div>
+                      {changed && (
+                        <div className="lg:basis-full w-full flex items-start gap-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
+                          <span>
+                            적용 전에 담임 선생님들께 <b>[학급 관리 &gt; 학급 기록 내보내기(보관용)]</b>로 {appliedYear}학년도 학급 기록(자리배치·칭찬·숙제·알림장·관찰)을 백업하도록 안내해 주세요.
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* 헤더 안내 및 연동 버튼 */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
                   <div>
@@ -3688,21 +3900,78 @@ export function SettingsModal() {
                 })()}
 
                 <TabsContent value="teachers" className="flex-1 min-h-0 data-[state=active]:flex flex-col border rounded-md overflow-hidden">
-                  {/* 교직원 검색 입력 */}
-                  <div className="p-2 border-b bg-background sticky top-0 z-20">
-                    <Input
-                      placeholder="이름, 이메일, 부서로 검색..."
-                      value={teacherTabQuery}
-                      onChange={(e) => setTeacherTabQuery(e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
+                  {(() => {
+                    const facultyList = users.filter(u => isFacultyMember(u, deptMemberSet));
+                    let regCount = 0;
+                    let unregCount = 0;
+                    for (const u of facultyList) {
+                      const sig = signaturesMap[u.email?.toLowerCase()] || signaturesMap[u.name] || u.signature;
+                      if (isActualSignature(sig)) {
+                        regCount++;
+                      } else {
+                        unregCount++;
+                      }
+                    }
+
+                    return (
+                      <div className="p-2 border-b bg-background sticky top-0 z-20 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                        <Input
+                          placeholder="이름, 이메일, 부서로 검색..."
+                          value={teacherTabQuery}
+                          onChange={(e) => setTeacherTabQuery(e.target.value)}
+                          className="h-8 text-sm flex-1 min-w-[200px]"
+                        />
+                        {/* 서명 등록 여부 필터 탭 */}
+                        <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-md text-xs shrink-0 self-start sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={() => setSigFilter('all')}
+                            className={cn(
+                              "px-2.5 py-1 rounded text-xs transition-all",
+                              sigFilter === 'all'
+                                ? "bg-white text-slate-800 shadow-2xs font-bold"
+                                : "text-slate-600 hover:text-slate-900 font-medium"
+                            )}
+                          >
+                            전체 ({facultyList.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSigFilter('registered')}
+                            className={cn(
+                              "px-2.5 py-1 rounded text-xs transition-all flex items-center gap-1",
+                              sigFilter === 'registered'
+                                ? "bg-white text-emerald-700 shadow-2xs font-bold"
+                                : "text-slate-600 hover:text-slate-900 font-medium"
+                            )}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                            서명 등록 ({regCount})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSigFilter('unregistered')}
+                            className={cn(
+                              "px-2.5 py-1 rounded text-xs transition-all flex items-center gap-1",
+                              sigFilter === 'unregistered'
+                                ? "bg-white text-amber-700 shadow-2xs font-bold"
+                                : "text-slate-600 hover:text-slate-900 font-medium"
+                            )}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                            미등록 ({unregCount})
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div className="overflow-y-auto flex-1">
                   <Table>
                       <TableHeader className="sticky top-0 bg-background z-10">
                       <TableRow>
                           <TableHead className="w-[150px]">사용자</TableHead>
                           <TableHead>소속 (학년/부서)</TableHead>
+                          <TableHead className="w-[130px] text-center">서명 / 도장</TableHead>
                           <TableHead className="w-[140px]">담당 시설(학급)</TableHead>
                           <TableHead className="w-[140px]">직책</TableHead>
                           <TableHead className="w-[80px] text-center">연가(일)</TableHead>
@@ -3736,63 +4005,76 @@ export function SettingsModal() {
                                       className="h-8 w-24 text-xs"
                                   />
                                   <Input 
-                                      placeholder="부서 (예: 교무기획부)" 
-                                      value={newUser.dept || ''} 
-                                      onChange={(e) => setNewUser(p => ({ ...p, dept: e.target.value }))}
-                                      className="h-8 flex-1 text-xs"
-                                  />
-                                </div>
-                              </TableCell>
-                              <TableCell className="align-top pt-3">
-                                  <div className="flex flex-col gap-1.5">
-                                    <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r, loginRedirectUrl: r === '담당' ? p.loginRedirectUrl : (r === '강사' ? (p.loginRedirectUrl || '/teacher/afterschool') : '') }))}>
-                                        <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                                        <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
-                                    </Select>
-                                    {(newUser.role === '담당' || newUser.role === '강사') && (
-                                      <Select value={newUser.loginRedirectUrl || (newUser.role === '강사' ? '/teacher/afterschool' : '')} onValueChange={(v) => setNewUser(p => ({ ...p, loginRedirectUrl: v }))}>
-                                        <SelectTrigger className="h-8 text-xs text-slate-600">
-                                          <SelectValue placeholder="로그인 후 이동 페이지" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="/teacher/afterschool">방과후 출석부</SelectItem>
-                                          <SelectItem value="/teacher/bus">교사 버스 탑승 관리</SelectItem>
-                                          {newUser.role !== '강사' && (
-                                            <>
-                                              <SelectItem value="/admin/bus">스쿨버스 관리자</SelectItem>
-                                              <SelectItem value="/teacher/pe">학교체육</SelectItem>
-                                              <SelectItem value="/teacher/safety">학생 안전지도 관리</SelectItem>
-                                              <SelectItem value="/inbox">전자결재 대시보드</SelectItem>
-                                            </>
-                                          )}
-                                        </SelectContent>
-                                      </Select>
-                                    )}
-                                  </div>
-                              </TableCell>
-                              <TableCell className="align-top pt-3 text-xs text-slate-400 font-medium">
-                                -
-                              </TableCell>
-                              <TableCell className="align-top pt-3"></TableCell>
-                              <TableCell></TableCell>
-                              <TableCell className="text-right align-top pt-3">
-                                  <div className="flex justify-end gap-1">
-                                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleAddNewUser}><Save className="h-4 w-4 text-primary"/></Button>
-                                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setIsAddingNewUser(false)}><XCircle className="h-4 w-4 text-muted-foreground"/></Button>
-                                  </div>
-                              </TableCell>
-                          </TableRow>
-                      )}
-                      {(() => {
-                         return users.filter(user => {
-                           if (!isFacultyMember(user, deptMemberSet)) return false;
-                           if (!teacherTabQuery.trim()) return true;
-                           const q = teacherTabQuery.trim().toLowerCase();
-                           return (user.name || '').toLowerCase().includes(q) ||
-                             (user.email || '').toLowerCase().includes(q) ||
-                             (user.dept || '').toLowerCase().includes(q) ||
-                             (user.role || '').toLowerCase().includes(q);
-                         }).map(user => (
+                                     placeholder="부서 (예: 교무기획부)" 
+                                     value={newUser.dept || ''} 
+                                     onChange={(e) => setNewUser(p => ({ ...p, dept: e.target.value }))}
+                                     className="h-8 flex-1 text-xs"
+                                 />
+                               </div>
+                             </TableCell>
+                             {/* 신규 등록 행 서명 컬럼 */}
+                             <TableCell className="align-top pt-3 text-xs text-slate-400 font-medium text-center">
+                               -
+                             </TableCell>
+                             <TableCell className="align-top pt-3 text-xs text-slate-400 font-medium">
+                               -
+                             </TableCell>
+                             <TableCell className="align-top pt-3">
+                                 <div className="flex flex-col gap-1.5">
+                                   <Select value={newUser.role} onValueChange={(r) => setNewUser(p => ({ ...p, role: r, loginRedirectUrl: r === '담당' ? p.loginRedirectUrl : (r === '강사' ? (p.loginRedirectUrl || '/teacher/afterschool') : '') }))}>
+                                       <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                                       <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+                                   </Select>
+                                   {(newUser.role === '담당' || newUser.role === '강사') && (
+                                     <Select value={newUser.loginRedirectUrl || (newUser.role === '강사' ? '/teacher/afterschool' : '')} onValueChange={(v) => setNewUser(p => ({ ...p, loginRedirectUrl: v }))}>
+                                       <SelectTrigger className="h-8 text-xs text-slate-600">
+                                         <SelectValue placeholder="로그인 후 이동 페이지" />
+                                       </SelectTrigger>
+                                       <SelectContent>
+                                         <SelectItem value="/teacher/afterschool">방과후 출석부</SelectItem>
+                                         <SelectItem value="/teacher/bus">교사 버스 탑승 관리</SelectItem>
+                                         {newUser.role !== '강사' && (
+                                           <>
+                                             <SelectItem value="/admin/bus">스쿨버스 관리자</SelectItem>
+                                             <SelectItem value="/teacher/pe">학교체육</SelectItem>
+                                             <SelectItem value="/teacher/safety">학생 안전지도 관리</SelectItem>
+                                             <SelectItem value="/inbox">전자결재 대시보드</SelectItem>
+                                           </>
+                                         )}
+                                       </SelectContent>
+                                     </Select>
+                                   )}
+                                 </div>
+                             </TableCell>
+                             <TableCell className="align-top pt-3 text-xs text-slate-400 font-medium">
+                               -
+                             </TableCell>
+                             <TableCell className="align-top pt-3"></TableCell>
+                             <TableCell className="text-right align-top pt-3">
+                                 <div className="flex justify-end gap-1">
+                                     <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleAddNewUser}><Save className="h-4 w-4 text-primary"/></Button>
+                                     <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setIsAddingNewUser(false)}><XCircle className="h-4 w-4 text-muted-foreground"/></Button>
+                                 </div>
+                             </TableCell>
+                         </TableRow>
+                     )}
+                     {(() => {
+                        return users.filter(user => {
+                          if (!isFacultyMember(user, deptMemberSet)) return false;
+
+                          // 서명 등록 여부 필터
+                          const userSig = signaturesMap[user.email?.toLowerCase()] || signaturesMap[user.name] || user.signature;
+                          const hasSig = isActualSignature(userSig);
+                          if (sigFilter === 'registered' && !hasSig) return false;
+                          if (sigFilter === 'unregistered' && hasSig) return false;
+
+                          if (!teacherTabQuery.trim()) return true;
+                          const q = teacherTabQuery.trim().toLowerCase();
+                          return (user.name || '').toLowerCase().includes(q) ||
+                            (user.email || '').toLowerCase().includes(q) ||
+                            (user.dept || '').toLowerCase().includes(q) ||
+                            (user.role || '').toLowerCase().includes(q);
+                        }).map(user => (
                            <TableRow key={user.email}>
                              <TableCell>
                              <div className="flex items-center gap-1.5 flex-wrap">
@@ -3827,6 +4109,58 @@ export function SettingsModal() {
                                 </span>
                               )}
                             </div>
+                          </TableCell>
+                          {/* 서명 / 도장 확인 및 대리 등록 컬럼 */}
+                          <TableCell className="text-center py-2">
+                            {(() => {
+                              const userSig = signaturesMap[user.email?.toLowerCase()] || signaturesMap[user.name] || user.signature;
+                              const hasSig = isActualSignature(userSig);
+
+                              return (
+                                <div className="flex items-center justify-center gap-1.5">
+                                  {hasSig ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSignatureProxyUser(user);
+                                        setIsSignatureProxyOpen(true);
+                                      }}
+                                      className="group cursor-pointer flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-200 bg-white hover:border-blue-400 hover:shadow-xs transition-all"
+                                      title="서명/도장 확인 및 대리 변경"
+                                    >
+                                      <div className="h-6 w-12 bg-slate-50 rounded flex items-center justify-center overflow-hidden border border-slate-100">
+                                        <img
+                                          src={userSig}
+                                          alt="서명"
+                                          className="max-h-full max-w-full object-contain mix-blend-multiply"
+                                        />
+                                      </div>
+                                      <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px] px-1 py-0 h-4 font-bold shrink-0">
+                                        등록됨
+                                      </Badge>
+                                    </button>
+                                  ) : (
+                                    <div className="flex items-center justify-center gap-1">
+                                      <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-[10px] px-1.5 py-0.5 font-bold">
+                                        미등록
+                                      </Badge>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          setSignatureProxyUser(user);
+                                          setIsSignatureProxyOpen(true);
+                                        }}
+                                        className="h-6 px-1.5 text-[11px] font-semibold text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                                      >
+                                        대리 등록
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </TableCell>
                           {/* 담당 시설(학급) 컬럼 */}
                           <TableCell className="text-xs">
@@ -4531,6 +4865,15 @@ export function SettingsModal() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* 교직원 서명/도장 확인 및 대리 등록 모달 */}
+        <TeacherSignatureProxyModal
+          open={isSignatureProxyOpen}
+          onOpenChange={setIsSignatureProxyOpen}
+          user={signatureProxyUser}
+          currentSignature={signatureProxyUser ? (signaturesMap[signatureProxyUser.email?.toLowerCase()] || signaturesMap[signatureProxyUser.name] || signatureProxyUser.signature) : null}
+          onSaveSignature={handleSaveTeacherSignature}
+        />
       </DialogContent>
     </Dialog>
   );

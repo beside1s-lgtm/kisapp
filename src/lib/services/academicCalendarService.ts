@@ -23,6 +23,55 @@ export const DEFAULT_ACADEMIC_CALENDAR_CONFIG: AcademicCalendarConfig = {
     ]
 };
 
+/** 날짜 기준 추정 학년도 (3월 이후면 그해, 1~2월이면 전년도) — 설정을 아직 못 불러왔을 때만 사용 */
+export function estimateAcademicYearByDate(d: Date = new Date()): number {
+    return d.getMonth() + 1 >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+}
+
+// 시스템 설정(학사 일정 관리)에서 적용한 학년도 — 앱 전체의 현재 학년도 단일 출처
+let cachedSystemAcademicYear: number | null = null;
+
+/** 시스템 현재 학년도 (설정을 불러오기 전에는 날짜로 추정) */
+export function getSystemAcademicYear(): number {
+    return cachedSystemAcademicYear ?? estimateAcademicYearByDate();
+}
+
+/**
+ * 학사 일정을 다른 학년도로 옮긴 초안을 만든다.
+ * 학기·방학 기간은 연도 차이만큼 날짜를 옮기고(관리자가 이어서 실제 날짜로 고침),
+ * 학교 행사·휴업일 목록은 새 학년도 기간에 들어가는 것만 남긴다.
+ */
+export function shiftAcademicCalendarToYear(cal: AcademicCalendarConfig, newYear: number): AcademicCalendarConfig {
+    const diff = newYear - (cal.year || newYear);
+    const shift = (d?: string) => {
+        if (!d || !diff) return d || '';
+        const [y, m, day] = d.split('-').map(Number);
+        if (!y || !m || !day) return d;
+        const ny = y + diff;
+        // 2월 29일 등 없는 날짜는 그달 말일로
+        const last = new Date(ny, m, 0).getDate();
+        return `${ny}-${String(m).padStart(2, '0')}-${String(Math.min(day, last)).padStart(2, '0')}`;
+    };
+    const base = cal.semesters || DEFAULT_ACADEMIC_CALENDAR_CONFIG.semesters;
+    const semesters = {
+        sem1: { ...base.sem1, startDate: shift(base.sem1.startDate), endDate: shift(base.sem1.endDate) },
+        vacationSummer: { ...base.vacationSummer, startDate: shift(base.vacationSummer.startDate), endDate: shift(base.vacationSummer.endDate) },
+        sem2: { ...base.sem2, startDate: shift(base.sem2.startDate), endDate: shift(base.sem2.endDate) },
+        vacationWinter: { ...base.vacationWinter, startDate: shift(base.vacationWinter.startDate), endDate: shift(base.vacationWinter.endDate) },
+    };
+    const from = semesters.sem1.startDate || `${newYear}-03-01`;
+    const to = semesters.vacationWinter.endDate || `${newYear + 1}-02-28`;
+    // 공유 발송 기록은 새 학년도에 넘기지 않음 (Firestore는 undefined 값을 받지 않으므로 키째 뺌)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { publishedVersion: _pv, lastPublishedAt: _lp, ...rest } = cal;
+    return {
+        ...rest,
+        year: newYear,
+        semesters,
+        events: (cal.events || []).filter((e) => e.date >= from && e.date <= to),
+    };
+}
+
 export interface CurrentSemesterResult {
     semesterId: 'sem1' | 'vacationSummer' | 'sem2' | 'vacationWinter';
     key: '2026_1' | '2026_summer' | '2026_2' | '2026_winter' | string;
@@ -232,6 +281,7 @@ export function useAcademicCalendar() {
         const unsub = onDocConfigUpdate((docCfg: DocConfig | null) => {
             if (docCfg?.academicCalendar) {
                 setCalendarConfig(docCfg.academicCalendar);
+                if (docCfg.academicCalendar.year) cachedSystemAcademicYear = docCfg.academicCalendar.year;
             }
             setIsLoading(false);
         });
