@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { FileEdit, History, Info, AlertCircle, Loader2, Bus as BusIcon, GraduationCap, Calendar, UserCheck, CheckCircle2, Clock, MessageSquare, ArrowRight, CalendarPlus, HeartHandshake, Dumbbell } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
+import { useSystemAcademicYear } from '@/lib/services/academicCalendarService';
+import { homeroomDataKey } from '@/lib/academicYear';
 
 // Google Calendar 원클릭 일정 등록 URL 생성 헬퍼
 function getGoogleCalendarUrl({
@@ -95,13 +97,15 @@ export default function ParentsDashboard() {
   const [consultationConfig, setConsultationConfig] = useState<ConsultationConfig | null>(null);
   const [consultationSlots, setConsultationSlots] = useState<Record<string, BookingSlot>>({});
 
+  // 학급 상담 데이터 키: 시스템 학년도별 (담임 화면과 같은 규칙)
+  const systemYear = useSystemAcademicYear();
   const classKey = useMemo(() => {
     if (!profile?.studentGrade || !profile?.studentClass) return '';
     const g = parseInt(profile.studentGrade, 10);
     const c = parseInt(profile.studentClass, 10);
     if (isNaN(g) || isNaN(c)) return '';
-    return `${g}-${c}`;
-  }, [profile]);
+    return homeroomDataKey(`${g}-${c}`, systemYear);
+  }, [profile, systemYear]);
 
   // 방과후 신청 진행 여부: 기기 시계가 아닌 서버(인터넷 표준) 시각 + 학교 현지 시간대 기준 (신청 화면·서버 API와 동일 규칙)
   const afterschoolServerNow = useServerNow(15000);

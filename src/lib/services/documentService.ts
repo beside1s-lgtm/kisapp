@@ -36,6 +36,7 @@ import { getTeacherHomeroom } from '@/lib/services/permissionService';
 import { getDocConfig, getGoogleDriveConfig, getOrgStructure } from '@/lib/services/settingsService';
 import { pickYearFoldersForLookup, resolveSpecialDutyDepartment } from '@/lib/drive/deptFolderMapping';
 import { syncCompletedApprovalToHandoverTimeline } from '@/lib/services/handoverService';
+import { systemAcademicYearOf } from '@/lib/academicYear';
 
 function toIsoStringSafe(timestamp: any): string | null {
   if (!timestamp) return null;
@@ -742,9 +743,8 @@ export async function createDocument(payload: ApprovalDocPayload, userId: string
       const isVolunteer = payload.docType === 'volunteer';
       
       const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1;
-      const schoolYear = (currentMonth === 1 || currentMonth === 2) ? currentYear - 1 : currentYear;
+      // 학년도: 시스템 설정(학사 일정 관리)에서 적용한 학년도 — 바뀌면 문서 일련번호를 1번부터 다시 매김
+      const schoolYear = systemAcademicYearOf(settingsSnap.exists() ? (settingsSnap.data() as any) : null, now);
 
       if (settingsSnap.exists()) {
         const data = settingsSnap.data() as any;
@@ -1191,9 +1191,8 @@ export async function approveDocument(docId: string, userProfile: UserProfile, u
           const settingsRef = doc(getSettingsCol(), 'docConfig');
           const settingsSnap = await transaction.get(settingsRef);
           const now = new Date();
-          const currentYear = now.getFullYear();
-          const currentMonth = now.getMonth() + 1;
-          const schoolYear = (currentMonth === 1 || currentMonth === 2) ? currentYear - 1 : currentYear;
+          // 학년도: 시스템 설정(학사 일정 관리)에서 적용한 학년도 — 바뀌면 문서 일련번호를 1번부터 다시 매김
+          const schoolYear = systemAcademicYearOf(settingsSnap.exists() ? (settingsSnap.data() as any) : null, now);
 
           let nextNum = 1;
           const isFamilyCat = data.category === 'family';

@@ -1,4 +1,5 @@
 import type { ApprovalDoc, GoogleDriveConfig, OrgStructure } from '@/lib/types';
+import { getSystemAcademicYear } from '@/lib/services/academicCalendarService';
 import {
   getNormalizedTaskCompareKey,
   listDriveFilingFolderOptions,
@@ -58,7 +59,7 @@ export function collectRegistryFilingFolderOptions(
   org: Partial<OrgStructure> | null | undefined,
   selectedYear: string = '전체'
 ): DriveFilingFolderOption[] {
-  const currentYear = String(new Date().getFullYear());
+  const currentYear = String(getSystemAcademicYear());
   const yearsToInspect = new Set<string>();
 
   if (selectedYear && selectedYear !== '전체') {

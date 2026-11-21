@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getGoogleDriveClient, getGoogleSheetsClient } from '@/lib/server/googleAuth';
 import { resolveDeptArchiveFolder } from '@/lib/server/driveDeptFolderHelper';
 import { denyIfNotStaff } from '@/lib/server/staffRequestAuth';
+import { serverAcademicYearForDate } from '@/lib/server/systemAcademicYear';
 
 export async function POST(req: NextRequest) {
   // 로그인한 교직원만 호출 가능
@@ -35,10 +36,8 @@ export async function POST(req: NextRequest) {
       : null;
 
     if (parentFolderId || deptName || folderName) {
-      const now = new Date();
-      const curY = now.getFullYear();
-      const curM = now.getMonth() + 1;
-      const defaultYear = String(curM >= 3 ? curY : curY - 1);
+      // 학년도: 시스템 설정(학사 일정 관리)에서 적용한 학년도 기준
+      const defaultYear = academicYear ? '' : await serverAcademicYearForDate(new Date());
 
       const folderRes = await resolveDeptArchiveFolder({
         drive,

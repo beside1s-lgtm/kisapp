@@ -11,6 +11,8 @@ import { onOrgStructureUpdate } from '@/lib/services/settingsService';
 import { onUsersDirectoryUpdate } from '@/lib/services/userService';
 import type { ConsultationConfig, BookingSlot } from '@/lib/types/homeroomClass';
 import { Badge } from '@/components/ui/badge';
+import { useSystemAcademicYear } from '@/lib/services/academicCalendarService';
+import { homeroomDataKey } from '@/lib/academicYear';
 
 // Google Calendar 원클릭 일정 등록 URL 생성 헬퍼
 function getGoogleCalendarUrl({
@@ -64,12 +66,14 @@ export default function ParentConsultationPage() {
   const { toast } = useToast();
 
   // 자녀 학급 키 계산 (예: "4-2")
+  //  → 상담 데이터는 시스템 학년도별 키 (담임 화면과 같은 규칙, 예: 2027학년도 "2027_4-2")
+  const systemYear = useSystemAcademicYear();
   const classKey = useMemo(() => {
     if (!profile?.studentGrade || !profile?.studentClass) return '';
     const g = String(parseInt(profile.studentGrade, 10) || profile.studentGrade).trim();
     const c = String(parseInt(profile.studentClass, 10) || profile.studentClass).trim();
-    return `${g}-${c}`;
-  }, [profile]);
+    return homeroomDataKey(`${g}-${c}`, systemYear);
+  }, [profile, systemYear]);
 
   const classLabel = useMemo(() => {
     if (!profile?.studentGrade || !profile?.studentClass) return '';

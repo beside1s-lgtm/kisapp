@@ -1,6 +1,7 @@
 import { getDocConfig, onDocConfigUpdate } from './settingsService';
 import type { AcademicCalendarConfig, AcademicSemesterPeriod, AcademicEvent, DocConfig } from '@/lib/types';
 import { useState, useEffect } from 'react';
+import { estimateAcademicYearByDate, systemAcademicYearOf } from '@/lib/academicYear';
 
 // 기본 2026학년도 학사일정 폴백
 export const DEFAULT_ACADEMIC_CALENDAR_CONFIG: AcademicCalendarConfig = {
@@ -23,10 +24,7 @@ export const DEFAULT_ACADEMIC_CALENDAR_CONFIG: AcademicCalendarConfig = {
     ]
 };
 
-/** 날짜 기준 추정 학년도 (3월 이후면 그해, 1~2월이면 전년도) — 설정을 아직 못 불러왔을 때만 사용 */
-export function estimateAcademicYearByDate(d: Date = new Date()): number {
-    return d.getMonth() + 1 >= 3 ? d.getFullYear() : d.getFullYear() - 1;
-}
+export { estimateAcademicYearByDate } from '@/lib/academicYear';
 
 // 시스템 설정(학사 일정 관리)에서 적용한 학년도 — 앱 전체의 현재 학년도 단일 출처
 let cachedSystemAcademicYear: number | null = null;
@@ -34,6 +32,23 @@ let cachedSystemAcademicYear: number | null = null;
 /** 시스템 현재 학년도 (설정을 불러오기 전에는 날짜로 추정) */
 export function getSystemAcademicYear(): number {
     return cachedSystemAcademicYear ?? estimateAcademicYearByDate();
+}
+
+/**
+ * 시스템 현재 학년도 (실시간). 설정을 불러오기 전에는 null —
+ * 학년도별로 나뉘는 데이터(학급 관리 등)는 null인 동안 아무것도 읽거나 쓰지 않는다.
+ */
+export function useSystemAcademicYear(): number | null {
+    const [year, setYear] = useState<number | null>(cachedSystemAcademicYear);
+    useEffect(() => {
+        const unsub = onDocConfigUpdate((docCfg: DocConfig | null) => {
+            const y = systemAcademicYearOf(docCfg as any);
+            cachedSystemAcademicYear = y;
+            setYear(y);
+        });
+        return () => unsub();
+    }, []);
+    return year;
 }
 
 /**

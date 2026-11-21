@@ -8,6 +8,7 @@ import { SAFETY_INSPECTION_ITEMS } from '@/lib/safety/types';
 import { getTeacherStampSignature, isActualSignature } from '@/lib/safety/stampHelper';
 import { discardDriveTempFile } from '@/lib/server/driveTempCleanup';
 import { denyIfNotStaff } from '@/lib/server/staffRequestAuth';
+import { serverAcademicYearForDate } from '@/lib/server/systemAcademicYear';
 
 interface ArchiveSafetyInspectionRequest {
   yearMonth: string; // 예: "2026-11"
@@ -41,7 +42,10 @@ export async function POST(req: NextRequest) {
     // 1. 학년도 및 부서 하위 대상 폴더(안전점검표) 탐색 및 생성
     const monthDisplay = parseInt(yearMonth.split('-')[1] || '11', 10);
     const yearDisplay = yearMonth.split('-')[0] || '2026';
-    const academicYear = body.academicYear || (monthDisplay >= 3 ? yearDisplay : String(parseInt(yearDisplay, 10) - 1));
+    // 학년도: 점검 월(1일 기준)이 현재 시스템 학년도 시작 이후면 시스템 학년도
+    const academicYear =
+      body.academicYear ||
+      (await serverAcademicYearForDate(`${yearDisplay}-${String(monthDisplay).padStart(2, '0')}-01`));
     const rootFolderId = body.rootFolderId || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
     const def = SPECIAL_FOLDER_DEFS.safetyInspection;
 

@@ -6,6 +6,7 @@ import { Readable } from 'stream';
 import { format } from 'date-fns';
 import { discardDriveTempFile } from '@/lib/server/driveTempCleanup';
 import { denyIfNotStaff } from '@/lib/server/staffRequestAuth';
+import { serverAcademicYearForDate } from '@/lib/server/systemAcademicYear';
 
 interface ArchiveApprovalRequestBody {
   docId: string;
@@ -69,10 +70,8 @@ export async function POST(req: NextRequest) {
     const drive = getGoogleDriveClient();
 
     const approvalDate = parseSafeDate(docData.completedAt || docData.createdAt);
-    const currentYear = approvalDate.getFullYear();
-    const currentMonth = approvalDate.getMonth() + 1;
-    const academicYear =
-      body.academicYear || String(currentMonth >= 3 ? currentYear : currentYear - 1);
+    // 학년도: 결재일이 현재 시스템 학년도 시작 이후면 시스템 학년도, 지난 문서면 그 날짜의 학년도
+    const academicYear = body.academicYear || (await serverAcademicYearForDate(approvalDate));
     const rootFolderId = body.rootFolderId || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
 
     const deptName =

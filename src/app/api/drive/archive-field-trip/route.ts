@@ -6,6 +6,7 @@ import { Readable } from 'stream';
 import { format } from 'date-fns';
 import { discardDriveTempFile } from '@/lib/server/driveTempCleanup';
 import { denyIfNotStaff } from '@/lib/server/staffRequestAuth';
+import { serverAcademicYearForDate } from '@/lib/server/systemAcademicYear';
 
 interface ArchiveFieldTripRequestBody {
   docId: string;
@@ -44,10 +45,8 @@ export async function POST(req: NextRequest) {
     const drive = getGoogleDriveClient();
 
     // 1. 대상 폴더 (부서 하위 체험학습신청서(완료)) 확인
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
-    const academicYear = body.academicYear || String(currentMonth >= 3 ? currentYear : currentYear - 1);
+    // 학년도: 시스템 설정(학사 일정 관리)에서 적용한 학년도 기준
+    const academicYear = body.academicYear || (await serverAcademicYearForDate(new Date()));
     const rootFolderId = body.rootFolderId || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
     const def = SPECIAL_FOLDER_DEFS.fieldTripDone;
 

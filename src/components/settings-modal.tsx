@@ -6,7 +6,7 @@ import { isActualSignature } from '@/lib/safety/stampHelper';
 import { TeacherSignatureProxyModal } from './settings/TeacherSignatureProxyModal';
 import { buildStaffApiHeaders } from '@/lib/staffApiHeaders';
 import { createMasterStudent, updateMasterStudent, deleteMasterStudent } from '@/lib/services/masterStudentService';
-import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES, getGoogleDriveConfig, saveGoogleDriveConfig, DEFAULT_GOOGLE_DRIVE_CONFIG } from '@/lib/services/settingsService';
+import { getDocConfig, saveDocConfig, getOrgStructure, saveOrgStructure, getDelegationRules, saveDelegationRules, DEFAULT_DELEGATION_RULES, getGoogleDriveConfig, saveGoogleDriveConfig, DEFAULT_GOOGLE_DRIVE_CONFIG, saveTeacherApplySettings } from '@/lib/services/settingsService';
 import { getAuditLogs } from '@/lib/services/documentService';
 import { getSchoolFacilities } from '@/lib/services/safetyService';
 import type { SchoolFacility } from '@/lib/safety/types';
@@ -1421,6 +1421,9 @@ export function SettingsModal() {
     const ok = confirm(
       `시스템 학년도를 ${prev}학년도 → ${target}학년도로 바꿉니다.\n\n` +
         `• 방과후·스쿨버스·결재·학급 관리 등 앱의 모든 기능이 ${target}학년도 기준으로 바뀝니다.\n` +
+        `   - 결재 문서번호: ${target}학년도 1번부터 새로 매김 / 드라이브 보관: ${target}학년도 폴더\n` +
+        `   - 방과후: 운영 학년도·학기를 ${target}학년도 1학기로 바꿈 (운영 기간은 1학기 기간으로, 이후 방과후 설정에서 조정)\n` +
+        `   - 학급 관리(자리배치·칭찬·숙제·알림장·관찰·상담): ${target}학년도 학급은 빈 상태로 새로 시작\n` +
         `• ${prev}학년도 학사 일정은 보관되며, 다시 ${prev}학년도로 돌아오면 그대로 불러옵니다.\n` +
         (archived
           ? `• 보관해 둔 ${target}학년도 학사 일정을 불러옵니다.\n`
@@ -1439,6 +1442,21 @@ export function SettingsModal() {
       };
       const result = await saveDocConfig(finalConfig);
       if (result.success) {
+        // 방과후 운영 학년도·학기도 새 학년도 1학기로 (방과후는 학년도·학기를 따로 저장함)
+        const sem1 = nextCal.semesters?.sem1;
+        const asRes = await saveTeacherApplySettings({
+          year: String(target),
+          semester: '1학기',
+          ...(sem1?.startDate ? { operatingStartDate: sem1.startDate } : {}),
+          ...(sem1?.endDate ? { operatingEndDate: sem1.endDate } : {}),
+        });
+        if (!asRes.success) {
+          toast({
+            variant: 'destructive',
+            title: '방과후 학년도 변경 실패',
+            description: `방과후 설정에서 학년도를 ${target}으로 직접 바꿔 주세요. (${asRes.error})`,
+          });
+        }
         setConfig(finalConfig);
         setAcademicCal(nextCal);
         setSelectedAcademicYear(String(target));

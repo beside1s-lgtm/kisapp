@@ -44,6 +44,8 @@ import { getWorkingDaysCount, cn } from '@/lib/utils';
 import { resizeStudentPhoto } from '@/lib/imageResize';
 import { BatchPhotoModal } from '@/app/(app)/admin/students/batch-photo-modal';
 import { MainLayout } from '@/components/layout/main-layout';
+import { useSystemAcademicYear } from '@/lib/services/academicCalendarService';
+import { homeroomDataKey } from '@/lib/academicYear';
 
 // 법적 기준: 신청서·결석계 대리작성 시에도 신청인/보호자 자리에 학부모 이름과 도장(인) 날인 자동 생성
 function generateParentStampSignature(name: string): string {
@@ -258,6 +260,9 @@ export default function TeacherHomeroomApplyPage() {
 
   // 선택된 학급 키 (예: "4-4")
   const [selectedClassKey, setSelectedClassKey] = useState<string>('');
+  // 학급 관리·학부모 상담 데이터는 시스템 학년도별로 따로 저장 (예: 2027학년도 → "2027_4-4")
+  const systemYear = useSystemAcademicYear();
+  const classDataKey = homeroomDataKey(selectedClassKey, systemYear);
   // 선택된 학생 ID
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
 
@@ -1203,7 +1208,7 @@ export default function TeacherHomeroomApplyPage() {
           )}
 
           <ClassManagementTab
-            classKey={selectedClassKey}
+            classKey={classDataKey}
             classLabel={selectedClassKey ? formatClassLabel(selectedClassKey) : '우리 반'}
             students={classStudents}
             userEmail={user?.email || undefined}
@@ -1248,7 +1253,7 @@ export default function TeacherHomeroomApplyPage() {
           )}
 
           <ParentConsultationTab
-            classKey={selectedClassKey}
+            classKey={classDataKey}
             classLabel={selectedClassKey ? formatClassLabel(selectedClassKey) : '우리 반'}
             students={classStudents}
             userEmail={user?.email || undefined}

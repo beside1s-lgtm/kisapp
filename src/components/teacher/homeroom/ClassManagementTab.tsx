@@ -12,6 +12,7 @@ import {
   FolderOpen,
   LayoutGrid,
   Sparkles,
+  Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -58,6 +59,8 @@ import { BehaviorInputDialog } from './class-management/BehaviorInputDialog';
 import { EditHomeworkDialog } from './class-management/EditHomeworkDialog';
 import { MemoHistoryDialog } from './class-management/MemoHistoryDialog';
 import { startClassStateSync, startTeacherPrefsSync } from '@/lib/services/classStateSync';
+import { buildClassRecordExport, downloadHtml } from '@/lib/services/homeroomClassExport';
+import { useSystemAcademicYear } from '@/lib/services/academicCalendarService';
 
 interface ClassManagementTabProps {
   classKey: string;
@@ -73,6 +76,30 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
   userEmail,
 }) => {
   const { toast } = useToast();
+  const systemYear = useSystemAcademicYear();
+  const [isExporting, setIsExporting] = useState(false);
+
+  // 학급 기록 내보내기(보관용 HTML) — 학년도 넘기기 전 백업
+  const handleExportClassRecords = async () => {
+    if (!classKey || isExporting) return;
+    setIsExporting(true);
+    try {
+      const { html, fileName } = await buildClassRecordExport({
+        classKey,
+        classLabel,
+        academicYear: systemYear || new Date().getFullYear(),
+        students: students.map((s) => ({ id: s.studentId || s.id || '', name: s.name, num: s.studentNum || '' })),
+        exportedBy: userEmail,
+      });
+      downloadHtml(html, fileName);
+      toast({ title: '학급 기록 내보내기 완료', description: `${fileName} 파일을 내려받았습니다. 안전한 곳에 보관해 주세요.` });
+    } catch (err: any) {
+      console.error(err);
+      toast({ variant: 'destructive', title: '내보내기 실패', description: err?.message || '학급 기록을 읽지 못했습니다.' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // 내부 탭 상태: 'seating' (수업 도구: 자리배치/칭찬, 뽑기, 모둠, 칠판알림, 숙제확인) | 'behavior' (행동 기록) | 'review' (기록 조회/상담) | 'matrix' (월별 현황) | 'materials' (학년 자료 공유) | 'memo' | 'homework'
   const [subTab, setSubTab] = useState<'memo' | 'homework' | 'behavior' | 'review' | 'matrix' | 'materials' | 'seating'>('seating');
@@ -691,11 +718,22 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
       {/* 상단 학급 정보 및 탭 네비게이션 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xl font-black text-slate-800 tracking-tight">{classLabel} 학급 교실 관리</span>
-            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 font-bold text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xl font-black text-slate-800 tracking-tight whitespace-nowrap">{classLabel} 학급 교실 관리</span>
+            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 font-bold text-xs whitespace-nowrap">
               재적 {students.length}명
             </Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportClassRecords}
+              disabled={isExporting}
+              className="h-7 text-xs font-bold gap-1 rounded-lg px-2 cursor-pointer whitespace-nowrap"
+              title="알림장·숙제·관찰·상담·자리배치·칭찬 기록을 보관용 HTML 파일로 내려받습니다"
+            >
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span>{isExporting ? '내보내는 중…' : '학급 기록 내보내기(보관용)'}</span>
+            </Button>
           </div>
           <p className="hidden sm:block text-xs text-slate-500 mt-0.5">
             칠판 알림 메모, 과제 원터치 체크 및 전자칠판 프레젠테이션, 관찰 기록과 상담 메모를 총괄합니다.
