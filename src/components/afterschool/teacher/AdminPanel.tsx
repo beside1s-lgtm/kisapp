@@ -3,7 +3,7 @@ import { useRouter } from 'next/navigation';
 import type { Course, Classroom, SubmittedApprovalDoc, SessionPeriod, Enrollment, Student, MaterialRequest, ExpenseProof, SubmissionReminder, AttendanceRecord, SubstituteRecord } from '@/lib/afterschool/types';
 import {
   X, Plus, Trash2, CheckCircle2, XCircle, Building2,
-  ClipboardList, BookOpen, Send, Shield, FileText, Download, Upload, Clock, Edit3, Calendar, Settings, Save, Lock, Unlock, Pause, UserPlus, UserCheck, Filter, Activity, Play, ChevronUp, ChevronDown, DollarSign, Bell, Square, AlertCircle, Loader2, Printer, Eye, ExternalLink, Image as ImageIcon, Search
+  ClipboardList, BookOpen, Send, Shield, FileText, Download, Upload, Clock, Edit3, Calendar, Settings, Save, Lock, Unlock, Pause, UserPlus, UserCheck, Filter, Activity, Play, ChevronUp, ChevronDown, DollarSign, Bell, Square, AlertCircle, Loader2, Printer, Eye, ExternalLink, Image as ImageIcon, Search, GraduationCap
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -19,6 +19,8 @@ import { OfficialAttendanceSheet, OfficialSeal } from './OfficialAttendanceSheet
 import { OfficialWorkRegister } from './OfficialWorkRegister';
 import { SignatureRegisterModal } from './SignatureRegisterModal';
 import { SubstituteModal } from './SubstituteModal';
+import { TeacherManagementTab } from './TeacherManagementTab';
+import { courseInstructors } from '@/lib/afterschool/settlement';
 import { afterschoolDayMark, afterschoolTermHeader, attendanceMarkDisplay } from '@/lib/afterschool/attendanceMarks';
 import { EvidenceApprovalCard } from './EvidenceApprovalCard';
 import { evidenceStage } from '@/lib/afterschool/evidenceApproval';
@@ -46,7 +48,7 @@ interface AdminPanelProps {
   timerConfig?: any;
 }
 
-type AdminTab = 'courses' | 'batchCreate' | 'students' | 'classrooms' | 'approval';
+type AdminTab = 'courses' | 'batchCreate' | 'students' | 'classrooms' | 'teachers' | 'approval';
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   courses,
@@ -935,6 +937,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     { key: 'batchCreate', icon: <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />, label: t('afterschool.admin.tab_batch') || '강좌 일괄 개설', shortLabel: t('afterschool.admin.tab_batch_short') || '일괄개설' },
     { key: 'students', icon: <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />, label: t('afterschool.admin.tab_students') || '수강생 관리', shortLabel: t('afterschool.admin.tab_students_short') || '수강생' },
     { key: 'classrooms', icon: <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />, label: t('afterschool.admin.tab_classrooms') || '교실 관리', shortLabel: t('afterschool.admin.tab_classrooms_short') || '교실' },
+    { key: 'teachers', icon: <GraduationCap className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />, label: t('afterschool.admin.tab_teachers') || '강사 관리', shortLabel: t('afterschool.admin.tab_teachers_short') || '강사' },
     { key: 'approval', icon: <ClipboardList className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />, label: t('afterschool.admin.tab_approval') || '전자결재 일괄 기안', shortLabel: t('afterschool.admin.tab_approval_short') || '전자결재' },
   ];
 
@@ -963,7 +966,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
 
         {/* Panel Content */}
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain overflow-x-hidden p-1.5 sm:p-2.5 space-y-1.5 sm:space-y-2 min-w-0 w-full">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain overflow-x-hidden p-1.5 sm:p-2.5 pb-36 sm:pb-8 space-y-1.5 sm:space-y-2 min-w-0 w-full">
 
           {/* ===== 방과후학교 운영 단계 마스터 설정 카드 (접기/펼치기 기능 지원) ===== */}
           <div className="bg-white p-2 sm:p-3 rounded-xl border border-blue-200 shadow-2xs space-y-1.5 sm:space-y-2 transition-all min-w-0">
@@ -2205,6 +2208,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 })}
               </div>
             </div>
+          )}
+
+          {/* Tab: 강사 관리 */}
+          {tab === 'teachers' && (
+            <TeacherManagementTab
+              courses={courses}
+              attendanceRecords={attendanceRecords}
+              substituteRecords={substituteRecords}
+              approvalDocs={approvalDocs}
+              enrollments={enrollments}
+              teacherApplySettings={teacherApplySettings}
+              docConfig={docConfig}
+              holidayDates={holidayDates}
+              sigBook={sigBook}
+              onOpenSubstituteModal={handleOpenSubstituteModal}
+              onRequestSignature={(teacherName, courseId) => {
+                const c =
+                  courses.find((crs) => crs.id === courseId) ||
+                  courses.find((crs) => courseInstructors(crs).includes(teacherName)) ||
+                  courses[0];
+                setSigModalTarget({
+                  teacherName,
+                  courseId: c?.id,
+                  teacherEmail: c ? instructorSealEmail(c, teacherName, substituteRecords) : undefined,
+                });
+              }}
+            />
           )}
 
           {/* Tab: 전자결재 일괄 기안 */}

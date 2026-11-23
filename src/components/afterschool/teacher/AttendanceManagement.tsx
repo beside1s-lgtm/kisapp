@@ -1577,7 +1577,7 @@ const getTeacherAttendanceRow = (sNos: number[]) => {
             </button>
           </div>
 
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-4xl mx-auto w-full overflow-hidden">
             <OfficialWorkRegister
               course={currentCourse}
               scheduleDays={scheduleDays}

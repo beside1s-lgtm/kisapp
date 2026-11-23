@@ -254,7 +254,16 @@ firebase.json             # Firebase 호스팅, 스토리지 및 App Hosting 배
   * `FixtureHandoverEditor.tsx` : 비품 인계서 작성/수정 에디터 (시스템 설정 [시설 및 학급] 실시간 연동, 특별실 검색 및 정식 시설 칩 선택기, 윈도우 비밀번호 가로 행 입력, 교원 전용 후임 인수자 자동완성 검색, 잠금 시 비활성화)
   * `FixtureHandoverViewer.tsx` : 비품 인계서 상세 뷰어 (A4 인쇄 미리보기, 인계자 제출 회수 기능, 3단계 인계・인수・입회 전자 서명 날인 현황 카드, 잠금 시 회수/수정 차단)
 
-### 카. 전자결재 및 공통 (`src/components/document-form/`, `src/components/inbox/`)
+### 카. 방과후학교 관리 (`src/components/afterschool/teacher/`)
+* `AdminPanel.tsx` : 방과후학교 관리자 메인 패널 (강좌 현황, 강좌 일괄 개설, 수강생 관리, 교실 관리, 강사 관리, 전자결재 일괄 기안 6대 탭 오케스트레이션)
+* `TeacherManagementTab.tsx` : 방과후학교 강사 관리 탭 (강사별 배정 강좌, 예상 및 실제 수업시수, 보결·대강 내역, 실시간 총 강사수당 산출 및 5개 시트 엑셀 다운로드)
+* `OfficialAttendanceSheet.tsx` : A4 세로 공식 출석부 모달 및 인쇄 컴포넌트
+* `OfficialWorkRegister.tsx` : A4 세로 공식 강사출근부 인쇄 컴포넌트
+* `SubstituteModal.tsx` : 관리자 및 강사 결근·보결(대강) 등록/수정 모달
+* `CourseManagement.tsx` : 강좌 개별/일괄 관리 및 승인
+* `StudentManagement.tsx` : 방과후 수강생 및 대기자 관리
+
+### 타. 전자결재 및 공통 (`src/components/document-form/`, `src/components/inbox/`)
 * `document-form/` : 기안서 폼 컨테이너 및 결재선/공람 다이얼로그
 * `inbox/OvertimeBarChart.tsx` : 부서/개인별 초과근무 시간대별 시각화 차트
 * `official-document-print.tsx` : 표준 기안문 인쇄 서식

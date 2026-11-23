@@ -568,6 +568,8 @@
     "afterschool.admin.tab_students_short": "Students",
     "afterschool.admin.tab_classrooms": "Classroom Management",
     "afterschool.admin.tab_classrooms_short": "Rooms",
+    "afterschool.admin.tab_teachers": "Instructor Management",
+    "afterschool.admin.tab_teachers_short": "Instructors",
     "afterschool.admin.tab_approval": "Batch Electronic Approval",
     "afterschool.admin.tab_approval_short": "Approval",
     "afterschool.admin.stage_control": "Stage Control",

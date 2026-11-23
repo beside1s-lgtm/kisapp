@@ -567,6 +567,8 @@
     "afterschool.admin.tab_students_short": "Học sinh",
     "afterschool.admin.tab_classrooms": "Quản lý phòng học",
     "afterschool.admin.tab_classrooms_short": "Phòng học",
+    "afterschool.admin.tab_teachers": "Quản lý giáo viên",
+    "afterschool.admin.tab_teachers_short": "Giáo viên",
     "afterschool.admin.tab_approval": "Dự thảo phê duyệt hàng loạt",
     "afterschool.admin.tab_approval_short": "Phê duyệt",
     "afterschool.admin.stage_control": "Kiểm soát",

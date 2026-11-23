@@ -590,6 +590,8 @@
     "afterschool.admin.tab_students_short": "수강생",
     "afterschool.admin.tab_classrooms": "교실 관리",
     "afterschool.admin.tab_classrooms_short": "교실",
+    "afterschool.admin.tab_teachers": "강사 관리",
+    "afterschool.admin.tab_teachers_short": "강사",
     "afterschool.admin.tab_approval": "전자결재 일괄 기안",
     "afterschool.admin.tab_approval_short": "전자결재",
     "afterschool.admin.stage_control": "단계 제어",

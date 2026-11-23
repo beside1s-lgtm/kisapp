@@ -543,12 +543,29 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
     </div>
   );
 
-  if (variant === 'page' || !isModal) {
+  if (variant === 'page') {
     return content;
   }
 
+  if (!isModal) {
+    return (
+      <div className="w-full overflow-hidden">
+        {/* 모바일 횡스크롤 안내 칩 */}
+        <div className="md:hidden flex items-center justify-between bg-indigo-50/70 border border-indigo-100 rounded-lg px-2.5 py-1.5 mb-2 text-[11px] text-indigo-900 font-medium no-print">
+          <span>좌우로 밀어서(횡스크롤) 전체 출근부를 확인하세요</span>
+          <span className="text-[10px] text-indigo-600 font-bold shrink-0">가로 스크롤 ↔</span>
+        </div>
+        <div className="w-full overflow-x-auto overscroll-x-contain print:overflow-visible pb-2">
+          <div className="min-w-[660px] md:min-w-0 print:min-w-0">
+            {content}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-2 md:p-4 overflow-y-auto print:p-0 print:m-0 print:bg-white print:overflow-visible">
+    <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-2 md:p-4 overflow-y-auto overflow-x-hidden print:p-0 print:m-0 print:bg-white print:overflow-visible">
       {/* 인쇄 전용 스타일 태그 (상단 1cm 여백 완벽 확보 & 오직 모달 출력 영역만 단독으로 렌더링) */}
       <style>{`
         @media print {
@@ -608,25 +625,25 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
         }
       `}</style>
 
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full border border-slate-200 p-4 md:p-6 space-y-4 my-auto print:border-none print:shadow-none print:p-0 print:m-0 print:max-w-none">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full border border-slate-200 p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 my-auto overflow-hidden print:border-none print:shadow-none print:p-0 print:m-0 print:max-w-none print:overflow-visible">
         {/* 모달 상단 헤더 컨트롤 바 */}
-        <div className="flex justify-between items-center border-b pb-3 no-print">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Printer className="w-4 h-4 text-indigo-600" />
-              공식 강사출근부 (A4 세로 1장 표준 양식)
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-2.5 sm:pb-3 no-print">
+          <div className="min-w-0">
+            <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5 truncate">
+              <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600 shrink-0" />
+              <span>공식 강사출근부 (A4 세로 1장 표준 양식)</span>
             </h3>
-            <p className="text-[11px] text-slate-500 mt-0.5">
+            <p className="text-[10.5px] sm:text-[11px] text-slate-500 mt-0.5 truncate">
               주 2회 20회차(40차시) 전 회차가 A4 세로 1장에 깔끔하게 수납되어 인쇄됩니다.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
             <button
               type="button"
               onClick={handlePrint}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow"
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-3.5 h-3.5" />
               출근부 인쇄
             </button>
             {onClose && (
@@ -635,14 +652,24 @@ export const OfficialWorkRegister: React.FC<OfficialWorkRegisterProps> = ({
                 onClick={onClose}
                 className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             )}
           </div>
         </div>
 
-        {/* 인쇄 대상 본문 (모달 전용 단독 렌더링) */}
-        {content}
+        {/* 모바일 횡스크롤 안내 칩 */}
+        <div className="md:hidden flex items-center justify-between bg-indigo-50/70 border border-indigo-100 rounded-lg px-2.5 py-1.5 text-[11px] text-indigo-900 font-medium no-print">
+          <span>좌우로 밀어서(횡스크롤) 전체 출근부를 확인하세요</span>
+          <span className="text-[10px] text-indigo-600 font-bold shrink-0">가로 스크롤 ↔</span>
+        </div>
+
+        {/* 인쇄 대상 본문 (모바일 횡스크롤 컨테이너) */}
+        <div className="w-full overflow-x-auto overscroll-x-contain print:overflow-visible pb-2">
+          <div className="min-w-[660px] md:min-w-0 print:min-w-0">
+            {content}
+          </div>
+        </div>
 
         {/* 모달 하단 액션 푸터 (화면 전용, 인쇄 시 자동 숨김) */}
         {(onDeleteApprovalDoc || onClose) && (
