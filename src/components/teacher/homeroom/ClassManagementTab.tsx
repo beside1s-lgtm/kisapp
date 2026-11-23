@@ -61,6 +61,7 @@ import { MemoHistoryDialog } from './class-management/MemoHistoryDialog';
 import { startClassStateSync, startTeacherPrefsSync } from '@/lib/services/classStateSync';
 import { buildClassRecordExport, downloadHtml } from '@/lib/services/homeroomClassExport';
 import { useSystemAcademicYear } from '@/lib/services/academicCalendarService';
+import { ClassRecordExportDialog, type ClassRecordExportOptions } from './class-management/ClassRecordExportDialog';
 
 interface ClassManagementTabProps {
   classKey: string;
@@ -78,9 +79,10 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
   const { toast } = useToast();
   const systemYear = useSystemAcademicYear();
   const [isExporting, setIsExporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   // 학급 기록 내보내기(보관용 HTML) — 학년도 넘기기 전 백업
-  const handleExportClassRecords = async () => {
+  const handleExportClassRecords = async (opts: ClassRecordExportOptions) => {
     if (!classKey || isExporting) return;
     setIsExporting(true);
     try {
@@ -88,9 +90,18 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
         classKey,
         classLabel,
         academicYear: systemYear || new Date().getFullYear(),
-        students: students.map((s) => ({ id: s.studentId || s.id || '', name: s.name, num: s.studentNum || '' })),
+        students: students.map((s) => ({
+          id: s.studentId || s.id || '',
+          name: s.name,
+          num: s.studentNum || '',
+          gender: s.gender,
+          photoUrl: s.photoUrl || null,
+        })),
         exportedBy: userEmail,
+        includePhotos: opts.includePhotos,
+        includeCounsel: opts.includeCounsel,
       });
+      setExportOpen(false);
       downloadHtml(html, fileName);
       toast({ title: '학급 기록 내보내기 완료', description: `${fileName} 파일을 내려받았습니다. 안전한 곳에 보관해 주세요.` });
     } catch (err: any) {
@@ -726,7 +737,7 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
             <Button
               variant="outline"
               size="sm"
-              onClick={handleExportClassRecords}
+              onClick={() => setExportOpen(true)}
               disabled={isExporting}
               className="h-7 text-xs font-bold gap-1 rounded-lg px-2 cursor-pointer whitespace-nowrap"
               title="알림장·숙제·관찰·상담·자리배치·칭찬 기록을 보관용 HTML 파일로 내려받습니다"
@@ -734,6 +745,14 @@ export const ClassManagementTab: React.FC<ClassManagementTabProps> = ({
               <Download className="w-3.5 h-3.5 shrink-0" />
               <span>{isExporting ? '내보내는 중…' : '학급 기록 내보내기(보관용)'}</span>
             </Button>
+            <ClassRecordExportDialog
+              open={exportOpen}
+              onOpenChange={setExportOpen}
+              classLabel={classLabel}
+              academicYear={systemYear || new Date().getFullYear()}
+              exporting={isExporting}
+              onExport={handleExportClassRecords}
+            />
           </div>
           <p className="hidden sm:block text-xs text-slate-500 mt-0.5">
             칠판 알림 메모, 과제 원터치 체크 및 전자칠판 프레젠테이션, 관찰 기록과 상담 메모를 총괄합니다.
