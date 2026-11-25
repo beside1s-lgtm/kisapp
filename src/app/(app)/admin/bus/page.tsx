@@ -42,7 +42,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { cn, normalizeString, getStudentName } from '@/lib/kisbus/utils';
-import { getOrgStructure, onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsUpdate } from '@/lib/services/settingsService';
+import { getOrgStructure, onAfterschoolCoursesUpdate, onAfterschoolEnrollmentsUpdate, onTeacherApplySettingsUpdate } from '@/lib/services/settingsService';
 import { onMasterStudentsUpdate } from '@/lib/services/masterStudentService';
 import type { MasterStudent } from '@/lib/types/masterStudent';
 import { getUsersDirectory } from '@/lib/services/userService';
@@ -92,6 +92,8 @@ const AdminPageContent: React.FC<{
     onApplySystemMode: () => Promise<void>;
     onOpenBusDocModal?: () => void;
     transferState?: { isTransferred?: boolean; lastDualAssignedAt?: string; transferredAt?: string; affectedCount?: number } | null;
+    /** 방과후학교 운영 종료 상태: 방과후 노선·방과후 조회를 숨김 (다음 학기 운영 준비를 시작하면 다시 보임) */
+    afterschoolClosed?: boolean;
 }> = ({
     buses,
     students,
@@ -109,6 +111,7 @@ const AdminPageContent: React.FC<{
     onApplySystemMode,
     onOpenBusDocModal,
     transferState,
+    afterschoolClosed = false,
 }) => {
     const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
     const [selectedDay, setSelectedDay] = useState<DayOfWeek>('Monday');
@@ -173,6 +176,13 @@ const AdminPageContent: React.FC<{
             setSelectedRouteType('Morning');
         }
     }, [semesterMode, selectedRouteType]);
+
+    // 방과후 운영 종료: 방과후 노선·방과후 조회 화면을 쓰지 않음
+    useEffect(() => {
+        if (!afterschoolClosed) return;
+        if (selectedRouteType === 'AfterSchool') setSelectedRouteType('Afternoon');
+        if (activeTab === 'after-school-management') setActiveTab('student-management');
+    }, [afterschoolClosed, selectedRouteType, activeTab]);
 
     useEffect(() => {
         setIsClient(true);
@@ -278,15 +288,17 @@ const AdminPageContent: React.FC<{
                 {/* 스크롤 시 탭 및 필터 고정 - MainLayout의 <main> 스크롤 컨테이너 기준 top-0에 밀착하여 헤더 바로 아래 유격 원천 차단 */}
                 <div className="sticky top-0 z-20 bg-background px-2.5 sm:px-4 md:px-6 py-2 space-y-2 border-b border-slate-200/50 shadow-xs">
                     {/* 데스크톱 전용 탭바 (모바일에서는 AdminPageFilter 내 기능 선택 드롭다운으로 대체) */}
-                    <TabsList className="hidden sm:grid grid-cols-6 h-auto w-full bg-slate-100 p-1 sm:p-1.5 rounded-2xl gap-1 border border-slate-200/80">
+                    <TabsList className={`hidden sm:grid ${afterschoolClosed ? 'grid-cols-5' : 'grid-cols-6'} h-auto w-full bg-slate-100 p-1 sm:p-1.5 rounded-2xl gap-1 border border-slate-200/80`}>
                         <TabsTrigger value="bus-registration" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_registration')}</TabsTrigger>
                         <TabsTrigger value="teacher-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.teacher_management')}</TabsTrigger>
                         <TabsTrigger value="bus-configuration" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.bus_configuration')}</TabsTrigger>
                         <TabsTrigger value="student-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">{t('admin.tabs.student_management')}</TabsTrigger>
+                        {!afterschoolClosed && (
                         <TabsTrigger value="after-school-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">
                             <span className="hidden sm:inline">방과후 하교 버스 조회</span>
                             <span className="inline sm:hidden">방과후 조회</span>
                         </TabsTrigger>
+                        )}
                         <TabsTrigger value="fare-management" className="w-full text-[11px] sm:text-xs md:text-sm font-bold px-1 sm:px-2 py-1.5 sm:py-2 h-auto whitespace-nowrap rounded-xl transition-all shadow-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-slate-200/60">
                             <span className="hidden sm:inline">요금 관리</span>
                             <span className="inline sm:hidden">요금</span>
@@ -310,6 +322,7 @@ const AdminPageContent: React.FC<{
                                 showRouteStops={activeTab === 'student-management'}
                                 destinations={destinations}
                                 semesterMode={semesterMode}
+                                hideAfterSchool={afterschoolClosed}
                                 activeTab={activeTab}
                                 onTabChange={setActiveTab}
                                 rightContent={activeTab === 'student-management' ? (
@@ -368,7 +381,7 @@ const AdminPageContent: React.FC<{
                                     <SelectItem value="teacher-management">교사 관리</SelectItem>
                                     <SelectItem value="bus-configuration">버스 설정</SelectItem>
                                     <SelectItem value="student-management">학생 관리</SelectItem>
-                                    <SelectItem value="after-school-management">방과후 조회</SelectItem>
+                                    {!afterschoolClosed && <SelectItem value="after-school-management">방과후 조회</SelectItem>}
                                     <SelectItem value="fare-management">요금 관리</SelectItem>
                                 </SelectContent>
                             </Select>
@@ -2912,7 +2925,8 @@ ${leaderRowsHtml}
                 )}
             </div>
 
-            {/* 🌟 방과후 노선 이동 및 하교 복귀 액션 버튼 */}
+            {/* 🌟 방과후 노선 이동 및 하교 복귀 액션 버튼 (방과후 운영 종료 시 숨김) */}
+            {!afterschoolClosed && (
             <Button
                 type="button"
                 variant="ghost"
@@ -2947,6 +2961,7 @@ ${leaderRowsHtml}
                     </Badge>
                 )}
             </Button>
+            )}
 
             {/* 0. 푸시 알림 관리 팝업 버튼 (모바일 숨김) */}
             <Dialog open={isNotificationsModalOpen} onOpenChange={setIsNotificationsModalOpen}>
@@ -3049,6 +3064,7 @@ ${leaderRowsHtml}
                 semesterMode={adminViewMode}
                 activeSystemMode={activeSystemMode}
                 transferState={transferState}
+                afterschoolClosed={afterschoolClosed}
                 onSemesterModeChange={(mode) => setAdminViewMode(mode)}
                 onApplySystemMode={async () => {
                     try {

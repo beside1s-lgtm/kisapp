@@ -8,7 +8,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { downloadClassroomTemplateExcel, parseClassroomExcel, downloadCourseTemplateExcel, parseCourseExcel } from '@/lib/afterschool/excel';
-import { defaultTeacherApplySettings, getTeacherApplySettings, onTeacherApplySettingsUpdate, saveTeacherApplySettings, updateAfterschoolCourse, deleteAfterschoolCourse, saveAfterschoolCoursesBatch, addAfterschoolClassroom, deleteAfterschoolClassroom, saveAfterschoolClassroomsBatch, onMaterialRequestsUpdate, onExpenseProofsUpdate, sendSubmissionReminder, purgeAfterschoolOperationalData, onAttendanceRecordsUpdate, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord, onDocConfigUpdate, deleteAfterschoolApprovalDoc } from '@/lib/services/settingsService';
+import { defaultTeacherApplySettings, getTeacherApplySettings, onTeacherApplySettingsUpdate, saveTeacherApplySettings, updateAfterschoolCourse, deleteAfterschoolCourse, saveAfterschoolCoursesBatch, addAfterschoolClassroom, deleteAfterschoolClassroom, saveAfterschoolClassroomsBatch, onMaterialRequestsUpdate, onExpenseProofsUpdate, sendSubmissionReminder, onAttendanceRecordsUpdate, onSubstituteRecordsUpdate, saveSubstituteRecord, deleteSubstituteRecord, onDocConfigUpdate, deleteAfterschoolApprovalDoc } from '@/lib/services/settingsService';
 import { countOperatingDays, getCourseSessionsPerClass, generateCalendarSchedule, generateCalendarScheduleByDateRange, ScheduleDay, extractHolidayDatesFromEvents } from '@/lib/afterschool/schedule';
 import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
 import type { DocConfig, UserProfile } from '@/lib/types';
@@ -151,15 +151,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       );
       if (!confirmResult) return;
     }
+    const prevStage = (teacherApplySettings as any)?.afterschoolStageStatus;
+    if (status === prevStage) return;
+    let closeMessage = '';
     if (status === 'CLOSED') {
       const confirmClose = window.confirm(
         '방과후학교 학기 운영을 최종 마감(종료)하시겠습니까?\n\n' +
         '• 진행 상태가 [방과후학교 운영 종료]로 변경됩니다.\n' +
-        '• 방과후 버스를 탑승하던 학생들이 원래의 정규 하교 버스로 100% 자동 복구됩니다.\n' +
-        '• 출석부, 지출증빙서류 등 실시간 운영 데이터가 깔끔하게 정리 초기화됩니다.'
+        '• 모든 강좌가 폐강 처리되고, 수강생이 방과후 출석부·담임 출석부에서 모두 빠집니다.\n' +
+        '• 방과후 버스를 탑승하던 학생들이 원래의 정규 하교 버스로 자동 복구됩니다.\n' +
+        '• 지난 출석 기록·지출증빙·결재 문서는 지우지 않고 보관합니다.'
       );
       if (!confirmClose) return;
-      await purgeAfterschoolOperationalData();
+      try {
+        const { closeAfterschoolSemester } = await import('@/lib/afterschool/closeSemester');
+        const r = await closeAfterschoolSemester();
+        closeMessage = `\n\n• 폐강 처리 강좌 ${r.courses}개, 출석부에서 제외된 수강 신청 ${r.enrollments}건`;
+      } catch (err: any) {
+        console.error('[AdminPanel] 운영 종료 처리 실패:', err);
+        alert('운영 종료 처리 중 오류가 발생해 단계를 바꾸지 않았습니다.\n' + (err?.message || ''));
+        return;
+      }
+    } else if (prevStage === 'CLOSED') {
+      // 운영 종료를 되돌리는 경우: 운영 종료로 폐강된 강좌·수강 신청을 원래 상태로
+      if (window.confirm('[운영 종료]로 폐강된 강좌와 수강 신청을 원래 상태로 되돌릴까요?\n(취소를 누르면 강좌는 폐강 상태로 두고 단계만 바꿉니다.)')) {
+        try {
+          const { reopenAfterschoolSemester } = await import('@/lib/afterschool/closeSemester');
+          const r = await reopenAfterschoolSemester();
+          closeMessage = `\n\n• 복구된 강좌 ${r.courses}개, 수강 신청 ${r.enrollments}건`;
+        } catch (err: any) {
+          console.error('[AdminPanel] 운영 종료 되돌리기 실패:', err);
+          alert('강좌 복구 중 오류가 발생했습니다.\n' + (err?.message || ''));
+          return;
+        }
+      }
     }
 
     const isFinalized = status === 'CONFIRMED' || status === 'OPERATING' || status === 'CLOSED';
@@ -196,7 +221,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       OPERATING: '방과후학교 운영 중 (출석부 활성화)',
       CLOSED: '운영 종료 (하교 버스 원상 복구)',
     };
-    alert(`방과후학교 진행 상태가 [${labelMap[status]}]로 성공적으로 변경되었습니다.${busSyncMessage}`);
+    alert(`방과후학교 진행 상태가 [${labelMap[status]}]로 성공적으로 변경되었습니다.${closeMessage}${busSyncMessage}`);
   };
 
   const getDetailedStatusText = () => {

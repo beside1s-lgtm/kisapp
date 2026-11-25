@@ -23,6 +23,8 @@ interface AdminPageFilterProps {
     filterConfiguredBusesOnly?: boolean;
     showRouteStops?: boolean;
     semesterMode?: 'regular' | 'vacation';
+    /** 방과후 운영 종료: 방과후 노선·방과후 조회 메뉴를 숨김 */
+    hideAfterSchool?: boolean;
     rightContent?: React.ReactNode;
     activeTab?: string;
     onTabChange?: (tab: string) => void;
@@ -42,6 +44,7 @@ export const AdminPageFilter = ({
     filterConfiguredBusesOnly = false,
     showRouteStops = false,
     semesterMode = 'regular',
+    hideAfterSchool = false,
     rightContent,
     activeTab,
     onTabChange,
@@ -121,7 +124,7 @@ export const AdminPageFilter = ({
                                     <SelectItem value="teacher-management">교사 관리</SelectItem>
                                     <SelectItem value="bus-configuration">버스 설정</SelectItem>
                                     <SelectItem value="student-management">학생 관리</SelectItem>
-                                    <SelectItem value="after-school-management">방과후 조회</SelectItem>
+                                    {!hideAfterSchool && <SelectItem value="after-school-management">방과후 조회</SelectItem>}
                                     <SelectItem value="fare-management">요금 관리</SelectItem>
                                 </SelectContent>
                             </Select>
@@ -164,10 +167,10 @@ export const AdminPageFilter = ({
                     {/* 모바일 2번째 줄: 경로 탭 (등교 / 하교 / 방과후) */}
                     <div className="w-full">
                         <Tabs value={selectedRouteType} onValueChange={(v) => setSelectedRouteType(v as RouteType)} className="w-full">
-                            <TabsList className={cn("grid w-full h-8 p-0.5", (selectedDay === 'Saturday' || semesterMode === 'vacation') ? "grid-cols-2" : "grid-cols-3")}>
+                            <TabsList className={cn("grid w-full h-8 p-0.5", (selectedDay === 'Saturday' || semesterMode === 'vacation' || hideAfterSchool) ? "grid-cols-2" : "grid-cols-3")}>
                                 <TabsTrigger value="Morning" className="text-xs px-1 py-1">{t('route_type.morning')}</TabsTrigger>
                                 <TabsTrigger value="Afternoon" className="text-xs px-1 py-1">{t('route_type.afternoon')}</TabsTrigger>
-                                {(selectedDay !== 'Saturday' && semesterMode !== 'vacation') && <TabsTrigger value="AfterSchool" className="text-xs px-1 py-1">{t('route_type.after_school')}</TabsTrigger>}
+                                {(selectedDay !== 'Saturday' && semesterMode !== 'vacation' && !hideAfterSchool) && <TabsTrigger value="AfterSchool" className="text-xs px-1 py-1">{t('route_type.after_school')}</TabsTrigger>}
                             </TabsList>
                         </Tabs>
                     </div>
@@ -216,10 +219,10 @@ export const AdminPageFilter = ({
                     <div className="w-[190px] lg:w-[210px] shrink-0">
                         <Label className="text-xs font-semibold text-slate-700">{t('route')}</Label>
                         <Tabs value={selectedRouteType} onValueChange={(v) => setSelectedRouteType(v as RouteType)} className="w-full">
-                            <TabsList className={cn("grid w-full h-10 p-0.5", (selectedDay === 'Saturday' || semesterMode === 'vacation') ? "grid-cols-2" : "grid-cols-3")}>
+                            <TabsList className={cn("grid w-full h-10 p-0.5", (selectedDay === 'Saturday' || semesterMode === 'vacation' || hideAfterSchool) ? "grid-cols-2" : "grid-cols-3")}>
                                 <TabsTrigger value="Morning" className="text-xs px-1">{t('route_type.morning')}</TabsTrigger>
                                 <TabsTrigger value="Afternoon" className="text-xs px-1">{t('route_type.afternoon')}</TabsTrigger>
-                                {(selectedDay !== 'Saturday' && semesterMode !== 'vacation') && <TabsTrigger value="AfterSchool" className="text-xs px-1">{t('route_type.after_school')}</TabsTrigger>}
+                                {(selectedDay !== 'Saturday' && semesterMode !== 'vacation' && !hideAfterSchool) && <TabsTrigger value="AfterSchool" className="text-xs px-1">{t('route_type.after_school')}</TabsTrigger>}
                             </TabsList>
                         </Tabs>
                     </div>
