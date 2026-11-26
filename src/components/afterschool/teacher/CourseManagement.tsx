@@ -18,6 +18,8 @@ interface CourseManagementProps {
   role?: Role;
   tuitionPerSession?: number;
   currentUserName?: string;
+  /** 지난 학기 내 강좌 찾기용 (강사 계정 이메일) */
+  currentUserEmail?: string;
   periods?: SessionPeriod[];
   schoolTeachers?: UserProfile[];
 }
@@ -30,6 +32,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
   role = 'teacher',
   tuitionPerSession = 6800,
   currentUserName,
+  currentUserEmail,
   periods = [],
   schoolTeachers = [],
 }) => {
@@ -248,6 +251,42 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
   // 신규 강좌 개설 시 차시별 수업 계획 상태 및 엑셀 파일 인풋 Ref
   const [newSyllabusSessions, setNewSyllabusSessions] = useState<SyllabusSession[]>([]);
   const [selectedCourseToImport, setSelectedCourseToImport] = useState<string>('');
+  // 불러온 강좌(소개·대상 학년 등 신청서에 없는 항목도 이어받음). 수강생은 이어받지 않는다.
+  const [importSource, setImportSource] = useState<Course | null>(null);
+
+  // 지난 학기(운영 종료로 보관된) 강좌: 강사는 본인 담당 강좌만, 관리자는 전체
+  const [pastCourses, setPastCourses] = useState<(Course & { _termLabel: string; _key: string })[]>([]);
+  useEffect(() => {
+    if (!isAddModalOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { listTermArchives, getArchivedCourses } = await import('@/lib/afterschool/closeSemester');
+        const terms = (await listTermArchives()).slice(0, 4); // 최근 4개 학기
+        const me = (currentUserName || '').trim();
+        const myEmail = (currentUserEmail || '').trim().toLowerCase();
+        const isMine = (c: any) =>
+          ['instructorName', 'instructor2', 'instructor3', 'instructor4', 'instructor5', 'instructor6'].some(
+            (k) => me && String(c[k] || '').trim() === me,
+          ) ||
+          (!!myEmail && Object.values(c.instructorEmails || {}).some((v) => String(v || '').toLowerCase() === myEmail));
+        const lists = await Promise.all(
+          terms.map(async (t) =>
+            (await getArchivedCourses(t.id))
+              .filter((c) => role === 'admin' || isMine(c))
+              .map((c) => ({ ...c, _termLabel: `${t.year} ${t.semester}`, _key: `past:${t.id}:${c.id}` })),
+          ),
+        );
+        if (!cancelled) setPastCourses(lists.flat().sort((a, b) => (a.title || '').localeCompare(b.title || '', 'ko')));
+      } catch (err) {
+        console.warn('[CourseManagement] 지난 학기 강좌 불러오기 실패:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAddModalOpen, role, currentUserName, currentUserEmail]);
+  const pastTermLabels = Array.from(new Set(pastCourses.map((c) => c._termLabel)));
   const addSyllabusFileInputRef = useRef<HTMLInputElement>(null);
   const editSyllabusFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -663,10 +702,16 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
   // 기존 강좌 불러오기 핸들러
   const handleImportCourse = (courseId: string) => {
     setSelectedCourseToImport(courseId);
-    if (!courseId) return;
+    if (!courseId) {
+      setImportSource(null);
+      return;
+    }
 
-    const targetCourse = courses.find((c) => c.id === courseId);
+    const targetCourse: Course | undefined = courseId.startsWith('past:')
+      ? pastCourses.find((c) => c._key === courseId)
+      : courses.find((c) => c.id === courseId);
     if (!targetCourse) return;
+    setImportSource(targetCourse);
 
     // 강좌 기본 정보 복사
     setNewTitle(targetCourse.title);
@@ -782,10 +827,11 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
       maxWaiting: 10,
       waitingStudents: 0,
       tuition: calculatedTuition, // 동적 계산 적용
-      textbookFee: 0,
-      materialFee: 0,
-      targetGrades: [1, 2, 3],
-      description: '새로 개설된 방과후학교 강좌입니다.',
+      textbookFee: importSource?.textbookFee || 0,
+      materialFee: importSource?.materialFee || 0,
+      targetGrades: importSource?.targetGrades?.length ? importSource.targetGrades : [1, 2, 3],
+      description: importSource?.description || '새로 개설된 방과후학교 강좌입니다.',
+      ...(importSource?.category ? { category: importSource.category } : {}),
       status: role === 'admin' ? 'OPEN' : 'PENDING', // 강사는 PENDING, 관리자(부장)는 즉시 OPEN
       syllabusSessions: finalSyllabusSessions,
       classDays: selectedDays,
@@ -806,6 +852,8 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
     setAssistantTeachersList([]);
     setIsFreeCourse(false);
     setNewSyllabusSessions([]);
+    setImportSource(null);
+    setSelectedCourseToImport('');
     if (role !== 'admin') {
       alert('강좌 개설 신청이 완료되었습니다. 예체능방과후부장의 승인 후 개설됩니다.');
     }
@@ -1242,7 +1290,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
             {/* Modal Scrollable Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
               {/* 기존 강좌 불러오기 (복사) */}
-              {courses.length > 0 && (
+              {(courses.length > 0 || pastCourses.length > 0) && (
                 <div className="bg-indigo-50/70 border border-indigo-100 p-3 rounded-xl space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-indigo-900 flex items-center gap-1.5">
@@ -1257,14 +1305,29 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                     className="w-full border border-indigo-200 p-2 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
                   >
                     <option value="">[선택 안 함 - 신규 직접 작성]</option>
-                    {sortedCourses.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.title} ({c.classTime || '시간미정'}) {c.instructorName ? `- ${c.instructorName}` : ''}
-                      </option>
+                    {sortedCourses.length > 0 && (
+                      <optgroup label="이번 학기 강좌">
+                        {sortedCourses.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.title} ({c.classTime || '시간미정'}) {c.instructorName ? `- ${c.instructorName}` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {pastTermLabels.map((label) => (
+                      <optgroup key={label} label={`지난 학기 · ${label}${role === 'admin' ? '' : ' (내 강좌)'}`}>
+                        {pastCourses
+                          .filter((c) => c._termLabel === label)
+                          .map((c) => (
+                            <option key={c._key} value={c._key}>
+                              {c.title} ({c.classTime || '시간미정'}) {c.instructorName ? `- ${c.instructorName}` : ''}
+                            </option>
+                          ))}
+                      </optgroup>
                     ))}
                   </select>
                   <p className="text-[10px] text-indigo-700 leading-tight">
-                    선택 시 강좌 설정 및 차시별 수업 계획 주제가 복사되며, 수업일자는 이번 학사일정에 맞춰 자동 계산됩니다.
+                    선택 시 강좌 설정·소개와 차시별 수업 계획 주제가 복사되며, 수업일자는 이번 학사일정에 맞춰 자동 계산됩니다. 수강생은 복사되지 않고 새로 신청을 받습니다.
                   </p>
                 </div>
               )}

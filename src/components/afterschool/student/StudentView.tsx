@@ -18,7 +18,7 @@ export { safeParseDate };
 
 export { getCoursePeriodGroup, cleanClassTime, shouldForceWaiting } from '@/lib/afterschool/waitingRules';
 export type { PeriodGroup } from '@/lib/afterschool/waitingRules';
-import { shouldForceWaiting, getCoursePeriodGroup, cleanClassTime, type PeriodGroup } from '@/lib/afterschool/waitingRules';
+import { shouldForceWaiting, getCoursePeriodGroup, cleanClassTime, isWaitlistFull, getWaitingLimit, type PeriodGroup } from '@/lib/afterschool/waitingRules';
 
 interface StudentViewProps {
   courses: Course[];
@@ -557,6 +557,9 @@ ${res.waitingReason}`);
                 const isLocked = course.isForceLocked || !isApplyEnabled();
                 const periodGroup = getCoursePeriodGroup(course);
                 const forceInfo = shouldForceWaiting(course, myEnrollments, courses);
+                // 정원이 찼거나 2순위라 대기로 가야 하는데 대기 자리도 다 찬 경우 → 신청 불가
+                const waitingLimit = getWaitingLimit(timerConfig);
+                const waitlistClosed = (isFull || forceInfo.forceWaiting) && isWaitlistFull(course, timerConfig);
                 const instructorName = course.instructorName || course.teacherName || '담당 교사';
                 const daysText = Array.isArray(course.classDays) && course.classDays.length > 0 ? course.classDays.join(',') : '월';
                 const tuitionFormatted = (course.tuition || 0).toLocaleString();
@@ -583,7 +586,7 @@ ${res.waitingReason}`);
 
                         {isFull ? (
                           <span className="text-[11px] bg-rose-50 text-rose-700 border border-rose-200 font-bold px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
-                            {t('afterschool.badge_full') || '마감'}
+                            {t('afterschool.badge_full') || '마감'}{waitingLimit !== null && waitingLimit > 0 ? ` · 대기 ${Math.min(course.waitingStudents || 0, waitingLimit)}/${waitingLimit}` : ''}
                           </span>
                         ) : (
                           <span className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
@@ -647,7 +650,7 @@ ${res.waitingReason}`);
 
                       {/* 수강신청 버튼 */}
                       <div className="relative flex items-center">
-                        {forceInfo.forceWaiting && !myRecord && !isLocked && (
+                        {forceInfo.forceWaiting && !myRecord && !isLocked && !waitlistClosed && (
                           <span className="text-[9px] text-amber-700 font-bold whitespace-nowrap absolute -top-4 right-0">
                             2순위 대기
                           </span>
@@ -656,6 +659,14 @@ ${res.waitingReason}`);
                           <div className="px-3.5 h-9 flex items-center rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap">
                             {myRecord.status === 'ENROLLED' ? (t('afterschool.btn_applied') || '✓ 신청완료') : (t('afterschool.btn_waiting_accepted') || '⏳ 대기접수')}
                           </div>
+                        ) : !isLocked && waitlistClosed ? (
+                          <button
+                            disabled
+                            title={waitingLimit === 0 ? '대기 신청을 받지 않습니다' : `대기 인원(${waitingLimit}명)이 모두 찼습니다`}
+                            className="px-3 h-9 rounded-lg text-xs font-bold bg-slate-100 text-slate-500 border border-slate-200 cursor-not-allowed whitespace-nowrap"
+                          >
+                            {waitingLimit === 0 ? '마감' : '대기 마감'}
+                          </button>
                         ) : isLocked ? (
                           <button
                             disabled

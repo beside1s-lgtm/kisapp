@@ -180,11 +180,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         destructive: true,
       });
       if (!ok) return;
-    } else if (prevStage === 'CLOSED') {
-      // 운영 종료를 되돌리는 경우: 운영 종료로 폐강된 강좌·수강 신청을 원래 상태로
+    } else if (prevStage === 'CLOSED' && status === 'OPERATING') {
+      // 운영 종료를 실수로 눌러 [운영 중]으로 돌아가는 경우에만: 폐강된 강좌를 원래 상태로 (수강생은 되돌리지 않음)
+      // 다음 학기 준비(강사 모집 등)로 넘어갈 때는 묻지 않고 지난 학기 강좌는 보관본으로 둔다.
       reopen = await confirmDialog({
         title: '폐강된 강좌를 되돌릴까요?',
-        message: '[운영 종료]로 폐강된 강좌와 수강 신청을 원래 상태로 되돌립니다.\n[그대로 두기]를 누르면 강좌는 폐강 상태로 두고 단계만 바꿉니다.',
+        message: '[운영 종료]로 폐강된 강좌를 원래 상태로 되돌립니다.\n수강생은 되돌리지 않으며, 강좌 인원은 0명에서 다시 시작합니다.\n[그대로 두기]를 누르면 강좌는 폐강 상태로 두고 단계만 바꿉니다.',
         confirmText: '되돌리기',
         cancelText: '그대로 두기',
       });
@@ -209,10 +210,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         }
       } else if (reopen) {
         try {
-          setStageBusy('폐강된 강좌와 수강 신청을 되돌리는 중…');
+          setStageBusy('폐강된 강좌를 되돌리는 중…');
           const { reopenAfterschoolSemester } = await import('@/lib/afterschool/closeSemester');
           const r = await reopenAfterschoolSemester();
-          closeMessage = `\n\n• 복구된 강좌 ${r.courses}개, 수강 신청 ${r.enrollments}건`;
+          closeMessage = `\n\n• 복구된 강좌 ${r.courses}개 (수강생은 복구하지 않음)`;
         } catch (err: any) {
           console.error('[AdminPanel] 운영 종료 되돌리기 실패:', err);
           await noticeDialog({ title: '강좌 복구 실패', message: '처리 중 오류가 발생했습니다.\n' + (err?.message || '') });

@@ -18,7 +18,6 @@ import { AttendanceManagement } from '@/components/afterschool/teacher/Attendanc
 
 // 이식한 초기 데이터 및 타입 임포트
 import {
-  initialCourses,
   initialStudents,
   initialEnrollments,
   initialAttendance,
@@ -169,11 +168,8 @@ function AfterschoolConsole() {
 
     const unsubCourses = onAfterschoolCoursesUpdate((data) => {
       if (!isMounted) return;
-      if (data && data.length > 0) {
-        setCourses(data);
-      } else {
-        setCourses(prev => (prev && prev.length > 0 ? prev : (initialCourses || [])));
-      }
+      // 강좌가 없으면 빈 목록 그대로 (예전처럼 예시 강좌로 채우지 않음: 운영 종료 후 지난 강좌가 보이는 문제)
+      setCourses(data || []);
       setIsLoadingCourses(false);
       clearTimeout(safetyTimer);
     }, (err) => {
@@ -294,16 +290,22 @@ function AfterschoolConsole() {
   const [approvalDocs, setApprovalDocs] = useState<SubmittedApprovalDoc[]>([]);
 
   // 서브탭 뷰 관리 (출석부 / 강사출근부 / 증빙 문서 관리 / 강좌 카드)
-  const [activeSubTab, setActiveSubTab] = useState<'studentSheet' | 'teacherAttendance' | 'batchApproval' | 'course'>('studentSheet');
+  const [selectedSubTab, setActiveSubTab] = useState<'studentSheet' | 'teacherAttendance' | 'batchApproval' | 'course'>('studentSheet');
 
   // 진행 상태 & 마스터 학생 데이터 연동
   const [stageStatus, setStageStatus] = useState<string>('RECRUITING');
+  const [stageLoaded, setStageLoaded] = useState(false);
   const [masterStudents, setMasterStudents] = useState<MasterStudent[]>([]);
+
+  // 운영 종료 ~ 강사 모집(다음 학기 준비) 단계: 출석부·출근부·증빙은 쓰지 않으므로 강좌 관리만 보여 줌 (강좌 신청이 여기서 이뤄짐)
+  const courseOnly = stageLoaded && (stageStatus === 'CLOSED' || stageStatus === 'RECRUITING');
+  const activeSubTab = courseOnly ? 'course' : selectedSubTab;
 
   useEffect(() => {
     getTeacherApplySettings().then(s => {
       if (s?.afterschoolStageStatus) setStageStatus(s.afterschoolStageStatus);
-    });
+      setStageLoaded(true);
+    }).catch(() => setStageLoaded(true));
     getOrgStructure().then(orgData => {
       const emailLower = (profile?.email || user?.email || '').toLowerCase();
       const afterschoolManagers = orgData?.afterschoolManagers || (orgData?.afterschoolManager ? [orgData.afterschoolManager] : []);
@@ -314,6 +316,7 @@ function AfterschoolConsole() {
 
     const unsubStage = onTeacherApplySettingsUpdate(s => {
       if (s?.afterschoolStageStatus) setStageStatus(s.afterschoolStageStatus);
+      setStageLoaded(true);
     });
     const unsubMaster = onMasterStudentsUpdate(data => {
       setMasterStudents(data);
@@ -629,15 +632,19 @@ function AfterschoolConsole() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="studentSheet" className="text-xs font-bold">
-                  {t('teacher_afterschool.tab_attendance', '출석부')}
-                </SelectItem>
-                <SelectItem value="teacherAttendance" className="text-xs font-bold">
-                  {t('teacher_afterschool.tab_teacher_work', '강사출근부')}
-                </SelectItem>
-                <SelectItem value="batchApproval" className="text-xs font-bold">
-                  {t('teacher_afterschool.tab_docs', '증빙 문서 관리')}
-                </SelectItem>
+                {!courseOnly && (
+                  <>
+                    <SelectItem value="studentSheet" className="text-xs font-bold">
+                      {t('teacher_afterschool.tab_attendance', '출석부')}
+                    </SelectItem>
+                    <SelectItem value="teacherAttendance" className="text-xs font-bold">
+                      {t('teacher_afterschool.tab_teacher_work', '강사출근부')}
+                    </SelectItem>
+                    <SelectItem value="batchApproval" className="text-xs font-bold">
+                      {t('teacher_afterschool.tab_docs', '증빙 문서 관리')}
+                    </SelectItem>
+                  </>
+                )}
                 <SelectItem value="course" className="text-xs font-bold text-indigo-700">
                   {t('teacher_afterschool.tab_courses', '강좌 관리 & 수업계획')}
                 </SelectItem>
@@ -677,6 +684,7 @@ function AfterschoolConsole() {
         renderStageStatusBadge()
       }
       titleActions={
+        courseOnly ? null :
         <div className="grid sm:hidden grid-cols-4 w-full bg-slate-100/90 p-0.5 rounded-lg border border-slate-200 gap-1 text-[11px] font-bold text-center">
           <button
             type="button"
@@ -725,14 +733,20 @@ function AfterschoolConsole() {
               <span className="font-bold flex items-center gap-1.5">
                 {t('teacher_afterschool.tab_courses', '강좌 관리 & 수업계획')}
               </span>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setActiveSubTab('studentSheet')}
-                className="h-6 px-2.5 text-xs bg-white text-indigo-700 font-bold border-indigo-300 hover:bg-indigo-50 cursor-pointer shadow-2xs"
-              >
-                {t('teacher_afterschool.btn_to_attendance', '출석부로 이동')}
-              </Button>
+              {courseOnly ? (
+                <span className="text-[11px] font-bold text-indigo-700">
+                  {stageStatus === 'CLOSED' ? '이번 학기 운영이 종료되었습니다' : '다음 학기 강좌 신청 기간입니다'}
+                </span>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setActiveSubTab('studentSheet')}
+                  className="h-6 px-2.5 text-xs bg-white text-indigo-700 font-bold border-indigo-300 hover:bg-indigo-50 cursor-pointer shadow-2xs"
+                >
+                  {t('teacher_afterschool.btn_to_attendance', '출석부로 이동')}
+                </Button>
+              )}
             </div>
             <CourseManagement
               courses={myCourses}
@@ -742,6 +756,7 @@ function AfterschoolConsole() {
               role="teacher"
               tuitionPerSession={tuitionPerSession}
               currentUserName={myName}
+              currentUserEmail={profile?.email || user?.email || ''}
               periods={periods}
               schoolTeachers={schoolTeachers}
             />

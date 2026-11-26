@@ -38,7 +38,6 @@ import {
   updateAfterschoolCourse,
   onTeacherApplySettingsUpdate,
   defaultTeacherApplySettings,
-  runAfterschoolEnrollmentTransaction,
   deleteAfterschoolEnrollment,
   saveTeacherApplySettings,
   onMaterialRequestsUpdate,
@@ -59,6 +58,7 @@ import { cn } from '@/lib/kisbus/utils';
 import type { DocConfig } from '@/lib/types';
 import { generateCalendarSchedule, calculateRealOperatingWeeksAndDays, extractHolidayDatesFromEvents } from '@/lib/afterschool/schedule';
 import { DEFAULT_ACADEMIC_CALENDAR_CONFIG } from '@/lib/services/academicCalendarService';
+import { WaitingLimitCard } from './WaitingLimitCard';
 
 interface AdminControlRoomProps {
   timerConfig: GlobalTimerConfig;
@@ -400,24 +400,6 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
     return `${programName} 수강신청 불가`;
   };
 
-  // Simulator State & Modal Toggle
-  const [isStressTestModalOpen, setIsStressTestModalOpen] = useState(false);
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [isCleaning, setIsCleaning] = useState(false);
-  const [testMode, setTestMode] = useState<'single' | 'multi'>('single');
-  const [useRealDb, setUseRealDb] = useState<boolean>(false);
-  const [simProgress, setSimProgress] = useState(0);
-  const [simLogs, setSimLogs] = useState<string[]>([]);
-  const [simResults, setSimResults] = useState<{
-    totalBots: number;
-    successEnrolled: number;
-    assignedWaiting: number;
-    rejected: number;
-    elapsedMs: number;
-  } | null>(null);
-
-  const [selectedSimCourseId, setSelectedSimCourseId] = useState<string>(courses[0]?.id || 'c1');
-
   // Draft Datetime States (사용자가 확인 버튼을 누를 때까지 임시 보관)
   const [draftStartTime, setDraftStartTime] = useState<string>(timerConfig.startTime);
   const [draftEndTime, setDraftEndTime] = useState<string>(timerConfig.endTime);
@@ -532,269 +514,6 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
     }
   };
 
-  // 1,000명 동시접속 스트레스 테스트 시뮬레이터 실행
-  const handleRun1000BotsTrafficSimulation = async () => {
-    setIsSimulating(true);
-    setSimProgress(0);
-    setSimLogs([
-      `[0ms] 1,000명 동시 수강신청 패킷 진입`,
-      `[10ms] 가상 대기열 순번표(Queue Token) 1,000건 발급`,
-      `[50ms] 수강 처리 연산 시작...`
-    ]);
-    setSimResults(null);
-
-    const startTime = Date.now();
-
-    // 1. 실제 파이어베이스 DB 연동 테스트 모드인 경우
-    if (useRealDb) {
-      try {
-        setSimLogs((prev) => [`[실제 DB 모드] 1,000명 트랜잭션 동시성 쏘기 시작...`, ...prev]);
-        
-        let enrolled = 0;
-        let waiting = 0;
-        let failed = 0;
-
-        // 1000명의 가상 봇 생성
-        const bots = Array.from({ length: 1000 }, (_, i) => {
-          // 다중 분산일 때는 courses 내의 임의 강좌 선택, 단일일 때는 selectedSimCourseId 선택
-          const target = testMode === 'multi' 
-            ? courses[Math.floor(Math.random() * courses.length)] 
-            : (courses.find((c) => c.id === selectedSimCourseId) || courses[0]);
-          return {
-            id: `sim_bot_${Date.now()}_${i + 1}`,
-            course: target,
-            index: i + 1
-          };
-        });
-
-        // 동시성 락 경합 방지를 위해 20개씩 청킹하여 날림
-        const CHUNK_SIZE = 20;
-        for (let i = 0; i < bots.length; i += CHUNK_SIZE) {
-          const chunk = bots.slice(i, i + CHUNK_SIZE);
-          
-          await Promise.all(
-            chunk.map(async (bot) => {
-              // 봇 개별 무작위 Micro-Jitter (0ms~40ms) 지연을 부여하여 트랜잭션 락 집중 해소
-              await new Promise(r => setTimeout(r, Math.floor(Math.random() * 40)));
-
-              const res = await runAfterschoolEnrollmentTransaction(
-                bot.id,
-                bot.course.id,
-                // 회차마다 고유한 가상 학생 ID (중복 신청 차단 로직에 이전 테스트 봇이 걸리지 않도록)
-                bot.id,
-                {
-                  name: `가상학생_${bot.index}`,
-                  phone: '010-9999-0000',
-                  parentPhone: '010-9999-0000',
-                },
-                bot.course.tuition,
-                bot.course.textbookFee || 0,
-                bot.course.materialFee || 0,
-                false,
-                // 관리자 부하 테스트는 신청 잠금 상태에서도 실행 가능해야 하므로 기간 검사 생략
-                { skipOpenCheck: true }
-              );
-
-              if (res.success) {
-                if (res.status === 'ENROLLED') enrolled++;
-                else waiting++;
-              } else {
-                failed++;
-              }
-            })
-          );
-
-          const progress = Math.min(100, Math.floor(((i + CHUNK_SIZE) / 1000) * 100));
-          setSimProgress(progress);
-          setSimLogs((prev) => [
-            `[${Date.now() - startTime}ms] 실제 DB 트랜잭션 처리 중: ${Math.min(1000, i + CHUNK_SIZE)} / 1000명 (성공:${enrolled}, 대기:${waiting}, 실패:${failed})`,
-            ...prev.slice(0, 5)
-          ]);
-        }
-
-        const elapsedTime = Date.now() - startTime;
-        setSimResults({
-          totalBots: 1000,
-          successEnrolled: enrolled,
-          assignedWaiting: waiting,
-          rejected: failed,
-          elapsedMs: elapsedTime,
-        });
-        setSimLogs((prev) => [`[완료] 실제 DB 1,000명 동시 트랜잭션 테스트 완료!`, ...prev]);
-
-      } catch (err: any) {
-        setSimLogs((prev) => [`[에러 발생] ${err.message}`, ...prev]);
-      } finally {
-        setIsSimulating(false);
-      }
-      return;
-    }
-
-    // 2. 가상 메모리 시뮬레이션 모드인 경우
-    let currentCount = 0;
-    const interval = setInterval(() => {
-      currentCount += 100;
-      const progress = Math.min(100, Math.floor((currentCount / 1000) * 100));
-      setSimProgress(progress);
-
-      setSimLogs((prev) => [
-        `[${Date.now() - startTime}ms] 대기열 시뮬레이션 처리 진행 중: ${currentCount} / 1000명`,
-        ...prev.slice(0, 5),
-      ]);
-
-      if (currentCount >= 1000) {
-        clearInterval(interval);
-        const elapsedTime = Date.now() - startTime;
-
-        let totalEnrolled = 0;
-        let totalWaiting = 0;
-        let totalRejected = 0;
-
-        const newEnrollments: Enrollment[] = [];
-        const courseUpdates = [...courses];
-
-        for (let i = 1; i <= 1000; i++) {
-          const targetCourse = testMode === 'multi'
-            ? courseUpdates[Math.floor(Math.random() * courseUpdates.length)]
-            : (courseUpdates.find((c) => c.id === selectedSimCourseId) || courseUpdates[0]);
-
-          const availableSeats = Math.max(0, targetCourse.maxStudents - targetCourse.currentStudents);
-          const isEnrolled = availableSeats > 0;
-
-          const waitingSeats = Math.max(0, targetCourse.maxWaiting - targetCourse.waitingStudents);
-          const isWaiting = !isEnrolled && waitingSeats > 0;
-
-          if (isEnrolled) {
-            targetCourse.currentStudents++;
-            totalEnrolled++;
-          } else if (isWaiting) {
-            targetCourse.waitingStudents++;
-            totalWaiting++;
-          } else {
-            totalRejected++;
-          }
-
-          if (isEnrolled || isWaiting) {
-            newEnrollments.push({
-              id: `sim_bot_${Date.now()}_${i}`,
-              courseId: targetCourse.id,
-              studentId: `bot_s_${i}`,
-              yearNo: i,
-              grade: Math.floor(Math.random() * 6) + 1,
-              classNum: Math.floor(Math.random() * 3) + 1,
-              studentNum: (i % 30) + 1,
-              name: `가상학생_${i}`,
-              phone: '010-9999-0000',
-              parentPhone: '010-9999-0000',
-              tuition: targetCourse.tuition,
-              textbookFee: targetCourse.textbookFee,
-              materialFee: targetCourse.materialFee,
-              registrationDate: new Date().toISOString().replace('T', ' ').slice(0, 19),
-              status: isEnrolled ? 'ENROLLED' : 'WAITING',
-              timestampMs: startTime + i * 2,
-            });
-          }
-        }
-
-        setEnrollments((prev) => [...newEnrollments, ...prev]);
-        setCourses(courseUpdates.map(c => ({
-          ...c,
-          status: c.currentStudents >= c.maxStudents ? 'CLOSED' : c.status
-        })));
-
-        setSimResults({
-          totalBots: 1000,
-          successEnrolled: totalEnrolled,
-          assignedWaiting: totalWaiting,
-          rejected: totalRejected,
-          elapsedMs: elapsedTime,
-        });
-        setIsSimulating(false);
-      }
-    }, 100);
-  };
-
-  // 시뮬레이션용 가상 데이터 삭제 및 원상복구
-  const handleCleanTestData = async () => {
-    setIsCleaning(true);
-    setSimLogs([`[0ms] 가상 테스트 데이터 초기화 시작...`]);
-    const startTime = Date.now();
-
-    try {
-      const { collection, getDocs, deleteDoc, doc } = require('firebase/firestore');
-      const { getDb } = require('@/lib/firebase');
-      const snap = await getDocs(collection(getDb(), 'afterschool_enrollments'));
-      
-      const botEnrollments = snap.docs.filter((d: any) => d.id.startsWith('sim_bot_'));
-      setSimLogs((prev) => [`[조회 완료] sim_bot 수강신청 문서 ${botEnrollments.length}건 감지`, ...prev]);
-
-      if (botEnrollments.length === 0) {
-        setSimLogs((prev) => [`[안내] 삭제할 가상 봇 데이터가 없습니다.`, ...prev]);
-        alert('삭제할 가상 데이터가 없습니다.');
-        return;
-      }
-
-      // 차감 계산 맵 구성
-      const diffMap: { [courseId: string]: { enrolled: number; waiting: number } } = {};
-      botEnrollments.forEach((d: any) => {
-        const data = d.data();
-        if (!diffMap[data.courseId]) {
-          diffMap[data.courseId] = { enrolled: 0, waiting: 0 };
-        }
-        if (data.status === 'ENROLLED') {
-          diffMap[data.courseId].enrolled++;
-        } else {
-          diffMap[data.courseId].waiting++;
-        }
-      });
-
-      // 청크 단위 문서 삭제
-      const CHUNK_SIZE = 50;
-      for (let i = 0; i < botEnrollments.length; i += CHUNK_SIZE) {
-        const chunk = botEnrollments.slice(i, i + CHUNK_SIZE);
-        await Promise.all(chunk.map((d: any) => deleteDoc(doc(getDb(), 'afterschool_enrollments', d.id))));
-        setSimLogs((prev) => [`[삭제 진행] ${Math.min(botEnrollments.length, i + CHUNK_SIZE)} / ${botEnrollments.length}건 완료`, ...prev]);
-      }
-
-      // 강좌 카운트 복원
-      setSimLogs((prev) => [`[강좌 카운트 복원] 강좌별 수강인원 차감 복구 중...`, ...prev]);
-      for (const courseId of Object.keys(diffMap)) {
-        const diff = diffMap[courseId];
-        const course = courses.find(c => c.id === courseId);
-        if (course) {
-          const newCurrent = Math.max(0, course.currentStudents - diff.enrolled);
-          const newWaiting = Math.max(0, course.waitingStudents - diff.waiting);
-          await updateAfterschoolCourse(courseId, {
-            currentStudents: newCurrent,
-            waitingStudents: newWaiting
-          });
-        }
-      }
-
-      // 로컬 상태 원복
-      setEnrollments((prev) => prev.filter(e => !e.id.startsWith('sim_bot_')));
-      setCourses((prev) => prev.map(c => {
-        const diff = diffMap[c.id];
-        if (diff) {
-          return {
-            ...c,
-            currentStudents: Math.max(0, c.currentStudents - diff.enrolled),
-            waitingStudents: Math.max(0, c.waitingStudents - diff.waiting),
-            status: 'OPEN'
-          };
-        }
-        return c;
-      }));
-
-      setSimLogs((prev) => [`[완료] 가상 테스트 데이터 삭제 및 강좌 인원 원상 복구 완료! (${Date.now() - startTime}ms)`, ...prev]);
-      alert('가상 테스트 데이터가 깔끔하게 삭제 및 복구되었습니다!');
-    } catch (err: any) {
-      setSimLogs((prev) => [`[초기화 에러] ${err.message}`, ...prev]);
-      alert(`초기화 중 오류가 발생했습니다: ${err.message}`);
-    } finally {
-      setIsCleaning(false);
-    }
-  };
 
   return (
     <div className="space-y-4 sm:space-y-6 min-w-0 w-full overflow-x-hidden">
@@ -842,8 +561,8 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
 
       {controlTab === 'enroll' && (
         <div className="space-y-3">
-          {/* 상단 1열: 수강신청 진행 상태 (좌측) + 1,000명 스트레스 테스트 도구 (우측) 동일 높이 배치 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+          {/* 상단: 수강신청 진행 상태 */}
+          <div className="grid grid-cols-1 gap-2.5">
             {/* 좌측: 수강신청 진행 상태 */}
             <div className="bg-white p-3 sm:p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between gap-2.5 min-w-0">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -878,24 +597,7 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
               </div>
             </div>
 
-            {/* 우측: 1,000명 스트레스 테스트 도구 */}
-            <div className="bg-white p-3 sm:p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between gap-2.5 min-w-0">
-              <div className="min-w-0">
-                <div className="font-bold text-slate-800 text-xs sm:text-sm truncate">동시접속 부하 테스트</div>
-                <div className="text-[11px] text-slate-400 truncate">1,000명 동시 수강신청 트래픽 시뮬레이션</div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsStressTestModalOpen(true)}
-                className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3 py-2 rounded-xl transition flex items-center gap-1.5 shadow-xs shrink-0 whitespace-nowrap cursor-pointer"
-              >
-                <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>1,000명 스트레스 테스트</span>
-              </button>
-            </div>
           </div>
-
           {/* Main Grid: Clean & Spaced */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {/* Card 1: Master Lock Control */}
@@ -1015,6 +717,9 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
         </div>
       </div>
 
+      {/* 정원 외 대기 인원 한도 */}
+      <WaitingLimitCard timerConfig={timerConfig} setTimerConfig={setTimerConfig} courses={courses} />
+
       {/* Individual Course Lock Switch Table */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
@@ -1109,148 +814,6 @@ export const AdminControlRoom: React.FC<AdminControlRoomProps> = ({
           ))}
         </div>
       </div>
-
-      {/* Stress Test Modal */}
-      {isStressTestModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full border border-slate-200 overflow-hidden space-y-4 p-6">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Zap className="w-5 h-5 text-amber-500" />
-                1,000명 동시접속 트래픽 스트레스 테스트
-              </h3>
-              <button
-                onClick={() => setIsStressTestModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-600 leading-relaxed">
-              수강신청 시작 시 <b>1,000명의 수강생이 동시에 신청</b>할 때, 과부하 없이 선착순 수강 등록 및 대기 배정을 수월하게 처리하는지 시뮬레이션합니다.
-            </p>
-
-            <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
-              <div className="flex gap-4 items-center">
-                <span className="font-semibold text-slate-700">테스트 방식:</span>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="simMode"
-                    checked={testMode === 'single'}
-                    onChange={() => setTestMode('single')}
-                  />
-                  단일 강좌 몰아주기
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="simMode"
-                    checked={testMode === 'multi'}
-                    onChange={() => setTestMode('multi')}
-                  />
-                  다중 강좌 무작위 분산
-                </label>
-              </div>
-
-              {testMode === 'single' && (
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">테스트할 강좌 선택</label>
-                  <select
-                    value={selectedSimCourseId}
-                    onChange={(e) => setSelectedSimCourseId(e.target.value)}
-                    className="w-full bg-white border border-slate-300 p-2 rounded-lg font-bold text-slate-800 focus:outline-none"
-                  >
-                    {courses.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.title} (현재 {c.currentStudents}/{c.maxStudents}명)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="flex justify-between items-center py-1">
-                <label className="flex items-center gap-2 cursor-pointer font-bold text-indigo-700">
-                  <input
-                    type="checkbox"
-                    checked={useRealDb}
-                    onChange={(e) => setUseRealDb(e.target.checked)}
-                  />
-                  🔥 실제 Firestore DB 부하 테스트 (실제 패킷 전송)
-                </label>
-                
-                <button
-                  onClick={handleCleanTestData}
-                  disabled={isCleaning || isSimulating}
-                  className="bg-rose-50 border border-rose-200 text-rose-700 font-bold px-2.5 py-1 rounded-lg text-[11px] hover:bg-rose-100 disabled:opacity-50 transition"
-                >
-                  {isCleaning ? '가상 데이터 삭제 중...' : '가상 데이터 원복 초기화'}
-                </button>
-              </div>
-
-              <button
-                onClick={handleRun1000BotsTrafficSimulation}
-                disabled={isSimulating || isCleaning}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl transition shadow flex items-center justify-center gap-2 text-xs"
-              >
-                <Activity className={`w-4 h-4 ${isSimulating ? 'animate-spin' : ''}`} />
-                {isSimulating ? '1,000명 대기열 수강 처리 중...' : '1,000명 동시 신청 테스트 실행'}
-              </button>
-            </div>
-
-            {/* Simulation Progress Bar */}
-            {isSimulating && (
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs font-mono">
-                  <span className="text-slate-600">대기열 처리 완료율</span>
-                  <span className="text-indigo-600 font-bold">{simProgress}%</span>
-                </div>
-                <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200">
-                  <div
-                    className="bg-indigo-600 h-full transition-all duration-200"
-                    style={{ width: `${simProgress}%` }}
-                  ></div>
-                </div>
-              </div>
-            )}
-
-            {/* Simulation Results Box */}
-            {simResults && (
-              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl space-y-2 text-xs text-emerald-900">
-                <div className="flex items-center gap-1.5 font-bold text-xs text-emerald-800">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  1,000명 동시 신청 대기열 시뮬레이션 완료
-                </div>
-                <div className="grid grid-cols-2 gap-2 pt-1 font-mono text-[11px]">
-                  <div className="bg-white/80 p-2 rounded border border-emerald-200">
-                    동시 접속: <b>{simResults.totalBots}명</b>
-                  </div>
-                  <div className="bg-white/80 p-2 rounded border border-emerald-200">
-                    소요 시간: <b>{simResults.elapsedMs}ms</b>
-                  </div>
-                  <div className="bg-emerald-100 p-2 rounded text-emerald-900 font-bold">
-                    수강 성공: <b>{simResults.successEnrolled}명</b>
-                  </div>
-                  <div className="bg-amber-100 p-2 rounded text-amber-900 font-bold">
-                    대기 배정: <b>{simResults.assignedWaiting}명</b>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Realtime Logs Console */}
-            <div className="bg-slate-900 p-3 rounded-xl font-mono text-[11px] text-slate-300 h-28 overflow-y-auto space-y-1">
-              {simLogs.map((log, idx) => (
-                <div key={idx} className="text-slate-300">
-                  {log}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )}
 

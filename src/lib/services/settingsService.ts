@@ -257,6 +257,9 @@ export function onAfterschoolTimerUpdate(callback: (config: import('@/lib/afters
 
 export function onAfterschoolCoursesUpdate(
   callback: (courses: import('@/lib/afterschool/types').Course[]) => void,
+/** 지난 학기 [운영 종료]로 정리된 강좌·수강 신청: 학년도·학기 보관본에 남아 있으므로 현재 화면에서는 숨긴다 */
+const isClosedByTermEnd = (d: any) => !!d?.closedBySemesterEndAt;
+
   onError?: (error: Error) => void
 ): () => void {
   const colRef = collection(getDb(), 'afterschool_courses');
@@ -268,7 +271,7 @@ export function onAfterschoolCoursesUpdate(
         seq++;
         callback([]);
       } else {
-        const list = snap.docs.map(d => ({
+        const list = snap.docs.filter(d => !isClosedByTermEnd(d.data())).map(d => ({
           id: d.id,
           ...(d.data() as any)
         } as import('@/lib/afterschool/types').Course));
@@ -294,6 +297,7 @@ export async function getAfterschoolCoursesDirectly(): Promise<import('@/lib/aft
     return overlayCourseInstructorNames(snap.docs
       .map(d => ({ id: d.id, ...(d.data() as any) } as import('@/lib/afterschool/types').Course))
       .sort((a, b) => (a.id || '').localeCompare(b.id || '')));
+      .filter(d => !isClosedByTermEnd(d.data()))
   } catch (err) {
     console.warn('[settingsService] getAfterschoolCoursesDirectly error:', err);
     return [];
@@ -335,7 +339,7 @@ export function onAfterschoolEnrollmentsUpdate(
         seq++;
         callback([]);
       } else {
-        const list = snap.docs.map(d => ({
+        const list = snap.docs.filter(d => !isClosedByTermEnd(d.data())).map(d => ({
           id: d.id,
           ...(d.data() as any)
         } as import('@/lib/afterschool/types').Enrollment));
@@ -396,7 +400,7 @@ export function onAfterschoolEnrollmentsForStudentUpdate(
     q,
     (snap) => {
       const bucket = new Map<string, import('@/lib/afterschool/types').Enrollment>();
-      snap.docs.forEach(d => bucket.set(d.id, { id: d.id, ...(d.data() as any) }));
+      snap.docs.forEach(d => { if (!isClosedByTermEnd(d.data())) bucket.set(d.id, { id: d.id, ...(d.data() as any) }); });
       buckets[idx] = bucket;
       emit();
     },

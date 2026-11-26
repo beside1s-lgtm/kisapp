@@ -1,8 +1,8 @@
 /**
  * 방과후학교 [운영 종료]: 모든 강좌 폐강 + 모든 수강생을 출석부에서 제외
  *
- *  - 강좌: CANCELLED (이전 상태는 statusBeforeClose에 보관 → [운영 중]으로 되돌리면 복구)
- *  - 수강 신청(ENROLLED·WAITING 등): CANCELLED (이전 상태는 statusBeforeClose에 보관)
+ *  - 강좌: CANCELLED (이전 상태는 statusBeforeClose에 보관 → [운영 중]으로 되돌리면 강좌만 복구)
+ *  - 수강 신청(ENROLLED·WAITING 등): CANCELLED (되돌려도 수강생은 복구하지 않음)
  *    → 방과후 출석부·담임 출석부(방과후 수강 현황)·출결 연동에서 모두 빠진다.
  *  - 출석 기록·지출증빙·결재 문서는 지우지 않는다(증빙 보존).
  *
@@ -155,32 +155,30 @@ export async function closeAfterschoolSemester(term: { year: string; semester: s
   };
 }
 
-/** [운영 종료]를 되돌릴 때: 운영 종료로 폐강된 강좌·수강 신청만 원래 상태로 */
-export async function reopenAfterschoolSemester(): Promise<{ courses: number; enrollments: number }> {
+/**
+ * [운영 종료]를 되돌릴 때: 운영 종료로 폐강된 강좌만 원래 상태로 (수강생은 되돌리지 않음)
+ *  - 수강 신청은 새로 받으므로 지난 수강 신청은 폐강(CANCELLED) 그대로 두고, 강좌 인원·대기 인원은 0으로 시작
+ */
+export async function reopenAfterschoolSemester(): Promise<{ courses: number }> {
   const db = getDb();
-  const [coursesSnap, enrollSnap] = await Promise.all([
-    getDocs(collection(db, 'afterschool_courses')),
-    getDocs(collection(db, 'afterschool_enrollments')),
-  ]);
-  // 가장 최근에 운영 종료한 학기 자료만 되돌림 (그 전 학기 자료는 그대로)
-  const latest = [...coursesSnap.docs, ...enrollSnap.docs]
+  const coursesSnap = await getDocs(collection(db, 'afterschool_courses'));
+  // 가장 최근에 운영 종료한 학기 강좌만 되돌림 (그 전 학기 자료는 그대로)
+  const latest = coursesSnap.docs
     .map((d) => String(d.data().closedBySemesterEndAt || ''))
     .reduce((m, v) => (v > m ? v : m), '');
-  const restore = (docs: typeof coursesSnap.docs, fallback: string) =>
-    docs
-      .filter((d) => latest && d.data().closedBySemesterEndAt === latest)
-      .map((d) => ({
-        ref: d.ref,
-        data: {
-          status: d.data().statusBeforeClose || fallback,
-          statusBeforeClose: deleteField(),
-          closedBySemesterEndAt: deleteField(),
-          closedTermKey: deleteField(),
-        },
-      }));
-  const c = restore(coursesSnap.docs, 'OPEN');
-  const e = restore(enrollSnap.docs, 'ENROLLED');
+  const c = coursesSnap.docs
+    .filter((d) => latest && d.data().closedBySemesterEndAt === latest)
+    .map((d) => ({
+      ref: d.ref,
+      data: {
+        status: d.data().statusBeforeClose || 'OPEN',
+        currentStudents: 0,
+        waitingStudents: 0,
+        statusBeforeClose: deleteField(),
+        closedBySemesterEndAt: deleteField(),
+        closedTermKey: deleteField(),
+      },
+    }));
   await commitInChunks(c);
-  await commitInChunks(e);
-  return { courses: c.length, enrollments: e.length };
+  return { courses: c.length };
 }

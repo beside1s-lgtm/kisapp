@@ -136,3 +136,20 @@ export function shouldForceWaiting(
 
   return { forceWaiting: false };
 }
+
+/**
+ * 정원 외 대기 인원 한도 (실시간 제어실 > 수강신청 제어에서 설정, settings/afterschoolTimer.waitingLimit)
+ *  - 없음 또는 음수: 무제한 (기존 동작)
+ *  - 0: 대기 신청을 받지 않음 (정원이 차면 마감)
+ *  - N: 강좌마다 대기 N명까지
+ */
+export function getWaitingLimit(cfg: { waitingLimit?: number | null } | null | undefined): number | null {
+  const n = Number(cfg?.waitingLimit);
+  return cfg?.waitingLimit === undefined || cfg?.waitingLimit === null || isNaN(n) || n < 0 ? null : Math.floor(n);
+}
+
+/** 이 강좌의 대기 자리가 다 찼는지 */
+export function isWaitlistFull(course: { waitingStudents?: number }, cfg: { waitingLimit?: number | null } | null | undefined): boolean {
+  const limit = getWaitingLimit(cfg);
+  return limit !== null && (course.waitingStudents || 0) >= limit;
+}

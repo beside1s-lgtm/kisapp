@@ -4,7 +4,7 @@ import {
   getAfterschoolStudentIdentity,
   isAfterschoolApplyOpen,
 } from '@/lib/afterschool/enrollmentRules';
-import { shouldForceWaiting } from '@/lib/afterschool/waitingRules';
+import { shouldForceWaiting, getWaitingLimit } from '@/lib/afterschool/waitingRules';
 import { initialTimerConfig } from '@/lib/afterschool/mock/data';
 import type { Course, Enrollment } from '@/lib/afterschool/types';
 import { buildMasterStudentIndex, resolveMasterStudentId, type MasterStudentIndex } from '@/lib/students/masterStudentKey';
@@ -48,7 +48,7 @@ async function resolveCallerMasterStudentId(caller: AfterschoolCaller): Promise<
 
 export type AfterschoolApiErrorCode =
   | 'LOGIN_REQUIRED' | 'NOT_STUDENT' | 'BAD_REQUEST'
-  | 'DUPLICATE' | 'CLOSED' | 'COURSE_LOCKED' | 'NOT_FOUND' | 'FORBIDDEN' | 'UNKNOWN';
+  | 'DUPLICATE' | 'CLOSED' | 'COURSE_LOCKED' | 'WAITLIST_FULL' | 'NOT_FOUND' | 'FORBIDDEN' | 'UNKNOWN';
 
 export class AfterschoolApiError extends Error {
   code: AfterschoolApiErrorCode;
@@ -222,6 +222,17 @@ export async function enrollAfterschoolCourse(
       const maxStudents = course.maxStudents || 0;
       const waitingStudents = (course as any).waitingStudents || 0;
       const isFull = forceInfo.forceWaiting || currentStudents >= maxStudents;
+      // 정원 외 대기 인원 한도 (관리자 설정): 대기 자리가 다 찼으면 신청 불가
+      const waitingLimit = getWaitingLimit(timerConfig);
+      if (isFull && waitingLimit !== null && waitingStudents >= waitingLimit) {
+        throw new AfterschoolApiError(
+          'WAITLIST_FULL',
+          409,
+          waitingLimit === 0
+            ? (forceInfo.forceWaiting ? `${forceInfo.reason}\n이번 신청은 대기 신청을 받지 않아 접수할 수 없습니다.` : '정원이 마감되었습니다. (대기 신청을 받지 않습니다)')
+            : `정원과 대기 인원(${waitingLimit}명)이 모두 찼습니다.`
+        );
+      }
       const finalStatus: 'ENROLLED' | 'WAITING' = isFull ? 'WAITING' : 'ENROLLED';
       const appliedAt = Date.now();
 

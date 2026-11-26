@@ -181,6 +181,8 @@ export interface GlobalTimerConfig {
   startTime: string;
   endTime: string;
   masterStatus: 'AUTO' | 'FORCE_LOCK' | 'FORCE_OPEN' | 'PAUSED';
+  /** 강좌별 정원 외 대기 인원 한도 (없음·음수=무제한, 0=대기 안 받음) */
+  waitingLimit?: number | null;
 }
 
 export interface QueueTicket {
