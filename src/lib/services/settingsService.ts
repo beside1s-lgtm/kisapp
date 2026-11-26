@@ -255,11 +255,11 @@ export function onAfterschoolTimerUpdate(callback: (config: import('@/lib/afters
   });
 }
 
-export function onAfterschoolCoursesUpdate(
-  callback: (courses: import('@/lib/afterschool/types').Course[]) => void,
 /** 지난 학기 [운영 종료]로 정리된 강좌·수강 신청: 학년도·학기 보관본에 남아 있으므로 현재 화면에서는 숨긴다 */
 const isClosedByTermEnd = (d: any) => !!d?.closedBySemesterEndAt;
 
+export function onAfterschoolCoursesUpdate(
+  callback: (courses: import('@/lib/afterschool/types').Course[]) => void,
   onError?: (error: Error) => void
 ): () => void {
   const colRef = collection(getDb(), 'afterschool_courses');
@@ -295,9 +295,9 @@ export async function getAfterschoolCoursesDirectly(): Promise<import('@/lib/aft
     const snap = await getDocs(colRef);
     if (snap.empty) return [];
     return overlayCourseInstructorNames(snap.docs
+      .filter(d => !isClosedByTermEnd(d.data()))
       .map(d => ({ id: d.id, ...(d.data() as any) } as import('@/lib/afterschool/types').Course))
       .sort((a, b) => (a.id || '').localeCompare(b.id || '')));
-      .filter(d => !isClosedByTermEnd(d.data()))
   } catch (err) {
     console.warn('[settingsService] getAfterschoolCoursesDirectly error:', err);
     return [];

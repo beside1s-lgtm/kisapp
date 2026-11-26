@@ -1060,6 +1060,12 @@ export default function AdminPage() {
 
     const [transferState, setTransferState] = useState<{ isTransferred?: boolean; lastDualAssignedAt?: string; transferredAt?: string; affectedCount?: number } | null>(null);
     const [isTransferring, setIsTransferring] = useState(false);
+    // 방과후학교 운영 단계 (운영 종료면 방과후 노선 관련 화면을 숨김)
+    const [afterschoolClosed, setAfterschoolClosed] = useState(false);
+    useEffect(() => {
+        const unsub = onTeacherApplySettingsUpdate((s: any) => setAfterschoolClosed(s?.afterschoolStageStatus === 'CLOSED'));
+        return () => unsub();
+    }, []);
 
     // 방과후 버스 노선 이동 상태 실시간 구독
     useEffect(() => {
