@@ -20,6 +20,8 @@ import { OfficialWorkRegister } from './OfficialWorkRegister';
 import { SignatureRegisterModal } from './SignatureRegisterModal';
 import { SubstituteModal } from './SubstituteModal';
 import { TeacherManagementTab } from './TeacherManagementTab';
+import { TermArchiveImport } from './TermArchiveImport';
+import { useAppDialog } from '@/hooks/use-app-dialog';
 import { courseInstructors } from '@/lib/afterschool/settlement';
 import { afterschoolDayMark, afterschoolTermHeader, attendanceMarkDisplay } from '@/lib/afterschool/attendanceMarks';
 import { EvidenceApprovalCard } from './EvidenceApprovalCard';
@@ -135,93 +137,134 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     };
   }, []);
 
+  // 단계 전환 확인·결과 안내는 앱 안 창으로 (브라우저 기본 confirm/alert는 막히는 환경이 있어 버튼이 먹통처럼 보임)
+  const { confirm: confirmDialog, notice: noticeDialog, dialog: appDialog } = useAppDialog();
+  // 단계 전환 처리 중 표시 (예: '강좌 보관 중…')
+  const [stageBusy, setStageBusy] = useState<string | null>(null);
+
   const handleUpdateStageStatus = async (status: 'RECRUITING' | 'APPLYING' | 'CONFIRMED' | 'OPERATING' | 'CLOSED') => {
-    if (!teacherApplySettings) return;
+    if (!teacherApplySettings || stageBusy) return;
 
     const isVacationSem = teacherApplySettings.semester === '여름방학' || teacherApplySettings.semester === '겨울방학';
-
-    if (status === 'CONFIRMED') {
-      const confirmResult = window.confirm(
-        '수강신청 결과를 최종 확정하고 학부모 팝업 전송 및 스쿨버스 연동을 진행하시겠습니까?\n\n' +
-        '• 수강 명단(ENROLLED) 및 대기 명단(WAITING)이 최종 확정됩니다.\n' +
-        (isVacationSem
-          ? '• [방학 중]: 버스 신청 학생이 [방학 중 등/하교 버스 미배정 명단]으로 자동 전송됩니다.\n'
-          : '• [학기 중]: 버스 신청 학생이 [방과후 하교 버스] 명단에 2중 배정되어 스쿨버스 관리자가 사전 좌석 배정을 진행할 수 있습니다.\n  (※ 방과후 시작 전까지 기존 정규 하교 버스 좌석은 그대로 유지되며, 스쿨버스 관리자가 [방과후 노선으로 이동] 버튼을 누르면 정규 하교 좌석에서 자동 제외됩니다.)\n') +
-        '• 학부모 서비스 접속 시 수강신청 확정 결과 팝업 알림이 전송됩니다.'
-      );
-      if (!confirmResult) return;
-    }
     const prevStage = (teacherApplySettings as any)?.afterschoolStageStatus;
     if (status === prevStage) return;
+
+    if (status === 'CONFIRMED') {
+      const ok = await confirmDialog({
+        title: '수강신청 결과를 확정할까요?',
+        message:
+          '학부모 팝업 전송과 스쿨버스 연동을 진행합니다.\n\n' +
+          '• 수강 명단(ENROLLED) 및 대기 명단(WAITING)이 최종 확정됩니다.\n' +
+          (isVacationSem
+            ? '• [방학 중]: 버스 신청 학생이 [방학 중 등/하교 버스 미배정 명단]으로 자동 전송됩니다.\n'
+            : '• [학기 중]: 버스 신청 학생이 [방과후 하교 버스] 명단에 2중 배정되어 스쿨버스 관리자가 사전 좌석 배정을 진행할 수 있습니다.\n  (※ 방과후 시작 전까지 기존 정규 하교 버스 좌석은 그대로 유지되며, 스쿨버스 관리자가 [방과후 노선으로 이동] 버튼을 누르면 정규 하교 좌석에서 자동 제외됩니다.)\n') +
+          '• 학부모 서비스 접속 시 수강신청 확정 결과 팝업 알림이 전송됩니다.',
+        confirmText: '결과 확정',
+      });
+      if (!ok) return;
+    }
+
     let closeMessage = '';
+    let reopen = false;
     if (status === 'CLOSED') {
-      const confirmClose = window.confirm(
-        '방과후학교 학기 운영을 최종 마감(종료)하시겠습니까?\n\n' +
-        '• 진행 상태가 [방과후학교 운영 종료]로 변경됩니다.\n' +
-        '• 모든 강좌가 폐강 처리되고, 수강생이 방과후 출석부·담임 출석부에서 모두 빠집니다.\n' +
-        '• 방과후 버스를 탑승하던 학생들이 원래의 정규 하교 버스로 자동 복구됩니다.\n' +
-        '• 지난 출석 기록·지출증빙·결재 문서는 지우지 않고 보관합니다.'
-      );
-      if (!confirmClose) return;
-      try {
-        const { closeAfterschoolSemester } = await import('@/lib/afterschool/closeSemester');
-        const r = await closeAfterschoolSemester();
-        closeMessage = `\n\n• 폐강 처리 강좌 ${r.courses}개, 출석부에서 제외된 수강 신청 ${r.enrollments}건`;
-      } catch (err: any) {
-        console.error('[AdminPanel] 운영 종료 처리 실패:', err);
-        alert('운영 종료 처리 중 오류가 발생해 단계를 바꾸지 않았습니다.\n' + (err?.message || ''));
-        return;
-      }
+      const ok = await confirmDialog({
+        title: '방과후학교 운영을 종료할까요?',
+        message:
+          `${teacherApplySettings.year || ''}학년도 ${teacherApplySettings.semester || ''} 운영을 최종 마감합니다.\n\n` +
+          '• 진행 상태가 [방과후학교 운영 종료]로 변경됩니다.\n' +
+          '• 모든 강좌가 폐강 처리되고, 수강생이 방과후 출석부·담임 출석부에서 모두 빠집니다.\n' +
+          '• 방과후 버스를 탑승하던 학생들이 원래의 정규 하교 버스로 자동 복구되고, 버스 관리자에서 방과후 노선이 사라집니다.\n' +
+          '• 이번 학기 강좌·강사·수강생 정보는 학년도·학기별로 보관되어, 다음 학기에 [강좌 일괄 개설]에서 불러올 수 있습니다.\n' +
+          '• 지난 출석 기록·지출증빙·결재 문서는 지우지 않고 보관합니다.',
+        confirmText: '운영 종료',
+        destructive: true,
+      });
+      if (!ok) return;
     } else if (prevStage === 'CLOSED') {
       // 운영 종료를 되돌리는 경우: 운영 종료로 폐강된 강좌·수강 신청을 원래 상태로
-      if (window.confirm('[운영 종료]로 폐강된 강좌와 수강 신청을 원래 상태로 되돌릴까요?\n(취소를 누르면 강좌는 폐강 상태로 두고 단계만 바꿉니다.)')) {
+      reopen = await confirmDialog({
+        title: '폐강된 강좌를 되돌릴까요?',
+        message: '[운영 종료]로 폐강된 강좌와 수강 신청을 원래 상태로 되돌립니다.\n[그대로 두기]를 누르면 강좌는 폐강 상태로 두고 단계만 바꿉니다.',
+        confirmText: '되돌리기',
+        cancelText: '그대로 두기',
+      });
+    }
+
+    try {
+      if (status === 'CLOSED') {
         try {
+          setStageBusy('이번 학기 강좌·수강생 정보를 보관하고 폐강 처리하는 중…');
+          const { closeAfterschoolSemester } = await import('@/lib/afterschool/closeSemester');
+          const r = await closeAfterschoolSemester({
+            year: String(teacherApplySettings.year || new Date().getFullYear()),
+            semester: String(teacherApplySettings.semester || '1학기'),
+          });
+          closeMessage =
+            `\n\n• [${r.archived}] 강좌·강사·수강생 정보를 보관했습니다. (강좌 일괄 개설 → 지난 학기 강좌 불러오기)` +
+            `\n• 폐강 처리 강좌 ${r.courses}개, 출석부에서 제외된 수강 신청 ${r.enrollments}건`;
+        } catch (err: any) {
+          console.error('[AdminPanel] 운영 종료 처리 실패:', err);
+          await noticeDialog({ title: '운영 종료 실패', message: '처리 중 오류가 발생해 단계를 바꾸지 않았습니다.\n' + (err?.message || '') });
+          return;
+        }
+      } else if (reopen) {
+        try {
+          setStageBusy('폐강된 강좌와 수강 신청을 되돌리는 중…');
           const { reopenAfterschoolSemester } = await import('@/lib/afterschool/closeSemester');
           const r = await reopenAfterschoolSemester();
           closeMessage = `\n\n• 복구된 강좌 ${r.courses}개, 수강 신청 ${r.enrollments}건`;
         } catch (err: any) {
           console.error('[AdminPanel] 운영 종료 되돌리기 실패:', err);
-          alert('강좌 복구 중 오류가 발생했습니다.\n' + (err?.message || ''));
+          await noticeDialog({ title: '강좌 복구 실패', message: '처리 중 오류가 발생했습니다.\n' + (err?.message || '') });
           return;
         }
       }
-    }
 
-    const isFinalized = status === 'CONFIRMED' || status === 'OPERATING' || status === 'CLOSED';
-    const updated = { 
-      ...teacherApplySettings, 
-      afterschoolStageStatus: status,
-      isAfterschoolFinalized: isFinalized,
-      afterschoolFinalizedAt: status === 'CONFIRMED' ? new Date().toISOString() : teacherApplySettings?.afterschoolFinalizedAt
-    };
-    setTeacherApplySettings(updated as any);
-    await saveTeacherApplySettings({ 
-      afterschoolStageStatus: status,
-      isAfterschoolFinalized: isFinalized,
-      afterschoolFinalizedAt: status === 'CONFIRMED' ? new Date().toISOString() : teacherApplySettings?.afterschoolFinalizedAt
-    });
+      setStageBusy('진행 단계를 저장하는 중…');
+      const isFinalized = status === 'CONFIRMED' || status === 'OPERATING' || status === 'CLOSED';
+      const updated = {
+        ...teacherApplySettings,
+        afterschoolStageStatus: status,
+        isAfterschoolFinalized: isFinalized,
+        afterschoolFinalizedAt: status === 'CONFIRMED' ? new Date().toISOString() : teacherApplySettings?.afterschoolFinalizedAt
+      };
+      setTeacherApplySettings(updated as any);
+      await saveTeacherApplySettings({
+        afterschoolStageStatus: status,
+        isAfterschoolFinalized: isFinalized,
+        afterschoolFinalizedAt: status === 'CONFIRMED' ? new Date().toISOString() : teacherApplySettings?.afterschoolFinalizedAt
+      });
 
-    let busSyncMessage = '';
-    if (status === 'CONFIRMED' || status === 'CLOSED') {
-      try {
-        const { syncAfterschoolBusAssignmentsOnStageChange } = await import('@/lib/kisbus/assignments');
-        const busRes = await syncAfterschoolBusAssignmentsOnStageChange(status, teacherApplySettings.semester || '1학기');
-        if (busRes.message) {
-          busSyncMessage = `\n\n${busRes.message}`;
+      let busSyncMessage = '';
+      if (status === 'CONFIRMED' || status === 'CLOSED') {
+        try {
+          setStageBusy(status === 'CLOSED' ? '스쿨버스를 정규 하교 노선으로 되돌리는 중…' : '스쿨버스 방과후 명단에 연동하는 중…');
+          const { syncAfterschoolBusAssignmentsOnStageChange } = await import('@/lib/kisbus/assignments');
+          const busRes = await syncAfterschoolBusAssignmentsOnStageChange(status, teacherApplySettings.semester || '1학기');
+          if (busRes.message) {
+            busSyncMessage = `\n\n${busRes.message}`;
+          }
+        } catch (busErr: any) {
+          console.error('Bus sync error:', busErr);
+          busSyncMessage = `\n\n⚠️ 스쿨버스 연동 중 오류가 발생했습니다. 버스 관리자 화면에서 확인해 주세요.\n${busErr?.message || ''}`;
         }
-      } catch (busErr) {
-        console.error('Bus sync error:', busErr);
       }
-    }
 
-    const labelMap = {
-      RECRUITING: '강사 모집 중',
-      APPLYING: '수강 신청 중',
-      CONFIRMED: '수강신청 완료 (결과 확정 & 버스 연동)',
-      OPERATING: '방과후학교 운영 중 (출석부 활성화)',
-      CLOSED: '운영 종료 (하교 버스 원상 복구)',
-    };
-    alert(`방과후학교 진행 상태가 [${labelMap[status]}]로 성공적으로 변경되었습니다.${closeMessage}${busSyncMessage}`);
+      const labelMap = {
+        RECRUITING: '강사 모집 중',
+        APPLYING: '수강 신청 중',
+        CONFIRMED: '수강신청 완료 (결과 확정 & 버스 연동)',
+        OPERATING: '방과후학교 운영 중 (출석부 활성화)',
+        CLOSED: '운영 종료 (하교 버스 원상 복구)',
+      };
+      setStageBusy(null);
+      await noticeDialog({
+        title: '진행 단계 변경 완료',
+        message: `방과후학교 진행 상태가 [${labelMap[status]}]로 변경되었습니다.${closeMessage}${busSyncMessage}`,
+      });
+    } finally {
+      setStageBusy(null);
+    }
   };
 
   const getDetailedStatusText = () => {
@@ -1049,12 +1092,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             </div>
 
+            {/* 단계 전환 처리 중 표시 */}
+            {stageBusy && (
+              <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs sm:text-sm font-bold text-blue-800" role="status" aria-live="polite">
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                <span>{stageBusy}</span>
+                <span className="ml-auto text-[11px] font-medium text-blue-600 hidden sm:inline">창을 닫거나 새로고침하지 마세요</span>
+              </div>
+            )}
+
             {/* 5단계 상태 전환 버튼 그룹 (접힘 상태가 아닐 때 표출) */}
             {!isStageControlFolded && (
               <div className="grid grid-cols-5 gap-1 sm:gap-2 animate-in fade-in duration-200">
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('RECRUITING')}
+                  disabled={!!stageBusy}
                   className={`p-1 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl border text-center sm:text-left transition flex flex-col justify-center sm:justify-between min-w-0 ${
                     ((teacherApplySettings as any)?.afterschoolStageStatus || 'RECRUITING') === 'RECRUITING'
                       ? 'bg-blue-50 border-2 border-blue-600 ring-1 sm:ring-2 ring-blue-100 text-blue-900 font-bold'
@@ -1072,6 +1125,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('APPLYING')}
+                  disabled={!!stageBusy}
                   className={`p-1 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl border text-center sm:text-left transition flex flex-col justify-center sm:justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'APPLYING'
                       ? 'bg-amber-50 border-2 border-amber-600 ring-1 sm:ring-2 ring-amber-100 text-amber-900 font-bold'
@@ -1089,6 +1143,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('CONFIRMED')}
+                  disabled={!!stageBusy}
                   className={`p-1 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl border text-center sm:text-left transition flex flex-col justify-center sm:justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'CONFIRMED'
                       ? 'bg-violet-50 border-2 border-violet-600 ring-1 sm:ring-2 ring-violet-100 text-violet-900 font-bold'
@@ -1106,6 +1161,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('OPERATING')}
+                  disabled={!!stageBusy}
                   className={`p-1 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl border text-center sm:text-left transition flex flex-col justify-center sm:justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'OPERATING'
                       ? 'bg-emerald-50 border-2 border-emerald-600 ring-1 sm:ring-2 ring-emerald-100 text-emerald-900 shadow-sm font-bold'
@@ -1123,6 +1179,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => handleUpdateStageStatus('CLOSED')}
+                  disabled={!!stageBusy}
                   className={`p-1 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl border text-center sm:text-left transition flex flex-col justify-center sm:justify-between min-w-0 ${
                     (teacherApplySettings as any)?.afterschoolStageStatus === 'CLOSED'
                       ? 'bg-slate-200 border-2 border-slate-600 ring-1 sm:ring-2 ring-slate-200 text-slate-900 font-bold'
@@ -1945,6 +2002,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* 지난 학기(운영 종료 때 보관) 강좌·강사 불러오기 */}
+              <TermArchiveImport
+                classrooms={classrooms}
+                onLoad={(loaded, label) => {
+                  if (batchPreviewCourses.length > 0 && !window.confirm(`개설 예정 목록에 이미 ${batchPreviewCourses.length}개 강좌가 있습니다.\n[${label}] 강좌 ${loaded.length}개를 뒤에 추가할까요?`)) return;
+                  setBatchTemplate('excel');
+                  setBatchPreviewCourses((prev) => [...prev, ...loaded]);
+                  alert(`[${label}] 강좌 ${loaded.length}개를 불러왔습니다.\n아래 목록에서 강사·교실·정원을 확인한 뒤 '일괄 개설 실행'을 눌러 주세요.`);
+                }}
+              />
 
               {/* 개설 예정 강좌 미리보기 및 목록 편집 */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200/80 space-y-4 flex flex-col shadow-sm">
@@ -3132,6 +3200,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           }}
         />
       )}
+
+      {/* 단계 전환 확인·결과 안내 창 */}
+      {appDialog}
 
       </div>
     </div>

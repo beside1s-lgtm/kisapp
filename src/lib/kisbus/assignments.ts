@@ -1,5 +1,5 @@
 import { getKisbusDb as db } from './firebase';
-import { collection, doc, writeBatch, query, getDocs, where, setDoc } from 'firebase/firestore';
+import { collection, doc, writeBatch, query, getDocs, getDoc, updateDoc, where, setDoc } from 'firebase/firestore';
 import type { Route, Student, RouteType, DayOfWeek } from './types';
 import { errorEmitter } from '@/lib/error-emitter';
 import { FirestorePermissionError, type SecurityRuleContext } from '@/lib/errors';
@@ -62,7 +62,7 @@ export const extractCourseDays = (course: any): string[] => {
 export const clearAllAfterSchoolAssignments = async (
     mode: 'regular' | 'vacation' = 'regular',
     opts: { refillAll?: boolean; keepAfterSchool?: boolean } = {}
-): Promise<{ restoredDestinations: number; refilledSeats: number }> => {
+): Promise<{ restoredDestinations: number; refilledSeats: number; unrestored: number }> => {
     const refillAll = opts.refillAll ?? true;
     // keepAfterSchool: 하교 노선 복귀 버튼 — 방과후 배차(목적지·방과후 노선 좌석)는 그대로 두고 하교 좌석만 복구
     const keepAfterSchool = opts.keepAfterSchool ?? false;
@@ -135,12 +135,40 @@ export const clearAllAfterSchoolAssignments = async (
         (route.seating || []).forEach(seat => { if (seat.studentId) seatedAfternoonByDay.get(route.dayOfWeek)!.add(seat.studentId); });
     });
 
+    // 이동할 때 저장해 둔 원래 하교 좌석 (없으면 예전 방식: 등교 좌석 번호로 짐작)
+    const savedSeats = await readSavedSeats();
+    const savedStudentIds = new Set<string>();
+    Object.values(savedSeats).forEach(m => Object.values(m || {}).forEach(sid => savedStudentIds.add(sid)));
+
     let refilledSeats = 0;
+    const seatingByRoute = new Map<string, { ref: any; route: Route; seating: any[]; changed: boolean }>();
     afternoonRoutesSnapshot.forEach(routeDoc => {
         const route = routeDoc.data() as Route;
-        const day = route.dayOfWeek;
+        if (!seatedAfternoonByDay.has(route.dayOfWeek)) seatedAfternoonByDay.set(route.dayOfWeek, new Set());
+        seatingByRoute.set(routeDoc.id, { ref: routeDoc.ref, route, seating: [...(route.seating || [])], changed: false });
+    });
+
+    // 3-1. 저장된 원래 하교 좌석으로 복귀
+    seatingByRoute.forEach((r, routeId) => {
+        const saved = savedSeats[routeId];
+        if (!saved) return;
+        const seated = seatedAfternoonByDay.get(r.route.dayOfWeek)!;
+        r.seating = r.seating.map(seat => {
+            const sid = saved[String(seat.seatNumber)];
+            if (seat.studentId === null && sid && !seated.has(sid)) {
+                r.changed = true;
+                seated.add(sid);
+                refilledSeats++;
+                return { ...seat, studentId: sid };
+            }
+            return seat;
+        });
+    });
+
+    // 3-2. 저장 기록이 없거나 원래 자리가 찼으면: 같은 요일 등교 좌석 번호로 짐작
+    seatingByRoute.forEach(r => {
+        const day = r.route.dayOfWeek;
         const afterSchoolStudentsForDay = afterSchoolStudentIdsByDay.get(day) || new Set<string>();
-        if (!seatedAfternoonByDay.has(day)) seatedAfternoonByDay.set(day, new Set());
         const seated = seatedAfternoonByDay.get(day)!;
 
         const morningSeatMap = new Map<string, string>();
@@ -148,24 +176,34 @@ export const clearAllAfterSchoolAssignments = async (
             (mRoute.seating || []).forEach(seat => {
                 const sid = seat.studentId;
                 if (!sid || !validAfternoonStudentIds.has(sid) || seated.has(sid)) return;
-                const removedFromAfternoon = refillAll ? afterSchoolStudentsForDay.has(sid) : hiddenStudentIds.has(sid);
+                const removedFromAfternoon =
+                    savedStudentIds.has(sid) || (refillAll ? afterSchoolStudentsForDay.has(sid) : hiddenStudentIds.has(sid));
                 if (removedFromAfternoon) morningSeatMap.set(`${mRoute.busId}_${seat.seatNumber}`, sid);
             });
         });
 
-        let hasChanged = false;
-        const nextSeating = (route.seating || []).map(seat => {
-            const targetStudentId = morningSeatMap.get(`${route.busId}_${seat.seatNumber}`);
+        r.seating = r.seating.map(seat => {
+            const targetStudentId = morningSeatMap.get(`${r.route.busId}_${seat.seatNumber}`);
             if (seat.studentId === null && targetStudentId && !seated.has(targetStudentId)) {
-                hasChanged = true;
+                r.changed = true;
                 seated.add(targetStudentId);
                 refilledSeats++;
                 return { ...seat, studentId: targetStudentId };
             }
             return seat;
         });
-        if (hasChanged) ops.push({ ref: routeDoc.ref, data: { seating: nextSeating } });
     });
+    seatingByRoute.forEach(r => { if (r.changed) ops.push({ ref: r.ref, data: { seating: r.seating } }); });
+
+    // 원래 자리가 다른 학생으로 차서 하교 좌석을 못 받은 학생 수
+    let unrestored = 0;
+    Object.entries(savedSeats).forEach(([routeId, m]) => {
+        const day = seatingByRoute.get(routeId)?.route.dayOfWeek;
+        const seated = day ? seatedAfternoonByDay.get(day) : undefined;
+        Object.values(m || {}).forEach(sid => { if (!seated || !seated.has(sid)) unrestored++; });
+    });
+    // 복구가 끝났으므로 저장 기록 비우기
+    if (Object.keys(savedSeats).length) ops.push({ ref: transferStateRef(), data: { savedSeats: {} } });
 
     try {
         for (let i = 0; i < ops.length; i += 400) {
@@ -178,8 +216,43 @@ export const clearAllAfterSchoolAssignments = async (
         errorEmitter.emit('permission-error', permissionError);
         throw serverError;
     }
-    return { restoredDestinations, refilledSeats };
+    return { restoredDestinations, refilledSeats, unrestored };
 };
+
+/** 방과후 노선으로 이동하며 비운 정규 하교 좌석 (config/afterschool_bus_transfer_state.savedSeats 에 보관) */
+type RemovedSeat = { routeId: string; seatNumber: number | string; studentId: string };
+type SavedSeats = Record<string, Record<string, string>>; // routeId → seatNumber → studentId
+
+const transferStateRef = () => doc(db(), 'config', 'afterschool_bus_transfer_state');
+
+const unrestoredNote = (n: number) =>
+    n > 0 ? `\n⚠️ 원래 하교 자리에 다른 학생이 앉아 있어 좌석을 받지 못한 경우가 ${n}건 있습니다. 하교 노선의 미배정 명단에서 확인해 주세요.` : '';
+
+async function readSavedSeats(): Promise<SavedSeats> {
+    try {
+        const snap = await getDoc(transferStateRef());
+        return (snap.exists() && (snap.data() as any)?.savedSeats) || {};
+    } catch {
+        return {};
+    }
+}
+
+/** 이동으로 비운 하교 좌석을 기존 저장분에 더해 저장 (같은 학생은 처음 저장한 자리를 유지) */
+async function saveRemovedAfternoonSeats(removed: RemovedSeat[]) {
+    if (!removed.length) return;
+    const saved = await readSavedSeats();
+    const already = new Set<string>();
+    Object.values(saved).forEach((m) => Object.values(m || {}).forEach((sid) => already.add(sid)));
+    // 같은 학생이 여러 요일 노선에 있을 수 있으므로 (노선, 학생) 단위로 확인
+    for (const r of removed) {
+        const route = (saved[r.routeId] = { ...(saved[r.routeId] || {}) });
+        if (Object.values(route).includes(r.studentId)) continue;
+        if (!route[String(r.seatNumber)]) route[String(r.seatNumber)] = r.studentId;
+    }
+    await setDoc(transferStateRef(), { savedSeatsUpdatedAt: new Date().toISOString() }, { merge: true });
+    // savedSeats는 통째로 바꿔 써야 지난 키가 남지 않음 (merge는 맵을 합침)
+    await updateDoc(transferStateRef(), { savedSeats: saved });
+}
 
 /** 방과후 수강 신청의 '정규 하교 숨김' 표시 해제 */
 const clearEnrollmentAfternoonHiddenFlags = async () => {
@@ -480,8 +553,8 @@ export const syncAfterschoolBusAssignmentsOnStageChange = async (
         count: r.refilledSeats,
         isVacation: false,
         message: wasTransferred
-          ? `🏁 [학기 중 하교 버스 원상 복구 완료]\n\n방과후학교 운영 종료에 따라 방과후 노선이 정리되고, 방과후 학생 ${r.refilledSeats}명이 정규 하교 좌석으로 돌아갔습니다.`
-          : `🏁 [방과후 버스 정리 완료]\n\n[방과후 노선으로 이동] 전이었으므로 정규 하교 좌석은 그대로 두고, 방과후 노선 배정만 정리했습니다.${r.refilledSeats ? `\n(일괄 이동으로 하교 좌석에서 빠졌던 ${r.refilledSeats}명은 하교 좌석으로 복귀)` : ''}`
+          ? `🏁 [학기 중 하교 버스 원상 복구 완료]\n\n방과후학교 운영 종료에 따라 방과후 노선이 정리되고, 방과후 학생들이 정규 하교 좌석으로 돌아갔습니다. (요일별 좌석 ${r.refilledSeats}자리)` + unrestoredNote(r.unrestored)
+          : `🏁 [방과후 버스 정리 완료]\n\n[방과후 노선으로 이동] 전이었으므로 정규 하교 좌석은 그대로 두고, 방과후 노선 배정만 정리했습니다.${r.refilledSeats ? `\n(일괄 이동으로 하교 좌석에서 빠졌던 학생들은 하교 좌석으로 복귀: 요일별 좌석 ${r.refilledSeats}자리)` : ''}` + unrestoredNote(r.unrestored)
       };
     }
   }
@@ -596,6 +669,7 @@ export const executeTransferAfterschoolStudentsToBus = async (): Promise<{ succe
   );
 
   let affectedSeatsCount = 0;
+  const removedSeats: RemovedSeat[] = [];
   afternoonRoutesSnap.forEach(routeDoc => {
     const route = routeDoc.data() as Route;
     const day = route.dayOfWeek;
@@ -607,6 +681,7 @@ export const executeTransferAfterschoolStudentsToBus = async (): Promise<{ succe
         if (seat.studentId && targetStudentIds.has(seat.studentId)) {
           seatingChanged = true;
           affectedSeatsCount++;
+          removedSeats.push({ routeId: routeDoc.id, seatNumber: seat.seatNumber, studentId: seat.studentId });
           return { ...seat, studentId: null };
         }
         return seat;
@@ -617,6 +692,9 @@ export const executeTransferAfterschoolStudentsToBus = async (): Promise<{ succe
       }
     }
   });
+
+  // 하교 노선 복귀·운영 종료 때 원래 자리로 돌려놓기 위해, 빼기 전에 원래 하교 좌석을 저장
+  await saveRemovedAfternoonSeats(removedSeats);
 
   // 5. 이동 상태 Firestore 저장
   const { setDoc, doc: fDoc } = await import('firebase/firestore');
@@ -657,10 +735,10 @@ export const executeRevertTransferFromAfterschoolToBus = async (): Promise<{ suc
   return {
     success: true,
     count: r.refilledSeats,
-    message: `🏁 [하교 노선 복귀 완료]
-
-방과후 학생 ${r.refilledSeats}명이 정규 하교 좌석으로 돌아갔습니다.
-방과후 노선 배차는 그대로 남아 있어 다시 [방과후 노선으로 이동]할 수 있습니다.`
+    message:
+      `🏁 [하교 노선 복귀 완료]\n\n방과후 학생들이 정규 하교 좌석으로 돌아갔습니다. (요일별 좌석 ${r.refilledSeats}자리)` +
+      unrestoredNote(r.unrestored) +
+      `\n방과후 노선 배차는 그대로 남아 있어 다시 [방과후 노선으로 이동]할 수 있습니다.`
   };
 };
 
@@ -825,6 +903,7 @@ export const transferAllAfterschoolStudentsToBus = async (
       query(collection(busDbInstance, 'routes'), where('type', '==', 'Afternoon'))
     );
 
+    const removedSeats: RemovedSeat[] = [];
     afternoonRoutesSnap.forEach((routeDoc) => {
       const route = routeDoc.data() as Route;
       const day = route.dayOfWeek;
@@ -835,6 +914,7 @@ export const transferAllAfterschoolStudentsToBus = async (
         const nextSeating = (route.seating || []).map((seat) => {
           if (seat.studentId && targetStudentIds.has(seat.studentId)) {
             seatingChanged = true;
+            removedSeats.push({ routeId: routeDoc.id, seatNumber: seat.seatNumber, studentId: seat.studentId });
             return { ...seat, studentId: null };
           }
           return seat;
@@ -845,6 +925,8 @@ export const transferAllAfterschoolStudentsToBus = async (
         }
       }
     });
+    // 원래 하교 좌석 저장 (하교 복귀·운영 종료 때 이 자리로 복구)
+    await saveRemovedAfternoonSeats(removedSeats);
   }
 
   await busBatch.commit();
