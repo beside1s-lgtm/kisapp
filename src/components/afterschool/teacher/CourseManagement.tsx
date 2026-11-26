@@ -815,8 +815,20 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
 
     const finalSyllabusSessions = newSyllabusSessions.length > 0 ? newSyllabusSessions : generatedSyllabus;
 
+    // 학년도·학기·운영기간 기록 (관리자 일괄 개설과 동일): 스쿨버스가 '방학' 학기 강좌를 방학 중 명단으로 구분하는 데 씀
+    const termSemester = String(teacherApplySettings?.semester || '');
+    const termStart = teacherApplySettings?.operatingStartDate || '';
+    const termEnd = teacherApplySettings?.operatingEndDate || '';
+    const termFields = {
+      ...(teacherApplySettings?.year ? { year: String(teacherApplySettings.year) } : {}),
+      ...(termSemester ? { semester: termSemester } : {}),
+      ...(termStart && termEnd ? { period: `${termStart} ~ ${termEnd}` } : {}),
+      ...(termSemester ? { semesterMode: (termSemester.includes('방학') ? 'vacation' : 'regular') as 'vacation' | 'regular' } : {}),
+    };
+
     const created: Course = {
       id: `c_${Date.now()}`,
+      ...termFields,
       title: newTitle,
       category: '',
       instructorName: currentInstructorName,

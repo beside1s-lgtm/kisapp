@@ -50,6 +50,11 @@ export interface Course {
   isForceLocked?: boolean;
   kisbusDepartureTime?: string;
   period?: any;
+  /** 개설 학년도·학기 (예: '2026', '여름방학') */
+  year?: string;
+  semester?: string;
+  /** 스쿨버스 학기 중/방학 중 구분 (없으면 semester·period·강좌명의 '방학' 글자로 판단) */
+  semesterMode?: 'regular' | 'vacation';
   totalHours?: any;
   syllabusFile?: any;
   teacherId?: any;

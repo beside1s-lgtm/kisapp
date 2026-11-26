@@ -25,7 +25,7 @@ import type { Bus, Student, Route, GroupLeaderRecord } from '@/lib/kisbus/types'
  * 독립 컴포넌트였기 때문에 그대로 파일만 옮긴 것이다 (동작 변경 없음).
  */
 export const AllGroupLeadersStatus = ({ relevantRoutes, students, buses, formatStudentName, t }: { relevantRoutes: Route[]; students: Student[]; buses: Bus[]; formatStudentName: (student: Student) => string; t: any; }) => {
-    const [leadersMap, setLeadersMap] = useState<Record<string, { names: string[]; days: number } | null>>({});
+    const [leadersMap, setLeadersMap] = useState<Record<string, { names: string[]; days: number; leaders: { studentId: string; label: string }[] } | null>>({});
     const [selectedBusIds, setSelectedBusIds] = useState<Set<string>>(new Set());
     const [editingBusId, setEditingBusId] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
@@ -50,10 +50,11 @@ export const AllGroupLeadersStatus = ({ relevantRoutes, students, buses, formatS
             if (active.length > 0) {
                 const minDate = Math.min(...active.map(l => new Date(l.startDate).getTime()));
                 const days = differenceInDays(new Date(), new Date(minDate)) + 1;
-                results[busId] = { names: active.map(l => {
+                const leaders = active.map(l => {
                     const student = students.find(s => s.id === l.studentId);
-                    return student ? formatStudentName(student) : (l.name || "알 수 없음");
-                }), days };
+                    return { studentId: l.studentId, label: student ? formatStudentName(student) : (l.name || "알 수 없음") };
+                });
+                results[busId] = { names: leaders.map(x => x.label), days, leaders };
             } else results[busId] = null;
         }));
         setLeadersMap(results);
@@ -242,6 +243,113 @@ export const AllGroupLeadersStatus = ({ relevantRoutes, students, buses, formatS
         setSelectedBusIds(next);
     };
 
+    /**
+     * 학교 봉사활동실적 입력 양식과 같은 열 순서의 시트
+     * (순서 | 학년 | 반 | 번호 | 이름 | 기간 | 인정시간 | 학교/개인 | 장소 또는 주관기관명 | 봉사활동내용)
+     * 학년·반·번호·이름을 각각 다른 칸에 적어 그대로 복사해 붙일 수 있게 한다.
+     * 번호가 스쿨버스 학생 정보에 없으면 통합 학생 계정에서 찾아 채운다.
+     */
+    const addVolunteerRecordSheet = async (workbook: ExcelJS.Workbook) => {
+        const toNum = (v: unknown) => {
+            const t = String(v ?? '').trim();
+            return t !== '' && /^\d+$/.test(t) ? Number(t) : t;
+        };
+
+        type MasterLookup = {
+            index: Awaited<ReturnType<typeof import('@/lib/students/masterStudentResolver').getMasterStudentIndex>>;
+            resolve: typeof import('@/lib/students/masterStudentKey').resolveMasterStudentId;
+        };
+        let masterLookup: Promise<MasterLookup | null> | null = null;
+        const getMasterLookup = () => {
+            masterLookup ??= (async () => {
+                try {
+                    const [{ getMasterStudentIndex }, { resolveMasterStudentId }] = await Promise.all([
+                        import('@/lib/students/masterStudentResolver'),
+                        import('@/lib/students/masterStudentKey'),
+                    ]);
+                    return { index: await getMasterStudentIndex(), resolve: resolveMasterStudentId };
+                } catch (err) {
+                    console.warn('[AllGroupLeadersStatus] 통합 학생 번호 조회 실패:', err);
+                    return null;
+                }
+            })();
+            return masterLookup;
+        };
+
+        const rows: { grade: string | number; klass: string | number; num: string | number; name: string }[] = [];
+        const seen = new Set<string>();
+        for (const busId of Object.keys(leadersMap)) {
+            for (const leader of leadersMap[busId]?.leaders || []) {
+                if (seen.has(leader.studentId)) continue;
+                seen.add(leader.studentId);
+                const s = students.find(x => x.id === leader.studentId);
+                if (s) {
+                    const name = getStudentName(s, 'ko');
+                    const klass = s.class ?? (s as any).classNum ?? '';
+                    let num: unknown = s.number ?? (s as any).studentNum ?? '';
+                    if (String(num ?? '').trim() === '') {
+                        const lookup = await getMasterLookup();
+                        if (lookup) {
+                            const hit = lookup.resolve({
+                                masterStudentId: (s as any).masterStudentId,
+                                email: s.studentEmail,
+                                name,
+                                grade: s.grade,
+                                classNum: klass,
+                            }, lookup.index);
+                            if (hit.id) num = lookup.index.byId.get(hit.id)?.studentNum ?? '';
+                        }
+                    }
+                    rows.push({ grade: toNum(s.grade), klass: toNum(klass), num: toNum(num), name });
+                } else {
+                    // 학생 정보가 없으면 저장된 표시 이름("52 홍길동")에서 학년·반을 나눔
+                    const m = leader.label.match(/^(\d)(\d+)\s+(.+)$/);
+                    rows.push(m
+                        ? { grade: Number(m[1]), klass: Number(m[2]), num: '', name: m[3].trim() }
+                        : { grade: '', klass: '', num: '', name: leader.label });
+                }
+            }
+        }
+
+        const sortKey = (v: string | number) => (typeof v === 'number' ? v : Number.MAX_SAFE_INTEGER);
+        rows.sort((a, b) =>
+            sortKey(a.grade) - sortKey(b.grade) ||
+            sortKey(a.klass) - sortKey(b.klass) ||
+            sortKey(a.num) - sortKey(b.num) ||
+            a.name.localeCompare(b.name, 'ko'));
+
+        const ws = workbook.addWorksheet('봉사활동실적 입력');
+        const headers = ['순서', '학년', '반', '번호', '이름', '기간(시작일자-종료일자)', '인정시간', '학교/개인', '장소 또는 주관기관명', '봉사활동내용'];
+        ws.columns = [6, 6, 6, 6, 12, 26, 9, 10, 30, 24].map(width => ({ width }));
+        const thin = { style: 'thin' as const };
+        const border = { top: thin, left: thin, bottom: thin, right: thin };
+        const header = ws.getRow(1);
+        headers.forEach((h, i) => {
+            const c = header.getCell(i + 1);
+            c.value = h;
+            c.font = { name: '돋움', size: 10, bold: true };
+            c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9ECEF' } };
+            c.border = border;
+        });
+        header.height = 22;
+        rows.forEach((r, i) => {
+            const row = ws.getRow(i + 2);
+            [i + 1, r.grade, r.klass, r.num, r.name, '', 8, '학교', '(학교)호치민시한국국제학교(초)', '학생 차량 안전 도우미']
+                .forEach((v, col) => {
+                    const c = row.getCell(col + 1);
+                    c.value = v as any;
+                    c.font = { name: '돋움', size: 10 };
+                    c.alignment = { vertical: 'middle', horizontal: col === 4 || col >= 8 ? 'left' : 'center' };
+                    c.border = border;
+                });
+        });
+        const noteRow = rows.length + 3;
+        ws.getCell(`A${noteRow}`).value = '*기간은 학기 활동 기간을 입력하세요. 인정시간은 특이사항 없는 차장 기준 8시간이며, 조정이 필요한 학생은 수정하세요. 번호가 빈 칸이면 통합 학생 계정에 번호가 없는 학생입니다.';
+        ws.getCell(`A${noteRow}`).font = { name: '돋움', size: 9, italic: true, color: { argb: 'FF666666' } };
+        ws.mergeCells(`A${noteRow}:J${noteRow}`);
+    };
+
     const handleExportExcel = async () => {
         const allLeaders = sorted.flatMap(item =>
             item.leaderNames
@@ -352,6 +460,8 @@ export const AllGroupLeadersStatus = ({ relevantRoutes, students, buses, formatS
         footerCell.font = { name: '돋움', size: 10, italic: true };
         footerCell.alignment = { vertical: 'middle', horizontal: 'left' };
         worksheet.mergeCells(`A${finalRowIndex}:F${finalRowIndex}`);
+
+        await addVolunteerRecordSheet(workbook);
 
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

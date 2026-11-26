@@ -252,10 +252,8 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
             
             if (semesterMode === 'vacation') {
                 const vacClassIds = student.vacationAfterSchoolClassIds || {};
-                const regClassIds = student.afterSchoolClassIds || {};
                 const enrolledClassIds = new Set([
                     ...Object.values(vacClassIds).filter(Boolean),
-                    ...Object.values(regClassIds).filter(Boolean)
                 ]);
                 const hasVacationClass = afterSchoolClasses.some(c => 
                     c.semesterMode === 'vacation' && enrolledClassIds.has(c.id)
@@ -267,10 +265,8 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                     errorKey = 'admin.student_management.unassignable.error_morning';
                 } else if (selectedRouteType === 'Afternoon') {
                     const vacDests = student.vacationAfterSchoolDestinations || {};
-                    const regDests = student.afterSchoolDestinations || {};
-                    destId = vacDests[selectedDay] || regDests[selectedDay] || 
-                             Object.values(vacDests).find(v => v && v !== 'UNSPECIFIED') || 
-                             Object.values(regDests).find(v => v && v !== 'UNSPECIFIED') || null;
+                    destId = vacDests[selectedDay] || 
+                             Object.values(vacDests).find(v => v && v !== 'UNSPECIFIED') || null;
                     errorKey = 'admin.student_management.unassignable.error_afternoon';
                 }
             } else {
@@ -297,10 +293,8 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
         const getStudentDestId = (s: Student) => {
             if (semesterMode === 'vacation') {
                 const vacClassIds = s.vacationAfterSchoolClassIds || {};
-                const regClassIds = s.afterSchoolClassIds || {};
                 const enrolledClassIds = new Set([
                     ...Object.values(vacClassIds).filter(Boolean),
-                    ...Object.values(regClassIds).filter(Boolean)
                 ]);
                 const hasVacationClass = afterSchoolClasses.some(c => 
                     c.semesterMode === 'vacation' && enrolledClassIds.has(c.id)
@@ -310,10 +304,8 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                 if (selectedRouteType === 'Morning') return s.morningDestinationId;
                 if (selectedRouteType === 'Afternoon') {
                     const vacDests = s.vacationAfterSchoolDestinations || {};
-                    const regDests = s.afterSchoolDestinations || {};
-                    const dest = vacDests[selectedDay] || regDests[selectedDay] || 
-                                 Object.values(vacDests).find(v => v && v !== 'UNSPECIFIED') || 
-                                 Object.values(regDests).find(v => v && v !== 'UNSPECIFIED') || null;
+                    const dest = vacDests[selectedDay] || 
+                                 Object.values(vacDests).find(v => v && v !== 'UNSPECIFIED') || null;
                     return dest || 'VACATION_CLASS_ENROLLED';
                 }
                 return null;
@@ -531,10 +523,8 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
             if (semesterMode === 'vacation') {
                 // 방학 중: 방과후 수업 등록 여부를 두 필드에서 모두 확인
                 const vacClassIds = s.vacationAfterSchoolClassIds || {};
-                const regClassIds = s.afterSchoolClassIds || {};
                 const enrolledClassIds = new Set([
                     ...Object.values(vacClassIds).filter(Boolean),
-                    ...Object.values(regClassIds).filter(Boolean)
                 ]);
                 const hasVacationClass = afterSchoolClasses.some(c =>
                     c.semesterMode === 'vacation' && enrolledClassIds.has(c.id)
@@ -544,10 +534,8 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                 if (selectedRouteType === 'Morning') return s.morningDestinationId;
                 if (selectedRouteType === 'Afternoon') {
                     const vacDests = s.vacationAfterSchoolDestinations || {};
-                    const regDests = s.afterSchoolDestinations || {};
-                    return vacDests[selectedDay] || regDests[selectedDay] ||
-                           Object.values(vacDests).find(v => v && v !== 'UNSPECIFIED') ||
-                           Object.values(regDests).find(v => v && v !== 'UNSPECIFIED') || null;
+                    return vacDests[selectedDay] ||
+                           Object.values(vacDests).find(v => v && v !== 'UNSPECIFIED') || null;
                 }
                 return null;
             }
@@ -615,10 +603,8 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
             if (currentMode === 'vacation') {
                 // 방학 중: 두 필드에서 방과후 수업 등록 여부 확인
                 const vacClassIds = s.vacationAfterSchoolClassIds || {};
-                const regClassIds = s.afterSchoolClassIds || {};
                 const enrolledClassIds = new Set([
                     ...Object.values(vacClassIds).filter(Boolean),
-                    ...Object.values(regClassIds).filter(Boolean)
                 ]);
                 const hasVacationClass = afterSchoolClasses.some(c =>
                     c.semesterMode === 'vacation' && enrolledClassIds.has(c.id)
@@ -629,10 +615,8 @@ export const StudentManagementTab: React.FC<StudentManagementTabProps> = ({
                 if (currentType === 'Morning') return s.morningDestinationId;
                 if (currentType === 'Afternoon') {
                     const vacDests = s.vacationAfterSchoolDestinations || {};
-                    const regDests = s.afterSchoolDestinations || {};
-                    return vacDests[currentDay] || regDests[currentDay] ||
-                           Object.values(vacDests).find(v => v && v !== 'UNSPECIFIED') ||
-                           Object.values(regDests).find(v => v && v !== 'UNSPECIFIED') || null;
+                    return vacDests[currentDay] ||
+                           Object.values(vacDests).find(v => v && v !== 'UNSPECIFIED') || null;
                 }
                 return null;
             }

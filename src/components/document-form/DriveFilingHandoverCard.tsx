@@ -179,7 +179,7 @@ export function DriveFilingHandoverCard({
         </p>
       </div>
 
-      {/* 하단: 인수인계 타임라인에 추가 체크박스 (기본 체크) */}
+      {/* 하단: 인수인계 타임라인에 추가 체크박스 (기본 해제: 이미 인수인계에 있는 업무와 중복 방지) */}
       <div className="pt-2.5 border-t border-slate-200/80 space-y-1">
         <div className="flex items-center gap-2">
           <Checkbox
